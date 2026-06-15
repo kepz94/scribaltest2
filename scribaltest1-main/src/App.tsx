@@ -120,10 +120,12 @@ const makeTabId = (
   chapter: number
 ) => "tab_" + bookId + "_" + volume + "_" + book + "_" + chapter;
 
-const vols = scriptures.volumes;
+// Stable identity for a chapter, independent of which study/book it sits in.
+// Used to group "linked" chapters that compile together and share themes.
+const chapterKey = (t: { volume: number; book: number; chapter: number }) =>
+  t.volume + "_" + t.book + "_" + t.chapter;
 
-// Shared book that all linked tabs point at, so linked tabs act like one book.
-const LINK_BOOK = "linked_book";
+const vols = scriptures.volumes;
 
 const VIEW_NAMES: Record<string, string> = {
   cornell: "Cornell Notes",
@@ -169,8 +171,6 @@ export default function App() {
     renameBook,
     deleteBook,
     getBook,
-    ensureBook,
-    absorb,
     mergeRemoteBooks,
   } = useMarks();
 
@@ -235,6 +235,24 @@ export default function App() {
       localStorage.getItem("scribal_active_tab_v2") ||
       makeTabId("master", 0, 0, 0)
   );
+
+  // Chapters the user has "linked" — they compile together and share themes,
+  // while staying in their own study (nothing gets relocated).
+  const [linkedChapters, setLinkedChapters] = useState<string[]>(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("scribal_linked_chapters") || "[]"
+      );
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      "scribal_linked_chapters",
+      JSON.stringify(linkedChapters)
+    );
+  }, [linkedChapters]);
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
@@ -657,44 +675,14 @@ export default function App() {
     setActiveTabBook(id);
   };
 
-  // Verse references for a tab's current chapter
-  const tabRefs = (t: Tab) =>
-    vols[t.volume].books[t.book].chapters[t.chapter].verses.map(
-      (v) => v.reference
-    );
-
-  // Link / unlink a tab. Linked tabs share one book, so they share marks,
-  // color meanings, notes, and compile together — they act like one book.
+  // Link / unlink a chapter. Linking is a grouping marker: linked chapters
+  // compile together and share themes, but STAY in their own study — nothing
+  // is moved or relocated, so no marks are ever shuffled between books.
   const toggleLink = (t: Tab) => {
-    const refs = tabRefs(t);
-    if (t.bookId === LINK_BOOK) {
-      // UNLINK: give this tab its own fresh session, carrying over what it shows
-      const n = books.filter((b) => !b.isMaster).length + 1;
-      const newId = createSession("Session " + n);
-      absorb(newId, LINK_BOOK, refs);
-      const newTabId = makeTabId(newId, t.volume, t.book, t.chapter);
-      setTabs((prev) =>
-        prev.map((x) =>
-          x.id === t.id ? { ...x, id: newTabId, bookId: newId } : x
-        )
-      );
-      if (t.id === activeTabId) setActiveTabId(newTabId);
-    } else {
-      // LINK: move this tab onto the shared linked book, carrying its marks in
-      ensureBook(LINK_BOOK, "Linked");
-      absorb(LINK_BOOK, t.bookId, refs);
-      const newTabId = makeTabId(LINK_BOOK, t.volume, t.book, t.chapter);
-      setTabs((prev) => {
-        // if that chapter is already open as a linked tab, just merge into it
-        if (prev.some((x) => x.id === newTabId && x.id !== t.id)) {
-          return prev.filter((x) => x.id !== t.id);
-        }
-        return prev.map((x) =>
-          x.id === t.id ? { ...x, id: newTabId, bookId: LINK_BOOK } : x
-        );
-      });
-      if (t.id === activeTabId) setActiveTabId(newTabId);
-    }
+    const key = chapterKey(t);
+    setLinkedChapters((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const locateReference = (reference: string) => {
@@ -796,7 +784,17 @@ export default function App() {
   groups.forEach((g) => g.items.sort((a, b) => a.startIndex - b.startIndex));
 
   const startCompile = () => {
-    setCompileSelection(tabs.map((t) => t.id));
+    // If the active chapter is linked, compile pulls together the whole linked
+    // group (the linked chapters that are open). Otherwise compile all open tabs.
+    const activeLinked = linkedChapters.includes(chapterKey(activeTab));
+    const linkedOpen = tabs.filter((t) =>
+      linkedChapters.includes(chapterKey(t))
+    );
+    setCompileSelection(
+      activeLinked && linkedOpen.length
+        ? linkedOpen.map((t) => t.id)
+        : tabs.map((t) => t.id)
+    );
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -2355,7 +2353,7 @@ export default function App() {
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
-            const linked = t.bookId === LINK_BOOK;
+            const linked = linkedChapters.includes(chapterKey(t));
             return (
               <div
                 key={t.id}
@@ -2386,8 +2384,8 @@ export default function App() {
                     }}
                     title={
                       linked
-                        ? "Linked — click to unlink"
-                        : "Link this tab (share marks, colors & compile)"
+                        ? "Linked — compiles together & shares themes. Click to unlink."
+                        : "Link this chapter — compile together & share themes (stays in this study)"
                     }
                     style={{
                       fontSize: "12px",
