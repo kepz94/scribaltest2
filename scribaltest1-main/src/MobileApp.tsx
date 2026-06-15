@@ -30,7 +30,6 @@ import {
   applyBackupString as syncApplyBackupString,
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
-  type ApplyOptions,
 } from "./sync";
 
 // Everything this (mobile) shell backs up: the shared study data (CORE_KEYS)
@@ -39,7 +38,7 @@ const BACKUP_KEYS = [...CORE_KEYS, "scribal_mobile_loc"];
 
 // Reading position / scroll are device-local: a pulled backup must never move
 // you off your current chapter, and scroll never travels between devices.
-const MOBILE_APPLY_OPTS: ApplyOptions = {
+const MOBILE_APPLY_OPTS = {
   alwaysLocal: ["scribal_mobile_scroll"],
   keepLocalIfPresent: ["scribal_mobile_loc"],
 };
