@@ -1247,6 +1247,7 @@ export default function App() {
     compileTabs,
     compileSelection,
     onToggleCompileTab: toggleCompileTab,
+    hideTabPicker: true,
     marks,
     colorLabels,
     setColorLabel,
