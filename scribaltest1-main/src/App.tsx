@@ -276,6 +276,12 @@ export default function App() {
     duration: number;
   }>({ show: false, duration: 1000 });
 
+  // When more than one separate thing is open, compile asks what to combine
+  // instead of silently merging everything.
+  const [compilePrompt, setCompilePrompt] = useState<
+    { label: string; tabIds: string[] }[] | null
+  >(null);
+
   const [backupOpen, setBackupOpen] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
   const [diag, setDiag] = useState("");
@@ -783,18 +789,27 @@ export default function App() {
     });
   groups.forEach((g) => g.items.sort((a, b) => a.startIndex - b.startIndex));
 
-  const startCompile = () => {
-    // If the active chapter is linked, compile pulls together the whole linked
-    // group (the linked chapters that are open). Otherwise compile all open tabs.
-    const activeLinked = linkedChapters.includes(chapterKey(activeTab));
+  // Group open tabs into "compile units": each unlinked tab is its own unit,
+  // and all linked open tabs collapse into one. (Mirrors the verified rules.)
+  const compileUnits = (): { label: string; tabIds: string[] }[] => {
+    const units: { label: string; tabIds: string[] }[] = [];
     const linkedOpen = tabs.filter((t) =>
       linkedChapters.includes(chapterKey(t))
     );
-    setCompileSelection(
-      activeLinked && linkedOpen.length
-        ? linkedOpen.map((t) => t.id)
-        : tabs.map((t) => t.id)
-    );
+    if (linkedOpen.length) {
+      units.push({
+        label: "Linked: " + linkedOpen.map((t) => tabLabel(t)).join(" + "),
+        tabIds: linkedOpen.map((t) => t.id),
+      });
+    }
+    tabs
+      .filter((t) => !linkedChapters.includes(chapterKey(t)))
+      .forEach((t) => units.push({ label: tabLabel(t), tabIds: [t.id] }));
+    return units;
+  };
+
+  const runCompile = (tabIds: string[]) => {
+    setCompileSelection(tabIds.length ? tabIds : tabs.map((t) => t.id));
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -803,6 +818,22 @@ export default function App() {
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
     setCompileAnim({ show: true, duration });
+  };
+
+  const startCompile = () => {
+    const units = compileUnits();
+    // Only one thing open (a single chapter, or a single linked group) — just
+    // compile it. More than one separate thing — ask first.
+    if (units.length <= 1) {
+      runCompile(units.length ? units[0].tabIds : tabs.map((t) => t.id));
+    } else {
+      setCompilePrompt(units);
+    }
+  };
+
+  const chooseCompileUnit = (u: { label: string; tabIds: string[] }) => {
+    setCompilePrompt(null);
+    runCompile(u.tabIds);
   };
 
   const finishCompileAnim = () => {
@@ -1377,6 +1408,90 @@ export default function App() {
           }}
           onClose={() => setShowSearch(false)}
         />
+      )}
+      {compilePrompt && (
+        <div
+          onClick={() => setCompilePrompt(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--panel)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "22px",
+              width: "100%",
+              maxWidth: "420px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}
+            >
+              What do you want to compile?
+            </div>
+            <div
+              style={{
+                fontSize: "13px",
+                opacity: 0.7,
+                marginBottom: "16px",
+              }}
+            >
+              You have more than one thing open. Pick what to compile.
+            </div>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+            >
+              {compilePrompt.map((u, i) => (
+                <button
+                  key={i}
+                  onClick={() => chooseCompileUnit(u)}
+                  style={{
+                    textAlign: "left",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {u.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCompilePrompt(null)}
+              style={{
+                marginTop: "16px",
+                width: "100%",
+                padding: "10px",
+                borderRadius: "10px",
+                border: "none",
+                background: "transparent",
+                color: "var(--text)",
+                opacity: 0.6,
+                fontSize: "13px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
       {compileAnim.show && (
         <CompileAnimation
