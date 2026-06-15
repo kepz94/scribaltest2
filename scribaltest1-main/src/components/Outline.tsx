@@ -16,6 +16,7 @@ interface OutlineProps {
   compileTabs: Tab[];
   compileSelection: string[];
   onToggleCompileTab: (id: string) => void;
+  hideTabPicker?: boolean;
   marks: Mark[];
   colorLabels: Record<number, string>;
   setColorLabel: (color: MarkColor, label: string) => void;
@@ -70,6 +71,7 @@ export default function Outline(props: OutlineProps) {
     compileTabs,
     compileSelection,
     onToggleCompileTab,
+    hideTabPicker,
     marks,
     colorLabels,
     setColorLabel,
@@ -162,6 +164,7 @@ export default function Outline(props: OutlineProps) {
           borderRadius: "14px",
           padding: "14px 16px",
           marginBottom: "20px",
+          display: hideTabPicker ? "none" : undefined,
         }}
       >
         <div
