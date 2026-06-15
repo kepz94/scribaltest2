@@ -17,6 +17,7 @@ interface ConceptMapProps {
   compileTabs: Tab[];
   compileSelection: string[];
   onToggleCompileTab: (id: string) => void;
+  hideTabPicker?: boolean;
   marks: Mark[];
   colorLabels: Record<number, string>;
   setColorLabel: (color: MarkColor, label: string) => void;
@@ -62,6 +63,7 @@ export default function ConceptMap(props: ConceptMapProps) {
     compileTabs,
     compileSelection,
     onToggleCompileTab,
+    hideTabPicker,
     marks,
     colorLabels,
     setColorLabel,
@@ -466,6 +468,7 @@ export default function ConceptMap(props: ConceptMapProps) {
           borderRadius: "14px",
           padding: "14px 16px",
           marginBottom: "16px",
+          display: hideTabPicker ? "none" : undefined,
         }}
       >
         <div
