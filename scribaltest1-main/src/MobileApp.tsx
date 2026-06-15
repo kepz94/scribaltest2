@@ -1,0 +1,3114 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import scriptures from "./data/scriptures.json";
+import {
+  Mark,
+  MarkColor,
+  MarkStyle,
+  Tool,
+  COLORS,
+  COLOR_MAP,
+  HIGHLIGHT_MAP,
+} from "./types";
+import MobileVerse from "./MobileVerse";
+import MobileCompile from "./MobileCompile";
+import CompileAnimation from "./components/CompileAnimation";
+import MobileSearch from "./MobileSearch";
+import SharePreview from "./SharePreview";
+import MobileVault from "./MobileVault";
+import MobileTour from "./MobileTour";
+import { useMarks } from "./hooks/useMarks";
+import { useVault, VaultEntry } from "./hooks/useVault";
+import * as drive from "./googleDrive";
+import {
+  CORE_KEYS,
+  DRIVE_CONFIGURED,
+  GOOGLE_CLIENT_ID,
+  countBookMarksFromJson,
+  booksFromBackup,
+  withFreshToken,
+  buildBackupString as syncBuildBackupString,
+  applyBackupString as syncApplyBackupString,
+  pushToDrive as syncPushToDrive,
+  pullIfNewer as syncPullIfNewer,
+  type ApplyOptions,
+} from "./sync";
+
+// Everything this (mobile) shell backs up: the shared study data (CORE_KEYS)
+// plus this device's reading position.
+const BACKUP_KEYS = [...CORE_KEYS, "scribal_mobile_loc"];
+
+// Reading position / scroll are device-local: a pulled backup must never move
+// you off your current chapter, and scroll never travels between devices.
+const MOBILE_APPLY_OPTS: ApplyOptions = {
+  alwaysLocal: ["scribal_mobile_scroll"],
+  keepLocalIfPresent: ["scribal_mobile_loc"],
+};
+
+// Backup / sync helpers — implementations live in ./sync (shared with desktop);
+// these thin wrappers pass in this shell's key list and device-local rules.
+function buildBackupString() {
+  return syncBuildBackupString(BACKUP_KEYS);
+}
+
+function applyBackupString(text: string) {
+  // Mobile historically never threw on a malformed backup — preserve that.
+  try {
+    syncApplyBackupString(text, MOBILE_APPLY_OPTS);
+  } catch {}
+}
+
+const vols = scriptures.volumes;
+
+const PALETTE = {
+  light: {
+    bg: "#f6f4ee",
+    panel: "#ffffff",
+    soft: "#efece4",
+    text: "#1d1c18",
+    muted: "#8d8a80",
+    border: "#e2dfd6",
+  },
+  dark: {
+    bg: "#131210",
+    panel: "#1d1c19",
+    soft: "#232220",
+    text: "#eae7de",
+    muted: "#8d8a82",
+    border: "#343229",
+  },
+};
+
+// The mark colors live as CSS variables (COLOR_MAP/HIGHLIGHT_MAP resolve to
+// var(--penN)/var(--hlN)). The desktop App sets these on its theme root; the
+// mobile shell must set them too or every mark renders black.
+const MARK_VARS_LIGHT = {
+  "--pen1": "#d11a2a",
+  "--pen2": "#e07b1a",
+  "--pen3": "#c9a200",
+  "--pen4": "#2f8f3e",
+  "--pen5": "#2f6fb0",
+  "--pen6": "#7b4fbf",
+  "--pen7": "#1a1a1a",
+  "--hl1": "#ffd6d6",
+  "--hl2": "#ffe2c2",
+  "--hl3": "#fbedb0",
+  "--hl4": "#d3f0d6",
+  "--hl5": "#cfe2f7",
+  "--hl6": "#e6d9f7",
+  "--hl7": "#e0e0e0",
+} as React.CSSProperties;
+
+const MARK_VARS_DARK = {
+  "--pen1": "#ff7b72",
+  "--pen2": "#f0a24b",
+  "--pen3": "#e3c341",
+  "--pen4": "#5fcf6b",
+  "--pen5": "#7cb0e8",
+  "--pen6": "#b794f6",
+  "--pen7": "#f2efe8",
+  "--hl1": "#5c2b2e",
+  "--hl2": "#5c3f1f",
+  "--hl3": "#5a4a1c",
+  "--hl4": "#1f4d2a",
+  "--hl5": "#243d56",
+  "--hl6": "#3d2b5c",
+  "--hl7": "#3f3e3a",
+} as React.CSSProperties;
+
+const STYLE_LABELS: { tool: Tool; label: string }[] = [
+  { tool: "highlight", label: "Highlight" },
+  { tool: "underline", label: "Underline" },
+  { tool: "bold", label: "Bold" },
+  { tool: "italic", label: "Italic" },
+  { tool: "circle", label: "Circle" },
+  { tool: "eraser", label: "Eraser" },
+];
+
+interface Loc {
+  v: number;
+  b: number;
+  c: number;
+}
+
+const readLoc = (): Loc => {
+  try {
+    const raw = localStorage.getItem("scribal_mobile_loc");
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (vols[p.v] && vols[p.v].books[p.b] && vols[p.v].books[p.b].chapters[p.c])
+        return { v: p.v, b: p.b, c: p.c };
+    }
+  } catch {}
+  return { v: 0, b: 0, c: 0 };
+};
+
+const SCROLL_KEY = "scribal_mobile_scroll";
+const locKey = (l: Loc) => l.v + "." + l.b + "." + l.c;
+const readScrollMap = (): Record<string, number> => {
+  try {
+    const r = localStorage.getItem(SCROLL_KEY);
+    if (r) return JSON.parse(r) || {};
+  } catch {}
+  return {};
+};
+
+const relTime = (ms: number | null): string => {
+  if (!ms) return "not yet";
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 45) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.floor(h / 24) + "d ago";
+};
+
+
+const readPen = (): { color: MarkColor; tool: Tool } => {
+  try {
+    const raw = localStorage.getItem("scribal_mobile_pen");
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.color && p.tool) return { color: p.color, tool: p.tool };
+    }
+  } catch {}
+  return { color: 1, tool: "highlight" };
+};
+
+export default function MobileApp() {
+  const {
+    marks,
+    colorLabels,
+    books,
+    activeBookId,
+    setActiveBook,
+    createSession,
+    deleteBook,
+    addMark,
+    deleteMark,
+    updateMarkRange,
+    importStudy,
+    freezeChapter,
+    mergeRemoteBooks,
+    undo,
+    canUndo,
+    setScopedLabel,
+    seedScopeLabels,
+    scopedLabels,
+    notes,
+    setNote,
+  } = useMarks();
+
+  const {
+    entries: vaultEntries,
+    addEntry: vaultAdd,
+    updateEntry: vaultUpdate,
+    deleteEntry: vaultDelete,
+    renameEntry: vaultRename,
+    mergeRemote: vaultMergeRemote,
+  } = useVault();
+
+  const [dark, setDark] = useState<boolean>(() => {
+    const saved = localStorage.getItem("scribal_theme");
+    if (saved) return saved === "dark";
+    return (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    );
+  });
+  const C = dark ? PALETTE.dark : PALETTE.light;
+
+  // Reading comfort: font scale, line spacing, warm (sepia) tone.
+  const [reading, setReading] = useState<{
+    fontScale: number;
+    lineScale: number;
+    warm: boolean;
+  }>(() => {
+    try {
+      const s = localStorage.getItem("scribal_mobile_reading");
+      if (s) {
+        const p = JSON.parse(s);
+        return {
+          fontScale: typeof p.fontScale === "number" ? p.fontScale : 1,
+          lineScale: typeof p.lineScale === "number" ? p.lineScale : 1.85,
+          warm: !!p.warm,
+        };
+      }
+    } catch {}
+    return { fontScale: 1, lineScale: 1.85, warm: false };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("scribal_mobile_reading", JSON.stringify(reading));
+    } catch {}
+  }, [reading]);
+
+  const readBg = reading.warm ? (dark ? "#1a1410" : "#f4ecd6") : C.bg;
+  const readText = reading.warm ? (dark ? "#e9ddc2" : "#53442c") : C.text;
+  const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
+  const verseSize = (19 * reading.fontScale).toFixed(1) + "px";
+
+  const [loc, setLoc] = useState<Loc>(readLoc);
+  const [pen, setPen] = useState(readPen);
+  const [penOpen, setPenOpen] = useState(false);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [gesturesOpen, setGesturesOpen] = useState(false);
+  const [compileOpen, setCompileOpen] = useState(false);
+  const [compileAnim, setCompileAnim] = useState<{
+    show: boolean;
+    duration: number;
+  }>({ show: false, duration: 1000 });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [editMark, setEditMark] = useState<{ id: string; reference: string } | null>(null);
+  const [versePreview, setVersePreview] = useState<{
+    phrase: string;
+    reference: string;
+    theme: string;
+    style: string;
+    color: number;
+  } | null>(null);
+  const [showTour, setShowTour] = useState(
+    () => !localStorage.getItem("scribal_mobile_onboarded")
+  );
+  const [chooseRef, setChooseRef] = useState<string | null>(null);
+
+  // Replay the first-run tour (which then opens the gestures sheet).
+  const resetIntro = () => {
+    try {
+      localStorage.removeItem("scribal_mobile_onboarded");
+    } catch {
+      /* ignore */
+    }
+    setSettingsOpen(false);
+    setShowTour(true);
+  };
+
+  // After the sign-in reload, finish opening the gestures sheet.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("scribal_mobile_show_gestures") === "1") {
+        localStorage.removeItem("scribal_mobile_show_gestures");
+        setGesturesOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const [connected, setConnected] = useState(
+    () => !!localStorage.getItem("scribal_drive_enabled")
+  );
+  const [syncMsg, setSyncMsg] = useState("");
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [diag, setDiag] = useState("");
+  const [barHidden, setBarHidden] = useState(false);
+
+  // Track which marks were created during this app session, so Compile can
+  // surface "what you just worked on." Re-seeds when the active book changes,
+  // so switching books never falsely flags everything as new.
+  const knownIds = useRef<Set<string>>(new Set());
+  const seededBook = useRef<string | null>(null);
+  const [sessionNew, setSessionNew] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (seededBook.current !== activeBookId) {
+      knownIds.current = new Set(marks.map((m) => m.id));
+      seededBook.current = activeBookId;
+      setSessionNew(new Set());
+      return;
+    }
+    const fresh: string[] = [];
+    marks.forEach((m) => {
+      if (!knownIds.current.has(m.id)) {
+        knownIds.current.add(m.id);
+        fresh.push(m.id);
+      }
+    });
+    if (fresh.length) {
+      setSessionNew((prev) => {
+        const n = new Set(prev);
+        fresh.forEach((id) => n.add(id));
+        return n;
+      });
+    }
+  }, [marks, activeBookId]);
+
+  // Warm up Google sign-in early so the consent popup opens within the tap.
+  useEffect(() => {
+    if (DRIVE_CONFIGURED) drive.preloadGis();
+  }, []);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastScroll = useRef(0);
+  const scrollPos = useRef<Record<string, number>>(readScrollMap());
+  const scrollSaveTimer = useRef<number | null>(null);
+  const jumpVerse = useRef<string | null>(null);
+  const progressRef = useRef<HTMLDivElement | null>(null);
+
+  // two-finger tap = undo last mark
+  const tfActive = useRef(false);
+  const tfStart = useRef(0);
+  const tfMoved = useRef(false);
+  const tfDist = useRef(0);
+  const tfPts = useRef<{ x: number; y: number }[]>([]);
+
+  const [lastSync, setLastSync] = useState<number | null>(
+    () => Date.parse(localStorage.getItem("scribal_sync_seen") || "") || null
+  );
+  // re-render every 30s so the "Synced 2m ago" label stays current
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("scribal_mobile_loc", JSON.stringify(loc));
+    const el = scrollRef.current;
+
+    const place = (clear: boolean) => {
+      if (!el) return;
+      const want = jumpVerse.current;
+      if (want) {
+        const safe = want.replace(/["\\]/g, "\\$&");
+        const target = el.querySelector(
+          '[data-vref="' + safe + '"]'
+        ) as HTMLElement | null;
+        if (target) {
+          const cTop = el.getBoundingClientRect().top;
+          const tTop = target.getBoundingClientRect().top;
+          // sit the verse just below the top bar
+          el.scrollTop = Math.max(0, el.scrollTop + (tTop - cTop) - 90);
+        }
+        if (clear) jumpVerse.current = null;
+        return;
+      }
+      // no jump target — restore where we left off in this chapter
+      el.scrollTop = scrollPos.current[locKey(loc)] || 0;
+    };
+
+    place(false);
+    requestAnimationFrame(() => {
+      place(true);
+      if (scrollRef.current) updateProgress(scrollRef.current);
+    });
+    lastScroll.current = el ? el.scrollTop : 0;
+    try {
+      localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPos.current));
+    } catch {}
+    setBarHidden(false);
+  }, [loc]);
+
+  // Persist scroll positions when the app is backgrounded or closed.
+  useEffect(() => {
+    const flush = () => {
+      try {
+        localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPos.current));
+      } catch {}
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("scribal_mobile_pen", JSON.stringify(pen));
+  }, [pen]);
+
+  // Flat chapter list for prev/next across the whole canon
+  const flat = useMemo(() => {
+    const list: Loc[] = [];
+    vols.forEach((vol, v) =>
+      vol.books.forEach((bk, b) =>
+        bk.chapters.forEach((_ch, c) => list.push({ v, b, c }))
+      )
+    );
+    return list;
+  }, []);
+
+  const curIndex = flat.findIndex(
+    (x) => x.v === loc.v && x.b === loc.b && x.c === loc.c
+  );
+  const go = (delta: number) => {
+    const next = flat[curIndex + delta];
+    if (next) setLoc(next);
+  };
+
+  // chapter reference ("Mosiah 18") -> location + canonical order, for jumping
+  // from the Outline / Search back to a verse.
+  const chapterLoc = useMemo(() => {
+    const map = new Map<string, { v: number; b: number; c: number; order: number }>();
+    let order = 0;
+    vols.forEach((vol, v) =>
+      vol.books.forEach((bk, b) =>
+        bk.chapters.forEach((ch, c) => {
+          map.set(bk.book + " " + ch.chapter, { v, b, c, order });
+          order++;
+        })
+      )
+    );
+    return map;
+  }, []);
+
+  // Flat list of canon book names for free-text reference parsing.
+  const bookList = useMemo(() => {
+    const out: { name: string; norm: string; firstChap: string }[] = [];
+    vols.forEach((vol) =>
+      vol.books.forEach((bk) =>
+        out.push({
+          name: bk.book,
+          norm: bk.book.toLowerCase().replace(/[^a-z0-9]/g, ""),
+          firstChap: bk.chapters.length ? String(bk.chapters[0].chapter) : "1",
+        })
+      )
+    );
+    return out;
+  }, []);
+
+  const parseRef = (raw: string): string | null => {
+    const t = raw.trim();
+    if (!t) return null;
+    // Try "Book Chapter[:Verse]" — but only when there's a book name *before*
+    // the trailing number (so "1 Nephi" alone isn't read as chapter 1).
+    const m = t.match(/^(.*?)(\d+)(?::(\d+))?\s*$/);
+    let bookPart: string;
+    let chapter: string | null;
+    let verse: string | undefined;
+    if (m && m[1].trim() !== "") {
+      bookPart = m[1];
+      chapter = m[2];
+      verse = m[3];
+    } else {
+      // book name only → default to its first chapter
+      bookPart = t;
+      chapter = null;
+      verse = undefined;
+    }
+    const norm = bookPart.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!norm) return null;
+    let hit = bookList.find((b) => b.norm === norm);
+    if (!hit) {
+      const starts = bookList
+        .filter((b) => b.norm.startsWith(norm))
+        .sort((a, b) => a.norm.length - b.norm.length);
+      hit = starts[0];
+    }
+    if (!hit) hit = bookList.find((b) => b.norm.includes(norm));
+    if (!hit) return null;
+    const chap = hit.name + " " + (chapter || hit.firstChap);
+    if (!chapterLoc.has(chap)) return null;
+    return verse ? chap + ":" + verse : chap;
+  };
+
+  const [gotoText, setGotoText] = useState("");
+  const [gotoErr, setGotoErr] = useState(false);
+  const [resumeNudge, setResumeNudge] = useState<{
+    loc: Loc;
+    label: string;
+  } | null>(null);
+
+  const submitGoto = () => {
+    const ref = parseRef(gotoText);
+    if (!ref) {
+      setGotoErr(true);
+      return;
+    }
+    setGotoErr(false);
+    setGotoText("");
+    setJumpOpen(false);
+    jumpToRef(ref);
+  };
+
+  // On open, if the last place you marked differs from where you're resuming,
+  // offer to jump back to it.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("scribal_mobile_last_marked");
+      if (!raw) return;
+      const lm = JSON.parse(raw);
+      if (typeof lm.v !== "number") return;
+      if (lm.v === loc.v && lm.b === loc.b && lm.c === loc.c) return;
+      const vol = vols[lm.v];
+      const bk = vol && vol.books[lm.b];
+      const ch = bk && bk.chapters[lm.c];
+      if (!ch) return;
+      setResumeNudge({
+        loc: { v: lm.v, b: lm.b, c: lm.c },
+        label: bk.book + " " + ch.chapter,
+      });
+    } catch {}
+    // eslint: intentional one-shot on mount
+  }, []);
+
+  const orderOf = (ref: string) => {
+    const chap = ref.replace(/:\d+$/, "");
+    const cl = chapterLoc.get(chap);
+    const vmatch = ref.match(/:(\d+)/);
+    const vnum = vmatch ? parseInt(vmatch[1], 10) : 0;
+    return (cl ? cl.order : 99999) * 1000 + vnum;
+  };
+
+  const jumpToRef = (ref: string) => {
+    const chap = ref.replace(/:\d+$/, "");
+    const cl = chapterLoc.get(chap);
+    jumpVerse.current = ref;
+    if (cl) setLoc({ v: cl.v, b: cl.b, c: cl.c });
+    setCompileOpen(false);
+    setSearchOpen(false);
+    setChooseRef(null);
+    setJumpOpen(false);
+    setMenuOpen(false);
+  };
+
+  const chapter = vols[loc.v].books[loc.b].chapters[loc.c];
+  const bookName = vols[loc.v].books[loc.b].book;
+  const title = bookName + " " + chapter.chapter;
+
+  // Pending "continue themes" carry → applied when you open the next chapter.
+  const carryRef = useRef<{
+    from: string;
+    labels: Record<number, string>;
+  } | null>(null);
+
+  // Theme names are per chapter (study scope). Each chapter keeps its own
+  // palette, so naming or clearing one chapter never touches another.
+  const scopeOf = (ref: string) => {
+    const i = ref.indexOf(":");
+    return i < 0 ? ref : ref.slice(0, i);
+  };
+  const chapterColorName = (scope: string, color: MarkColor): string => {
+    const sl = scopedLabels[scope];
+    if (sl && color in sl) return (sl[color] || "").trim();
+    // fall back to a frozen per-mark label (saved/older studies)
+    const fm = marks.find(
+      (m) =>
+        scopeOf(m.reference) === scope &&
+        m.color === color &&
+        m.label &&
+        m.label.trim()
+    );
+    return fm ? (fm.label as string).trim() : "";
+  };
+  const effLabel = (m: Mark) => chapterColorName(scopeOf(m.reference), m.color);
+  // The current chapter's palette as a color→name map (for compile / verse views).
+  const scopeLabels = (() => {
+    const out: Record<number, string> = {};
+    COLORS.forEach((c) => {
+      const n = chapterColorName(title, c);
+      if (n) out[c] = n;
+    });
+    return out;
+  })();
+  const chapterMarks = marks.filter((m) =>
+    m.reference.startsWith(title + ":")
+  );
+  const chapterThemes = (() => {
+    const map = new Map<
+      string,
+      { color: MarkColor; name: string; count: number }
+    >();
+    chapterMarks.forEach((m) => {
+      const nm = effLabel(m);
+      const key = nm ? "n:" + nm : "c:" + m.color;
+      const e = map.get(key);
+      if (e) e.count += 1;
+      else
+        map.set(key, {
+          color: m.color,
+          name: nm || "Color " + m.color,
+          count: 1,
+        });
+    });
+    return Array.from(map.values());
+  })();
+  // "Continue these themes": carry this chapter's named palette into the NEXT
+  // chapter you open (applied once, fills blanks only).
+  const continueThemes = () => {
+    const carry: Record<number, string> = {};
+    chapterThemes.forEach((t) => {
+      if (t.name && !t.name.startsWith("Color ")) carry[t.color] = t.name;
+    });
+    carryRef.current = { from: title, labels: carry };
+    setLinkOpen(false);
+    flash("Themes will carry into your next chapter");
+  };
+  // When the open chapter changes, apply any pending carry to it (fill-blank).
+  useEffect(() => {
+    const c = carryRef.current;
+    if (!c || c.from === title) return;
+    if (Object.keys(c.labels).length) seedScopeLabels(title, c.labels);
+    carryRef.current = null;
+  }, [title, seedScopeLabels]);
+
+  const updateProgress = (el: HTMLDivElement) => {
+    const max = el.scrollHeight - el.clientHeight;
+    const pct = max > 8 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0;
+    if (progressRef.current)
+      progressRef.current.style.width = (pct * 100).toFixed(2) + "%";
+  };
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const y = el.scrollTop;
+    updateProgress(el);
+    if (y > lastScroll.current + 6 && y > 40) setBarHidden(true);
+    else if (y < lastScroll.current - 6) setBarHidden(false);
+    lastScroll.current = y;
+    // remember where we are in this chapter
+    scrollPos.current[locKey(loc)] = y;
+    if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+    scrollSaveTimer.current = window.setTimeout(() => {
+      try {
+        localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPos.current));
+      } catch {}
+    }, 500);
+  };
+
+  const tfDist2 = (
+    a: { clientX: number; clientY: number },
+    b: { clientX: number; clientY: number }
+  ) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  const onReadTouchStart = (e: {
+    touches: { length: number; [i: number]: { clientX: number; clientY: number } };
+  }) => {
+    if (e.touches.length === 2) {
+      tfActive.current = true;
+      tfMoved.current = false;
+      tfStart.current = Date.now();
+      tfPts.current = [
+        { x: e.touches[0].clientX, y: e.touches[0].clientY },
+        { x: e.touches[1].clientX, y: e.touches[1].clientY },
+      ];
+      tfDist.current = tfDist2(e.touches[0], e.touches[1]);
+    } else {
+      tfActive.current = false;
+    }
+  };
+
+  const onReadTouchMove = (e: {
+    touches: { length: number; [i: number]: { clientX: number; clientY: number } };
+  }) => {
+    if (!tfActive.current || e.touches.length < 2) return;
+    const d = tfDist2(e.touches[0], e.touches[1]);
+    if (Math.abs(d - tfDist.current) > 12) {
+      tfMoved.current = true;
+      return;
+    }
+    const m0 = Math.hypot(
+      e.touches[0].clientX - tfPts.current[0].x,
+      e.touches[0].clientY - tfPts.current[0].y
+    );
+    const m1 = Math.hypot(
+      e.touches[1].clientX - tfPts.current[1].x,
+      e.touches[1].clientY - tfPts.current[1].y
+    );
+    if (m0 > 14 || m1 > 14) tfMoved.current = true;
+  };
+
+  const onReadTouchEnd = () => {
+    if (tfActive.current && !tfMoved.current && Date.now() - tfStart.current < 300) {
+      tfActive.current = false;
+      if (canUndo) {
+        undo();
+        flash("Undid last mark");
+      } else {
+        flash("Nothing to undo");
+      }
+      return;
+    }
+    tfActive.current = false;
+  };
+
+  const armedName = chapterColorName(title, pen.color);
+  const isEraser = pen.tool === "eraser";
+  const isSession = activeBookId !== "master";
+  const activeBookName =
+    books.find((b) => b.id === activeBookId)?.name || "Master Book";
+
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef<number | null>(null);
+  const flash = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 1400);
+  };
+
+  const [manage, setManage] = useState<{
+    ref: string;
+    text: string;
+    s: number;
+    e: number;
+  } | null>(null);
+
+  const selBg = dark ? "rgba(234,231,222,0.20)" : "rgba(29,28,24,0.12)";
+
+  const chapterRefSet = useMemo(
+    () => new Set(chapter.verses.map((v: any) => v.reference)),
+    [chapter]
+  );
+
+  const eraseRange = (ref: string, s: number, e: number) => {
+    const hits = marks.filter(
+      (m) => m.reference === ref && m.startIndex < e && m.endIndex > s
+    );
+    hits.forEach((m) => deleteMark(m.id));
+    if (hits.length) flash("Removed");
+  };
+
+  const addRange = (ref: string, text: string, s: number, e: number) => {
+    if (e <= s) return;
+    addMark(ref, text, text.slice(s, e), s, e, pen.tool as MarkStyle, pen.color);
+    try {
+      const chap = ref.replace(/:\d+$/, "");
+      const cl = chapterLoc.get(chap);
+      if (cl)
+        localStorage.setItem(
+          "scribal_mobile_last_marked",
+          JSON.stringify({ v: cl.v, b: cl.b, c: cl.c })
+        );
+    } catch {}
+    const count =
+      marks.filter((m) => m.color === pen.color && chapterRefSet.has(m.reference))
+        .length + 1;
+    flash((armedName || "Color " + pen.color) + " · " + count);
+  };
+
+  const onTap = (ref: string, text: string, s: number, e: number) => {
+    if (isEraser) {
+      eraseRange(ref, s, e);
+      return;
+    }
+    const same = marks.find(
+      (m) =>
+        m.reference === ref &&
+        m.color === pen.color &&
+        m.style === pen.tool &&
+        m.startIndex < e &&
+        m.endIndex > s
+    );
+    if (same) {
+      deleteMark(same.id);
+      flash("Removed");
+    } else {
+      addRange(ref, text, s, e);
+    }
+  };
+
+  const onRange = (ref: string, text: string, s: number, e: number) => {
+    if (isEraser) eraseRange(ref, s, e);
+    else addRange(ref, text, s, e);
+  };
+
+  const onManage = (ref: string, text: string, s: number, e: number) => {
+    setManage({ ref, text, s, e });
+  };
+
+  // ---- Refine a mark's edges (double-tap to enter, tap words to adjust) ----
+  const onEnterEdit = (id: string, ref: string) => {
+    setManage(null);
+    setEditMark({ id, reference: ref });
+    flash("Tap words to set the edges · tap Done to finish");
+  };
+  const onAdjust = (
+    id: string,
+    startIndex: number,
+    endIndex: number,
+    markedText: string,
+    commit: boolean
+  ) => {
+    updateMarkRange(id, startIndex, endIndex, markedText, commit);
+  };
+
+  const recolor = (m: Mark, color: MarkColor) => {
+    deleteMark(m.id);
+    addMark(
+      m.reference,
+      m.verseText,
+      m.markedText,
+      m.startIndex,
+      m.endIndex,
+      m.style,
+      color
+    );
+  };
+
+  // ---- Compile (gathering animation, then full-screen view) ----
+  const startCompile = () => {
+    const lastCount = Number(
+      localStorage.getItem("scribal_mobile_compile_count") || "0"
+    );
+    const delta = Math.max(0, marks.length - lastCount);
+    const duration = delta > 8 ? 2500 : 1000;
+    localStorage.setItem("scribal_mobile_compile_count", String(marks.length));
+    setCompileAnim({ show: true, duration });
+  };
+
+  // ---- Save the current chapter's study to the Vault ----
+  // One file per chapter study: re-saving the same chapter updates that file
+  // instead of making a duplicate. Saving also locks in this chapter's theme
+  // names so reusing a color elsewhere never rewrites them.
+  const saveOutlineToVault = () => {
+    const studyMarks = chapterMarks;
+    if (studyMarks.length === 0) {
+      flash("Nothing to save in this chapter yet");
+      return;
+    }
+    const bookName =
+      books.find((b) => b.id === activeBookId)?.name || "Master Book";
+    const scopeKey = title; // e.g. "1 Nephi 2"
+    const seen = new Set<string>();
+    const compileTabs: {
+      id: string;
+      volume: number;
+      book: number;
+      chapter: number;
+    }[] = [];
+    studyMarks.forEach((m) => {
+      const chap = m.reference.replace(/:\d+$/, "");
+      if (seen.has(chap)) return;
+      const cl = chapterLoc.get(chap);
+      if (cl) {
+        seen.add(chap);
+        compileTabs.push({
+          id: "vtab_" + chap.replace(/\s+/g, "_"),
+          volume: cl.v,
+          book: cl.b,
+          chapter: cl.c,
+        });
+      }
+    });
+    const existing = vaultEntries.find(
+      (e) => e.scopeKey === scopeKey && e.bookName === bookName
+    );
+    const payload = {
+      view: "outline" as const,
+      bookName,
+      scopeKey,
+      compileTabs,
+      marks: studyMarks.slice(),
+      colorLabels: { ...scopeLabels },
+      notes: { ...notes },
+    };
+    if (existing) {
+      vaultUpdate(existing.id, payload);
+      flash("Updated " + scopeKey);
+    } else {
+      vaultAdd({
+        name: scopeKey,
+        tags: [],
+        ...payload,
+      });
+      flash("Saved " + scopeKey);
+    }
+    // Lock this chapter's theme names onto its marks.
+    freezeChapter(title);
+  };
+
+  // ---- Restore a saved study from the Vault into the active book ----
+  // Safe / additive: it only ADDS marks that aren't already present, and only
+  // FILLS blank theme names + notes. It never overwrites a mark, a name, or a
+  // note you're currently using — so restoring can recover lost work without
+  // ever stomping good data.
+  const restoreFromVault = (entry: VaultEntry) => {
+    const curIds = new Set(marks.map((m) => m.id));
+    const added = (entry.marks || []).filter((m) => !curIds.has(m.id));
+    const mergedMarks = [...marks, ...added];
+
+    const mergedLabels: Record<number, string> = { ...colorLabels };
+    COLORS.forEach((c) => {
+      const cur = (mergedLabels[c] || "").trim();
+      const fromEntry = (entry.colorLabels && entry.colorLabels[c]) || "";
+      if (!cur && fromEntry.trim()) mergedLabels[c] = fromEntry; // fill blanks only
+    });
+
+    const mergedNotes: Record<string, string> = { ...notes };
+    const en = entry.notes || {};
+    Object.keys(en).forEach((k) => {
+      if (!(mergedNotes[k] && mergedNotes[k].trim())) mergedNotes[k] = en[k]; // fill blanks only
+    });
+
+    importStudy(mergedMarks, mergedLabels, mergedNotes);
+    flash(
+      added.length
+        ? "Restored " + added.length + (added.length === 1 ? " mark" : " marks")
+        : "Already in your book"
+    );
+  };
+
+  // ---- Close (delete) a session study book ----
+  const closeSession = (id: string, name: string, markCount: number) => {
+    const warn =
+      markCount > 0
+        ? "Close “" +
+          name +
+          "”? Its " +
+          markCount +
+          (markCount === 1 ? " mark" : " marks") +
+          " will be removed from your open books. Anything you've saved to the Vault stays safe."
+        : "Close “" + name + "”?";
+    if (window.confirm(warn)) {
+      deleteBook(id);
+      flash("Session closed");
+    }
+  };
+
+  // ---- Google Drive sync ----
+  // While an initial sign-in pull is in flight, block auto-save so a fresh
+  // install can't push its empty book over your good Drive backup before the
+  // pull lands.
+  const pullPending = useRef(false);
+
+  // The single safe path for writing to Drive (same rules as desktop):
+  //   1. Staleness — if the cloud is newer than the version this device last
+  //      synced from, adopt the cloud copy instead of overwriting it.
+  //   2. Emptiness — never replace a cloud copy that has marks with an empty one.
+  const pushToDrive = () =>
+    syncPushToDrive(BACKUP_KEYS, mergeRemoteBooks, vaultMergeRemote);
+
+  const driveConnect = async () => {
+    if (!DRIVE_CONFIGURED) {
+      setSyncMsg("Google sync isn't set up yet.");
+      return;
+    }
+    setSyncBusy(true);
+    setSyncMsg("Connecting…");
+    pullPending.current = true;
+    try {
+      const token = await drive.connect(GOOGLE_CLIENT_ID);
+      localStorage.setItem("scribal_drive_enabled", "1");
+      setConnected(true);
+      setSyncMsg("Loading your study…");
+      const text = await drive.loadData(token);
+      if (text) {
+        applyBackupString(text);
+        window.location.reload();
+        return;
+      }
+      await drive.saveData(token, buildBackupString());
+      pullPending.current = false;
+      setSyncMsg("Connected ✓");
+      setLastSync(Date.now());
+    } catch (e: any) {
+      setSyncMsg("Sign-in failed: " + (e && e.message ? e.message : "unknown"));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setSyncBusy(true);
+    setSyncMsg("Saving…");
+    try {
+      const res = await pushToDrive();
+      if (res === "adopted") return; // reloading with the newer cloud copy
+      if (res === "blocked") {
+        setSyncMsg(
+          "Kept your saved copy — the cloud has more than this device. Reopen to pull it first."
+        );
+        return;
+      }
+      setSyncMsg(
+        res === "pushed"
+          ? "Saved ✓ " + new Date().toLocaleTimeString()
+          : "Save failed — try again."
+      );
+      if (res === "pushed") setLastSync(Date.now());
+    } catch (e: any) {
+      setSyncMsg("Save failed: " + (e && e.message ? e.message : "unknown"));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  // One-look diagnostic: compares what THIS device has vs what's in the cloud.
+  const runDiag = async () => {
+    const localMarks = countBookMarksFromJson(
+      localStorage.getItem("scribal_books_v1")
+    );
+    const seen = localStorage.getItem("scribal_sync_seen") || "(never)";
+    setDiag("Phone: " + localMarks + " marks. Checking cloud…");
+    try {
+      const text = await withFreshToken((tok) => drive.loadData(tok));
+      if (!text) {
+        setDiag(
+          "Phone has " +
+            localMarks +
+            " marks.\nCloud: NO file found for this account."
+        );
+        return;
+      }
+      const p = JSON.parse(text);
+      const cloudMarks = countBookMarksFromJson(booksFromBackup(text));
+      setDiag(
+        "Phone: " +
+          localMarks +
+          " marks\nCloud: " +
+          cloudMarks +
+          " marks\nCloud saved: " +
+          (p.exportedAt || "?") +
+          "\nLast synced here: " +
+          seen
+      );
+    } catch (e: any) {
+      setDiag("Cloud check failed: " + (e && e.message ? e.message : "unknown"));
+    }
+  };
+
+  const signOutDrive = () => {
+    drive.disconnect();
+    localStorage.removeItem("scribal_drive_enabled");
+    setConnected(false);
+    setSyncMsg("Signed out. Your study stays on this device.");
+  };
+
+  // Silently re-establish a token on open so auto-save works without a popup.
+  useEffect(() => {
+    if (!connected || !DRIVE_CONFIGURED) return;
+    drive.connectSilent(GOOGLE_CLIENT_ID).catch(() => {});
+  }, [connected]);
+
+  // Auto-save to Drive on changes, refreshing the token as needed (no popup).
+  const autoSaveReady = useRef(false);
+  useEffect(() => {
+    if (!autoSaveReady.current) {
+      autoSaveReady.current = true;
+      return;
+    }
+    if (!connected) return;
+    if (pullPending.current) return;
+    const t = setTimeout(() => {
+      if (pullPending.current) return;
+      setSyncBusy(true);
+      pushToDrive()
+        .then((res) => {
+          if (res === "pushed") setLastSync(Date.now());
+          else if (res === "blocked")
+            setSyncMsg("Safeguard on — kept your saved copy.");
+        })
+        .finally(() => setSyncBusy(false));
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [marks, colorLabels, scopedLabels, notes, connected]);
+
+  // Auto-pull the other device's changes when the app opens or regains focus.
+  // Guarded by the saved timestamp so it only pulls when Drive is genuinely
+  // newer than what's here — it never clobbers newer local edits.
+  useEffect(() => {
+    if (!connected || !DRIVE_CONFIGURED) return;
+    const checkRemote = async () => {
+      await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
+    };
+    const onVisible = () => {
+      if (!document.hidden) checkRemote();
+    };
+    window.addEventListener("focus", checkRemote);
+    document.addEventListener("visibilitychange", onVisible);
+    checkRemote();
+    return () => {
+      window.removeEventListener("focus", checkRemote);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [connected]);
+
+  // ---- shared sheet backdrop ----
+  const sheet = (onClose: () => void, children: React.ReactNode) => (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0,0,0,0.4)",
+        zIndex: 200,
+        display: "flex",
+        alignItems: "flex-end",
+        animation: "mob-fadein 0.18s ease",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          backgroundColor: C.panel,
+          color: C.text,
+          borderRadius: "18px 18px 0 0",
+          padding: "18px 18px calc(18px + env(safe-area-inset-bottom))",
+          maxHeight: "80vh",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+          animation: "mob-slideup 0.28s cubic-bezier(0.22,1,0.36,1)",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: C.bg,
+        color: C.text,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        ...(dark ? MARK_VARS_DARK : MARK_VARS_LIGHT),
+        ...({
+          "--bg": C.bg,
+          "--panel": C.panel,
+          "--soft": C.soft,
+          "--text": C.text,
+          "--muted": C.muted,
+          "--border": C.border,
+        } as React.CSSProperties),
+      }}
+    >
+      <style>{`
+        @keyframes mob-fadein { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes mob-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
+      {/* Chapter progress line (always visible) */}
+      <div
+        style={{
+          position: "absolute",
+          top: "env(safe-area-inset-top)",
+          left: 0,
+          right: 0,
+          height: "2.5px",
+          zIndex: 60,
+          pointerEvents: "none",
+          backgroundColor: "transparent",
+        }}
+      >
+        <div
+          ref={progressRef}
+          style={{
+            height: "100%",
+            width: "0%",
+            backgroundColor: "#8b5cf6",
+            transition: "width 0.08s linear",
+          }}
+        />
+      </div>
+
+      {/* Top bar (hides on scroll) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          backgroundColor: C.bg,
+          borderBottom: "1px solid " + C.border,
+          paddingTop: "env(safe-area-inset-top)",
+          transform: barHidden
+            ? "translateY(-110%)"
+            : "translateY(0)",
+          transition: "transform 0.25s ease",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "52px",
+            padding: "0 8px",
+          }}
+        >
+          <button
+            onClick={() => go(-1)}
+            disabled={curIndex <= 0}
+            style={navBtn(C, curIndex <= 0)}
+            aria-label="Previous chapter"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => setJumpOpen(true)}
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              color: C.text,
+              fontSize: "16px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {title}
+            {activeBookId !== "master" && (
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                {"  · session"}
+              </span>
+            )}
+          </button>
+          {chapterMarks.length > 0 && (
+            <button
+              onClick={() => setLinkOpen(true)}
+              style={{
+                ...navBtn(C, false),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              aria-label="This chapter's study"
+            >
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={() => go(1)}
+            disabled={curIndex >= flat.length - 1}
+            style={navBtn(C, curIndex >= flat.length - 1)}
+            aria-label="Next chapter"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => setMenuOpen(true)}
+            style={navBtn(C, false)}
+            aria-label="Menu"
+          >
+            ☰
+          </button>
+        </div>
+
+        {/* Sync status (tap for details) */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            width: "100%",
+            padding: "0 14px 6px",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+          aria-label="Sync status"
+        >
+          <span
+            style={{
+              width: "7px",
+              height: "7px",
+              borderRadius: "50%",
+              backgroundColor:
+                !DRIVE_CONFIGURED || !connected
+                  ? C.muted
+                  : syncBusy
+                  ? "#e0a32e"
+                  : "#3a9d4e",
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontSize: "11px", color: C.muted }}>
+            {!DRIVE_CONFIGURED || !connected
+              ? "Saved on this phone"
+              : syncBusy
+              ? "Saving…"
+              : "Synced " + relTime(lastSync)}
+          </span>
+        </button>
+      </div>
+
+      {/* Reading area */}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        onTouchStart={onReadTouchStart}
+        onTouchMove={onReadTouchMove}
+        onTouchEnd={onReadTouchEnd}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+          touchAction: "pan-y",
+          backgroundColor: readBg,
+          color: readText,
+          transition: "background-color 0.2s ease, color 0.2s ease",
+          padding: "calc(74px + env(safe-area-inset-top) + 14px) 22px 140px",
+          ["--verse-lh" as any]: String(reading.lineScale),
+        }}
+      >
+        <h2
+          style={{
+            fontFamily: '"Times New Roman", Times, serif',
+            fontSize: titleSize,
+            fontWeight: 600,
+            margin: "0 0 14px",
+          }}
+        >
+          {title}
+        </h2>
+        <div
+          style={{
+            fontFamily: '"Times New Roman", Times, serif',
+            fontSize: verseSize,
+            lineHeight: reading.lineScale,
+            userSelect: "none",
+            WebkitUserSelect: "none",
+          }}
+        >
+          {chapter.verses.map((vs: any) => (
+            <MobileVerse
+              key={vs.reference}
+              reference={vs.reference}
+              verseNumber={vs.verse}
+              text={vs.text}
+              marks={marks}
+              selBg={selBg}
+              onTap={onTap}
+              onRange={onRange}
+              onManage={onManage}
+              editMarkId={
+                editMark && editMark.reference === vs.reference ? editMark.id : null
+              }
+              editingActive={!!editMark}
+              onEnterEdit={onEnterEdit}
+              onAdjust={onAdjust}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Resume-last-marked nudge */}
+      {resumeNudge && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(74px + env(safe-area-inset-top) + 10px)",
+            left: "14px",
+            right: "14px",
+            zIndex: 120,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            backgroundColor: C.panel,
+            border: "1px solid " + C.border,
+            borderRadius: "12px",
+            padding: "10px 10px 10px 14px",
+            boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+            animation: "mob-rise 0.25s ease",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "13px", fontWeight: 600 }}>
+              Resume where you were marking?
+            </div>
+            <div
+              style={{
+                fontSize: "12px",
+                color: C.muted,
+                marginTop: "1px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {resumeNudge.label}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setLoc(resumeNudge.loc);
+              setResumeNudge(null);
+            }}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "999px",
+              border: "none",
+              backgroundColor: C.text,
+              color: C.bg,
+              fontSize: "13px",
+              fontWeight: 700,
+              fontFamily: "inherit",
+              flexShrink: 0,
+            }}
+          >
+            Go
+          </button>
+          <button
+            onClick={() => setResumeNudge(null)}
+            aria-label="Dismiss"
+            style={{
+              padding: "6px 8px",
+              background: "transparent",
+              border: "none",
+              color: C.muted,
+              fontSize: "16px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Pen tray (collapsible, locked to bottom) */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 60,
+          padding: "0 14px calc(14px + env(safe-area-inset-bottom))",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            pointerEvents: "auto",
+            backgroundColor: C.panel,
+            border: "1px solid " + C.border,
+            borderRadius: "16px",
+            boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Collapsed pill row */}
+          <button
+            onClick={() => setPenOpen((o) => !o)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              padding: "12px 14px",
+              cursor: "pointer",
+              color: C.text,
+              fontFamily: "inherit",
+            }}
+          >
+            <span
+              style={{
+                width: "22px",
+                height: "22px",
+                borderRadius: "7px",
+                backgroundColor: isEraser
+                  ? "transparent"
+                  : pen.tool === "highlight"
+                  ? HIGHLIGHT_MAP[pen.color]
+                  : COLOR_MAP[pen.color],
+                border: isEraser ? "1.5px dashed " + C.muted : "1px solid " + C.border,
+                flexShrink: 0,
+              }}
+            />
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontSize: "14px", fontWeight: 600 }}>
+                {isEraser
+                  ? "Eraser"
+                  : (STYLE_LABELS.find((s) => s.tool === pen.tool)?.label || "")}
+              </div>
+              <div style={{ fontSize: "11px", color: C.muted }}>
+                {isEraser
+                  ? "tap a mark to remove it"
+                  : armedName || "expand to name this theme"}
+              </div>
+            </div>
+            {isSession && !isEraser && (
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: C.muted,
+                  backgroundColor: C.soft,
+                  borderRadius: "999px",
+                  padding: "4px 10px",
+                  maxWidth: "120px",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                {activeBookName}
+              </span>
+            )}
+            <span style={{ color: C.muted, fontSize: "13px" }}>
+              {penOpen ? "▾" : "▴"}
+            </span>
+          </button>
+
+          {/* Expanded tray */}
+          {penOpen && (
+            <div style={{ padding: "0 14px 14px" }}>
+              <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
+                Color
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setPen((p) => ({ ...p, color: c }))}
+                    style={{
+                      width: "30px",
+                      height: "30px",
+                      borderRadius: "50%",
+                      backgroundColor: COLOR_MAP[c],
+                      border: "none",
+                      cursor: "pointer",
+                      boxShadow:
+                        pen.color === c
+                          ? "0 0 0 2px " + C.panel + ", 0 0 0 4px " + C.text
+                          : "0 0 0 1px " + C.border,
+                    }}
+                    aria-label={"Color " + c}
+                  />
+                ))}
+              </div>
+
+              {!isEraser && (
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
+                    Theme name
+                  </div>
+                  <input
+                    value={
+                      scopedLabels[title] && pen.color in scopedLabels[title]
+                        ? scopedLabels[title][pen.color]
+                        : chapterColorName(title, pen.color)
+                    }
+                    onChange={(e) =>
+                      setScopedLabel(title, pen.color, e.target.value)
+                    }
+                    placeholder={"Name color " + pen.color + " (e.g. Covenant)"}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "10px 12px",
+                      fontSize: "16px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      backgroundColor: C.bg,
+                      color: C.text,
+                      fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
+                Style
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {STYLE_LABELS.map((s) => {
+                  const active = pen.tool === s.tool;
+                  return (
+                    <button
+                      key={s.tool}
+                      onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid " + (active ? C.text : C.border),
+                        backgroundColor: active ? C.text : "transparent",
+                        color: active ? C.bg : C.text,
+                        fontSize: "13px",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Chapter study + link panel */}
+      {linkOpen &&
+        sheet(
+          () => setLinkOpen(false),
+          <div>
+            <div
+              style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}
+            >
+              {title}
+            </div>
+            <div
+              style={{
+                fontSize: "12.5px",
+                color: C.muted,
+                marginBottom: "16px",
+              }}
+            >
+              {chapterMarks.length}{" "}
+              {chapterMarks.length === 1 ? "marking" : "markings"} in this chapter
+            </div>
+
+            {chapterThemes.length > 0 && (
+              <>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: C.muted,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Themes here
+                </div>
+                <div style={{ marginBottom: "18px" }}>
+                  {chapterThemes.map((t, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "7px 0",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "14px",
+                          height: "14px",
+                          borderRadius: "50%",
+                          backgroundColor: COLOR_MAP[t.color],
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ flex: 1, fontSize: "14px", fontWeight: 600 }}>
+                        {t.name}
+                      </span>
+                      <span style={{ fontSize: "11.5px", color: C.muted }}>
+                        {t.count} {t.count === 1 ? "mark" : "marks"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "8px",
+              }}
+            >
+              Marked verses
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                marginBottom: "20px",
+                maxHeight: "38vh",
+                overflowY: "auto",
+              }}
+            >
+              {chapterMarks
+                .slice()
+                .sort((a: Mark, b: Mark) => a.startIndex - b.startIndex)
+                .sort((a: Mark, b: Mark) => {
+                  const av = parseInt(
+                    (a.reference.match(/:(\d+)/) || [])[1] || "0",
+                    10
+                  );
+                  const bv = parseInt(
+                    (b.reference.match(/:(\d+)/) || [])[1] || "0",
+                    10
+                  );
+                  return av - bv;
+                })
+                .map((m: Mark) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setLinkOpen(false);
+                      jumpToRef(m.reference);
+                    }}
+                    style={{
+                      textAlign: "left",
+                      background: C.soft,
+                      border: "1px solid " + C.border,
+                      borderLeft: "3px solid " + COLOR_MAP[m.color],
+                      borderRadius: "10px",
+                      padding: "9px 12px",
+                      cursor: "pointer",
+                      color: C.text,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: '"Times New Roman", Times, serif',
+                        fontSize: "14px",
+                        lineHeight: 1.55,
+                        marginBottom: "3px",
+                      }}
+                    >
+                      {m.markedText}
+                    </div>
+                    <div style={{ fontSize: "11px", color: C.muted }}>
+                      {m.reference}
+                    </div>
+                  </button>
+                ))}
+            </div>
+
+            <button
+              onClick={continueThemes}
+              style={{
+                width: "100%",
+                background: "#8b5cf6",
+                color: "#fff",
+                border: "none",
+                borderRadius: "10px",
+                padding: "13px",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                marginBottom: "6px",
+              }}
+            >
+              Continue these themes →
+            </button>
+            <div
+              style={{
+                fontSize: "11.5px",
+                color: C.muted,
+                textAlign: "center",
+                lineHeight: 1.5,
+              }}
+            >
+              Carries these theme names onto your pens so your next chapter picks
+              up right where this one left off.
+            </div>
+          </div>
+        )}
+
+      {/* Jump panel */}
+      {jumpOpen &&
+        sheet(
+          () => setJumpOpen(false),
+          <div>
+            <div style={{ marginBottom: "16px" }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: C.muted,
+                  marginBottom: "8px",
+                }}
+              >
+                Go to reference
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  value={gotoText}
+                  onChange={(e) => {
+                    setGotoText(e.target.value);
+                    if (gotoErr) setGotoErr(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitGoto();
+                  }}
+                  placeholder="e.g. Alma 32 or 1 Nephi 3:7"
+                  autoCapitalize="words"
+                  autoCorrect="off"
+                  style={{
+                    flex: 1,
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid " + (gotoErr ? "#d9534f" : C.border),
+                    backgroundColor: C.bg,
+                    color: C.text,
+                    fontSize: "16px",
+                    fontFamily: "inherit",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  onClick={submitGoto}
+                  style={{
+                    padding: "0 18px",
+                    borderRadius: "10px",
+                    border: "none",
+                    backgroundColor: C.text,
+                    color: C.bg,
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                    flexShrink: 0,
+                  }}
+                >
+                  Go
+                </button>
+              </div>
+              {gotoErr && (
+                <div
+                  style={{ fontSize: "12px", color: "#d9534f", marginTop: "7px" }}
+                >
+                  Couldn't find that — try a book and chapter, like "Alma 32".
+                </div>
+              )}
+            </div>
+            <JumpPanel
+              C={C}
+              loc={loc}
+              onGo={(nl) => {
+                setLoc(nl);
+                setJumpOpen(false);
+              }}
+            />
+          </div>
+        )}
+
+      {/* Menu (book switch) */}
+      {menuOpen &&
+        sheet(
+          () => setMenuOpen(false),
+          <div>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                startCompile();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "18px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>☰</span>
+              Compile
+              <span style={{ flex: 1 }} />
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                your marks by theme
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setSearchOpen(true);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "18px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>⌕</span>
+              Search
+              <span style={{ flex: 1 }} />
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                scripture &amp; your marks
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setSettingsOpen(true);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "18px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>⚙</span>
+              Settings
+              <span style={{ flex: 1 }} />
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                {connected ? "synced" : "sync &amp; theme"}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setVaultOpen(true);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "18px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>❖</span>
+              Vault
+              <span style={{ flex: 1 }} />
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                {vaultEntries.length} saved
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setGesturesOpen(true);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "18px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>✸</span>
+              Gestures
+              <span style={{ flex: 1 }} />
+              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                how to mark
+              </span>
+            </button>
+
+            <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "4px" }}>
+              Study book
+            </div>
+            <div style={{ fontSize: "12px", color: C.muted, marginBottom: "14px" }}>
+              One book open at a time on mobile.
+            </div>
+            {books.map((b) => {
+              const active = b.id === activeBookId;
+              return (
+                <div
+                  key={b.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "stretch",
+                    gap: "6px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setActiveBook(b.id);
+                      setMenuOpen(false);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: "left",
+                      background: active ? C.soft : "transparent",
+                      border: "1px solid " + C.border,
+                      borderRadius: "10px",
+                      padding: "12px 14px",
+                      color: C.text,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <span style={{ color: active ? C.text : C.muted }}>
+                      {active ? "●" : "○"}
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: "14px",
+                        fontWeight: active ? 600 : 400,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {b.name}
+                      {b.isMaster && (
+                        <span style={{ color: C.muted, fontSize: "11px" }}>
+                          {" "}
+                          · default
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontSize: "11px", color: C.muted }}>
+                      {b.markCount}
+                    </span>
+                  </button>
+                  {!b.isMaster && (
+                    <button
+                      onClick={() => closeSession(b.id, b.name, b.markCount)}
+                      aria-label={"Close " + b.name}
+                      style={{
+                        width: "44px",
+                        flexShrink: 0,
+                        background: "transparent",
+                        border: "1px solid " + C.border,
+                        borderRadius: "10px",
+                        color: C.muted,
+                        fontSize: "20px",
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <button
+              onClick={() => {
+                const id = createSession(
+                  "Session · " +
+                    new Date().toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                );
+                setActiveBook(id);
+                setMenuOpen(false);
+              }}
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "1px dashed " + C.border,
+                borderRadius: "10px",
+                padding: "12px",
+                color: C.muted,
+                cursor: "pointer",
+                fontSize: "13px",
+                fontFamily: "inherit",
+                marginBottom: "12px",
+              }}
+            >
+              + New session
+            </button>
+          </div>
+        )}
+
+      {/* Gestures cheat sheet */}
+      {gesturesOpen &&
+        sheet(
+          () => setGesturesOpen(false),
+          (() => {
+            const row = (icon: string, name: string, desc: string) => (
+              <div
+                key={name}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "14px",
+                  padding: "13px 0",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "20px",
+                    width: "30px",
+                    textAlign: "center",
+                    flexShrink: 0,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {icon}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600 }}>{name}</div>
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      color: C.muted,
+                      marginTop: "2px",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {desc}
+                  </div>
+                </div>
+              </div>
+            );
+            return (
+              <div>
+                <div
+                  style={{ fontSize: "18px", fontWeight: 700, marginBottom: "4px" }}
+                >
+                  Gestures
+                </div>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: C.muted,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Everything you can do while reading.
+                </div>
+                {row("👆", "Tap a word", "Marks it in your armed pen. Tap it again to remove it.")}
+                {row("↔", "Swipe sideways across words", "Marks the whole phrase you drag over.")}
+                {row("↕", "Swipe up or down", "Scrolls — your marks stay put.")}
+                {row("✌", "Two-finger tap", "Undoes your last mark.")}
+                {row("⊙", "Double-tap a mark", "Edit its edges — tap words to extend or trim, then Done.")}
+                {row("⏱", "Long-press a mark", "Opens manage — recolor, copy, or erase it.")}
+                {row("✎", "Long-press plain text", "Starts a deliberate phrase selection.")}
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: C.muted,
+                    marginTop: "14px",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  Tip: the pen pill at the bottom always shows your armed color,
+                  theme, and which study book you're marking into.
+                </div>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: C.muted,
+                    marginTop: "10px",
+                    lineHeight: 1.55,
+                    fontWeight: 600,
+                  }}
+                >
+                  You can reopen this anytime from Settings.
+                </div>
+              </div>
+            );
+          })()
+        )}
+
+      {/* Settings */}
+      {settingsOpen &&
+        sheet(
+          () => setSettingsOpen(false),
+          (() => {
+            const label = (t: string) => (
+              <div
+                style={{
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: C.muted,
+                  margin: "18px 0 10px",
+                }}
+              >
+                {t}
+              </div>
+            );
+            const actionBtn = (
+              text: string,
+              onClick: () => void,
+              opts?: { primary?: boolean; disabled?: boolean }
+            ) => (
+              <button
+                onClick={onClick}
+                disabled={opts?.disabled}
+                style={{
+                  width: "100%",
+                  padding: "13px",
+                  borderRadius: "10px",
+                  border: opts?.primary ? "none" : "1px solid " + C.border,
+                  backgroundColor: opts?.primary ? C.text : "transparent",
+                  color: opts?.primary ? C.bg : C.text,
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: opts?.disabled ? "default" : "pointer",
+                  opacity: opts?.disabled ? 0.5 : 1,
+                  fontFamily: "inherit",
+                  marginBottom: "8px",
+                }}
+              >
+                {text}
+              </button>
+            );
+            return (
+              <div>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>Settings</div>
+
+                {label("Sync")}
+                {connected ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        marginBottom: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <span style={{ color: COLOR_MAP[4] }}>●</span>
+                      Connected to Google Drive
+                    </div>
+                    {actionBtn(syncBusy ? "Saving…" : "Sync now", syncNow, {
+                      primary: true,
+                      disabled: syncBusy,
+                    })}
+                    {actionBtn("Check sync", runDiag)}
+                    {diag && (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: C.text,
+                          marginTop: "8px",
+                          whiteSpace: "pre-line",
+                          fontFamily: "monospace",
+                          background: C.soft,
+                          borderRadius: "8px",
+                          padding: "10px 12px",
+                        }}
+                      >
+                        {diag}
+                      </div>
+                    )}
+                    {actionBtn("Sign out", signOutDrive)}
+                  </>
+                ) : (
+                  <>
+                    {actionBtn(
+                      syncBusy ? "Connecting…" : "Sync with Google",
+                      driveConnect,
+                      { primary: true, disabled: syncBusy || !DRIVE_CONFIGURED }
+                    )}
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: C.muted,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Or keep studying on this device — your marks are always
+                      saved here, and you can connect later.
+                    </div>
+                    {!DRIVE_CONFIGURED && (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: C.muted,
+                          marginTop: "8px",
+                        }}
+                      >
+                        Google sync isn't configured for this build yet.
+                      </div>
+                    )}
+                  </>
+                )}
+                {syncMsg && (
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: C.muted,
+                      marginTop: "10px",
+                    }}
+                  >
+                    {syncMsg}
+                  </div>
+                )}
+
+                {label("Appearance")}
+                {actionBtn(dark ? "Switch to light" : "Switch to dark", () => {
+                  const next = !dark;
+                  setDark(next);
+                  localStorage.setItem("scribal_theme", next ? "dark" : "light");
+                })}
+
+                {label("Reading")}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 0",
+                  }}
+                >
+                  <span style={{ fontSize: "14px", fontWeight: 600 }}>Text size</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      disabled={reading.fontScale <= 0.8}
+                      onClick={() =>
+                        setReading((r) => ({
+                          ...r,
+                          fontScale: Math.max(0.8, +(r.fontScale - 0.1).toFixed(2)),
+                        }))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: reading.fontScale <= 0.8 ? 0.4 : 1,
+                      }}
+                    >
+                      A−
+                    </button>
+                    <span
+                      style={{
+                        minWidth: "46px",
+                        textAlign: "center",
+                        fontSize: "13px",
+                        color: C.muted,
+                      }}
+                    >
+                      {Math.round(reading.fontScale * 100)}%
+                    </span>
+                    <button
+                      disabled={reading.fontScale >= 1.7}
+                      onClick={() =>
+                        setReading((r) => ({
+                          ...r,
+                          fontScale: Math.min(1.7, +(r.fontScale + 0.1).toFixed(2)),
+                        }))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: reading.fontScale >= 1.7 ? 0.4 : 1,
+                      }}
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 0",
+                  }}
+                >
+                  <span style={{ fontSize: "14px", fontWeight: 600 }}>
+                    Line spacing
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      disabled={reading.lineScale <= 1.5}
+                      onClick={() =>
+                        setReading((r) => ({
+                          ...r,
+                          lineScale: Math.max(1.5, +(r.lineScale - 0.15).toFixed(2)),
+                        }))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: reading.lineScale <= 1.5 ? 0.4 : 1,
+                      }}
+                    >
+                      −
+                    </button>
+                    <span
+                      style={{
+                        minWidth: "58px",
+                        textAlign: "center",
+                        fontSize: "13px",
+                        color: C.muted,
+                      }}
+                    >
+                      {reading.lineScale <= 1.6
+                        ? "Tight"
+                        : reading.lineScale <= 1.95
+                        ? "Normal"
+                        : reading.lineScale <= 2.15
+                        ? "Relaxed"
+                        : "Airy"}
+                    </span>
+                    <button
+                      disabled={reading.lineScale >= 2.3}
+                      onClick={() =>
+                        setReading((r) => ({
+                          ...r,
+                          lineScale: Math.min(2.3, +(r.lineScale + 0.15).toFixed(2)),
+                        }))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: reading.lineScale >= 2.3 ? 0.4 : 1,
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                {actionBtn(
+                  reading.warm ? "Warm tone: on" : "Warm tone: off",
+                  () => setReading((r) => ({ ...r, warm: !r.warm }))
+                )}
+
+                {label("Help")}
+                {actionBtn("Gestures & marking guide", () => {
+                  setSettingsOpen(false);
+                  setGesturesOpen(true);
+                })}
+                {actionBtn("Replay the welcome tour", resetIntro)}
+
+                {label("About")}
+                <div
+                  style={{ fontSize: "12px", color: C.muted, lineHeight: 1.6 }}
+                >
+                  On desktop, Scribal opens up into the full workbench:
+                  side-by-side study, every compile view, and the Vault. Your
+                  marks stay in step across desktop and phone whenever you're
+                  signed in.
+                </div>
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setShowTour(true);
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    padding: "12px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: "transparent",
+                    color: C.text,
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Show the tour again
+                </button>
+              </div>
+            );
+          })()
+        )}
+
+      {/* Search */}
+      {searchOpen &&
+        sheet(
+          () => setSearchOpen(false),
+          <MobileSearch
+            C={C}
+            marks={marks}
+            colorLabels={colorLabels}
+            orderOf={orderOf}
+            onJump={jumpToRef}
+            onPickScripture={(ref) => setChooseRef(ref)}
+          />
+        )}
+
+      {/* Destination chooser (scripture search result) */}
+      {chooseRef &&
+        (() => {
+          const ref = chooseRef;
+          const activeBook = books.find((b) => b.id === activeBookId);
+          const isMaster = activeBookId === "master";
+          const dateStr = new Date().toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          });
+          const choice = (label: string, sub: string, onClick: () => void) => (
+            <button
+              onClick={onClick}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: C.soft,
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px 14px",
+                marginBottom: "8px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <div style={{ fontSize: "14px", fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: "11px", color: C.muted, marginTop: "2px" }}>
+                {sub}
+              </div>
+            </button>
+          );
+          return sheet(
+            () => setChooseRef(null),
+            <div>
+              <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "2px" }}>
+                Open {ref}
+              </div>
+              <div style={{ fontSize: "12px", color: C.muted, marginBottom: "16px" }}>
+                Where would you like to study this verse?
+              </div>
+
+              {!isMaster &&
+                activeBook &&
+                choice("Open in " + activeBook.name, "current session", () => {
+                  jumpToRef(ref);
+                })}
+
+              {choice(
+                "Open in Master Book",
+                isMaster ? "your default book" : "your default book",
+                () => {
+                  setActiveBook("master");
+                  jumpToRef(ref);
+                }
+              )}
+
+              {choice("Open in a new session", "start a fresh study layer", () => {
+                const id = createSession("Session · " + dateStr);
+                setActiveBook(id);
+                jumpToRef(ref);
+              })}
+            </div>
+          );
+        })()}
+
+      {/* Compile: gathering animation, then the full-screen view */}
+      {compileAnim.show && (
+        <CompileAnimation
+          duration={compileAnim.duration}
+          onDone={() => {
+            setCompileAnim((a) => ({ ...a, show: false }));
+            setCompileOpen(true);
+          }}
+        />
+      )}
+      {compileOpen && (
+        <MobileCompile
+          marks={chapterMarks}
+          colorLabels={scopeLabels}
+          C={C}
+          orderOf={orderOf}
+          sessionNew={sessionNew}
+          onJump={jumpToRef}
+          notes={notes}
+          setNote={setNote}
+          onSaveToVault={() => {
+            saveOutlineToVault();
+            setCompileOpen(false);
+          }}
+          onClose={() => setCompileOpen(false)}
+          dark={dark}
+          title={title}
+          scope={title}
+          onFlash={flash}
+        />
+      )}
+
+      {/* Manage a mark (long-press) */}
+      {manage &&
+        (() => {
+          const cover: Mark[] = marks.filter(
+            (m) =>
+              m.reference === manage.ref &&
+              m.startIndex < manage.e &&
+              m.endIndex > manage.s
+          );
+          const word = manage.text.slice(manage.s, manage.e);
+          return sheet(
+            () => setManage(null),
+            <div>
+              <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "12px" }}>
+                {"“" + word + "”"}
+              </div>
+              {cover.length === 0 && (
+                <div style={{ fontSize: "13px", color: C.muted, marginBottom: "14px" }}>
+                  No marks on this word.
+                </div>
+              )}
+              {cover.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 0",
+                    borderBottom: "1px solid " + C.border,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "16px",
+                      height: "16px",
+                      borderRadius: "50%",
+                      backgroundColor: COLOR_MAP[m.color],
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ flex: 1, fontSize: "14px" }}>
+                    {chapterColorName(scopeOf(m.reference), m.color) ||
+                      "Color " + m.color}
+                  </span>
+                  <button
+                    onClick={() => {
+                      deleteMark(m.id);
+                      setManage(null);
+                      flash("Removed");
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid " + C.border,
+                      borderRadius: "8px",
+                      padding: "6px 12px",
+                      fontSize: "13px",
+                      color: C.text,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Erase
+                  </button>
+                </div>
+              ))}
+
+              {cover.length > 0 && (
+                <div style={{ marginTop: "14px" }}>
+                  <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
+                    Recolor
+                  </div>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    {COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          recolor(cover[0], c);
+                          setManage(null);
+                        }}
+                        style={{
+                          width: "28px",
+                          height: "28px",
+                          borderRadius: "50%",
+                          backgroundColor: COLOR_MAP[c],
+                          border: "none",
+                          cursor: "pointer",
+                          boxShadow: "0 0 0 1px " + C.border,
+                        }}
+                        aria-label={"Recolor " + c}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {cover.length > 0 && (
+                <button
+                  onClick={() => {
+                    const m = cover[0];
+                    setManage(null);
+                    setVersePreview({
+                      phrase: m.markedText,
+                      reference: m.reference,
+                      theme: chapterColorName(scopeOf(m.reference), m.color),
+                      style: m.style,
+                      color: m.color,
+                    });
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "18px",
+                    background: C.text,
+                    color: C.bg,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "13px",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Share as image
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (navigator.clipboard) navigator.clipboard.writeText(manage.text);
+                  setManage(null);
+                  flash("Verse copied");
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: "10px",
+                  background: "transparent",
+                  border: "1px solid " + C.border,
+                  borderRadius: "10px",
+                  padding: "12px",
+                  fontSize: "13px",
+                  color: C.text,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Copy verse
+              </button>
+            </div>
+          );
+        })()}
+
+
+      {/* Share preview (verse) */}
+      {versePreview && (
+        <SharePreview
+          C={C}
+          appDark={dark}
+          kind="verse"
+          verse={versePreview}
+          onClose={() => setVersePreview(null)}
+          onFlash={flash}
+        />
+      )}
+
+      {/* Vault (full-screen) */}
+      {vaultOpen && (
+        <MobileVault
+          entries={vaultEntries}
+          C={C}
+          onUpdate={vaultUpdate}
+          onDelete={vaultDelete}
+          onRename={vaultRename}
+          onRestore={restoreFromVault}
+          onClose={() => setVaultOpen(false)}
+        />
+      )}
+
+      {/* First-run tour */}
+      {showTour && (
+        <MobileTour
+          C={C}
+          driveConfigured={DRIVE_CONFIGURED}
+          onSync={async () => {
+            localStorage.setItem("scribal_mobile_onboarded", "1");
+            // Sign-in pulls data and reloads; this flag re-opens the gestures
+            // sheet after the reload so it isn't wiped.
+            localStorage.setItem("scribal_mobile_show_gestures", "1");
+            setShowTour(false);
+            await driveConnect();
+            // Only reached if no reload happened (e.g. first-ever sign-in).
+            try {
+              localStorage.removeItem("scribal_mobile_show_gestures");
+            } catch {
+              /* ignore */
+            }
+            setGesturesOpen(true);
+          }}
+          onLocal={() => {
+            localStorage.setItem("scribal_mobile_onboarded", "1");
+            setShowTour(false);
+            setGesturesOpen(true);
+          }}
+        />
+      )}
+
+      {/* Edit-mark mode bar */}
+      {editMark && (
+        <div
+          style={{
+            position: "fixed",
+            left: 0,
+            right: 0,
+            bottom: "calc(env(safe-area-inset-bottom) + 84px)",
+            display: "flex",
+            justifyContent: "center",
+            zIndex: 250,
+            pointerEvents: "none",
+            padding: "0 16px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              backgroundColor: C.text,
+              color: C.bg,
+              borderRadius: "999px",
+              padding: "9px 9px 9px 18px",
+              boxShadow: "0 6px 24px rgba(0,0,0,0.3)",
+              pointerEvents: "auto",
+              maxWidth: "100%",
+            }}
+          >
+            <span style={{ fontSize: "12.5px", fontWeight: 600 }}>
+              Tap words to set the edges
+            </span>
+            <button
+              onClick={() => setEditMark(null)}
+              style={{
+                background: C.bg,
+                color: C.text,
+                border: "none",
+                borderRadius: "999px",
+                padding: "7px 16px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                flexShrink: 0,
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Quiet feedback toast */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "calc(96px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            zIndex: 120,
+            backgroundColor: C.text,
+            color: C.bg,
+            borderRadius: "999px",
+            padding: "8px 16px",
+            fontSize: "13px",
+            fontWeight: 600,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function navBtn(
+  C: { text: string; muted: string },
+  disabled: boolean
+): React.CSSProperties {
+  return {
+    width: "44px",
+    height: "44px",
+    background: "transparent",
+    border: "none",
+    color: disabled ? C.muted : C.text,
+    fontSize: "24px",
+    lineHeight: 1,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    flexShrink: 0,
+  };
+}
+
+function JumpPanel({
+  C,
+  loc,
+  onGo,
+}: {
+  C: { text: string; muted: string; border: string; bg: string; panel: string };
+  loc: Loc;
+  onGo: (l: Loc) => void;
+}) {
+  const [v, setV] = useState(loc.v);
+  const [b, setB] = useState(loc.b);
+  const [c, setC] = useState(loc.c);
+
+  const books = vols[v].books;
+  const safeB = books[b] ? b : 0;
+  const chapters = books[safeB].chapters;
+  const safeC = chapters[c] ? c : 0;
+
+  const selStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "12px",
+    fontSize: "16px",
+    borderRadius: "10px",
+    border: "1px solid " + C.border,
+    backgroundColor: C.bg,
+    color: C.text,
+    marginBottom: "12px",
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "14px" }}>
+        Jump to
+      </div>
+      <select
+        value={v}
+        onChange={(e) => {
+          setV(Number(e.target.value));
+          setB(0);
+          setC(0);
+        }}
+        style={selStyle}
+      >
+        {vols.map((vol, i) => (
+          <option key={i} value={i}>
+            {vol.volume}
+          </option>
+        ))}
+      </select>
+      <select
+        value={safeB}
+        onChange={(e) => {
+          setB(Number(e.target.value));
+          setC(0);
+        }}
+        style={selStyle}
+      >
+        {books.map((bk, i) => (
+          <option key={i} value={i}>
+            {bk.book}
+          </option>
+        ))}
+      </select>
+      <select
+        value={safeC}
+        onChange={(e) => setC(Number(e.target.value))}
+        style={selStyle}
+      >
+        {chapters.map((ch, i) => (
+          <option key={i} value={i}>
+            Chapter {ch.chapter}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => onGo({ v, b: safeB, c: safeC })}
+        style={{
+          width: "100%",
+          backgroundColor: C.text,
+          color: C.bg,
+          border: "none",
+          borderRadius: "10px",
+          padding: "13px",
+          fontSize: "15px",
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        Go
+      </button>
+    </div>
+  );
+}
