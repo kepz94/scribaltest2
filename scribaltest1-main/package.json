@@ -1,6 +1,9 @@
 {
   "name": "react-typescript",
   "version": "1.0.0",
+  "engines": {
+    "node": "20.x"
+  },
   "description": "React and TypeScript example starter project",
   "keywords": [
     "typescript",
