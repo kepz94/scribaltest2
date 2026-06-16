@@ -3,6 +3,7 @@ import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import SharePreview from "./SharePreview";
+import type { VersesCardEntry } from "./shareCard";
 
 interface Palette {
   bg: string;
@@ -72,6 +73,11 @@ export default function MobileCompile({
   const synthKey = (color: number) => "synthesis:" + scope + ":" + color;
   const [sortMode, setSortMode] = useState<SortMode>("order");
   const [view, setView] = useState<"focused" | "full">("focused");
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
+    null
+  );
   const VI = verseIndex();
   const [compPreview, setCompPreview] = useState<{
     scopeTitle: string;
@@ -270,6 +276,54 @@ export default function MobileCompile({
     return entries;
   };
 
+  // Flat list of every (verse × theme) entry, for the share picker. Each carries
+  // that theme's marks on the verse — matching what the outline shows.
+  type ShareableVerse = {
+    key: string;
+    reference: string;
+    theme: string;
+    color: number;
+    phrases: { text: string; style: string }[];
+  };
+  const shareableVerses: ShareableVerse[] = [];
+  groups.forEach((g) => {
+    verseEntriesFor(g.marks).forEach((ve) => {
+      shareableVerses.push({
+        key: g.key + "|" + ve.reference,
+        reference: ve.reference,
+        theme: g.name,
+        color: g.color,
+        phrases: ve.marks.map((m) => ({ text: m.markedText, style: m.style })),
+      });
+    });
+  });
+  const togglePick = (key: string) => {
+    if (picked.includes(key)) {
+      setPicked((prev) => prev.filter((k) => k !== key));
+      return;
+    }
+    if (picked.length >= 4) {
+      onFlash("You can share up to 4 verses");
+      return;
+    }
+    setPicked((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  };
+  const startShareVerses = () => {
+    const chosen = picked
+      .map((k) => shareableVerses.find((sv) => sv.key === k))
+      .filter((x): x is ShareableVerse => !!x);
+    if (chosen.length === 0) return;
+    setVersesPreview(
+      chosen.map((sv) => ({
+        reference: sv.reference,
+        theme: sv.theme,
+        color: sv.color,
+        phrases: sv.phrases,
+      }))
+    );
+    setPicking(false);
+  };
+
   const toggle = (key: string) =>
     setExpanded((prev) =>
       prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
@@ -349,7 +403,10 @@ export default function MobileCompile({
         {liveMarks.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              onClick={shareStudy}
+              onClick={() => {
+                setPicked([]);
+                setPicking(true);
+              }}
               style={{
                 background: "transparent",
                 color: C.text,
@@ -690,6 +747,220 @@ export default function MobileCompile({
           kind="compilation"
           comp={compPreview}
           onClose={() => setCompPreview(null)}
+          onFlash={onFlash}
+        />
+      )}
+
+      {picking && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 400,
+            backgroundColor: C.bg,
+            color: C.text,
+            display: "flex",
+            flexDirection: "column",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            animation: "mob-fadein 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "calc(12px + env(safe-area-inset-top)) 12px 12px",
+              borderBottom: "1px solid " + C.border,
+            }}
+          >
+            <button
+              onClick={() => setPicking(false)}
+              aria-label="Cancel"
+              style={{
+                width: "40px",
+                height: "40px",
+                background: "transparent",
+                border: "none",
+                color: C.text,
+                fontSize: "22px",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              ‹
+            </button>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "17px", fontWeight: 700 }}>
+                Choose verses to share
+              </div>
+              <div style={{ fontSize: "12px", color: C.muted }}>
+                {picked.length} of 4 selected
+              </div>
+            </div>
+            <button
+              onClick={startShareVerses}
+              disabled={picked.length === 0}
+              style={{
+                background: picked.length ? C.text : C.soft,
+                color: picked.length ? C.bg : C.muted,
+                border: "none",
+                borderRadius: "999px",
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: picked.length ? "pointer" : "default",
+                fontFamily: "inherit",
+              }}
+            >
+              Share{picked.length ? " " + picked.length : ""}
+            </button>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              padding: "12px 16px calc(20px + env(safe-area-inset-bottom))",
+            }}
+          >
+            {shareableVerses.map((sv) => {
+              const on = picked.includes(sv.key);
+              const atCap = !on && picked.length >= 4;
+              const preview = sv.phrases[0] ? sv.phrases[0].text : "";
+              return (
+                <button
+                  key={sv.key}
+                  onClick={() => togglePick(sv.key)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    width: "100%",
+                    textAlign: "left",
+                    background: on ? C.soft : "transparent",
+                    border:
+                      "1px solid " +
+                      (on ? COLOR_MAP[sv.color as MarkColor] : C.border),
+                    borderRadius: "12px",
+                    padding: "11px 12px",
+                    marginBottom: "8px",
+                    cursor: "pointer",
+                    color: C.text,
+                    fontFamily: "inherit",
+                    opacity: atCap ? 0.45 : 1,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "6px",
+                      border:
+                        "2px solid " +
+                        (on ? COLOR_MAP[sv.color as MarkColor] : C.muted),
+                      background: on
+                        ? COLOR_MAP[sv.color as MarkColor]
+                        : "transparent",
+                      color: "#fff",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "13px",
+                      flexShrink: 0,
+                      marginTop: "1px",
+                    }}
+                  >
+                    {on ? "✓" : ""}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "7px",
+                        marginBottom: "3px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "9px",
+                          height: "9px",
+                          borderRadius: "50%",
+                          backgroundColor: COLOR_MAP[sv.color as MarkColor],
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ fontSize: "12.5px", fontWeight: 700 }}>
+                        {sv.reference}
+                      </span>
+                      <span style={{ fontSize: "11px", color: C.muted }}>
+                        {sv.theme}
+                      </span>
+                    </span>
+                    <span
+                      style={
+                        {
+                          fontFamily: '"Times New Roman", Times, serif',
+                          fontSize: "14px",
+                          lineHeight: 1.5,
+                          color: C.text,
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                        } as CSSProperties
+                      }
+                    >
+                      “{preview}”
+                      {sv.phrases.length > 1
+                        ? " +" + (sv.phrases.length - 1) + " more"
+                        : ""}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => {
+                setPicking(false);
+                shareStudy();
+              }}
+              style={{
+                marginTop: "6px",
+                background: "transparent",
+                border: "none",
+                color: C.muted,
+                fontSize: "12.5px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                padding: "10px 0",
+                width: "100%",
+                textAlign: "center",
+              }}
+            >
+              Or share a study summary instead
+            </button>
+          </div>
+        </div>
+      )}
+
+      {versesPreview && (
+        <SharePreview
+          C={C}
+          appDark={dark}
+          kind="verses"
+          verses={versesPreview}
+          onClose={() => setVersesPreview(null)}
           onFlash={onFlash}
         />
       )}
