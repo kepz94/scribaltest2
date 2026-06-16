@@ -587,10 +587,6 @@ export default function MobileApp() {
 
   const [gotoText, setGotoText] = useState("");
   const [gotoErr, setGotoErr] = useState(false);
-  const [resumeNudge, setResumeNudge] = useState<{
-    loc: Loc;
-    label: string;
-  } | null>(null);
 
   const submitGoto = () => {
     const ref = parseRef(gotoText);
@@ -603,27 +599,6 @@ export default function MobileApp() {
     setJumpOpen(false);
     jumpToRef(ref);
   };
-
-  // On open, if the last place you marked differs from where you're resuming,
-  // offer to jump back to it.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("scribal_mobile_last_marked");
-      if (!raw) return;
-      const lm = JSON.parse(raw);
-      if (typeof lm.v !== "number") return;
-      if (lm.v === loc.v && lm.b === loc.b && lm.c === loc.c) return;
-      const vol = vols[lm.v];
-      const bk = vol && vol.books[lm.b];
-      const ch = bk && bk.chapters[lm.c];
-      if (!ch) return;
-      setResumeNudge({
-        loc: { v: lm.v, b: lm.b, c: lm.c },
-        label: bk.book + " " + ch.chapter,
-      });
-    } catch {}
-    // eslint: intentional one-shot on mount
-  }, []);
 
   const orderOf = (ref: string) => {
     const chap = ref.replace(/:\d+$/, "");
@@ -1659,81 +1634,6 @@ export default function MobileApp() {
           ))}
         </div>
       </div>
-
-      {/* Resume-last-marked nudge */}
-      {resumeNudge && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(74px + env(safe-area-inset-top) + 10px)",
-            left: "14px",
-            right: "14px",
-            zIndex: 120,
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            backgroundColor: C.panel,
-            border: "1px solid " + C.border,
-            borderRadius: "12px",
-            padding: "10px 10px 10px 14px",
-            boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
-            animation: "mob-rise 0.25s ease",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "13px", fontWeight: 600 }}>
-              Resume where you were marking?
-            </div>
-            <div
-              style={{
-                fontSize: "12px",
-                color: C.muted,
-                marginTop: "1px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {resumeNudge.label}
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setLoc(resumeNudge.loc);
-              setResumeNudge(null);
-            }}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "999px",
-              border: "none",
-              backgroundColor: C.text,
-              color: C.bg,
-              fontSize: "13px",
-              fontWeight: 700,
-              fontFamily: "inherit",
-              flexShrink: 0,
-            }}
-          >
-            Go
-          </button>
-          <button
-            onClick={() => setResumeNudge(null)}
-            aria-label="Dismiss"
-            style={{
-              padding: "6px 8px",
-              background: "transparent",
-              border: "none",
-              color: C.muted,
-              fontSize: "16px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              flexShrink: 0,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Pen tray (collapsible, locked to bottom) */}
       <div
