@@ -7,6 +7,7 @@ import {
   shareCanvas,
   CompTheme,
   VersesCardEntry,
+  VersesSynthesis,
 } from "./shareCard";
 
 interface CC {
@@ -43,6 +44,7 @@ interface Props {
   verse?: VerseData;
   comp?: CompData;
   verses?: VersesCardEntry[];
+  syntheses?: VersesSynthesis[];
   onClose: () => void;
   onFlash: (m: string) => void;
 }
@@ -54,20 +56,32 @@ export default function SharePreview({
   verse,
   comp,
   verses,
+  syntheses,
   onClose,
   onFlash,
 }: Props) {
   const [cardDark, setCardDark] = useState(appDark);
   const [featured, setFeatured] = useState(comp ? comp.defaultFeatured : 0);
+  const [showNotes, setShowNotes] = useState(true);
+  const [showSynthesis, setShowSynthesis] = useState(false);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const hasNotes = !!verses && verses.some((v) => (v.note || "").trim());
+  const hasSynth = !!syntheses && syntheses.some((s) => s.text.trim());
 
   const build = (): HTMLCanvasElement | null => {
     if (kind === "verse" && verse) {
       return renderVerseCard({ ...verse, dark: cardDark });
     }
     if (kind === "verses" && verses) {
-      return renderVersesCard({ verses, dark: cardDark });
+      return renderVersesCard({
+        verses,
+        dark: cardDark,
+        showNotes,
+        showSynthesis,
+        syntheses,
+      });
     }
     if (kind === "compilation" && comp) {
       const hero =
@@ -94,7 +108,7 @@ export default function SharePreview({
     const c = build();
     if (c) setUrl(canvasURL(c));
     // eslint: re-render preview when inputs change
-  }, [cardDark, featured, kind]);
+  }, [cardDark, featured, kind, showNotes, showSynthesis]);
 
   const doShare = async () => {
     const c = build();
@@ -266,6 +280,27 @@ export default function SharePreview({
                 </button>
               </div>
             </>
+          )}
+
+          {kind === "verses" && (hasNotes || hasSynth) && (
+            <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+              {hasNotes && (
+                <button
+                  onClick={() => setShowNotes((s) => !s)}
+                  style={seg(showNotes)}
+                >
+                  {showNotes ? "\u2713 Notes" : "Notes"}
+                </button>
+              )}
+              {hasSynth && (
+                <button
+                  onClick={() => setShowSynthesis((s) => !s)}
+                  style={seg(showSynthesis)}
+                >
+                  {showSynthesis ? "\u2713 Synthesis" : "Synthesis"}
+                </button>
+              )}
+            </div>
           )}
 
           <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
