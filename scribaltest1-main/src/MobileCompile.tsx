@@ -81,6 +81,10 @@ export default function MobileCompile({
   const [view, setView] = useState<"focused" | "full">("focused");
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
+  // Which synthesis / verse-note is in edit mode (textarea open). Otherwise the
+  // text shows as a finished part of the card with an Edit button.
+  const [editSynth, setEditSynth] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
@@ -608,27 +612,162 @@ export default function MobileCompile({
                     </span>
                   </button>
 
-                  {/* synthesis-first: the conclusion sits up top, always visible */}
+                  {/* synthesis-first: the conclusion sits up top */}
                   <div style={{ padding: "0 14px 14px" }}>
-                    <textarea
-                      value={notes[synthKey(c)] || ""}
-                      onChange={(e) => setNote(synthKey(c), e.target.value)}
-                      placeholder={"What do these verses say together about " + name + "?"}
-                      rows={2}
-                      style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        padding: "10px 12px",
-                        fontSize: "16px",
-                        lineHeight: 1.5,
-                        borderRadius: "10px",
-                        border: "1px solid " + C.border,
-                        backgroundColor: C.bg,
-                        color: C.text,
-                        fontFamily: "inherit",
-                        resize: "vertical",
-                      }}
-                    />
+                    {(() => {
+                      const sk = synthKey(c);
+                      const sVal = notes[sk] || "";
+                      const sHas = sVal.trim().length > 0;
+                      const sEditing = editSynth === sk;
+                      const accent = COLOR_MAP[c as MarkColor];
+                      if (sEditing) {
+                        return (
+                          <div>
+                            <textarea
+                              value={sVal}
+                              onChange={(e) => setNote(sk, e.target.value)}
+                              autoFocus
+                              placeholder={
+                                "What do these verses say together about " +
+                                name +
+                                "?"
+                              }
+                              rows={3}
+                              style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                padding: "10px 12px",
+                                fontSize: "16px",
+                                lineHeight: 1.5,
+                                borderRadius: "10px",
+                                border: "1px solid " + C.border,
+                                backgroundColor: C.bg,
+                                color: C.text,
+                                fontFamily: "inherit",
+                                resize: "vertical",
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                              <button
+                                onClick={() => setEditSynth(null)}
+                                style={{
+                                  background: C.text,
+                                  color: C.bg,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "13px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                }}
+                              >
+                                Done
+                              </button>
+                              {sHas && (
+                                <button
+                                  onClick={() => {
+                                    setNote(sk, "");
+                                    setEditSynth(null);
+                                  }}
+                                  style={{
+                                    background: "transparent",
+                                    border: "1px solid " + C.border,
+                                    borderRadius: "8px",
+                                    padding: "8px 14px",
+                                    fontSize: "13px",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    fontFamily: "inherit",
+                                    color: C.muted,
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (sHas) {
+                        return (
+                          <div
+                            style={{
+                              borderLeft: "3px solid " + accent,
+                              background: C.bg,
+                              borderRadius: "0 10px 10px 0",
+                              padding: "11px 14px",
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: "10px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                fontSize: "16px",
+                                lineHeight: 1.6,
+                                color: C.text,
+                                whiteSpace: "pre-wrap",
+                              }}
+                            >
+                              {sVal}
+                            </div>
+                            <button
+                              onClick={() => setEditSynth(sk)}
+                              aria-label="Edit note"
+                              style={{
+                                flexShrink: 0,
+                                background: "transparent",
+                                border: "1px solid " + C.border,
+                                borderRadius: "8px",
+                                padding: "5px 12px",
+                                fontSize: "12.5px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                                color: C.muted,
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <button
+                          onClick={() => setEditSynth(sk)}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            background: "transparent",
+                            border: "1px dashed " + C.border,
+                            borderRadius: "10px",
+                            padding: "11px 12px",
+                            fontSize: "13.5px",
+                            fontWeight: 600,
+                            color: C.muted,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "16px",
+                              fontWeight: 700,
+                              color: accent,
+                              lineHeight: 1,
+                            }}
+                          >
+                            +
+                          </span>
+                          What do these verses say about {name}?
+                        </button>
+                      );
+                    })()}
 
                     {!isOpen && (
                       <button
@@ -703,7 +842,10 @@ export default function MobileCompile({
                               >
                                 {/* FRONT — tap anywhere to flip to the note */}
                                 <div
-                                  onClick={() => setFlippedRef(ve.reference)}
+                                  onClick={() => {
+                                    setFlippedRef(ve.reference);
+                                    setEditNote(hasNote ? null : noteKey);
+                                  }}
                                   style={{
                                     ...faceBase,
                                     borderLeft: ve.isNew
@@ -877,66 +1019,174 @@ export default function MobileCompile({
                                   >
                                     Note · {ve.reference}
                                   </div>
-                                  <textarea
-                                    value={noteVal}
-                                    onChange={(e) =>
-                                      setNote(noteKey, e.target.value)
+                                  {(() => {
+                                    const editing = editNote === noteKey;
+                                    if (editing) {
+                                      return (
+                                        <>
+                                          <textarea
+                                            value={noteVal}
+                                            onChange={(e) =>
+                                              setNote(noteKey, e.target.value)
+                                            }
+                                            autoFocus
+                                            placeholder="Write a note for this verse…"
+                                            style={{
+                                              flex: 1,
+                                              minHeight: "72px",
+                                              resize: "none",
+                                              border: "1px solid " + C.border,
+                                              borderRadius: "8px",
+                                              padding: "8px 10px",
+                                              fontFamily: "inherit",
+                                              fontSize: "16px",
+                                              lineHeight: 1.5,
+                                              background: C.bg,
+                                              color: C.text,
+                                            }}
+                                          />
+                                          <div style={{ display: "flex", gap: "8px" }}>
+                                            <button
+                                              onClick={() => setEditNote(null)}
+                                              style={{
+                                                flex: 1,
+                                                background: C.text,
+                                                color: C.bg,
+                                                border: "none",
+                                                borderRadius: "8px",
+                                                padding: "8px",
+                                                fontSize: "13px",
+                                                fontWeight: 700,
+                                                cursor: "pointer",
+                                                fontFamily: "inherit",
+                                              }}
+                                            >
+                                              Save
+                                            </button>
+                                            {hasNote && (
+                                              <button
+                                                onClick={() => {
+                                                  setNote(noteKey, "");
+                                                  setEditNote(null);
+                                                  setFlippedRef(null);
+                                                }}
+                                                style={{
+                                                  background: "transparent",
+                                                  border: "1px solid " + C.border,
+                                                  borderRadius: "8px",
+                                                  padding: "8px 14px",
+                                                  fontSize: "13px",
+                                                  fontWeight: 600,
+                                                  cursor: "pointer",
+                                                  fontFamily: "inherit",
+                                                  color: C.muted,
+                                                }}
+                                              >
+                                                Delete
+                                              </button>
+                                            )}
+                                          </div>
+                                        </>
+                                      );
                                     }
-                                    placeholder="Write a note for this verse…"
-                                    style={{
-                                      flex: 1,
-                                      minHeight: "72px",
-                                      resize: "none",
-                                      border: "1px solid " + C.border,
-                                      borderRadius: "8px",
-                                      padding: "8px 10px",
-                                      fontFamily: "inherit",
-                                      fontSize: "16px",
-                                      lineHeight: 1.5,
-                                      background: C.bg,
-                                      color: C.text,
-                                    }}
-                                  />
-                                  <div style={{ display: "flex", gap: "8px" }}>
-                                    <button
-                                      onClick={() => setFlippedRef(null)}
-                                      style={{
-                                        flex: 1,
-                                        background: C.text,
-                                        color: C.bg,
-                                        border: "none",
-                                        borderRadius: "8px",
-                                        padding: "8px",
-                                        fontSize: "13px",
-                                        fontWeight: 700,
-                                        cursor: "pointer",
-                                        fontFamily: "inherit",
-                                      }}
-                                    >
-                                      Done
-                                    </button>
-                                    {hasNote && (
-                                      <button
-                                        onClick={() => {
-                                          setNote(noteKey, "");
-                                          setFlippedRef(null);
-                                        }}
-                                        style={{
-                                          background: "transparent",
-                                          border: "1px solid " + C.border,
-                                          borderRadius: "8px",
-                                          padding: "8px 14px",
-                                          fontSize: "13px",
-                                          fontWeight: 600,
-                                          cursor: "pointer",
-                                          fontFamily: "inherit",
-                                          color: C.muted,
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
-                                    )}
-                                  </div>
+                                    if (hasNote) {
+                                      return (
+                                        <>
+                                          <div
+                                            style={{
+                                              flex: 1,
+                                              overflowY: "auto",
+                                              fontSize: "16px",
+                                              lineHeight: 1.6,
+                                              color: C.text,
+                                              whiteSpace: "pre-wrap",
+                                              fontFamily: "inherit",
+                                            }}
+                                          >
+                                            {noteVal}
+                                          </div>
+                                          <div style={{ display: "flex", gap: "8px" }}>
+                                            <button
+                                              onClick={() => setEditNote(noteKey)}
+                                              style={{
+                                                background: "transparent",
+                                                border: "1px solid " + C.border,
+                                                borderRadius: "8px",
+                                                padding: "8px 16px",
+                                                fontSize: "13px",
+                                                fontWeight: 600,
+                                                cursor: "pointer",
+                                                fontFamily: "inherit",
+                                                color: C.muted,
+                                              }}
+                                            >
+                                              Edit
+                                            </button>
+                                            <button
+                                              onClick={() => setFlippedRef(null)}
+                                              style={{
+                                                flex: 1,
+                                                background: C.text,
+                                                color: C.bg,
+                                                border: "none",
+                                                borderRadius: "8px",
+                                                padding: "8px",
+                                                fontSize: "13px",
+                                                fontWeight: 700,
+                                                cursor: "pointer",
+                                                fontFamily: "inherit",
+                                              }}
+                                            >
+                                              Done
+                                            </button>
+                                          </div>
+                                        </>
+                                      );
+                                    }
+                                    return (
+                                      <>
+                                        <button
+                                          onClick={() => setEditNote(noteKey)}
+                                          style={{
+                                            flex: 1,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "7px",
+                                            background: "transparent",
+                                            border: "1px dashed " + C.border,
+                                            borderRadius: "8px",
+                                            padding: "10px",
+                                            fontSize: "13.5px",
+                                            fontWeight: 600,
+                                            color: C.muted,
+                                            cursor: "pointer",
+                                            fontFamily: "inherit",
+                                          }}
+                                        >
+                                          <span style={{ fontSize: "16px", fontWeight: 700, lineHeight: 1 }}>
+                                            +
+                                          </span>
+                                          Add a note
+                                        </button>
+                                        <button
+                                          onClick={() => setFlippedRef(null)}
+                                          style={{
+                                            background: "transparent",
+                                            border: "none",
+                                            color: C.muted,
+                                            fontSize: "12.5px",
+                                            fontWeight: 600,
+                                            cursor: "pointer",
+                                            fontFamily: "inherit",
+                                            padding: "4px",
+                                          }}
+                                        >
+                                          Back
+                                        </button>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>
