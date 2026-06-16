@@ -510,16 +510,11 @@ export default function App() {
       setSaveStatus("saving");
       pushToDrive()
         .then((res) => {
-          if (res === "pushed") {
-            setSaveStatus("saved");
-            setLastSync(Date.now());
-          } else if (res === "fail") {
-            // Token likely expired. Don't nag — stay quiet and retry on the
-            // next change/focus (the focus handler refreshes the token).
-            setSaveStatus("saved");
-          } else {
-            setSaveStatus("saved");
-          }
+          // "adopted" means the cloud was newer and we merged it in — that's a
+          // successful sync too, so stamp the time just like a real "pushed".
+          // ("fail"/"blocked" didn't sync, so we leave the timestamp alone.)
+          setSaveStatus("saved");
+          if (res === "pushed" || res === "adopted") setLastSync(Date.now());
         })
         .catch(() => setSaveStatus("saved"));
     }, 3000); // debounce 3 seconds after last change
@@ -551,9 +546,16 @@ export default function App() {
     window.addEventListener("focus", checkRemote);
     document.addEventListener("visibilitychange", onVisible);
     checkRemote();
+    // Poll every 15s while the tab is open + visible, so the other device's
+    // changes (and deletes) show up on their own without needing to refocus.
+    // Same silent path — no popup — and it's skipped whenever the tab is hidden.
+    const pollId = window.setInterval(() => {
+      if (!document.hidden) checkRemote();
+    }, 15000);
     return () => {
       window.removeEventListener("focus", checkRemote);
       document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(pollId);
     };
   }, []);
 
