@@ -328,6 +328,31 @@ export default function App() {
   const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
 
+  // Floating-toolbar position/orientation — ONE shared value across every open
+  // tab, so the toolbar doesn't jump when you switch tabs.
+  const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number }>(() => {
+    try {
+      const s = localStorage.getItem("scribal_toolbar_pos");
+      return s
+        ? JSON.parse(s)
+        : { x: Math.max(12, (window.innerWidth - 860) / 2 - 60), y: 200 };
+    } catch {
+      return { x: 100, y: 200 };
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("scribal_toolbar_pos", JSON.stringify(toolbarPos));
+  }, [toolbarPos]);
+  const [toolbarOrient, setToolbarOrient] = useState<"vertical" | "horizontal">(
+    () =>
+      (localStorage.getItem("scribal_toolbar_orient") as
+        | "vertical"
+        | "horizontal") || "vertical"
+  );
+  useEffect(() => {
+    localStorage.setItem("scribal_toolbar_orient", toolbarOrient);
+  }, [toolbarOrient]);
+
   const [backupOpen, setBackupOpen] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
   const [diag, setDiag] = useState("");
@@ -2942,6 +2967,10 @@ export default function App() {
                     onEraseMark={deleteMark}
                     marks={getBook(t.bookId).marks}
                     showToolbar={isActive}
+                    toolbarPos={toolbarPos}
+                    onToolbarPos={setToolbarPos}
+                    toolbarOrient={toolbarOrient}
+                    onToolbarOrient={setToolbarOrient}
                     panelMode={multi}
                     fontScale={reading.fontScale}
                     lineScale={reading.lineScale}
