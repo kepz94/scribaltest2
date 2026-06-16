@@ -395,69 +395,76 @@ export default function MobileCompile({
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "calc(12px + env(safe-area-inset-top)) 12px 12px",
+          flexDirection: "column",
+          gap: "12px",
+          padding: "calc(12px + env(safe-area-inset-top)) 14px 12px",
           borderBottom: "1px solid " + C.border,
         }}
       >
-        <button
-          onClick={onClose}
-          aria-label="Back"
-          style={{
-            width: "40px",
-            height: "40px",
-            background: "transparent",
-            border: "none",
-            color: C.text,
-            fontSize: "22px",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          ‹
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <input
-            value={studyName}
-            onChange={(e) => setStudyName(e.target.value)}
-            placeholder={defaultName}
-            aria-label="Study name"
+        {/* Row 1 — back + editable study name + scope */}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <button
+            onClick={onClose}
+            aria-label="Back"
             style={{
-              width: "100%",
-              fontSize: "18px",
-              fontWeight: 700,
+              width: "36px",
+              height: "36px",
               background: "transparent",
               border: "none",
-              borderBottom: "1px dashed " + C.border,
               color: C.text,
-              fontFamily: "inherit",
-              padding: "1px 0 3px",
-              outline: "none",
+              fontSize: "22px",
+              cursor: "pointer",
+              flexShrink: 0,
+              marginLeft: "-6px",
             }}
-          />
-          {title && (
-            <div style={{ fontSize: "12px", color: C.muted, marginTop: "3px" }}>
-              {studyScopes && studyScopes.length > 1
-                ? studyScopes.length + " chapters · " + studyScopes.join(", ")
-                : title + " · this chapter"}
-            </div>
-          )}
+          >
+            ‹
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <input
+              value={studyName}
+              onChange={(e) => setStudyName(e.target.value)}
+              placeholder={defaultName}
+              aria-label="Study name"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                fontSize: "19px",
+                fontWeight: 700,
+                background: "transparent",
+                border: "none",
+                borderBottom: "1px dashed " + C.border,
+                color: C.text,
+                fontFamily: "inherit",
+                padding: "1px 0 4px",
+                outline: "none",
+              }}
+            />
+            {title && (
+              <div style={{ fontSize: "12px", color: C.muted, marginTop: "4px" }}>
+                {studyScopes && studyScopes.length > 1
+                  ? studyScopes.length + " chapters · " + studyScopes.join(", ")
+                  : title + " · this chapter"}
+              </div>
+            )}
+          </div>
         </div>
+        {/* Row 2 — actions (Save is the primary, Share is secondary) */}
         {liveMarks.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={() => {
                 setPicked([]);
                 setPicking(true);
               }}
               style={{
+                flexShrink: 0,
                 background: "transparent",
                 color: C.text,
                 border: "1px solid " + C.border,
                 borderRadius: "999px",
-                padding: "8px 14px",
-                fontSize: "12.5px",
+                padding: "10px 18px",
+                fontSize: "13.5px",
                 fontWeight: 600,
                 cursor: "pointer",
                 fontFamily: "inherit",
@@ -468,13 +475,14 @@ export default function MobileCompile({
             <button
               onClick={() => onSave(studyName.trim() || defaultName)}
               style={{
+                flex: 1,
                 background: C.text,
                 color: C.bg,
                 border: "none",
                 borderRadius: "999px",
-                padding: "8px 14px",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                padding: "10px 18px",
+                fontSize: "13.5px",
+                fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: "inherit",
               }}
