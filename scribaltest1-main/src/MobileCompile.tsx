@@ -71,8 +71,13 @@ export default function MobileCompile({
   onFlash,
 }: Props) {
   const synthKey = (color: number) => "synthesis:" + scope + ":" + color;
+  // Per-verse notes live in the same store, keyed by the verse reference, so a
+  // note follows its verse whether viewed alone or inside a linked study.
+  const verseNoteKey = (ref: string) => "versenote:" + ref;
   const [sortMode, setSortMode] = useState<SortMode>("order");
   const [view, setView] = useState<"focused" | "full">("focused");
+  // Which verse card is flipped to its note side (one at a time).
+  const [flippedRef, setFlippedRef] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
@@ -623,6 +628,10 @@ export default function MobileCompile({
                       >
                         {verseEntriesFor(list).map((ve) => {
                           const info = VI.get(ve.reference);
+                          const noteKey = verseNoteKey(ve.reference);
+                          const noteVal = notes[noteKey] || "";
+                          const hasNote = noteVal.trim().length > 0;
+                          const isFlipped = flippedRef === ve.reference;
                           const fullStyle: CSSProperties = {
                             fontFamily: '"Times New Roman", Times, serif',
                             fontSize: "16px",
@@ -632,105 +641,272 @@ export default function MobileCompile({
                           // MarkedVerse colors its verse number with var(--muted);
                           // feed it the live palette so it matches light/dark.
                           (fullStyle as any)["--muted"] = C.muted;
+                          const faceBase: CSSProperties = {
+                            background: C.soft,
+                            border: "1px solid " + C.border,
+                            borderRadius: "10px",
+                            padding: "10px 12px",
+                            backfaceVisibility: "hidden",
+                            WebkitBackfaceVisibility: "hidden",
+                          };
                           return (
                             <div
                               key={ve.reference}
-                              style={{
-                                background: C.soft,
-                                border: "1px solid " + C.border,
-                                borderLeft: ve.isNew
-                                  ? "3px solid " + COLOR_MAP[c as MarkColor]
-                                  : "1px solid " + C.border,
-                                borderRadius: "10px",
-                                padding: "10px 12px",
-                              }}
+                              style={{ perspective: "1200px" }}
                             >
-                              {/* verse header: reference + points */}
                               <div
                                 style={{
-                                  display: "flex",
-                                  alignItems: "baseline",
-                                  gap: "8px",
-                                  marginBottom: "6px",
-                                  flexWrap: "wrap",
+                                  position: "relative",
+                                  transformStyle: "preserve-3d",
+                                  WebkitTransformStyle: "preserve-3d",
+                                  transition: "transform 0.45s",
+                                  transform: isFlipped
+                                    ? "rotateY(180deg)"
+                                    : "rotateY(0deg)",
+                                  WebkitTransform: isFlipped
+                                    ? "rotateY(180deg)"
+                                    : "rotateY(0deg)",
+                                  minHeight: isFlipped ? "168px" : undefined,
                                 }}
                               >
-                                <button
-                                  onClick={() => onJump(ve.reference)}
-                                  style={{
-                                    background: "transparent",
-                                    border: "none",
-                                    padding: 0,
-                                    cursor: "pointer",
-                                    color: C.text,
-                                    fontFamily: "inherit",
-                                    fontSize: "12.5px",
-                                    fontWeight: 700,
-                                    textDecoration: "underline",
-                                    textDecorationStyle: "dotted",
-                                  }}
-                                >
-                                  {ve.reference} ↗
-                                </button>
-                                <span
-                                  style={{
-                                    fontSize: "10.5px",
-                                    fontWeight: 700,
-                                    color: COLOR_MAP[c as MarkColor],
-                                    background: C.bg,
-                                    borderRadius: "999px",
-                                    padding: "1px 8px",
-                                  }}
-                                >
-                                  +{ve.pts}
-                                </span>
-                                {ve.isNew && (
-                                  <span
-                                    style={{ fontSize: "10.5px", color: C.muted }}
-                                  >
-                                    just marked
-                                  </span>
-                                )}
-                              </div>
-
-                              {view === "full" && info ? (
-                                <div style={fullStyle}>
-                                  <MarkedVerse
-                                    reference={ve.reference}
-                                    verseNumber={info.verse}
-                                    text={info.text}
-                                    marks={ve.marks}
-                                  />
-                                </div>
-                              ) : (
+                                {/* FRONT — tap anywhere to flip to the note */}
                                 <div
+                                  onClick={() => setFlippedRef(ve.reference)}
                                   style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "4px",
+                                    ...faceBase,
+                                    borderLeft: ve.isNew
+                                      ? "3px solid " + COLOR_MAP[c as MarkColor]
+                                      : "1px solid " + C.border,
+                                    cursor: "pointer",
                                   }}
                                 >
-                                  {ve.marks.map((m) => (
-                                    <div
-                                      key={m.id}
+                                  {/* verse header: reference + points + note flag */}
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "baseline",
+                                      gap: "8px",
+                                      marginBottom: "6px",
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onJump(ve.reference);
+                                      }}
                                       style={{
-                                        fontFamily:
-                                          '"Times New Roman", Times, serif',
-                                        fontSize: "15px",
-                                        lineHeight: 1.7,
+                                        background: "transparent",
+                                        border: "none",
+                                        padding: 0,
+                                        cursor: "pointer",
+                                        color: C.text,
+                                        fontFamily: "inherit",
+                                        fontSize: "12.5px",
+                                        fontWeight: 700,
+                                        textDecoration: "underline",
+                                        textDecorationStyle: "dotted",
                                       }}
                                     >
-                                      “
+                                      {ve.reference} ↗
+                                    </button>
+                                    <span
+                                      style={{
+                                        fontSize: "10.5px",
+                                        fontWeight: 700,
+                                        color: COLOR_MAP[c as MarkColor],
+                                        background: C.bg,
+                                        borderRadius: "999px",
+                                        padding: "1px 8px",
+                                      }}
+                                    >
+                                      +{ve.pts}
+                                    </span>
+                                    {ve.isNew && (
                                       <span
-                                        style={markStyleCSS(m.style, m.color)}
+                                        style={{
+                                          fontSize: "10.5px",
+                                          color: C.muted,
+                                        }}
                                       >
-                                        {m.markedText}
+                                        just marked
                                       </span>
-                                      ”
+                                    )}
+                                    {hasNote && (
+                                      <span
+                                        title="Has a note"
+                                        style={{
+                                          marginLeft: "auto",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          fontSize: "10.5px",
+                                          fontWeight: 700,
+                                          color: COLOR_MAP[c as MarkColor],
+                                        }}
+                                      >
+                                        <svg
+                                          width="11"
+                                          height="11"
+                                          viewBox="0 0 16 16"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="1.6"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          aria-hidden="true"
+                                        >
+                                          <rect
+                                            x="2.5"
+                                            y="2.5"
+                                            width="11"
+                                            height="11"
+                                            rx="2.5"
+                                          />
+                                          <path d="M5.5 6.5h5M5.5 9.5h3" />
+                                        </svg>
+                                        note
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {view === "full" && info ? (
+                                    <div style={fullStyle}>
+                                      <MarkedVerse
+                                        reference={ve.reference}
+                                        verseNumber={info.verse}
+                                        text={info.text}
+                                        marks={ve.marks}
+                                      />
                                     </div>
-                                  ))}
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "4px",
+                                      }}
+                                    >
+                                      {ve.marks.map((m) => (
+                                        <div
+                                          key={m.id}
+                                          style={{
+                                            fontFamily:
+                                              '"Times New Roman", Times, serif',
+                                            fontSize: "15px",
+                                            lineHeight: 1.7,
+                                          }}
+                                        >
+                                          “
+                                          <span
+                                            style={markStyleCSS(m.style, m.color)}
+                                          >
+                                            {m.markedText}
+                                          </span>
+                                          ”
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div
+                                    style={{
+                                      marginTop: "8px",
+                                      fontSize: "10.5px",
+                                      color: C.muted,
+                                    }}
+                                  >
+                                    {hasNote
+                                      ? "Tap to view note"
+                                      : "Tap to add a note"}
+                                  </div>
                                 </div>
-                              )}
+
+                                {/* BACK — the note editor */}
+                                <div
+                                  style={{
+                                    ...faceBase,
+                                    position: "absolute",
+                                    inset: 0,
+                                    transform: "rotateY(180deg)",
+                                    WebkitTransform: "rotateY(180deg)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: "10.5px",
+                                      fontWeight: 700,
+                                      letterSpacing: "0.05em",
+                                      textTransform: "uppercase",
+                                      color: C.muted,
+                                    }}
+                                  >
+                                    Note · {ve.reference}
+                                  </div>
+                                  <textarea
+                                    value={noteVal}
+                                    onChange={(e) =>
+                                      setNote(noteKey, e.target.value)
+                                    }
+                                    placeholder="Write a note for this verse…"
+                                    style={{
+                                      flex: 1,
+                                      minHeight: "72px",
+                                      resize: "none",
+                                      border: "1px solid " + C.border,
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      fontFamily: "inherit",
+                                      fontSize: "14px",
+                                      lineHeight: 1.5,
+                                      background: C.bg,
+                                      color: C.text,
+                                    }}
+                                  />
+                                  <div style={{ display: "flex", gap: "8px" }}>
+                                    <button
+                                      onClick={() => setFlippedRef(null)}
+                                      style={{
+                                        flex: 1,
+                                        background: C.text,
+                                        color: C.bg,
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        padding: "8px",
+                                        fontSize: "13px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                        fontFamily: "inherit",
+                                      }}
+                                    >
+                                      Done
+                                    </button>
+                                    {hasNote && (
+                                      <button
+                                        onClick={() => {
+                                          setNote(noteKey, "");
+                                          setFlippedRef(null);
+                                        }}
+                                        style={{
+                                          background: "transparent",
+                                          border: "1px solid " + C.border,
+                                          borderRadius: "8px",
+                                          padding: "8px 14px",
+                                          fontSize: "13px",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          fontFamily: "inherit",
+                                          color: C.muted,
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
