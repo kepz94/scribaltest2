@@ -15,6 +15,7 @@ import CompileAnimation from "./components/CompileAnimation";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
 import MobileTour from "./MobileTour";
+import MobileFeatureGuide from "./MobileFeatureGuide";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import * as drive from "./googleDrive";
@@ -466,6 +467,7 @@ export default function MobileApp() {
   const prevBookForStudy = useRef<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
   // When set, Compile + Save are scoped to this search study, not the chapter.
   const [compileStudy, setCompileStudy] = useState<SearchStudy | null>(null);
@@ -2895,7 +2897,7 @@ export default function MobileApp() {
             )}
             {homeTile(
               "Features guide",
-              "Tour what Scribal does",
+              "Learn each feature in depth",
               <svg
                 width="22"
                 height="22"
@@ -2911,7 +2913,7 @@ export default function MobileApp() {
               </svg>,
               () => {
                 setHomeOpen(false);
-                setShowTour(true);
+                setGuideOpen(true);
               }
             )}
           </div>
@@ -5359,6 +5361,10 @@ export default function MobileApp() {
             setGesturesOpen(true);
           }}
         />
+      )}
+
+      {guideOpen && (
+        <MobileFeatureGuide C={C} onClose={() => setGuideOpen(false)} />
       )}
 
       {/* Edit-mark mode bar */}
