@@ -120,28 +120,24 @@ const makeTabId = (
   chapter: number
 ) => "tab_" + bookId + "_" + volume + "_" + book + "_" + chapter;
 
-// Stable identity for a chapter, independent of which study/book it sits in.
-// Used to group "linked" chapters that compile together and share themes.
-const chapterKey = (t: { volume: number; book: number; chapter: number }) =>
-  t.volume + "_" + t.book + "_" + t.chapter;
-
 // "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
 const scopeOfRef = (ref: string) => {
   const i = ref.indexOf(":");
   return i < 0 ? ref : ref.slice(0, i);
 };
 
-// Shared label scope for linked chapters (they pool their theme names here).
-const LINKED_LABEL_SCOPE = "__linked__";
-
 const vols = scriptures.volumes;
 
-// The per-chapter label scope for a tab, e.g. "Genesis 1".
+// The per-chapter label scope for a tab, e.g. "Genesis 1". Unique per chapter.
 const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
   scopeOfRef(
     vols[t.volume]?.books[t.book]?.chapters[t.chapter]?.verses[0]?.reference ||
       ""
   );
+
+// A fresh id for a new link group.
+const newGroupId = () =>
+  "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
 const VIEW_NAMES: Record<string, string> = {
   cornell: "Cornell Notes",
@@ -254,23 +250,32 @@ export default function App() {
       makeTabId("master", 0, 0, 0)
   );
 
-  // Chapters the user has "linked" — they compile together and share themes,
-  // while staying in their own study (nothing gets relocated).
-  const [linkedChapters, setLinkedChapters] = useState<string[]>(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("scribal_linked_chapters") || "[]"
-      );
-    } catch {
-      return [];
+  // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
+  // the same group are one study — they compile together and share one set of
+  // theme names. Different groups are fully independent (no theme bleed).
+  const [chapterGroups, setChapterGroups] = useState<Record<string, string>>(
+    () => {
+      try {
+        const raw = JSON.parse(
+          localStorage.getItem("scribal_linked_chapters") || "{}"
+        );
+        // ignore the old flat-list format from a previous version
+        return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+      } catch {
+        return {};
+      }
     }
-  });
+  );
   useEffect(() => {
     localStorage.setItem(
       "scribal_linked_chapters",
-      JSON.stringify(linkedChapters)
+      JSON.stringify(chapterGroups)
     );
-  }, [linkedChapters]);
+  }, [chapterGroups]);
+
+  // A chapter's label scope: its group's shared scope if linked, else its own.
+  const resolveScope = (chapterScope: string) =>
+    chapterGroups[chapterScope] ? "group:" + chapterGroups[chapterScope] : chapterScope;
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
@@ -699,20 +704,33 @@ export default function App() {
     setActiveTabBook(id);
   };
 
-  // Link / unlink a chapter. Linking is a grouping marker: linked chapters
-  // compile together and share themes, but STAY in their own study — nothing
-  // is moved or relocated, so no marks are ever shuffled between books.
+  // Link / unlink a chapter into an independent "study" group. Linking joins the
+  // group of another currently-open linked chapter, or starts a fresh group.
+  // Each group keeps its own theme names — no bleed between separate groups.
   const toggleLink = (t: Tab) => {
-    const key = chapterKey(t);
-    const wasLinked = linkedChapters.includes(key);
-    if (!wasLinked) {
-      // Carry this chapter's theme names into the shared linked palette,
-      // filling blanks only — so linking never wipes names you already had.
-      seedScopeLabels(LINKED_LABEL_SCOPE, scopedLabels[chapterScopeOf(t)] || {});
+    const cs = chapterScopeOf(t);
+    if (chapterGroups[cs]) {
+      // UNLINK: remove this chapter; if its group drops below 2, dissolve it.
+      setChapterGroups((prev) => {
+        const next = { ...prev };
+        const gid = next[cs];
+        delete next[cs];
+        const members = Object.keys(next).filter((s) => next[s] === gid);
+        if (members.length <= 1) members.forEach((s) => delete next[s]);
+        return next;
+      });
+    } else {
+      // LINK: join an already-linked open chapter's group, else open a new group.
+      const openLinked = tabs.find(
+        (x) => x.id !== t.id && chapterGroups[chapterScopeOf(x)]
+      );
+      const gid = openLinked
+        ? chapterGroups[chapterScopeOf(openLinked)]
+        : newGroupId();
+      // Carry this chapter's names into the group palette (fill blanks only).
+      seedScopeLabels("group:" + gid, scopedLabels[cs] || {});
+      setChapterGroups((prev) => ({ ...prev, [cs]: gid }));
     }
-    setLinkedChapters((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
   };
 
   const locateReference = (reference: string) => {
@@ -814,21 +832,29 @@ export default function App() {
   groups.forEach((g) => g.items.sort((a, b) => a.startIndex - b.startIndex));
 
   // Group open tabs into "compile units": each unlinked tab is its own unit,
-  // and all linked open tabs collapse into one. (Mirrors the verified rules.)
+  // and each link group becomes one unit. (Mirrors the verified rules.)
   const compileUnits = (): { label: string; tabIds: string[] }[] => {
     const units: { label: string; tabIds: string[] }[] = [];
-    const linkedOpen = tabs.filter((t) =>
-      linkedChapters.includes(chapterKey(t))
-    );
-    if (linkedOpen.length) {
-      units.push({
-        label: "Linked: " + linkedOpen.map((t) => tabLabel(t)).join(" + "),
-        tabIds: linkedOpen.map((t) => t.id),
-      });
-    }
-    tabs
-      .filter((t) => !linkedChapters.includes(chapterKey(t)))
-      .forEach((t) => units.push({ label: tabLabel(t), tabIds: [t.id] }));
+    const seen: Record<string, { label: string; tabIds: string[] }> = {};
+    const seenTabs: Record<string, Tab[]> = {};
+    tabs.forEach((t) => {
+      const gid = chapterGroups[chapterScopeOf(t)];
+      if (gid) {
+        if (!seen[gid]) {
+          seen[gid] = { label: "", tabIds: [] };
+          seenTabs[gid] = [];
+          units.push(seen[gid]);
+        }
+        seen[gid].tabIds.push(t.id);
+        seenTabs[gid].push(t);
+      } else {
+        units.push({ label: tabLabel(t), tabIds: [t.id] });
+      }
+    });
+    Object.keys(seen).forEach((gid) => {
+      seen[gid].label =
+        "Linked: " + seenTabs[gid].map((t) => tabLabel(t)).join(" + ");
+    });
     return units;
   };
 
@@ -873,23 +899,20 @@ export default function App() {
 
   const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
 
-  // Per-chapter label scope (the active study view reads/writes labels here).
-  // Linked chapters resolve to one shared scope so they share theme names.
-  const activeScope = linkedChapters.includes(chapterKey(activeTab))
-    ? LINKED_LABEL_SCOPE
-    : chapterScopeOf(activeTab);
+  // The label scope for the active chapter (its group's scope if linked).
+  const activeScope = resolveScope(chapterScopeOf(activeTab));
   const activeScopedLabels = scopedLabels[activeScope] || {};
 
   // Scope for whatever is being compiled (the prompt guarantees one unit:
-  // a single chapter, or a linked group that shares one scope).
-  const compileScope = compileTabs.some((t) =>
-    linkedChapters.includes(chapterKey(t))
-  )
-    ? LINKED_LABEL_SCOPE
-    : compileTabs[0]
-    ? chapterScopeOf(compileTabs[0])
+  // a single chapter, or one link group — both resolve to a single scope).
+  const compileScope = compileTabs[0]
+    ? resolveScope(chapterScopeOf(compileTabs[0]))
     : "";
   const compileScopedLabels = scopedLabels[compileScope] || {};
+
+  // The per-chapter (group-aware) theme name for any verse — used by search.
+  const labelFor = (reference: string, color: MarkColor) =>
+    scopedLabels[resolveScope(scopeOfRef(reference))]?.[color] || "";
 
   const usedColors = COLORS.filter((c) =>
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
@@ -1439,7 +1462,8 @@ export default function App() {
           currentVolume={activeTab.volume}
           currentBook={activeTab.book}
           marks={marks}
-          colorLabels={colorLabels}
+          colorLabels={activeScopedLabels}
+          labelFor={labelFor}
           allMarks={allMarks}
           onJump={(ref) => {
             jumpToReference(ref);
@@ -2512,7 +2536,7 @@ export default function App() {
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
-            const linked = linkedChapters.includes(chapterKey(t));
+            const linked = !!chapterGroups[chapterScopeOf(t)];
             return (
               <div
                 key={t.id}
