@@ -101,11 +101,16 @@ const KEYFRAMES = `
   70%,86% { transform:scaleX(1); opacity:0.4; }
   100% { transform:scaleX(0); opacity:0; }
 }
+@keyframes stour-flipcard {
+  0%,28% { transform:rotateY(0deg); }
+  50%,78% { transform:rotateY(180deg); }
+  100% { transform:rotateY(0deg); }
+}
 `;
 
 export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Props) {
   const [step, setStep] = useState(0);
-  const LAST = 6; // sign-in step index
+  const LAST = 7; // sign-in step index
 
   const dot: React.CSSProperties = {
     position: "absolute",
@@ -587,6 +592,135 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
     </div>
   );
 
+  const noteDemo = (
+    <div
+      style={{
+        ...panel,
+        perspective: "1000px",
+        display: "flex",
+        justifyContent: "center",
+        paddingTop: "20px",
+        paddingBottom: "20px",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          width: "212px",
+          height: "98px",
+          transformStyle: "preserve-3d",
+          WebkitTransformStyle: "preserve-3d",
+          animation: "stour-flipcard 4.5s infinite",
+        }}
+      >
+        {/* FRONT — a verse card */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            boxSizing: "border-box",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            borderLeft: "3px solid #8b5cf6",
+            backgroundColor: C.soft,
+            padding: "10px 12px",
+            textAlign: "left",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "6px",
+            }}
+          >
+            <span style={{ fontSize: "11px", fontWeight: 700, color: C.text }}>
+              Alma 32:21
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "3px",
+                fontSize: "9.5px",
+                fontWeight: 700,
+                color: "#8b5cf6",
+              }}
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
+                <path d="M5.5 6.5h5M5.5 9.5h3" />
+              </svg>
+              note
+            </span>
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: "13px", lineHeight: 1.45, color: C.text }}>
+            “faith is not to have a{" "}
+            <span style={{ backgroundColor: HL, borderRadius: "3px", padding: "0 2px" }}>
+              perfect knowledge
+            </span>
+            ”
+          </div>
+        </div>
+        {/* BACK — the note */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+            WebkitTransform: "rotateY(180deg)",
+            boxSizing: "border-box",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            backgroundColor: C.soft,
+            padding: "10px 12px",
+            textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "9.5px",
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              color: C.muted,
+            }}
+          >
+            NOTE · ALMA 32:21
+          </span>
+          <span
+            style={{
+              fontFamily: SERIF,
+              fontSize: "12.5px",
+              fontStyle: "italic",
+              lineHeight: 1.45,
+              color: C.text,
+            }}
+          >
+            Faith grows as I act on it — like a seed I choose to plant.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
   const moreDemo = (
     <div style={{ marginBottom: "14px" }}>
       {featRow(
@@ -702,6 +836,19 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
       case 5:
         return (
           <div>
+            {title("Note your thoughts on a verse")}
+            {noteDemo}
+            {body(
+              "In Compile, tap a verse to flip it over and write a private note — your own thinking, kept right with that verse."
+            )}
+            {body(
+              "Verses with a note show a small flag, and notes save as you type. You can even include them when you share a verse card."
+            )}
+          </div>
+        );
+      case 6:
+        return (
+          <div>
             {title("More as you go")}
             {moreDemo}
             {body(
@@ -709,7 +856,7 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
             )}
           </div>
         );
-      case 6:
+      case 7:
         return (
           <div>
             {title("Sync, or keep it local")}
@@ -830,7 +977,7 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
           padding: "8px 0 14px",
         }}
       >
-        {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <span
             key={i}
             style={{
@@ -846,7 +993,7 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
 
       {/* nav */}
       <div style={{ padding: "0 24px 24px" }}>
-        {step === 0 && primaryBtn("Take the 30-second tour", () => setStep(1))}
+        {step === 0 && primaryBtn("Take the quick tour", () => setStep(1))}
         {step === 0 && ghostBtn("Skip", () => setStep(LAST))}
 
         {step > 0 && step < LAST && (
