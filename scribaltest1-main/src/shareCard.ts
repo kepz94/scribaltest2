@@ -237,6 +237,151 @@ export function renderVerseCard(o: VerseCardOpts): HTMLCanvasElement {
   return canvas;
 }
 
+// ---------- Multi-verse card (up to 4 selected verses, focused phrases) ----------
+export interface VersesCardEntry {
+  reference: string;
+  theme: string;
+  color: number;
+  phrases: { text: string; style: string }[];
+}
+export interface VersesCardOpts {
+  verses: VersesCardEntry[];
+  dark: boolean;
+}
+
+export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
+  const p = o.dark ? darkCard : lightCard;
+  const { canvas, ctx } = newCanvas();
+  if (!ctx) return canvas;
+  paintBackground(ctx, p);
+
+  const verses = o.verses.slice(0, 4);
+  const padX = 120;
+  const barW = 6;
+  const contentX = padX + 22; // text begins to the right of the accent bar
+  const maxW = W - contentX - padX;
+  const top = 150;
+  const bottom = H - 168; // leave room for the brand footer
+  const budget = bottom - top;
+
+  const refSize = 27;
+  const themeSize = 21;
+  const headerGap = 16; // header block -> phrases
+  const phraseGap = 10; // between phrases within one verse
+  const verseGap = 38; // between verse blocks
+
+  const fontFor = (style: string, size: number) => {
+    const weight = style === "bold" ? "700" : "500";
+    const ital = style === "italic" ? "italic " : "";
+    return ital + weight + " " + size + "px " + SERIF;
+  };
+
+  // Measure the whole stack at a candidate phrase font size.
+  const measure = (size: number) => {
+    const blocks = verses.map((v) => {
+      const phraseLines = v.phrases.map((ph) => {
+        ctx.font = fontFor(ph.style, size);
+        return {
+          style: ph.style,
+          lines: wrap(ctx, "\u201C" + ph.text + "\u201D", maxW),
+        };
+      });
+      const phrasesH =
+        phraseLines.reduce((s, pl) => s + pl.lines.length * size * 1.34, 0) +
+        Math.max(0, phraseLines.length - 1) * phraseGap;
+      const headerH = (v.theme.trim() ? themeSize + 9 : 0) + refSize + headerGap;
+      return { v, phraseLines, height: headerH + phrasesH };
+    });
+    const total =
+      blocks.reduce((s, b) => s + b.height, 0) +
+      Math.max(0, blocks.length - 1) * verseGap;
+    return { blocks, total };
+  };
+
+  const baseByCount: { [k: number]: number } = { 1: 52, 2: 46, 3: 40, 4: 36 };
+  let size = baseByCount[verses.length] || 36;
+  let lay = measure(size);
+  while (lay.total > budget && size > 22) {
+    size -= 2;
+    lay = measure(size);
+  }
+
+  // Center the stack vertically when there's spare room.
+  let y = top + (lay.total < budget ? (budget - lay.total) / 2 : 0);
+
+  lay.blocks.forEach((b) => {
+    const accent = penHex(b.v.color, o.dark);
+    const highlight = hlHex(b.v.color, o.dark);
+    const blockTop = y;
+
+    if (b.v.theme.trim()) {
+      ctx.fillStyle = accent;
+      ctx.font = "700 " + themeSize + "px " + SANS;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      drawTrackedLeft(
+        ctx,
+        b.v.theme.trim().toUpperCase(),
+        contentX,
+        y + themeSize,
+        3
+      );
+      y += themeSize + 9;
+    }
+
+    ctx.fillStyle = p.muted;
+    ctx.font = "600 " + refSize + "px " + SANS;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(b.v.reference, contentX, y + refSize);
+    y += refSize + headerGap;
+
+    b.phraseLines.forEach((pl) => {
+      ctx.font = fontFor(pl.style, size);
+      pl.lines.forEach((ln) => {
+        const lineBase = y + size;
+        const tw = ctx.measureText(ln).width;
+        if (pl.style === "highlight") {
+          ctx.fillStyle = highlight;
+          roundRect(
+            ctx,
+            contentX - 8,
+            lineBase - size + size * 0.2,
+            tw + 16,
+            size * 1.1,
+            7
+          );
+          ctx.fill();
+        }
+        ctx.fillStyle = p.text;
+        ctx.textAlign = "left";
+        ctx.fillText(ln, contentX, lineBase);
+        if (pl.style === "underline" || pl.style === "circle") {
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(contentX, lineBase + 9);
+          ctx.lineTo(contentX + tw, lineBase + 9);
+          ctx.stroke();
+        }
+        y += size * 1.34;
+      });
+      y += phraseGap;
+    });
+    y -= phraseGap; // remove trailing gap after the last phrase
+
+    const barH = Math.max(14, y - blockTop);
+    ctx.fillStyle = accent;
+    roundRect(ctx, padX, blockTop, barW, barH, 3);
+    ctx.fill();
+
+    y += verseGap;
+  });
+
+  paintBrand(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
+  return canvas;
+}
+
 // ---------- Compilation card ----------
 export interface CompTheme {
   name: string;
