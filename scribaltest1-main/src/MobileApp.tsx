@@ -266,8 +266,9 @@ export default function MobileApp() {
   const [penOpen, setPenOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
-  const [pickBookI, setPickBookI] = useState(-1);
-  const [pickChapI, setPickChapI] = useState(-1);
+  const [pickV, setPickV] = useState(-1);
+  const [pickB, setPickB] = useState(-1);
+  const [pickC, setPickC] = useState(-1);
   // Chapters in the same group are one study — they share theme names and
   // compile together. Different groups stay independent. Same storage key as
   // desktop, so a link made on one device's shell shows in the other.
@@ -667,10 +668,6 @@ export default function MobileApp() {
     return Array.from(map.values());
   })();
   // ---- Link groups: combine chapters into one study (shared themes + compile) ----
-  const allBooks: { v: number; b: number; name: string }[] = [];
-  vols.forEach((vol, v) =>
-    vol.books.forEach((bk, b) => allBooks.push({ v, b, name: bk.book }))
-  );
   const groupMembers = (cs: string): string[] =>
     chapterGroups[cs]
       ? Object.keys(chapterGroups)
@@ -717,8 +714,9 @@ export default function MobileApp() {
     setChapterGroups(next);
   };
   const openLinkPrompt = () => {
-    setPickBookI(-1);
-    setPickChapI(-1);
+    setPickV(-1);
+    setPickB(-1);
+    setPickC(-1);
     setLinkOpen(true);
   };
   // Next chapter in canonical order (the one-tap "link with next").
@@ -736,13 +734,12 @@ export default function MobileApp() {
     flash("Linked with " + nextTitle);
   };
   // The chapter chosen in the book/chapter picker (the link target).
-  const pickBook = pickBookI >= 0 ? allBooks[pickBookI] : null;
-  const pickChapters = pickBook
-    ? vols[pickBook.v].books[pickBook.b].chapters
-    : [];
+  const pickVol = pickV >= 0 ? vols[pickV] : null;
+  const pickBookObj = pickVol && pickB >= 0 ? pickVol.books[pickB] : null;
+  const pickChapters = pickBookObj ? pickBookObj.chapters : [];
   const targetScope =
-    pickBook && pickChapI >= 0 && pickChapters[pickChapI]
-      ? pickBook.name + " " + pickChapters[pickChapI].chapter
+    pickBookObj && pickC >= 0 && pickChapters[pickC]
+      ? pickBookObj.book + " " + pickChapters[pickC].chapter
       : null;
   const previewLabels = targetScope
     ? scopedLabels[resolveScope(targetScope)] || {}
@@ -954,6 +951,17 @@ export default function MobileApp() {
     );
   };
 
+  // The chapters Compile gathers: the current chapter's whole study if it's
+  // linked, otherwise just this chapter (sorted in canonical order).
+  const studyScopes = (chapterGroups[title] ? groupMembers(title) : [title])
+    .slice()
+    .sort(
+      (a, b) => (chapterLoc.get(a)?.order ?? 0) - (chapterLoc.get(b)?.order ?? 0)
+    );
+  const studyMarks = marks.filter((m) =>
+    studyScopes.includes(scopeOf(m.reference))
+  );
+
   // ---- Compile (gathering animation, then full-screen view) ----
   const startCompile = () => {
     const lastCount = Number(
@@ -970,14 +978,13 @@ export default function MobileApp() {
   // instead of making a duplicate. Saving also locks in this chapter's theme
   // names so reusing a color elsewhere never rewrites them.
   const saveOutlineToVault = () => {
-    const studyMarks = chapterMarks;
     if (studyMarks.length === 0) {
-      flash("Nothing to save in this chapter yet");
+      flash("Nothing to save yet");
       return;
     }
     const bookName =
       books.find((b) => b.id === activeBookId)?.name || "Master Book";
-    const scopeKey = title; // e.g. "1 Nephi 2"
+    const scopeKey = resolveScope(title); // group scope when linked
     const seen = new Set<string>();
     const compileTabs: {
       id: string;
@@ -2047,17 +2054,24 @@ export default function MobileApp() {
             >
               Or link with another chapter
             </div>
-            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                marginBottom: "12px",
+              }}
+            >
               <select
-                value={pickBookI}
+                value={pickV}
                 onChange={(e) => {
-                  setPickBookI(Number(e.target.value));
-                  setPickChapI(-1);
+                  setPickV(Number(e.target.value));
+                  setPickB(-1);
+                  setPickC(-1);
                 }}
                 style={{
-                  flex: 2,
-                  minWidth: 0,
                   boxSizing: "border-box",
+                  width: "100%",
                   padding: "11px 10px",
                   borderRadius: "10px",
                   border: "1px solid " + C.border,
@@ -2067,21 +2081,23 @@ export default function MobileApp() {
                   fontFamily: "inherit",
                 }}
               >
-                <option value={-1}>Choose a book…</option>
-                {allBooks.map((bk, i) => (
-                  <option key={i} value={i}>
-                    {bk.name}
+                <option value={-1}>Choose a volume…</option>
+                {vols.map((vol, v) => (
+                  <option key={v} value={v}>
+                    {vol.volume}
                   </option>
                 ))}
               </select>
               <select
-                value={pickChapI}
-                disabled={pickBookI < 0}
-                onChange={(e) => setPickChapI(Number(e.target.value))}
+                value={pickB}
+                disabled={pickV < 0}
+                onChange={(e) => {
+                  setPickB(Number(e.target.value));
+                  setPickC(-1);
+                }}
                 style={{
-                  flex: 1,
-                  minWidth: 0,
                   boxSizing: "border-box",
+                  width: "100%",
                   padding: "11px 10px",
                   borderRadius: "10px",
                   border: "1px solid " + C.border,
@@ -2089,10 +2105,34 @@ export default function MobileApp() {
                   color: C.text,
                   fontSize: "14px",
                   fontFamily: "inherit",
-                  opacity: pickBookI < 0 ? 0.5 : 1,
+                  opacity: pickV < 0 ? 0.5 : 1,
                 }}
               >
-                <option value={-1}>Chapter…</option>
+                <option value={-1}>Choose a book…</option>
+                {(pickVol ? pickVol.books : []).map((bk, b) => (
+                  <option key={b} value={b}>
+                    {bk.book}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={pickC}
+                disabled={pickB < 0}
+                onChange={(e) => setPickC(Number(e.target.value))}
+                style={{
+                  boxSizing: "border-box",
+                  width: "100%",
+                  padding: "11px 10px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.soft,
+                  color: C.text,
+                  fontSize: "14px",
+                  fontFamily: "inherit",
+                  opacity: pickB < 0 ? 0.5 : 1,
+                }}
+              >
+                <option value={-1}>Choose a chapter…</option>
                 {pickChapters.map((ch, c) => (
                   <option key={c} value={c}>
                     {ch.chapter}
@@ -3079,7 +3119,8 @@ export default function MobileApp() {
       )}
       {compileOpen && (
         <MobileCompile
-          marks={chapterMarks}
+          marks={studyMarks}
+          studyScopes={studyScopes}
           colorLabels={scopeLabels}
           C={C}
           orderOf={orderOf}
@@ -3094,7 +3135,7 @@ export default function MobileApp() {
           onClose={() => setCompileOpen(false)}
           dark={dark}
           title={title}
-          scope={title}
+          scope={resolveScope(title)}
           onFlash={flash}
         />
       )}
