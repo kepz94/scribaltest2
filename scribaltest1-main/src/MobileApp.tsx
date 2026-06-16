@@ -370,6 +370,8 @@ export default function MobileApp() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
+  // When set, Compile + Save are scoped to this search study, not the chapter.
+  const [compileStudy, setCompileStudy] = useState<SearchStudy | null>(null);
   const [compileAnim, setCompileAnim] = useState<{
     show: boolean;
     duration: number;
@@ -821,6 +823,12 @@ export default function MobileApp() {
       createdAt: Date.now(),
     };
     setSearchStudies((prev) => [study, ...prev]);
+    // Give the study its own theme palette, seeded from the chapters it spans
+    // so any names you already gave those chapters carry into the study.
+    const studyScope = "searchstudy:" + study.id;
+    Array.from(new Set(refs.map((r) => scopeOf(r)))).forEach((ch) =>
+      seedScopeLabels(studyScope, scopedLabels[ch] || {})
+    );
     setLinkDraftRefs(null);
     openStudy(study, study.bookId);
   };
@@ -1187,6 +1195,63 @@ export default function MobileApp() {
     }
     // Lock this chapter's theme names onto its marks.
     freezeChapter(title);
+  };
+
+  // Save a search study to the Vault: its verses' marks under its own scope key,
+  // so re-saving updates the same file. (No freeze — the Vault entry already
+  // snapshots the study's theme names.)
+  const saveStudyToVault = (study: SearchStudy) => {
+    const sm = marks.filter((m) => study.refs.includes(m.reference));
+    if (sm.length === 0) {
+      flash("Nothing to save yet");
+      return;
+    }
+    const bookName =
+      books.find((b) => b.id === study.bookId)?.name || "Master Book";
+    const scopeKey = "searchstudy:" + study.id;
+    const seen = new Set<string>();
+    const compileTabs: {
+      id: string;
+      volume: number;
+      book: number;
+      chapter: number;
+    }[] = [];
+    sm.forEach((m) => {
+      const chap = m.reference.replace(/:\d+$/, "");
+      if (seen.has(chap)) return;
+      const cl = chapterLoc.get(chap);
+      if (cl) {
+        seen.add(chap);
+        compileTabs.push({
+          id: "vtab_" + chap.replace(/\s+/g, "_"),
+          volume: cl.v,
+          book: cl.b,
+          chapter: cl.c,
+        });
+      }
+    });
+    const labels: Record<number, string> = {};
+    COLORS.forEach((c) => {
+      const n = (scopedLabels[scopeKey]?.[c] || "").trim();
+      if (n) labels[c] = n;
+    });
+    const existing = vaultEntries.find((e) => e.scopeKey === scopeKey);
+    const payload = {
+      view: "outline" as const,
+      bookName,
+      scopeKey,
+      compileTabs,
+      marks: sm.slice(),
+      colorLabels: labels,
+      notes: { ...notes },
+    };
+    if (existing) {
+      vaultUpdate(existing.id, payload);
+      flash("Updated " + study.name);
+    } else {
+      vaultAdd({ name: study.name, tags: [], ...payload });
+      flash("Saved " + study.name);
+    }
   };
 
   // ---- Restore a saved study from the Vault into the active book ----
@@ -3949,6 +4014,53 @@ export default function MobileApp() {
 
               <div
                 style={{
+                  display: "flex",
+                  gap: "8px",
+                  padding: "10px 14px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setCompileStudy(study);
+                    setCompileOpen(true);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Compile
+                </button>
+                <button
+                  onClick={() => saveStudyToVault(study)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Save to Vault
+                </button>
+              </div>
+
+              <div
+                style={{
                   flex: 1,
                   minHeight: 0,
                   overflowY: "auto",
@@ -4071,6 +4183,86 @@ export default function MobileApp() {
                     );
                   })}
                 </div>
+
+                {/* Name the armed color's theme — for this study's palette */}
+                {!isEraser && (
+                  <>
+                    <button
+                      onClick={() => setPenOpen((o) => !o)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        width: "100%",
+                        background: "transparent",
+                        border: "none",
+                        padding: "10px 0 0",
+                        cursor: "pointer",
+                        color: C.text,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          flex: 1,
+                          textAlign: "left",
+                          fontSize: "12px",
+                          color: C.muted,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {(
+                          scopedLabels["searchstudy:" + study.id]?.[
+                            pen.color
+                          ] || ""
+                        ).trim()
+                          ? "Theme: " +
+                            (
+                              scopedLabels["searchstudy:" + study.id]?.[
+                                pen.color
+                              ] || ""
+                            ).trim()
+                          : "Name this theme"}
+                      </span>
+                      <span style={{ color: C.muted, fontSize: "13px" }}>
+                        {penOpen ? "▾" : "▴"}
+                      </span>
+                    </button>
+                    {penOpen && (
+                      <input
+                        value={
+                          scopedLabels["searchstudy:" + study.id]?.[
+                            pen.color
+                          ] || ""
+                        }
+                        onChange={(e) =>
+                          setScopedLabel(
+                            "searchstudy:" + study.id,
+                            pen.color,
+                            e.target.value
+                          )
+                        }
+                        placeholder={
+                          "Name color " + pen.color + " (e.g. Covenant)"
+                        }
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          marginTop: "8px",
+                          padding: "10px 12px",
+                          fontSize: "16px",
+                          borderRadius: "10px",
+                          border: "1px solid " + C.border,
+                          backgroundColor: C.bg,
+                          color: C.text,
+                          fontFamily: "inherit",
+                        }}
+                      />
+                    )}
+                  </>
+                )}
               </div>
             </div>
           );
@@ -4153,28 +4345,58 @@ export default function MobileApp() {
           }}
         />
       )}
-      {compileOpen && (
-        <MobileCompile
-          marks={studyMarks}
-          studyScopes={studyScopes}
-          colorLabels={scopeLabels}
-          C={C}
-          orderOf={orderOf}
-          sessionNew={sessionNew}
-          onJump={jumpToRef}
-          notes={notes}
-          setNote={setNote}
-          onSaveToVault={() => {
-            saveOutlineToVault();
-            setCompileOpen(false);
-          }}
-          onClose={() => setCompileOpen(false)}
-          dark={dark}
-          title={displayTitle}
-          scope={resolveScope(title)}
-          onFlash={flash}
-        />
-      )}
+      {compileOpen &&
+        (() => {
+          const cs = compileStudy;
+          const cMarks = cs
+            ? marks.filter((m) => cs.refs.includes(m.reference))
+            : studyMarks;
+          const cScopes = cs
+            ? Array.from(new Set(cs.refs.map((r) => scopeOf(r)))).sort(
+                (a, b) =>
+                  (chapterLoc.get(a)?.order ?? 0) -
+                  (chapterLoc.get(b)?.order ?? 0)
+              )
+            : studyScopes;
+          const cScope = cs ? "searchstudy:" + cs.id : resolveScope(title);
+          const cTitle = cs ? cs.name : displayTitle;
+          let cLabels = scopeLabels;
+          if (cs) {
+            const o: Record<number, string> = {};
+            COLORS.forEach((c) => {
+              const n = (scopedLabels[cScope]?.[c] || "").trim();
+              if (n) o[c] = n;
+            });
+            cLabels = o;
+          }
+          return (
+            <MobileCompile
+              marks={cMarks}
+              studyScopes={cScopes}
+              colorLabels={cLabels}
+              C={C}
+              orderOf={orderOf}
+              sessionNew={sessionNew}
+              onJump={jumpToRef}
+              notes={notes}
+              setNote={setNote}
+              onSaveToVault={() => {
+                if (cs) saveStudyToVault(cs);
+                else saveOutlineToVault();
+                setCompileOpen(false);
+                setCompileStudy(null);
+              }}
+              onClose={() => {
+                setCompileOpen(false);
+                setCompileStudy(null);
+              }}
+              dark={dark}
+              title={cTitle}
+              scope={cScope}
+              onFlash={flash}
+            />
+          );
+        })()}
 
       {/* Manage a mark (long-press) */}
       {manage &&
