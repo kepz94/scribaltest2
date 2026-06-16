@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, CSSProperties } from "react";
+import scriptures from "./data/scriptures.json";
+import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import SharePreview from "./SharePreview";
 
@@ -31,6 +33,25 @@ interface Props {
 
 type SortMode = "order" | "points";
 
+// Look up a verse's full text + number by reference (e.g. "1 Nephi 2:5").
+// Built once, lazily, the first time Compile opens — used for the Full-verse view.
+let _verseIndex: Map<string, { text: string; verse: number }> | null = null;
+function verseIndex(): Map<string, { text: string; verse: number }> {
+  if (_verseIndex) return _verseIndex;
+  const m = new Map<string, { text: string; verse: number }>();
+  (scriptures as any).volumes.forEach((vol: any) =>
+    vol.books.forEach((bk: any) =>
+      bk.chapters.forEach((ch: any) =>
+        ch.verses.forEach((v: any) =>
+          m.set(v.reference, { text: v.text, verse: v.verse })
+        )
+      )
+    )
+  );
+  _verseIndex = m;
+  return m;
+}
+
 export default function MobileCompile({
   marks,
   colorLabels,
@@ -50,6 +71,8 @@ export default function MobileCompile({
 }: Props) {
   const synthKey = (color: number) => "synthesis:" + scope + ":" + color;
   const [sortMode, setSortMode] = useState<SortMode>("order");
+  const [view, setView] = useState<"focused" | "full">("focused");
+  const VI = verseIndex();
   const [compPreview, setCompPreview] = useState<{
     scopeTitle: string;
     studyLabel: string;
@@ -212,21 +235,39 @@ export default function MobileCompile({
   const pointsFor = (list: Mark[]) =>
     list.reduce((s, m) => s + (STYLE_POINTS[m.style] || 0), 0);
 
-  const sortMarks = (list: Mark[]) => {
-    const cmp =
-      sortMode === "points"
-        ? (a: Mark, b: Mark) =>
-            (STYLE_POINTS[b.style] || 0) - (STYLE_POINTS[a.style] || 0) ||
-            orderOf(a.reference) - orderOf(b.reference)
-        : (a: Mark, b: Mark) =>
-            orderOf(a.reference) - orderOf(b.reference) ||
-            a.startIndex - b.startIndex;
-    // freshly-marked verses always rise to the top of their theme
-    return list.slice().sort((a, b) => {
-      const na = isNew(a) ? 0 : 1;
-      const nb = isNew(b) ? 0 : 1;
-      return na - nb || cmp(a, b);
+  // Group a theme's marks by verse → one entry per verse (matches desktop),
+  // then sort: freshly-marked verses first, then by points or scripture order.
+  type VerseEntry = {
+    reference: string;
+    marks: Mark[];
+    pts: number;
+    order: number;
+    isNew: boolean;
+  };
+  const verseEntriesFor = (list: Mark[]): VerseEntry[] => {
+    const byRef = new Map<string, Mark[]>();
+    list.forEach((m) => {
+      const arr = byRef.get(m.reference);
+      if (arr) arr.push(m);
+      else byRef.set(m.reference, [m]);
     });
+    const entries: VerseEntry[] = [];
+    byRef.forEach((ms, reference) => {
+      entries.push({
+        reference,
+        marks: ms.slice().sort((a, b) => a.startIndex - b.startIndex),
+        pts: pointsFor(ms),
+        order: orderOf(reference),
+        isNew: ms.some(isNew),
+      });
+    });
+    entries.sort((a, b) => {
+      if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+      return sortMode === "points"
+        ? b.pts - a.pts || a.order - b.order
+        : a.order - b.order;
+    });
+    return entries;
   };
 
   const toggle = (key: string) =>
@@ -350,8 +391,27 @@ export default function MobileCompile({
         </div>
       ) : (
         <>
-          {/* sort toggle */}
-          <div style={{ padding: "12px 16px 4px" }}>
+          {/* view + sort toggles */}
+          <div
+            style={{
+              padding: "12px 16px 4px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "4px",
+                backgroundColor: C.soft,
+                borderRadius: "10px",
+                padding: "4px",
+              }}
+            >
+              {seg(view === "focused", "Focused", () => setView("focused"))}
+              {seg(view === "full", "Full verse", () => setView("full"))}
+            </div>
             <div
               style={{
                 display: "flex",
@@ -383,6 +443,7 @@ export default function MobileCompile({
               const isOpen = expanded.includes(g.key);
               const pts = pointsFor(list);
               const newCount = list.filter(isNew).length;
+              const verseCount = new Set(list.map((m) => m.reference)).size;
               return (
                 <div
                   key={g.key}
@@ -487,7 +548,7 @@ export default function MobileCompile({
                           padding: 0,
                         }}
                       >
-                        Show {list.length} {list.length === 1 ? "verse" : "verses"} ▾
+                        Show {verseCount} {verseCount === 1 ? "verse" : "verses"} ▾
                       </button>
                     )}
 
@@ -496,48 +557,123 @@ export default function MobileCompile({
                         style={{
                           display: "flex",
                           flexDirection: "column",
-                          gap: "8px",
+                          gap: "10px",
                           marginTop: "12px",
                         }}
                       >
-                        {sortMarks(list).map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => onJump(m.reference)}
-                            style={{
-                              textAlign: "left",
-                              background: C.soft,
-                              border: "1px solid " + C.border,
-                              borderLeft: isNew(m)
-                                ? "3px solid " + COLOR_MAP[c as MarkColor]
-                                : "1px solid " + C.border,
-                              borderRadius: "10px",
-                              padding: "10px 12px",
-                              cursor: "pointer",
-                              color: C.text,
-                              fontFamily: "inherit",
-                            }}
-                          >
+                        {verseEntriesFor(list).map((ve) => {
+                          const info = VI.get(ve.reference);
+                          const fullStyle: CSSProperties = {
+                            fontFamily: '"Times New Roman", Times, serif',
+                            fontSize: "16px",
+                            lineHeight: 1.8,
+                            color: C.text,
+                          };
+                          // MarkedVerse colors its verse number with var(--muted);
+                          // feed it the live palette so it matches light/dark.
+                          (fullStyle as any)["--muted"] = C.muted;
+                          return (
                             <div
+                              key={ve.reference}
                               style={{
-                                fontFamily: '"Times New Roman", Times, serif',
-                                fontSize: "15px",
-                                lineHeight: 1.7,
-                                marginBottom: "4px",
+                                background: C.soft,
+                                border: "1px solid " + C.border,
+                                borderLeft: ve.isNew
+                                  ? "3px solid " + COLOR_MAP[c as MarkColor]
+                                  : "1px solid " + C.border,
+                                borderRadius: "10px",
+                                padding: "10px 12px",
                               }}
                             >
-                              “
-                              <span style={markStyleCSS(m.style, m.color)}>
-                                {m.markedText}
-                              </span>
-                              ”
+                              {/* verse header: reference + points */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "baseline",
+                                  gap: "8px",
+                                  marginBottom: "6px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <button
+                                  onClick={() => onJump(ve.reference)}
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                    color: C.text,
+                                    fontFamily: "inherit",
+                                    fontSize: "12.5px",
+                                    fontWeight: 700,
+                                    textDecoration: "underline",
+                                    textDecorationStyle: "dotted",
+                                  }}
+                                >
+                                  {ve.reference} ↗
+                                </button>
+                                <span
+                                  style={{
+                                    fontSize: "10.5px",
+                                    fontWeight: 700,
+                                    color: COLOR_MAP[c as MarkColor],
+                                    background: C.bg,
+                                    borderRadius: "999px",
+                                    padding: "1px 8px",
+                                  }}
+                                >
+                                  +{ve.pts}
+                                </span>
+                                {ve.isNew && (
+                                  <span
+                                    style={{ fontSize: "10.5px", color: C.muted }}
+                                  >
+                                    just marked
+                                  </span>
+                                )}
+                              </div>
+
+                              {view === "full" && info ? (
+                                <div style={fullStyle}>
+                                  <MarkedVerse
+                                    reference={ve.reference}
+                                    verseNumber={info.verse}
+                                    text={info.text}
+                                    marks={ve.marks}
+                                  />
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  {ve.marks.map((m) => (
+                                    <div
+                                      key={m.id}
+                                      style={{
+                                        fontFamily:
+                                          '"Times New Roman", Times, serif',
+                                        fontSize: "15px",
+                                        lineHeight: 1.7,
+                                      }}
+                                    >
+                                      “
+                                      <span
+                                        style={markStyleCSS(m.style, m.color)}
+                                      >
+                                        {m.markedText}
+                                      </span>
+                                      ”
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <div style={{ fontSize: "11px", color: C.muted }}>
-                              {m.reference}
-                              {isNew(m) ? " · just marked" : ""}
-                            </div>
-                          </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
