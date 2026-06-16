@@ -1828,7 +1828,7 @@ export default function MobileApp() {
           backgroundColor: readBg,
           color: readText,
           transition: "background-color 0.2s ease, color 0.2s ease",
-          padding: "calc(74px + env(safe-area-inset-top) + 14px) 22px 140px",
+          padding: "calc(74px + env(safe-area-inset-top) + 14px) 22px calc(150px + env(safe-area-inset-bottom))",
           ["--verse-lh" as any]: String(reading.lineScale),
         }}
       >
@@ -1931,13 +1931,12 @@ export default function MobileApp() {
             ))}
           </div>
 
-          {/* Styles — always visible */}
+          {/* Styles — always visible (single letters keep the bar short) */}
           <div
             style={{
-              padding: "10px 14px 0",
+              padding: "8px 14px 0",
               display: "flex",
-              gap: "6px",
-              flexWrap: "wrap",
+              gap: "8px",
             }}
           >
             {STYLE_LABELS.map((s) => {
@@ -1946,20 +1945,22 @@ export default function MobileApp() {
                 <button
                   key={s.tool}
                   onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                  aria-label={s.label}
+                  title={s.label}
                   style={{
-                    padding: "7px 12px",
-                    borderRadius: "999px",
-                    whiteSpace: "nowrap",
+                    flex: 1,
+                    height: "30px",
+                    borderRadius: "8px",
                     border: "1px solid " + (active ? C.text : C.border),
                     background: active ? C.text : "transparent",
                     color: active ? C.bg : C.text,
-                    fontSize: "12px",
-                    fontWeight: 600,
+                    fontSize: "13px",
+                    fontWeight: 700,
                     cursor: "pointer",
                     fontFamily: "inherit",
                   }}
                 >
-                  {s.label}
+                  {s.label.charAt(0)}
                 </button>
               );
             })}
@@ -4154,8 +4155,7 @@ export default function MobileApp() {
                 <div
                   style={{
                     display: "flex",
-                    gap: "6px",
-                    flexWrap: "wrap",
+                    gap: "8px",
                   }}
                 >
                   {STYLE_LABELS.map((s) => {
@@ -4164,21 +4164,22 @@ export default function MobileApp() {
                       <button
                         key={s.tool}
                         onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                        aria-label={s.label}
+                        title={s.label}
                         style={{
-                          padding: "7px 12px",
-                          borderRadius: "999px",
-                          whiteSpace: "nowrap",
+                          flex: 1,
+                          height: "30px",
+                          borderRadius: "8px",
                           border: "1px solid " + (on ? C.text : C.border),
                           background: on ? C.text : "transparent",
                           color: on ? C.bg : C.text,
-                          fontSize: "12px",
-                          fontWeight: 600,
+                          fontSize: "13px",
+                          fontWeight: 700,
                           cursor: "pointer",
                           fontFamily: "inherit",
-                          flexShrink: 0,
                         }}
                       >
-                        {s.label}
+                        {s.label.charAt(0)}
                       </button>
                     );
                   })}
