@@ -626,8 +626,10 @@ function reducer(state: State, action: Action): State {
         let notes = local.notes;
         let notesChanged = false;
         Object.keys(rb.notes || {}).forEach((k) => {
-          const cur = local.notes[k];
-          if (!(cur && String(cur).trim()) && rb.notes[k] != null) {
+          // Adopt a remote note only for a key we've never had, and only when
+          // it's non-empty. A note the user cleared stays "" locally and is not
+          // resurrected from the cloud copy.
+          if (!(k in local.notes) && String(rb.notes[k] || "").trim()) {
             if (!notesChanged) {
               notes = { ...local.notes };
               notesChanged = true;
