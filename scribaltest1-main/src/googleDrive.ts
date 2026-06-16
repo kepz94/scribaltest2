@@ -11,24 +11,49 @@ let gisLoading: Promise<void> | null = null;
 let accessToken: string | null = null;
 
 const TOKEN_KEY = "scribal_drive_token";
+const EXP_KEY = "scribal_drive_token_exp";
 
-// Store the token in memory AND sessionStorage so it survives a page reload
-// (the gate's auto-load reloads the page; we don't want to re-popup after that).
-function setToken(t: string) {
-  accessToken = t;
-  try {
-    sessionStorage.setItem(TOKEN_KEY, t);
-  } catch {}
-}
+// When the current token goes stale (epoch ms; 0 = none/unknown yet).
+let tokenExpiry = 0;
 
-// Return the current token without any popup or network call. Used by auto-save.
-export function getToken(): string | null {
-  if (accessToken) return accessToken;
+function ssGet(key: string): string | null {
   try {
-    return sessionStorage.getItem(TOKEN_KEY);
+    return sessionStorage.getItem(key);
   } catch {
     return null;
   }
+}
+
+// Store the token in memory AND sessionStorage so it survives a page reload
+// (the gate's auto-load reloads the page; we don't want to re-popup after that).
+// We also record when it expires so we never hand a dead token to a Drive call.
+function setToken(t: string, expiresInSec?: number) {
+  accessToken = t;
+  // GIS access tokens last ~3600s. Treat ours as stale ~2 min early so a refresh
+  // happens before it actually dies (and so the UI can prompt a reconnect).
+  const ttl = (expiresInSec && expiresInSec > 0 ? expiresInSec : 3600) - 120;
+  tokenExpiry = Date.now() + Math.max(ttl, 60) * 1000;
+  try {
+    sessionStorage.setItem(TOKEN_KEY, t);
+    sessionStorage.setItem(EXP_KEY, String(tokenExpiry));
+  } catch {}
+}
+
+// Return the current token without any popup or network call — but only if it
+// hasn't expired. Returns null once stale so callers refresh instead of using a
+// dead token. Used by auto-save.
+export function getToken(): string | null {
+  const t = accessToken || ssGet(TOKEN_KEY);
+  if (!t) return null;
+  const exp = tokenExpiry || Number(ssGet(EXP_KEY) || 0);
+  if (exp && Date.now() >= exp) return null; // expired — force a refresh
+  return t;
+}
+
+// True when we currently hold a token that hasn't expired (no popup/network).
+// The UI uses this to show a "tap to reconnect" cue when a silent refresh fails.
+export function tokenValid(): boolean {
+  return getToken() !== null;
 }
 
 function loadGis(): Promise<void> {
@@ -81,7 +106,7 @@ export async function connect(clientId: string): Promise<string> {
         scope: SCOPE,
         callback: (resp: any) => {
           if (resp && resp.access_token) {
-            setToken(resp.access_token);
+            setToken(resp.access_token, resp.expires_in);
             resolve(resp.access_token);
           } else {
             reject(new Error(resp && resp.error ? resp.error : "Sign-in failed"));
@@ -108,8 +133,10 @@ export function disconnect(): void {
     } catch {}
   }
   accessToken = null;
+  tokenExpiry = 0;
   try {
     sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(EXP_KEY);
   } catch {}
 }
 
@@ -126,7 +153,7 @@ export async function connectSilent(clientId: string): Promise<string> {
         scope: SCOPE,
         callback: (resp: any) => {
           if (resp && resp.access_token) {
-            setToken(resp.access_token);
+            setToken(resp.access_token, resp.expires_in);
             resolve(resp.access_token);
           } else {
             reject(
