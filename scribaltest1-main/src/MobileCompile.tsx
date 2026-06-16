@@ -3,7 +3,7 @@ import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import SharePreview from "./SharePreview";
-import type { VersesCardEntry } from "./shareCard";
+import type { VersesCardEntry, VersesSynthesis } from "./shareCard";
 
 interface Palette {
   bg: string;
@@ -83,6 +83,7 @@ export default function MobileCompile({
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
+  const [versesSyntheses, setVersesSyntheses] = useState<VersesSynthesis[]>([]);
   const VI = verseIndex();
   const [compPreview, setCompPreview] = useState<{
     scopeTitle: string;
@@ -327,8 +328,19 @@ export default function MobileCompile({
         theme: sv.theme,
         color: sv.color,
         phrases: sv.phrases,
+        note: (notes[verseNoteKey(sv.reference)] || "").trim() || undefined,
       }))
     );
+    // One synthesis per distinct theme among the chosen verses (if written).
+    const seen = new Set<number>();
+    const synths: VersesSynthesis[] = [];
+    chosen.forEach((sv) => {
+      if (seen.has(sv.color)) return;
+      seen.add(sv.color);
+      const text = (notes[synthKey(sv.color)] || "").trim();
+      if (text) synths.push({ theme: sv.theme, color: sv.color, text });
+    });
+    setVersesSyntheses(synths);
     setPicking(false);
   };
 
@@ -1139,6 +1151,7 @@ export default function MobileCompile({
           appDark={dark}
           kind="verses"
           verses={versesPreview}
+          syntheses={versesSyntheses}
           onClose={() => setVersesPreview(null)}
           onFlash={onFlash}
         />
