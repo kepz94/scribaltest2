@@ -1716,95 +1716,9 @@ export default function MobileApp() {
             display: "flex",
             alignItems: "center",
             height: "52px",
-            padding: "0 8px",
+            padding: "0 6px",
           }}
         >
-          <button
-            onClick={() => go(-1)}
-            disabled={curIndex <= 0}
-            style={navBtn(C, curIndex <= 0)}
-            aria-label="Previous chapter"
-          >
-            ‹
-          </button>
-          <button
-            onClick={() => setJumpOpen(true)}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              background: "transparent",
-              border: "none",
-              color: C.text,
-              fontSize: "16px",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            {displayTitle}
-            {activeBookId !== "master" && (
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                {"  · session"}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={compileCurrentStudy}
-            style={{
-              flexShrink: 0,
-              background: C.text,
-              color: C.bg,
-              border: "none",
-              borderRadius: "999px",
-              padding: "7px 14px",
-              marginRight: "4px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-            aria-label="Compile this study"
-          >
-            Compile
-          </button>
-          {(
-            <button
-              onClick={openLinkPrompt}
-              style={{
-                ...navBtn(C, false),
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              aria-label="This chapter's study"
-            >
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#8b5cf6"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-              </svg>
-            </button>
-          )}
-          <button
-            onClick={() => go(1)}
-            disabled={curIndex >= flat.length - 1}
-            style={navBtn(C, curIndex >= flat.length - 1)}
-            aria-label="Next chapter"
-          >
-            ›
-          </button>
           <button
             onClick={() => setHomeOpen(true)}
             style={{
@@ -1830,46 +1744,175 @@ export default function MobileApp() {
               <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
             </svg>
           </button>
+
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <button
+              onClick={() => go(-1)}
+              disabled={curIndex <= 0}
+              style={navBtn(C, curIndex <= 0)}
+              aria-label="Previous chapter"
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => setJumpOpen(true)}
+              style={{
+                minWidth: 0,
+                flex: "0 1 auto",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                background: "transparent",
+                border: "none",
+                color: C.text,
+                fontSize: "16px",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                padding: "0 4px",
+              }}
+            >
+              {displayTitle}
+              {activeBookId !== "master" && (
+                <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+                  {"  · session"}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => go(1)}
+              disabled={curIndex >= flat.length - 1}
+              style={navBtn(C, curIndex >= flat.length - 1)}
+              aria-label="Next chapter"
+            >
+              ›
+            </button>
+          </div>
+
+          <button
+            onClick={compileCurrentStudy}
+            style={{
+              flexShrink: 0,
+              background: C.text,
+              color: C.bg,
+              border: "none",
+              borderRadius: "999px",
+              padding: "8px 16px",
+              fontSize: "12.5px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            aria-label="Compile this study"
+          >
+            Compile
+          </button>
         </div>
 
-        {/* Sync status (tap for details) */}
-        <button
-          onClick={() => setSettingsOpen(true)}
+        {/* Sync status (tap for details) + link this chapter */}
+        <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "7px",
-            width: "100%",
-            padding: "0 14px 6px",
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            fontFamily: "inherit",
+            gap: "8px",
+            padding: "0 10px 7px",
           }}
-          aria-label="Sync status"
         >
-          <span
+          <button
+            onClick={() => setSettingsOpen(true)}
             style={{
-              width: "7px",
-              height: "7px",
-              borderRadius: "50%",
-              backgroundColor:
-                !DRIVE_CONFIGURED || !connected
-                  ? C.muted
-                  : syncBusy
-                  ? "#e0a32e"
-                  : "#3a9d4e",
-              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: "7px",
+              flex: 1,
+              minWidth: 0,
+              padding: "0 4px",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "inherit",
             }}
-          />
-          <span style={{ fontSize: "11px", color: C.muted }}>
-            {!DRIVE_CONFIGURED || !connected
-              ? "Saved on this phone"
-              : syncBusy
-              ? "Saving…"
-              : "Synced " + relTime(lastSync)}
-          </span>
-        </button>
+            aria-label="Sync status"
+          >
+            <span
+              style={{
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                backgroundColor:
+                  !DRIVE_CONFIGURED || !connected
+                    ? C.muted
+                    : syncBusy
+                    ? "#e0a32e"
+                    : "#3a9d4e",
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                fontSize: "11px",
+                color: C.muted,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {!DRIVE_CONFIGURED || !connected
+                ? "Saved on this phone"
+                : syncBusy
+                ? "Saving…"
+                : "Synced " + relTime(lastSync)}
+            </span>
+          </button>
+          <button
+            onClick={openLinkPrompt}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              flexShrink: 0,
+              background: "transparent",
+              border: "1px solid " + C.border,
+              borderRadius: "999px",
+              padding: "5px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            aria-label="Link this chapter into a study"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#8b5cf6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+              <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+            </svg>
+            <span
+              style={{
+                fontSize: "12px",
+                fontWeight: 700,
+                color: chapterGroups[title] ? "#8b5cf6" : C.text,
+              }}
+            >
+              {chapterGroups[title] ? "Linked" : "Link"}
+            </span>
+          </button>
+        </div>
         {DRIVE_CONFIGURED && connected && needsReconnect && (
           <button
             onClick={syncNow}
