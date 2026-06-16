@@ -159,6 +159,36 @@ interface Loc {
   c: number;
 }
 
+// A search study: a named, hand-picked set of verses pulled from search results.
+// Its marks live in the chosen book (master or a session); this is the saved
+// "lens" over them, persisted so it can be reopened and worked on later.
+interface SearchStudy {
+  id: string;
+  name: string;
+  bookId: string; // "master" or a session book id — which book holds the marks
+  refs: string[]; // verse references, kept in scripture order
+  createdAt: number;
+}
+
+// Look up a verse's text + number by reference, built once lazily — used to
+// render a search study's hand-picked verses (which span many chapters).
+let _verseIdx: Map<string, { text: string; verse: number }> | null = null;
+function verseByRef(): Map<string, { text: string; verse: number }> {
+  if (_verseIdx) return _verseIdx;
+  const m = new Map<string, { text: string; verse: number }>();
+  (vols as any[]).forEach((vol) =>
+    vol.books.forEach((bk: any) =>
+      bk.chapters.forEach((ch: any) =>
+        ch.verses.forEach((v: any) =>
+          m.set(v.reference, { text: v.text, verse: v.verse })
+        )
+      )
+    )
+  );
+  _verseIdx = m;
+  return m;
+}
+
 const readLoc = (): Loc => {
   try {
     const raw = localStorage.getItem("scribal_mobile_loc");
@@ -306,6 +336,37 @@ export default function MobileApp() {
       JSON.stringify(chapterGroups)
     );
   }, [chapterGroups]);
+  // Search studies: named, hand-picked verse collections built from search.
+  const [searchStudies, setSearchStudies] = useState<SearchStudy[]>(() => {
+    try {
+      const raw = JSON.parse(
+        localStorage.getItem("scribal_search_studies") || "[]"
+      );
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "scribal_search_studies",
+        JSON.stringify(searchStudies)
+      );
+    } catch {}
+  }, [searchStudies]);
+  // Verses just picked in search, waiting for the source + name step.
+  const [linkDraftRefs, setLinkDraftRefs] = useState<string[] | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftSource, setDraftSource] = useState<"master" | "session">(
+    "master"
+  );
+  const [draftSessionId, setDraftSessionId] = useState<string>(""); // "" = new book
+  const [draftNewName, setDraftNewName] = useState("");
+  // The search study whose screen is open (full-screen). prevBookForStudy holds
+  // the book to restore on close, since the screen switches the active book.
+  const [openStudyId, setOpenStudyId] = useState<string | null>(null);
+  const prevBookForStudy = useRef<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
@@ -708,6 +769,60 @@ export default function MobileApp() {
   const jumpToScope = (scope: string) => {
     const cl = chapterLoc.get(scope);
     if (cl) setLoc({ v: cl.v, b: cl.b, c: cl.c });
+  };
+
+  // ---- Search studies: open/close switches the active book to the study's
+  // own (so marking, compile and save target it), restoring it on close. ----
+  const openStudy = (study: SearchStudy, bookId?: string) => {
+    const bid = bookId || study.bookId;
+    prevBookForStudy.current = activeBookId;
+    if (bid !== activeBookId) setActiveBook(bid);
+    setOpenStudyId(study.id);
+    setHomeOpen(false);
+    setSearchOpen(false);
+    setMenuOpen(false);
+  };
+  const closeStudy = () => {
+    setOpenStudyId(null);
+    const prev = prevBookForStudy.current;
+    if (prev && prev !== activeBookId) setActiveBook(prev);
+    prevBookForStudy.current = null;
+  };
+  const deleteSearchStudy = (id: string) => {
+    setSearchStudies((prev) => prev.filter((s) => s.id !== id));
+    if (openStudyId === id) closeStudy();
+  };
+  // Search → "Next": stash the picked verses and open the source + name step.
+  const onLinkConfirm = (refs: string[]) => {
+    if (!refs.length) return;
+    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    setLinkDraftRefs(ordered);
+    setDraftName("");
+    setDraftSource("master");
+    setDraftSessionId("");
+    setDraftNewName("");
+    setSearchOpen(false);
+  };
+  const cancelDraft = () => setLinkDraftRefs(null);
+  const createStudyFromDraft = () => {
+    const refs = linkDraftRefs;
+    if (!refs || !refs.length) return;
+    const name = draftName.trim() || "Untitled study";
+    let bookId = "master";
+    if (draftSource === "session") {
+      if (draftSessionId) bookId = draftSessionId;
+      else bookId = createSession(draftNewName.trim() || name);
+    }
+    const study: SearchStudy = {
+      id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      name,
+      bookId,
+      refs,
+      createdAt: Date.now(),
+    };
+    setSearchStudies((prev) => [study, ...prev]);
+    setLinkDraftRefs(null);
+    openStudy(study, study.bookId);
   };
   // Link chapter a (current) with chapter b. Never drops a study's theme names:
   // seeding only fills blanks, so existing names survive a join or a merge.
@@ -1234,11 +1349,9 @@ export default function MobileApp() {
     setSyncMsg("Signed out. Your study stays on this device.");
   };
 
-  // Silently re-establish a token on open so auto-save works without a popup.
-  useEffect(() => {
-    if (!connected || !DRIVE_CONFIGURED) return;
-    drive.connectSilent(GOOGLE_CLIENT_ID).catch(() => {});
-  }, [connected]);
+  // (No on-open silent token refresh: on iOS Safari a silent GIS request can
+  // surface a sign-in popup, so token refresh is now user-initiated via the
+  // reconnect cue. The stored token is used directly while it is still valid.)
 
   // Auto-save to Drive on changes, refreshing the token as needed (no popup).
   const autoSaveReady = useRef(false);
@@ -1251,6 +1364,13 @@ export default function MobileApp() {
     if (pullPending.current) return;
     const t = setTimeout(() => {
       if (pullPending.current) return;
+      // No live token — don't push. A push would trigger a silent token refresh
+      // that can pop a sign-in window on iOS. The change is already saved on this
+      // device and will sync after the next reconnect; show the cue meanwhile.
+      if (!drive.tokenValid()) {
+        setNeedsReconnect(true);
+        return;
+      }
       setSyncBusy(true);
       pushToDrive()
         .then((res) => {
@@ -1272,17 +1392,16 @@ export default function MobileApp() {
   useEffect(() => {
     if (!connected || !DRIVE_CONFIGURED) return;
     const checkRemote = async () => {
-      // Keep the Google token warm so background pulls don't silently fail.
-      // Best-effort + silent (no popup); if it can't refresh, we just retry later.
-      try {
-        await drive.connectSilent(GOOGLE_CLIENT_ID);
-      } catch {
-        /* silent refresh unavailable right now — fine */
+      // Use the stored token while it's valid. Do NOT trigger a silent refresh
+      // here: on iOS Safari a silent GIS request can pop a sign-in window, and
+      // this runs on focus, on visibility change, AND a 15s poll — which is what
+      // produced the repeating sign-in prompts. When there's no live token, show
+      // the one-tap reconnect cue instead and wait for the user.
+      if (!drive.tokenValid()) {
+        setNeedsReconnect(true);
+        return;
       }
-      // If we STILL have no live token, the phone couldn't renew the sign-in
-      // quietly (common on mobile). Surface a one-tap reconnect cue instead of
-      // letting saves fail silently; it clears as soon as a sync succeeds.
-      setNeedsReconnect(!drive.tokenValid());
+      setNeedsReconnect(false);
       const pulled = await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
       if (pulled) setLastSync(Date.now());
     };
@@ -2743,6 +2862,115 @@ export default function MobileApp() {
             )}
           </div>
 
+          {/* Search studies */}
+          <div
+            style={{
+              background: C.panel,
+              border: "1px solid " + C.border,
+              borderRadius: "14px",
+              padding: "14px",
+              marginBottom: "14px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: searchStudies.length ? "4px" : "8px",
+              }}
+            >
+              <span style={{ color: "#0d9488", display: "inline-flex" }}>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.3-4.3" />
+                </svg>
+              </span>
+              <span style={{ fontSize: "15px", fontWeight: 700 }}>
+                Search studies
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: "11.5px", color: C.muted }}>
+                {searchStudies.length || ""}
+              </span>
+            </div>
+            {searchStudies.length === 0 ? (
+              <div
+                style={{ fontSize: "12.5px", color: C.muted, lineHeight: 1.4 }}
+              >
+                In Search, tap “Link verses into a study” to bundle results into
+                one study you can mark together.
+              </div>
+            ) : (
+              searchStudies.map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => openStudy(st)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    borderTop: "1px solid " + C.border,
+                    padding: "12px 2px",
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "9px",
+                      height: "9px",
+                      borderRadius: "50%",
+                      background: "#0d9488",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "13.5px",
+                        fontWeight: 600,
+                        lineHeight: 1.35,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {st.name}
+                    </span>
+                    <span style={{ fontSize: "11.5px", color: C.muted }}>
+                      {st.refs.length} verse{st.refs.length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      color: C.muted,
+                      fontSize: "16px",
+                    }}
+                  >
+                    ›
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+
           {/* Study books — slim row (the study-book switcher) */}
           <button
             onClick={() => {
@@ -3418,10 +3646,445 @@ export default function MobileApp() {
               orderOf={orderOf}
               onJump={jumpToRef}
               onPickScripture={(ref) => setChooseRef(ref)}
+              onLinkConfirm={onLinkConfirm}
             />
           </div>
         </div>
       )}
+
+      {/* New search study — choose where marks live + name it */}
+      {linkDraftRefs && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 240,
+            backgroundColor: C.bg,
+            color: C.text,
+            display: "flex",
+            flexDirection: "column",
+            animation: "mob-fadein 0.18s ease",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
+              borderBottom: "1px solid " + C.border,
+            }}
+          >
+            <button
+              onClick={cancelDraft}
+              aria-label="Cancel"
+              style={{
+                width: "38px",
+                height: "38px",
+                background: "transparent",
+                border: "none",
+                color: C.text,
+                fontSize: "22px",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              ‹
+            </button>
+            <div style={{ fontSize: "17px", fontWeight: 700 }}>New study</div>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              padding: "16px 18px",
+            }}
+          >
+            <div
+              style={{ fontSize: "13px", color: C.muted, marginBottom: "18px" }}
+            >
+              {linkDraftRefs.length} verse
+              {linkDraftRefs.length === 1 ? "" : "s"} selected
+            </div>
+
+            <div
+              style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}
+            >
+              Study name
+            </div>
+            <input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder="e.g. If–Then promises"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "12px",
+                fontSize: "16px",
+                borderRadius: "10px",
+                border: "1px solid " + C.border,
+                backgroundColor: C.bg,
+                color: C.text,
+                fontFamily: "inherit",
+                marginBottom: "22px",
+              }}
+            />
+
+            <div
+              style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}
+            >
+              Where should the marks live?
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "6px" }}>
+              {(["master", "session"] as const).map((src) => {
+                const on = draftSource === src;
+                return (
+                  <button
+                    key={src}
+                    onClick={() => setDraftSource(src)}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      border: "1px solid " + (on ? C.text : C.border),
+                      background: on ? C.text : "transparent",
+                      color: on ? C.bg : C.text,
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {src === "master" ? "Master book" : "Session book"}
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              style={{ fontSize: "11px", color: C.muted, marginBottom: "16px" }}
+            >
+              {draftSource === "master"
+                ? "Marks join your main study and show when you read these chapters."
+                : "Marks stay in a separate book, apart from your main study."}
+            </div>
+
+            {draftSource === "session" && (
+              <div style={{ marginBottom: "8px" }}>
+                {books
+                  .filter((b) => b.id !== "master")
+                  .map((b) => {
+                    const on = draftSessionId === b.id;
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => setDraftSessionId(b.id)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "11px 13px",
+                          marginBottom: "8px",
+                          borderRadius: "10px",
+                          border: "1px solid " + (on ? C.text : C.border),
+                          background: on ? C.soft : "transparent",
+                          color: C.text,
+                          fontFamily: "inherit",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {b.name}
+                      </button>
+                    );
+                  })}
+                <button
+                  onClick={() => setDraftSessionId("")}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "11px 13px",
+                    marginBottom: "8px",
+                    borderRadius: "10px",
+                    border:
+                      "1px solid " + (draftSessionId === "" ? C.text : C.border),
+                    background: draftSessionId === "" ? C.soft : "transparent",
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  + New book…
+                </button>
+                {draftSessionId === "" && (
+                  <input
+                    value={draftNewName}
+                    onChange={(e) => setDraftNewName(e.target.value)}
+                    placeholder="New book name (optional)"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "11px",
+                      fontSize: "15px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      backgroundColor: C.bg,
+                      color: C.text,
+                      fontFamily: "inherit",
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: "12px 18px calc(14px + env(safe-area-inset-bottom))",
+              borderTop: "1px solid " + C.border,
+            }}
+          >
+            <button
+              onClick={createStudyFromDraft}
+              disabled={!draftName.trim()}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: "12px",
+                border: "none",
+                background: draftName.trim() ? C.text : C.soft,
+                color: draftName.trim() ? C.bg : C.muted,
+                fontFamily: "inherit",
+                fontSize: "15px",
+                fontWeight: 700,
+                cursor: draftName.trim() ? "pointer" : "default",
+              }}
+            >
+              Create study
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Search-study screen — list the picked verses and mark them */}
+      {openStudyId &&
+        (() => {
+          const study = searchStudies.find((s) => s.id === openStudyId);
+          if (!study) return null;
+          const VI = verseByRef();
+          const bookName =
+            books.find((b) => b.id === study.bookId)?.name || "Master Book";
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 250,
+                backgroundColor: C.bg,
+                color: C.text,
+                display: "flex",
+                flexDirection: "column",
+                animation: "mob-fadein 0.18s ease",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <button
+                  onClick={closeStudy}
+                  aria-label="Back"
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    background: "transparent",
+                    border: "none",
+                    color: C.text,
+                    fontSize: "22px",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {study.name}
+                  </div>
+                  <div style={{ fontSize: "11px", color: C.muted }}>
+                    {study.refs.length} verses · {bookName}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Delete this study? Your marks stay in the book."
+                      )
+                    )
+                      deleteSearchStudy(study.id);
+                  }}
+                  aria-label="Delete study"
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    background: "transparent",
+                    border: "none",
+                    color: C.muted,
+                    fontSize: "18px",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  padding: "16px 18px 0",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: '"Times New Roman", Times, serif',
+                    fontSize: verseSize,
+                    lineHeight: reading.lineScale,
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                  }}
+                >
+                  {study.refs.map((ref) => {
+                    const vi = VI.get(ref);
+                    if (!vi) return null;
+                    return (
+                      <div key={ref} style={{ marginBottom: "16px" }}>
+                        <div
+                          style={{
+                            fontFamily:
+                              "system-ui, -apple-system, sans-serif",
+                            fontSize: "11px",
+                            color: C.muted,
+                            marginBottom: "3px",
+                          }}
+                        >
+                          {ref}
+                        </div>
+                        <MobileVerse
+                          reference={ref}
+                          verseNumber={vi.verse}
+                          text={vi.text}
+                          marks={marks}
+                          selBg={selBg}
+                          onTap={onTap}
+                          onRange={onRange}
+                          onManage={onManage}
+                          editMarkId={
+                            editMark && editMark.reference === ref
+                              ? editMark.id
+                              : null
+                          }
+                          editingActive={!!editMark}
+                          onEnterEdit={onEnterEdit}
+                          onAdjust={onAdjust}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ height: "24px" }} />
+              </div>
+
+              {/* Compact pen bar */}
+              <div
+                style={{
+                  padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
+                  borderTop: "1px solid " + C.border,
+                  background: C.panel,
+                }}
+              >
+                <div
+                  style={{ display: "flex", gap: "8px", marginBottom: "8px" }}
+                >
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setPen((p) => ({ ...p, color: c }))}
+                      aria-label={"Color " + c}
+                      style={{
+                        flex: 1,
+                        height: "30px",
+                        borderRadius: "8px",
+                        background:
+                          pen.tool === "highlight"
+                            ? HIGHLIGHT_MAP[c]
+                            : COLOR_MAP[c],
+                        border:
+                          pen.color === c
+                            ? "2px solid " + C.text
+                            : "1px solid " + C.border,
+                        cursor: "pointer",
+                      }}
+                    />
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "6px",
+                    overflowX: "auto",
+                    WebkitOverflowScrolling: "touch",
+                  }}
+                >
+                  {STYLE_LABELS.map((s) => {
+                    const on = pen.tool === s.tool;
+                    return (
+                      <button
+                        key={s.tool}
+                        onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                        style={{
+                          padding: "7px 12px",
+                          borderRadius: "999px",
+                          whiteSpace: "nowrap",
+                          border: "1px solid " + (on ? C.text : C.border),
+                          background: on ? C.text : "transparent",
+                          color: on ? C.bg : C.text,
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Destination chooser (scripture search result) */}
       {chooseRef &&
