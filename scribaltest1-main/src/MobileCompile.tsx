@@ -98,6 +98,9 @@ export default function MobileCompile({
   // belongs to this study — show them all, grouped by their theme.
   const liveMarks = marks;
   const [expanded, setExpanded] = useState<string[]>(() => {
+    // Linked studies span several chapters and many verses — open them
+    // collapsed so the themes are the headline; verses are a tap away.
+    if (studyScopes && studyScopes.length > 1) return [];
     const s = new Set<string>();
     liveMarks.forEach((m) => {
       if (sessionNew.has(m.id)) s.add(groupKeyOf(m));
