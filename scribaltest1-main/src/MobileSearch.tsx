@@ -27,6 +27,10 @@ const SCRIPTURE_CAP = 120;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const wildcardSource = (term: string) =>
   "\\b" + escapeRe(term).replace(/\\\*/g, "\\w*");
+// A plain term matches a WHOLE WORD (\bif\b), so "if" no longer hits inside
+// "strife" or "fifty". The * wildcard (e.g. if*) is how you match word prefixes.
+const termSource = (term: string) =>
+  term.includes("*") ? wildcardSource(term) : "\\b" + escapeRe(term) + "\\b";
 
 type TermTest = (txt: string) => boolean;
 
@@ -51,16 +55,13 @@ function buildMatcher(
         .filter((t) => t.replace(/\*/g, "").length > 0);
       terms.forEach((t) => allTerms.push(t));
       return terms.map((term): TermTest => {
-        if (term.includes("*")) {
-          let re: RegExp;
-          try {
-            re = new RegExp(wildcardSource(term), "i");
-          } catch {
-            return () => false;
-          }
-          return (txt) => re.test(txt);
+        let re: RegExp;
+        try {
+          re = new RegExp(termSource(term), "i");
+        } catch {
+          return () => false;
         }
-        return (txt) => txt.includes(term);
+        return (txt) => re.test(txt);
       });
     })
     .filter((g) => g.length > 0);
@@ -73,9 +74,10 @@ function buildMatcher(
 
 function highlight(text: string, terms: string[], hlColor: string) {
   if (!terms.length) return text;
-  const src = terms
-    .map((t) => (t.includes("*") ? wildcardSource(t) : escapeRe(t)))
-    .join("|");
+  // Highlight WHOLE WORDS only (same rule as the matcher), so "if" doesn't get
+  // lit up inside "strife" or "fifty". termSource adds the \b word boundaries
+  // for plain terms and expands * into a word-wildcard.
+  const src = terms.map((t) => termSource(t)).join("|");
   let re: RegExp;
   try {
     re = new RegExp("(" + src + ")", "gi");
