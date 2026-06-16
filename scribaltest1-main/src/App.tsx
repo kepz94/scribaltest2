@@ -125,7 +125,23 @@ const makeTabId = (
 const chapterKey = (t: { volume: number; book: number; chapter: number }) =>
   t.volume + "_" + t.book + "_" + t.chapter;
 
+// "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
+const scopeOfRef = (ref: string) => {
+  const i = ref.indexOf(":");
+  return i < 0 ? ref : ref.slice(0, i);
+};
+
+// Shared label scope for linked chapters (they pool their theme names here).
+const LINKED_LABEL_SCOPE = "__linked__";
+
 const vols = scriptures.volumes;
+
+// The per-chapter label scope for a tab, e.g. "Genesis 1".
+const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
+  scopeOfRef(
+    vols[t.volume]?.books[t.book]?.chapters[t.chapter]?.verses[0]?.reference ||
+      ""
+  );
 
 const VIEW_NAMES: Record<string, string> = {
   cornell: "Cornell Notes",
@@ -158,7 +174,9 @@ export default function App() {
     canUndo,
     canRedo,
     colorLabels,
-    setColorLabel,
+    scopedLabels,
+    setScopedLabel,
+    seedScopeLabels,
     notes,
     setNote,
     books,
@@ -454,7 +472,7 @@ export default function App() {
     }, 3000); // debounce 3 seconds after last change
 
     return () => clearTimeout(timer);
-  }, [marks, tabs, activeTabId, colorLabels, notes]);
+  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes]);
 
   // Auto-pull the other device's changes when this tab opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
@@ -686,6 +704,12 @@ export default function App() {
   // is moved or relocated, so no marks are ever shuffled between books.
   const toggleLink = (t: Tab) => {
     const key = chapterKey(t);
+    const wasLinked = linkedChapters.includes(key);
+    if (!wasLinked) {
+      // Carry this chapter's theme names into the shared linked palette,
+      // filling blanks only — so linking never wipes names you already had.
+      seedScopeLabels(LINKED_LABEL_SCOPE, scopedLabels[chapterScopeOf(t)] || {});
+    }
     setLinkedChapters((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
@@ -849,6 +873,24 @@ export default function App() {
 
   const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
 
+  // Per-chapter label scope (the active study view reads/writes labels here).
+  // Linked chapters resolve to one shared scope so they share theme names.
+  const activeScope = linkedChapters.includes(chapterKey(activeTab))
+    ? LINKED_LABEL_SCOPE
+    : chapterScopeOf(activeTab);
+  const activeScopedLabels = scopedLabels[activeScope] || {};
+
+  // Scope for whatever is being compiled (the prompt guarantees one unit:
+  // a single chapter, or a linked group that shares one scope).
+  const compileScope = compileTabs.some((t) =>
+    linkedChapters.includes(chapterKey(t))
+  )
+    ? LINKED_LABEL_SCOPE
+    : compileTabs[0]
+    ? chapterScopeOf(compileTabs[0])
+    : "";
+  const compileScopedLabels = scopedLabels[compileScope] || {};
+
   const usedColors = COLORS.filter((c) =>
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
   );
@@ -889,7 +931,7 @@ export default function App() {
         chapter: t.chapter,
       })),
       marks: snapMarks,
-      colorLabels: { ...colorLabels },
+      colorLabels: { ...compileScopedLabels },
       notes: snapNotes,
     });
 
@@ -910,7 +952,7 @@ export default function App() {
       title: VIEW_NAMES[compileView] + " — " + first + extra,
       compileTabs,
       marks,
-      colorLabels,
+      colorLabels: compileScopedLabels,
       notes,
     });
   };
@@ -1249,8 +1291,9 @@ export default function App() {
     onToggleCompileTab: toggleCompileTab,
     hideTabPicker: true,
     marks,
-    colorLabels,
-    setColorLabel,
+    colorLabels: compileScopedLabels,
+    setColorLabel: (c: MarkColor, l: string) =>
+      setScopedLabel(compileScope, c, l),
     onJumpToReference: jumpToReference,
   };
 
@@ -1384,7 +1427,7 @@ export default function App() {
       )}
       {showColorKey && (
         <ColorKey
-          colorLabels={colorLabels}
+          colorLabels={activeScopedLabels}
           marks={marks}
           bookName={activeBookName}
           onClose={() => setShowColorKey(false)}
@@ -2580,7 +2623,7 @@ export default function App() {
             usedColors.map((c) => {
             const editing = editingColor === c;
             const commit = () => {
-              setColorLabel(c, colorDraft.trim());
+              setScopedLabel(activeScope, c, colorDraft.trim());
               setEditingColor(null);
             };
             return (
@@ -2623,7 +2666,7 @@ export default function App() {
                   <span
                     onClick={() => {
                       setEditingColor(c);
-                      setColorDraft(colorLabels[c] || "");
+                      setColorDraft(activeScopedLabels[c] || "");
                     }}
                     title="Click to name this color"
                     style={{
@@ -2632,7 +2675,7 @@ export default function App() {
                       borderBottom: "1px dashed var(--border)",
                     }}
                   >
-                    {colorLabels[c]?.trim() ? colorLabels[c] : "Name…"}
+                    {activeScopedLabels[c]?.trim() ? activeScopedLabels[c] : "Name…"}
                   </span>
                 )}
               </span>
