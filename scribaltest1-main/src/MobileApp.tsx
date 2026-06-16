@@ -341,6 +341,8 @@ export default function MobileApp() {
   );
   const [syncMsg, setSyncMsg] = useState("");
   const [syncBusy, setSyncBusy] = useState(false);
+  // When the phone couldn't renew the Google sign-in quietly, show a tap cue.
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [diag, setDiag] = useState("");
   const [barHidden, setBarHidden] = useState(false);
 
@@ -1106,6 +1108,7 @@ export default function MobileApp() {
       const token = await drive.connect(GOOGLE_CLIENT_ID);
       localStorage.setItem("scribal_drive_enabled", "1");
       setConnected(true);
+      setNeedsReconnect(false);
       setSyncMsg("Loading your study…");
       const text = await drive.loadData(token);
       if (text) {
@@ -1129,6 +1132,8 @@ export default function MobileApp() {
     setSyncMsg("Saving…");
     try {
       const res = await pushToDrive();
+      // Any non-"fail" result means the token worked — clear the reconnect cue.
+      if (res !== "fail") setNeedsReconnect(false);
       if (res === "adopted") return; // reloading with the newer cloud copy
       if (res === "blocked") {
         setSyncMsg(
@@ -1211,8 +1216,10 @@ export default function MobileApp() {
       pushToDrive()
         .then((res) => {
           // "adopted" = cloud was newer and we merged it in; that's a sync too.
-          if (res === "pushed" || res === "adopted") setLastSync(Date.now());
-          else if (res === "blocked")
+          if (res === "pushed" || res === "adopted") {
+            setLastSync(Date.now());
+            setNeedsReconnect(false);
+          } else if (res === "blocked")
             setSyncMsg("Safeguard on — kept your saved copy.");
         })
         .finally(() => setSyncBusy(false));
@@ -1233,6 +1240,10 @@ export default function MobileApp() {
       } catch {
         /* silent refresh unavailable right now — fine */
       }
+      // If we STILL have no live token, the phone couldn't renew the sign-in
+      // quietly (common on mobile). Surface a one-tap reconnect cue instead of
+      // letting saves fail silently; it clears as soon as a sync succeeds.
+      setNeedsReconnect(!drive.tokenValid());
       const pulled = await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
       if (pulled) setLastSync(Date.now());
     };
@@ -1476,6 +1487,42 @@ export default function MobileApp() {
               : "Synced " + relTime(lastSync)}
           </span>
         </button>
+        {DRIVE_CONFIGURED && connected && needsReconnect && (
+          <button
+            onClick={syncNow}
+            disabled={syncBusy}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              width: "calc(100% - 28px)",
+              margin: "0 14px 8px",
+              padding: "9px 11px",
+              background: "#fbf1da",
+              border: "1px solid #e0a32e",
+              borderRadius: "9px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textAlign: "left",
+            }}
+            aria-label="Sign-in expired — tap to reconnect and sync"
+          >
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: "#e0a32e",
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{ fontSize: "12px", color: "#8a6112", lineHeight: 1.35 }}
+            >
+              Sign-in expired — tap to reconnect and sync
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Reading area */}
