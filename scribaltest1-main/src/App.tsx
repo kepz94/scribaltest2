@@ -139,6 +139,18 @@ const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
 const newGroupId = () =>
   "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+// Distinct border colors so different link groups are visually distinguishable.
+const LINK_COLORS = [
+  "#8b5cf6",
+  "#0ea5e9",
+  "#f59e0b",
+  "#ec4899",
+  "#10b981",
+  "#ef4444",
+  "#6366f1",
+  "#14b8a6",
+];
+
 const VIEW_NAMES: Record<string, string> = {
   cornell: "Cornell Notes",
   outline: "Outline",
@@ -277,6 +289,13 @@ export default function App() {
   const resolveScope = (chapterScope: string) =>
     chapterGroups[chapterScope] ? "group:" + chapterGroups[chapterScope] : chapterScope;
 
+  // Stable distinct color for each link group (so borders differ per group).
+  const groupColor = (gid: string) => {
+    const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
+    const i = ids.indexOf(gid);
+    return LINK_COLORS[(i < 0 ? 0 : i) % LINK_COLORS.length];
+  };
+
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
   const [selectedColor, setSelectedColor] = useState<MarkColor>(1);
@@ -304,6 +323,10 @@ export default function App() {
   const [compilePrompt, setCompilePrompt] = useState<
     { label: string; tabIds: string[] }[] | null
   >(null);
+
+  // "Which open tabs do you want to link this one with?" prompt.
+  const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
+  const [linkSelected, setLinkSelected] = useState<string[]>([]);
 
   const [backupOpen, setBackupOpen] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
@@ -704,33 +727,62 @@ export default function App() {
     setActiveTabBook(id);
   };
 
-  // Link / unlink a chapter into an independent "study" group. Linking joins the
-  // group of another currently-open linked chapter, or starts a fresh group.
-  // Each group keeps its own theme names — no bleed between separate groups.
-  const toggleLink = (t: Tab) => {
-    const cs = chapterScopeOf(t);
-    if (chapterGroups[cs]) {
-      // UNLINK: remove this chapter; if its group drops below 2, dissolve it.
+  // Open the "which tabs do you want to link?" prompt for a tab. Pre-checks the
+  // tab's current group members so you can also change or unlink from here.
+  const openLinkPrompt = (t: Tab) => {
+    const csT = chapterScopeOf(t);
+    const gid = chapterGroups[csT];
+    const pre = gid
+      ? Object.keys(chapterGroups).filter(
+          (s) => chapterGroups[s] === gid && s !== csT
+        )
+      : [];
+    setLinkSelected(pre);
+    setLinkPromptTabId(t.id);
+  };
+
+  const toggleLinkSelect = (cs: string) =>
+    setLinkSelected((prev) =>
+      prev.includes(cs) ? prev.filter((s) => s !== cs) : [...prev, cs]
+    );
+
+  // Apply the prompt: the clicked tab is linked with exactly the checked tabs.
+  // Checking none unlinks it. Any old groups left with one chapter dissolve.
+  const applyLinkPrompt = () => {
+    const t = tabs.find((x) => x.id === linkPromptTabId);
+    const members = linkSelected;
+    setLinkPromptTabId(null);
+    if (!t) return;
+    const csT = chapterScopeOf(t);
+    if (members.length === 0) {
       setChapterGroups((prev) => {
         const next = { ...prev };
-        const gid = next[cs];
-        delete next[cs];
-        const members = Object.keys(next).filter((s) => next[s] === gid);
-        if (members.length <= 1) members.forEach((s) => delete next[s]);
+        delete next[csT];
+        const counts: Record<string, number> = {};
+        Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+        Object.keys(next).forEach((s) => {
+          if (counts[next[s]] < 2) delete next[s];
+        });
         return next;
       });
-    } else {
-      // LINK: join an already-linked open chapter's group, else open a new group.
-      const openLinked = tabs.find(
-        (x) => x.id !== t.id && chapterGroups[chapterScopeOf(x)]
-      );
-      const gid = openLinked
-        ? chapterGroups[chapterScopeOf(openLinked)]
-        : newGroupId();
-      // Carry this chapter's names into the group palette (fill blanks only).
-      seedScopeLabels("group:" + gid, scopedLabels[cs] || {});
-      setChapterGroups((prev) => ({ ...prev, [cs]: gid }));
+      return;
     }
+    const gid = newGroupId();
+    const all = [csT, ...members];
+    // carry names into the new group's palette (fill blanks, clicked tab first)
+    all.forEach((ms) => seedScopeLabels("group:" + gid, scopedLabels[ms] || {}));
+    setChapterGroups((prev) => {
+      const next = { ...prev };
+      all.forEach((ms) => {
+        next[ms] = gid;
+      });
+      const counts: Record<string, number> = {};
+      Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+      Object.keys(next).forEach((s) => {
+        if (next[s] !== gid && counts[next[s]] < 2) delete next[s];
+      });
+      return next;
+    });
   };
 
   const locateReference = (reference: string) => {
@@ -1478,6 +1530,139 @@ export default function App() {
           }}
           onClose={() => setShowSearch(false)}
         />
+      )}
+      {linkPromptTabId && (
+        <div
+          onClick={() => setLinkPromptTabId(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--panel)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "22px",
+              width: "100%",
+              maxWidth: "440px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}
+            >
+              Link{" "}
+              {(() => {
+                const t = tabs.find((x) => x.id === linkPromptTabId);
+                return t ? tabLabel(t) : "this chapter";
+              })()}{" "}
+              with…
+            </div>
+            <div
+              style={{ fontSize: "13px", opacity: 0.7, marginBottom: "16px" }}
+            >
+              Pick the open tabs to study together. They'll share one set of
+              themes and compile as one. Leave all unchecked to unlink.
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                maxHeight: "320px",
+                overflowY: "auto",
+              }}
+            >
+              {tabs
+                .filter((x) => x.id !== linkPromptTabId)
+                .map((x) => {
+                  const cs = chapterScopeOf(x);
+                  const on = linkSelected.includes(cs);
+                  return (
+                    <button
+                      key={x.id}
+                      onClick={() => toggleLinkSelect(cs)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        textAlign: "left",
+                        padding: "12px 14px",
+                        borderRadius: "10px",
+                        border: on
+                          ? "2px solid var(--text)"
+                          : "1px solid var(--border)",
+                        background: "var(--bg)",
+                        color: "var(--text)",
+                        fontSize: "14px",
+                        fontWeight: on ? 600 : 400,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          borderRadius: "4px",
+                          border: "1px solid currentColor",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          fontSize: "11px",
+                        }}
+                      >
+                        {on ? "✓" : ""}
+                      </span>
+                      {tabLabel(x)}
+                    </button>
+                  );
+                })}
+            </div>
+            <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
+              <button
+                onClick={applyLinkPrompt}
+                style={{
+                  flex: 1,
+                  padding: "11px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: "var(--text)",
+                  color: "var(--bg)",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Done
+              </button>
+              <button
+                onClick={() => setLinkPromptTabId(null)}
+                style={{
+                  padding: "11px 16px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {compilePrompt && (
         <div
@@ -2538,7 +2723,9 @@ export default function App() {
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
-            const linked = !!chapterGroups[chapterScopeOf(t)];
+            const gid = chapterGroups[chapterScopeOf(t)];
+            const linked = !!gid;
+            const linkColor = gid ? groupColor(gid) : "#8b5cf6";
             return (
               <div
                 key={t.id}
@@ -2555,7 +2742,7 @@ export default function App() {
                   backgroundColor: active ? "var(--text)" : "var(--panel)",
                   color: active ? "var(--bg)" : "var(--text)",
                   border: linked
-                    ? "2px solid #8b5cf6"
+                    ? "2px solid " + linkColor
                     : "1px solid var(--border)",
                   transition: "all 0.15s",
                 }}
@@ -2565,19 +2752,19 @@ export default function App() {
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleLink(t);
+                      openLinkPrompt(t);
                     }}
                     title={
                       linked
-                        ? "Linked — compiles together & shares themes. Click to unlink."
-                        : "Link this chapter — compile together & share themes (stays in this study)"
+                        ? "Linked study — click to change which chapters it links, or unlink"
+                        : "Link this chapter — choose which open tabs to link it with"
                     }
                     style={{
                       fontSize: "12px",
                       lineHeight: 1,
                       opacity: linked ? 1 : 0.4,
                       color: linked
-                        ? "#8b5cf6"
+                        ? linkColor
                         : active
                         ? "var(--bg)"
                         : "var(--text)",
@@ -2629,9 +2816,11 @@ export default function App() {
             justifyContent: "center",
             alignItems: "center",
             gap: "16px",
-            flexWrap: "wrap",
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            overflowY: "hidden",
             padding: "7px 16px",
-            minHeight: "32px",
+            height: "46px",
             boxSizing: "border-box",
             backgroundColor: "var(--bg)",
             borderBottom: "1px solid var(--border)",
