@@ -1210,7 +1210,8 @@ export default function MobileApp() {
       setSyncBusy(true);
       pushToDrive()
         .then((res) => {
-          if (res === "pushed") setLastSync(Date.now());
+          // "adopted" = cloud was newer and we merged it in; that's a sync too.
+          if (res === "pushed" || res === "adopted") setLastSync(Date.now());
           else if (res === "blocked")
             setSyncMsg("Safeguard on — kept your saved copy.");
         })
@@ -1225,7 +1226,15 @@ export default function MobileApp() {
   useEffect(() => {
     if (!connected || !DRIVE_CONFIGURED) return;
     const checkRemote = async () => {
-      await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
+      // Keep the Google token warm so background pulls don't silently fail.
+      // Best-effort + silent (no popup); if it can't refresh, we just retry later.
+      try {
+        await drive.connectSilent(GOOGLE_CLIENT_ID);
+      } catch {
+        /* silent refresh unavailable right now — fine */
+      }
+      const pulled = await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
+      if (pulled) setLastSync(Date.now());
     };
     const onVisible = () => {
       if (!document.hidden) checkRemote();
@@ -1233,9 +1242,15 @@ export default function MobileApp() {
     window.addEventListener("focus", checkRemote);
     document.addEventListener("visibilitychange", onVisible);
     checkRemote();
+    // Poll every 15s while visible so the other device's changes/deletes show
+    // up on their own. Silent path — no popup — and skipped while backgrounded.
+    const pollId = window.setInterval(() => {
+      if (!document.hidden) checkRemote();
+    }, 15000);
     return () => {
       window.removeEventListener("focus", checkRemote);
       document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(pollId);
     };
   }, [connected]);
 
