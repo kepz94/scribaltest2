@@ -170,6 +170,19 @@ interface SearchStudy {
   createdAt: number;
 }
 
+// A recorded study (chapter or linked). Live: its marks are always the book's
+// current marks within its scope. Created when you Compile (compile-gated).
+// Search studies aren't recorded here — they come from the SearchStudy list,
+// which already holds their verses and is reachable as a workspace.
+interface Study {
+  id: string;
+  type: "chapter" | "linked";
+  bookId: string;
+  name: string;
+  scopeRef: string; // chapter title (chapter) or link-group id (linked)
+  compiledAt: number;
+}
+
 // Look up a verse's text + number by reference, built once lazily — used to
 // render a search study's hand-picked verses (which span many chapters).
 let _verseIdx: Map<string, { text: string; verse: number }> | null = null;
@@ -355,6 +368,23 @@ export default function MobileApp() {
       );
     } catch {}
   }, [searchStudies]);
+  // Recorded chapter/linked studies (created when you Compile). Search studies
+  // come from searchStudies above, so they're not duplicated here.
+  const [studies, setStudies] = useState<Study[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("scribal_studies_v1") || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("scribal_studies_v1", JSON.stringify(studies));
+    } catch {}
+  }, [studies]);
+  // The Studies screen (lists every study done, by type).
+  const [studiesOpen, setStudiesOpen] = useState(false);
   // Verses just picked in search, waiting for the source + name step.
   const [linkDraftRefs, setLinkDraftRefs] = useState<string[] | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -1137,6 +1167,74 @@ export default function MobileApp() {
     setCompileAnim({ show: true, duration });
   };
 
+  // Record the current chapter (or its linked group) as a study, then compile.
+  // Compile is the save — the single intentional action that lists a study.
+  const recordStudy = (
+    type: "chapter" | "linked",
+    scopeRef: string,
+    name: string
+  ) => {
+    const bookId = activeBookId;
+    setStudies((prev) => {
+      const now = Date.now();
+      const i = prev.findIndex(
+        (s) => s.type === type && s.bookId === bookId && s.scopeRef === scopeRef
+      );
+      if (i >= 0) {
+        const next = prev.slice();
+        next[i] = { ...next[i], name, compiledAt: now };
+        return next;
+      }
+      return [
+        {
+          id: "study_" + now + "_" + Math.random().toString(36).slice(2, 7),
+          type,
+          bookId,
+          name,
+          scopeRef,
+          compiledAt: now,
+        },
+        ...prev,
+      ];
+    });
+  };
+  const compileCurrentStudy = () => {
+    if (studyMarks.length === 0) {
+      flash("Mark something first, then compile");
+      return;
+    }
+    if (chapterGroups[title]) {
+      recordStudy(
+        "linked",
+        chapterGroups[title],
+        groupMembers(title).map(displayOf).join("  +  ")
+      );
+    } else {
+      recordStudy("chapter", title, displayTitle);
+    }
+    startCompile();
+  };
+  // Open a recorded study from the Studies screen — go to its book + chapter.
+  const openRecordedStudy = (s: Study) => {
+    if (s.bookId !== activeBookId) setActiveBook(s.bookId);
+    const chapter =
+      s.type === "linked"
+        ? Object.keys(chapterGroups)
+            .filter((c) => chapterGroups[c] === s.scopeRef)
+            .sort(
+              (a, b) =>
+                (chapterLoc.get(a)?.order ?? 0) -
+                (chapterLoc.get(b)?.order ?? 0)
+            )[0] || s.scopeRef
+        : s.scopeRef;
+    jumpToScope(chapter);
+    setStudiesOpen(false);
+    setHomeOpen(false);
+  };
+  const deleteStudy = (id: string) => {
+    setStudies((prev) => prev.filter((s) => s.id !== id));
+  };
+
   // ---- Save the current chapter's study to the Vault ----
   // One file per chapter study: re-saving the same chapter updates that file
   // instead of making a duplicate. Saving also locks in this chapter's theme
@@ -1658,6 +1756,10 @@ export default function MobileApp() {
             onClick={() => setJumpOpen(true)}
             style={{
               flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
               background: "transparent",
               border: "none",
               color: C.text,
@@ -1673,6 +1775,25 @@ export default function MobileApp() {
                 {"  · session"}
               </span>
             )}
+          </button>
+          <button
+            onClick={compileCurrentStudy}
+            style={{
+              flexShrink: 0,
+              background: C.text,
+              color: C.bg,
+              border: "none",
+              borderRadius: "999px",
+              padding: "7px 14px",
+              marginRight: "4px",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            aria-label="Compile this study"
+          >
+            Compile
           </button>
           {(
             <button
@@ -2713,8 +2834,8 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
-              "Compile",
-              "Your marks by theme",
+              "Studies",
+              "Every study you've done",
               <svg
                 width="22"
                 height="22"
@@ -2730,7 +2851,7 @@ export default function MobileApp() {
               </svg>,
               () => {
                 setHomeOpen(false);
-                startCompile();
+                setStudiesOpen(true);
               }
             )}
             {homeTile(
@@ -4262,6 +4383,292 @@ export default function MobileApp() {
                         }}
                       />
                     )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* Studies screen — every study done, grouped by type (live) */}
+      {studiesOpen &&
+        (() => {
+          const bookMarksOf = (bid: string) =>
+            books.find((b) => b.id === bid)?.marks || [];
+          const bookLabel = (bid: string) =>
+            bid === "master"
+              ? ""
+              : books.find((b) => b.id === bid)?.name || "Session";
+          const chapterRecs = studies.filter((s) => s.type === "chapter");
+          const linkedRecs = studies.filter((s) => s.type === "linked");
+          const countChapter = (s: Study) =>
+            bookMarksOf(s.bookId).filter(
+              (m) => scopeOf(m.reference) === s.scopeRef
+            ).length;
+          const countLinked = (s: Study) => {
+            const chs = Object.keys(chapterGroups).filter(
+              (c) => chapterGroups[c] === s.scopeRef
+            );
+            return bookMarksOf(s.bookId).filter((m) =>
+              chs.includes(scopeOf(m.reference))
+            ).length;
+          };
+          const countSearch = (ss: SearchStudy) =>
+            bookMarksOf(ss.bookId).filter((m) => ss.refs.includes(m.reference))
+              .length;
+          const total =
+            chapterRecs.length + linkedRecs.length + searchStudies.length;
+
+          const row = (
+            key: string,
+            name: string,
+            meta: string,
+            accent: string,
+            onOpen: () => void,
+            onDelete: () => void
+          ) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                borderTop: "1px solid " + C.border,
+              }}
+            >
+              <button
+                onClick={onOpen}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  textAlign: "left",
+                  background: "transparent",
+                  border: "none",
+                  padding: "12px 2px",
+                  color: C.text,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                <span
+                  style={{
+                    width: "9px",
+                    height: "9px",
+                    borderRadius: "50%",
+                    background: accent,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {name}
+                  </span>
+                  <span style={{ fontSize: "11.5px", color: C.muted }}>
+                    {meta}
+                  </span>
+                </span>
+              </button>
+              <button
+                onClick={onDelete}
+                aria-label="Delete study"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "transparent",
+                  border: "none",
+                  color: C.muted,
+                  fontSize: "16px",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          );
+
+          const section = (
+            title: string,
+            accent: string,
+            rows: React.ReactNode
+          ) => (
+            <div style={{ marginBottom: "20px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: C.muted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  marginBottom: "2px",
+                }}
+              >
+                {title}
+              </div>
+              {rows}
+            </div>
+          );
+
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 250,
+                backgroundColor: C.bg,
+                color: C.text,
+                display: "flex",
+                flexDirection: "column",
+                animation: "mob-fadein 0.18s ease",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <button
+                  onClick={() => setStudiesOpen(false)}
+                  aria-label="Back"
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    background: "transparent",
+                    border: "none",
+                    color: C.text,
+                    fontSize: "22px",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <div style={{ fontSize: "17px", fontWeight: 700 }}>Studies</div>
+              </div>
+
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  padding: "16px 18px calc(20px + env(safe-area-inset-bottom))",
+                }}
+              >
+                {total === 0 ? (
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      color: C.muted,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    No studies yet. Mark a chapter and tap{" "}
+                    <b style={{ color: C.text }}>Compile</b> to record it here, or
+                    build one from Search.
+                  </div>
+                ) : (
+                  <>
+                    {chapterRecs.length > 0 &&
+                      section(
+                        "Chapter studies",
+                        "#8b5cf6",
+                        chapterRecs.map((s) =>
+                          row(
+                            s.id,
+                            s.name,
+                            countChapter(s) +
+                              " mark" +
+                              (countChapter(s) === 1 ? "" : "s") +
+                              (bookLabel(s.bookId)
+                                ? " · " + bookLabel(s.bookId)
+                                : ""),
+                            "#8b5cf6",
+                            () => openRecordedStudy(s),
+                            () => {
+                              if (
+                                window.confirm(
+                                  "Remove this study from the list? Your marks stay in the book."
+                                )
+                              )
+                                deleteStudy(s.id);
+                            }
+                          )
+                        )
+                      )}
+                    {linkedRecs.length > 0 &&
+                      section(
+                        "Linked studies",
+                        "#8b5cf6",
+                        linkedRecs.map((s) =>
+                          row(
+                            s.id,
+                            s.name,
+                            countLinked(s) +
+                              " mark" +
+                              (countLinked(s) === 1 ? "" : "s") +
+                              (bookLabel(s.bookId)
+                                ? " · " + bookLabel(s.bookId)
+                                : ""),
+                            "#8b5cf6",
+                            () => openRecordedStudy(s),
+                            () => {
+                              if (
+                                window.confirm(
+                                  "Remove this study from the list? Your marks stay in the book."
+                                )
+                              )
+                                deleteStudy(s.id);
+                            }
+                          )
+                        )
+                      )}
+                    {searchStudies.length > 0 &&
+                      section(
+                        "Search studies",
+                        "#0d9488",
+                        searchStudies.map((ss) =>
+                          row(
+                            ss.id,
+                            ss.name,
+                            countSearch(ss) +
+                              " mark" +
+                              (countSearch(ss) === 1 ? "" : "s") +
+                              " · " +
+                              ss.refs.length +
+                              " verse" +
+                              (ss.refs.length === 1 ? "" : "s") +
+                              (bookLabel(ss.bookId)
+                                ? " · " + bookLabel(ss.bookId)
+                                : ""),
+                            "#0d9488",
+                            () => openStudy(ss),
+                            () => {
+                              if (
+                                window.confirm(
+                                  "Delete this study? Your marks stay in the book."
+                                )
+                              )
+                                deleteSearchStudy(ss.id);
+                            }
+                          )
+                        )
+                      )}
                   </>
                 )}
               </div>
