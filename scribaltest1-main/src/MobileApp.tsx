@@ -335,6 +335,7 @@ export default function MobileApp() {
     setScopedLabel,
     seedScopeLabels,
     scopedLabels,
+    getBook,
     notes,
     setNote,
   } = useMarks();
@@ -4166,12 +4167,20 @@ export default function MobileApp() {
           const countSearch = (ss: SearchStudy) =>
             bookMarksOf(ss.bookId).filter((m) => ss.refs.includes(m.reference))
               .length;
-          // Distinct theme colors used in a study, each with its name.
+          // Distinct theme colors used in a study, each with its name — read
+          // from the study's OWN book so names are right even when a different
+          // book is active (per-chapter name first, then the book-wide name).
           const themesFor = (
             bid: string,
             repScope: string,
             refOk: (ref: string) => boolean
           ) => {
+            const bk = getBook(bid);
+            const scoped = bk.scopedLabels[resolveScope(repScope)];
+            const nameFor = (c: MarkColor) => {
+              if (scoped && c in scoped) return (scoped[c] || "").trim();
+              return (bk.colorLabels[c] || "").trim();
+            };
             const cols: number[] = [];
             allMarks.forEach((m) => {
               if (
@@ -4183,10 +4192,7 @@ export default function MobileApp() {
             });
             return cols
               .sort((a, b) => a - b)
-              .map((c) => ({
-                color: c,
-                name: chapterColorName(repScope, c as MarkColor),
-              }));
+              .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
           };
           // The expandable "more info" panel: what the study covers + its themes.
           const detail = (
