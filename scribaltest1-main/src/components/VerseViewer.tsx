@@ -24,6 +24,14 @@ interface VerseViewerProps {
   onEraseMark: (markId: string) => void;
   marks: Mark[];
   showToolbar?: boolean;
+  toolbarPos: { x: number; y: number };
+  onToolbarPos: (
+    v:
+      | { x: number; y: number }
+      | ((p: { x: number; y: number }) => { x: number; y: number })
+  ) => void;
+  toolbarOrient: Orientation;
+  onToolbarOrient: (v: Orientation | ((p: Orientation) => Orientation)) => void;
   panelMode?: boolean;
   fontScale?: number;
   lineScale?: number;
@@ -36,11 +44,6 @@ interface VerseViewerProps {
 
 type Orientation = "vertical" | "horizontal";
 const vols = scriptures.volumes;
-
-const defaultToolbarPos = () => {
-  const colLeft = Math.max(12, (window.innerWidth - 860) / 2 - 60);
-  return { x: colLeft, y: 200 };
-};
 
 export default function VerseViewer(props: VerseViewerProps) {
   const {
@@ -64,6 +67,10 @@ export default function VerseViewer(props: VerseViewerProps) {
     sidebarOpen = false,
     jumpTarget,
     onJumpHandled,
+    toolbarPos: pos,
+    onToolbarPos: setPos,
+    toolbarOrient: orientation,
+    onToolbarOrient: setOrientation,
   } = props;
 
   const currentVolume = vols[selectedVolume];
@@ -175,23 +182,8 @@ export default function VerseViewer(props: VerseViewerProps) {
   const [chapMenuOpen, setChapMenuOpen] = useState(false);
   const [flashRef, setFlashRef] = useState<string | null>(null);
 
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    const saved = localStorage.getItem("scribal_toolbar_pos");
-    return saved ? JSON.parse(saved) : defaultToolbarPos();
-  });
-  const [orientation, setOrientation] = useState<Orientation>(() => {
-    const saved = localStorage.getItem("scribal_toolbar_orient");
-    return (saved as Orientation) || "vertical";
-  });
   const [dragging, setDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    localStorage.setItem("scribal_toolbar_pos", JSON.stringify(pos));
-  }, [pos]);
-  useEffect(() => {
-    localStorage.setItem("scribal_toolbar_orient", orientation);
-  }, [orientation]);
 
   useEffect(() => {
     if (!jumpTarget) return;
