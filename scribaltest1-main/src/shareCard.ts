@@ -74,6 +74,14 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number): string
   return lines;
 }
 
+// Limit wrapped lines to a maximum, adding an ellipsis to the last shown line.
+function clampLines(lines: string[], max: number): string[] {
+  if (lines.length <= max) return lines;
+  const kept = lines.slice(0, max);
+  kept[max - 1] = kept[max - 1].replace(/[\s.,;:]+$/, "") + "\u2026";
+  return kept;
+}
+
 function paintBackground(ctx: CanvasRenderingContext2D, p: Palette) {
   const g = ctx.createLinearGradient(0, 0, W, H);
   g.addColorStop(0, p.bg);
@@ -243,10 +251,19 @@ export interface VersesCardEntry {
   theme: string;
   color: number;
   phrases: { text: string; style: string }[];
+  note?: string;
+}
+export interface VersesSynthesis {
+  theme: string;
+  color: number;
+  text: string;
 }
 export interface VersesCardOpts {
   verses: VersesCardEntry[];
   dark: boolean;
+  showNotes?: boolean;
+  showSynthesis?: boolean;
+  syntheses?: VersesSynthesis[];
 }
 
 export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
@@ -256,6 +273,13 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   paintBackground(ctx, p);
 
   const verses = o.verses.slice(0, 4);
+  const showNotes = !!o.showNotes;
+  const syntheses =
+    o.showSynthesis && o.syntheses
+      ? o.syntheses.filter((s) => s.text.trim())
+      : [];
+  const showSynth = syntheses.length > 0;
+
   const padX = 120;
   const barW = 6;
   const contentX = padX + 22; // text begins to the right of the accent bar
@@ -269,15 +293,25 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const headerGap = 16; // header block -> phrases
   const phraseGap = 10; // between phrases within one verse
   const verseGap = 38; // between verse blocks
+  const noteGap = 10; // phrases -> note
+  const synthTopGap = 30; // last verse -> synthesis rule
+  const synthRuleGap = 18; // rule -> first synthesis
+  const synthItemGap = 16; // between syntheses
+  const synthLabelGap = 7; // synthesis theme label -> its text
 
   const fontFor = (style: string, size: number) => {
     const weight = style === "bold" ? "700" : "500";
     const ital = style === "italic" ? "italic " : "";
     return ital + weight + " " + size + "px " + SERIF;
   };
+  const proseFont = (sz: number) => "italic 500 " + sz + "px " + SERIF;
 
   // Measure the whole stack at a candidate phrase font size.
   const measure = (size: number) => {
+    const noteSize = Math.max(16, Math.round(size * 0.66));
+    const synthSize = Math.max(18, Math.round(size * 0.74));
+    const synthLabelSize = 18;
+
     const blocks = verses.map((v) => {
       const phraseLines = v.phrases.map((ph) => {
         ctx.font = fontFor(ph.style, size);
@@ -290,18 +324,54 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
         phraseLines.reduce((s, pl) => s + pl.lines.length * size * 1.34, 0) +
         Math.max(0, phraseLines.length - 1) * phraseGap;
       const headerH = (v.theme.trim() ? themeSize + 9 : 0) + refSize + headerGap;
-      return { v, phraseLines, height: headerH + phrasesH };
+      let noteLines: string[] = [];
+      if (showNotes && v.note && v.note.trim()) {
+        ctx.font = proseFont(noteSize);
+        noteLines = clampLines(wrap(ctx, v.note.trim(), maxW), 4);
+      }
+      const noteH = noteLines.length
+        ? noteGap + noteLines.length * noteSize * 1.32
+        : 0;
+      return {
+        v,
+        phraseLines,
+        noteLines,
+        noteSize,
+        height: headerH + phrasesH + noteH,
+      };
     });
+
+    const synthItems = showSynth
+      ? syntheses.map((s) => {
+          ctx.font = proseFont(synthSize);
+          const lines = clampLines(wrap(ctx, s.text.trim(), maxW), 6);
+          const labelH = s.theme.trim() ? synthLabelSize + synthLabelGap : 0;
+          return { s, lines, labelH, synthSize, synthLabelSize };
+        })
+      : [];
+    let synthH = 0;
+    if (showSynth) {
+      synthH += synthTopGap + synthRuleGap;
+      synthItems.forEach((it, i) => {
+        synthH +=
+          it.labelH +
+          it.lines.length * synthSize * 1.34 +
+          (i < synthItems.length - 1 ? synthItemGap : 0);
+      });
+    }
+
     const total =
       blocks.reduce((s, b) => s + b.height, 0) +
-      Math.max(0, blocks.length - 1) * verseGap;
-    return { blocks, total };
+      Math.max(0, blocks.length - 1) * verseGap +
+      synthH;
+    return { blocks, synthItems, total };
   };
 
   const baseByCount: { [k: number]: number } = { 1: 52, 2: 46, 3: 40, 4: 36 };
   let size = baseByCount[verses.length] || 36;
+  const floor = showNotes || showSynth ? 18 : 22;
   let lay = measure(size);
-  while (lay.total > budget && size > 22) {
+  while (lay.total > budget && size > floor) {
     size -= 2;
     lay = measure(size);
   }
@@ -370,6 +440,18 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     });
     y -= phraseGap; // remove trailing gap after the last phrase
 
+    // per-verse note (muted italic, beneath the phrases)
+    if (b.noteLines.length) {
+      y += noteGap;
+      ctx.font = proseFont(b.noteSize);
+      ctx.fillStyle = p.muted;
+      ctx.textAlign = "left";
+      b.noteLines.forEach((ln) => {
+        ctx.fillText(ln, contentX, y + b.noteSize);
+        y += b.noteSize * 1.32;
+      });
+    }
+
     const barH = Math.max(14, y - blockTop);
     ctx.fillStyle = accent;
     roundRect(ctx, padX, blockTop, barW, barH, 3);
@@ -377,6 +459,45 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
 
     y += verseGap;
   });
+
+  // synthesis (the study's conclusion) beneath the verses
+  if (showSynth) {
+    y -= verseGap; // undo the trailing gap after the last verse
+    y += synthTopGap;
+    ctx.strokeStyle = p.frame;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(padX, y);
+    ctx.lineTo(W - padX, y);
+    ctx.stroke();
+    y += synthRuleGap;
+
+    lay.synthItems.forEach((it, i) => {
+      const accent = penHex(it.s.color, o.dark);
+      if (it.s.theme.trim()) {
+        ctx.fillStyle = accent;
+        ctx.font = "700 " + it.synthLabelSize + "px " + SANS;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        drawTrackedLeft(
+          ctx,
+          it.s.theme.trim().toUpperCase(),
+          contentX,
+          y + it.synthLabelSize,
+          3
+        );
+        y += it.synthLabelSize + synthLabelGap;
+      }
+      ctx.font = proseFont(it.synthSize);
+      ctx.fillStyle = p.text;
+      ctx.textAlign = "left";
+      it.lines.forEach((ln) => {
+        ctx.fillText(ln, contentX, y + it.synthSize);
+        y += it.synthSize * 1.34;
+      });
+      if (i < lay.synthItems.length - 1) y += synthItemGap;
+    });
+  }
 
   paintBrand(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
   return canvas;
