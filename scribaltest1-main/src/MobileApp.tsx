@@ -69,6 +69,9 @@ const chapterScopeKey = (bk: any, ch: any): string =>
   ch && ch.verses && ch.verses[0]
     ? refScope(ch.verses[0].reference)
     : bk.book + " " + ch.chapter;
+// D&C is divided into sections, not chapters.
+const chapterWord = (bookName: string) =>
+  /covenants/i.test(bookName) ? "Section" : "Chapter";
 
 // Backup / sync helpers — implementations live in ./sync (shared with desktop);
 // these thin wrappers pass in this shell's key list and device-local rules.
@@ -508,6 +511,30 @@ export default function MobileApp() {
     return map;
   }, []);
 
+  // One-time cleanup: drop link-group entries whose scope no longer maps to a
+  // real chapter — orphans left by the old book-name vs reference mismatch (e.g.
+  // a stale "Doctrine and Covenants 93" sitting next to the correct "D&C 93") —
+  // then drop any group left with fewer than two chapters.
+  useEffect(() => {
+    setChapterGroups((prev) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      Object.keys(prev).forEach((k) => {
+        if (chapterLoc.has(k)) next[k] = prev[k];
+        else changed = true;
+      });
+      const counts: Record<string, number> = {};
+      Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+      Object.keys(next).forEach((s) => {
+        if (counts[next[s]] < 2) {
+          delete next[s];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [chapterLoc]);
+
   // Flat list of canon book names for free-text reference parsing.
   const bookList = useMemo(() => {
     const out: { name: string; norm: string; firstChap: string }[] = [];
@@ -690,6 +717,20 @@ export default function MobileApp() {
           .filter((s) => chapterGroups[s] === chapterGroups[cs])
           .sort()
       : [];
+  // Friendly name for a scope key (e.g. "D&C 93" -> "Doctrine and Covenants 93").
+  const displayOf = (scope: string): string => {
+    const cl = chapterLoc.get(scope);
+    return cl
+      ? vols[cl.v].books[cl.b].book +
+          " " +
+          vols[cl.v].books[cl.b].chapters[cl.c].chapter
+      : scope;
+  };
+  // Navigate to a chapter by its scope key (the linked-chapter jump buttons).
+  const jumpToScope = (scope: string) => {
+    const cl = chapterLoc.get(scope);
+    if (cl) setLoc({ v: cl.v, b: cl.b, c: cl.c });
+  };
   // Link chapter a (current) with chapter b. Never drops a study's theme names:
   // seeding only fills blanks, so existing names survive a join or a merge.
   const linkChapters = (a: string, b: string) => {
@@ -2055,9 +2096,6 @@ export default function MobileApp() {
             {chapterGroups[title] && (
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
                   background: C.soft,
                   border: "1px solid " + C.border,
                   borderRadius: "10px",
@@ -2065,41 +2103,97 @@ export default function MobileApp() {
                   marginBottom: "12px",
                 }}
               >
-                <span
+                <div
                   style={{
-                    width: "12px",
-                    height: "12px",
-                    borderRadius: "50%",
-                    background: groupColor(chapterGroups[title]),
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ flex: 1, fontSize: "13px" }}>
-                  Linked with{" "}
-                  {groupMembers(title)
-                    .filter((s) => s !== title)
-                    .join(", ")}
-                </span>
-                <button
-                  onClick={() => {
-                    unlink(title);
-                    setLinkOpen(false);
-                    flash("Chapter unlinked");
-                  }}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid " + C.border,
-                    borderRadius: "8px",
-                    padding: "6px 10px",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    color: "inherit",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "8px",
                   }}
                 >
-                  Unlink
-                </button>
+                  <span
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      borderRadius: "50%",
+                      background: groupColor(chapterGroups[title]),
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontWeight: 700, fontSize: "13px" }}>
+                    Linked study
+                  </span>
+                  <span style={{ fontSize: "11px", opacity: 0.6 }}>
+                    {groupMembers(title).length} chapters
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                  }}
+                >
+                  {groupMembers(title).map((mScope) => {
+                    const isCurrent = mScope === title;
+                    return (
+                      <div
+                        key={mScope}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            if (!isCurrent) {
+                              jumpToScope(mScope);
+                              setLinkOpen(false);
+                            }
+                          }}
+                          disabled={isCurrent}
+                          style={{
+                            flex: 1,
+                            textAlign: "left",
+                            background: "transparent",
+                            border: "none",
+                            padding: "5px 0",
+                            cursor: isCurrent ? "default" : "pointer",
+                            color: "inherit",
+                            fontFamily: "inherit",
+                            fontSize: "13px",
+                            opacity: isCurrent ? 0.6 : 1,
+                          }}
+                        >
+                          {displayOf(mScope)}
+                          {isCurrent ? " · this chapter" : "  ↗"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            unlink(mScope);
+                            if (isCurrent) setLinkOpen(false);
+                            flash("Unlinked " + displayOf(mScope));
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid " + C.border,
+                            borderRadius: "8px",
+                            padding: "5px 10px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            color: "inherit",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -2248,9 +2342,11 @@ export default function MobileApp() {
                       marginBottom: previewThemes.length ? "10px" : "0",
                     }}
                   >
-                    <strong>{targetScope}</strong> is already linked with{" "}
+                    <strong>{displayOf(targetScope)}</strong> is already linked
+                    with{" "}
                     {groupMembers(targetScope)
                       .filter((s) => s !== targetScope)
+                      .map((s) => displayOf(s))
                       .join(", ")}
                     .
                   </div>
@@ -3597,7 +3693,7 @@ function JumpPanel({
       >
         {chapters.map((ch, i) => (
           <option key={i} value={i}>
-            Chapter {ch.chapter}
+            {chapterWord(books[safeB] ? books[safeB].book : "")} {ch.chapter}
           </option>
         ))}
       </select>
