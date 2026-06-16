@@ -3702,7 +3702,7 @@ export default function MobileApp() {
             <MobileSearch
               C={C}
               marks={marks}
-              colorLabels={colorLabels}
+              markLabel={effLabel}
               orderOf={orderOf}
               onJump={jumpToRef}
               onPickScripture={(ref) => setChooseRef(ref)}
