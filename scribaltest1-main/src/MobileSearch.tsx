@@ -389,7 +389,33 @@ export default function MobileSearch({
             cursor: "pointer",
           }}
         >
-          {linkMode ? "Cancel selection" : "⛓ Link verses into a study"}
+          {linkMode ? (
+            "Cancel selection"
+          ) : (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#0d9488"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+              </svg>
+              Link verses into a study
+            </span>
+          )}
         </button>
       )}
 
