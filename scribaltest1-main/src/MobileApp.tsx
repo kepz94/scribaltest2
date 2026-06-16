@@ -2533,7 +2533,7 @@ export default function MobileApp() {
               </svg>,
               () => {
                 setHomeOpen(false);
-                setMenuOpen(true);
+                setJumpOpen(true);
               }
             )}
             {homeTile(
@@ -2700,6 +2700,50 @@ export default function MobileApp() {
               ))
             )}
           </div>
+
+          {/* Study books — slim row (the study-book switcher) */}
+          <button
+            onClick={() => {
+              setHomeOpen(false);
+              setMenuOpen(true);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              width: "100%",
+              textAlign: "left",
+              background: "transparent",
+              border: "1px solid " + C.border,
+              borderRadius: "12px",
+              padding: "13px 14px",
+              marginBottom: "12px",
+              color: C.text,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: "14px",
+              fontWeight: 600,
+            }}
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="4" y="4" width="16" height="6" rx="1.5" />
+              <rect x="4" y="14" width="16" height="6" rx="1.5" />
+            </svg>
+            Study books
+            <span style={{ flex: 1 }} />
+            <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+              {books.find((b) => b.id === activeBookId)?.name || "Master Book"}
+            </span>
+          </button>
 
           {/* Settings — slim row */}
           <button
@@ -3858,89 +3902,170 @@ function JumpPanel({
   loc: Loc;
   onGo: (l: Loc) => void;
 }) {
-  const [v, setV] = useState(loc.v);
-  const [b, setB] = useState(loc.b);
-  const [c, setC] = useState(loc.c);
+  // Drill-down: Standard works -> books -> chapters (sections for D&C) -> jump.
+  const [vi, setVi] = useState<number | null>(null);
+  const [bi, setBi] = useState<number | null>(null);
+  const accent = "#8b5cf6";
 
-  const books = vols[v].books;
-  const safeB = books[b] ? b : 0;
-  const chapters = books[safeB].chapters;
-  const safeC = chapters[c] ? c : 0;
-
-  const selStyle: React.CSSProperties = {
+  const rowBtn: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
     width: "100%",
-    padding: "12px",
-    fontSize: "16px",
-    borderRadius: "10px",
+    textAlign: "left",
+    background: C.bg,
     border: "1px solid " + C.border,
-    backgroundColor: C.bg,
+    borderRadius: "10px",
+    padding: "14px",
+    marginBottom: "8px",
     color: C.text,
-    marginBottom: "12px",
+    cursor: "pointer",
     fontFamily: "inherit",
+    fontSize: "15px",
+    fontWeight: 600,
   };
 
+  const backBar = (label: string, onBack: () => void) => (
+    <button
+      onClick={onBack}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        background: "transparent",
+        border: "none",
+        color: C.muted,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        fontSize: "13px",
+        fontWeight: 600,
+        padding: "2px 0",
+        marginBottom: "12px",
+      }}
+    >
+      <span style={{ fontSize: "18px", lineHeight: 1 }}>‹</span>
+      {label}
+    </button>
+  );
+
+  const heading = (txt: string) => (
+    <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "14px" }}>
+      {txt}
+    </div>
+  );
+
+  // ---- Chapters / sections of the selected book ----
+  if (vi !== null && bi !== null) {
+    const bk = vols[vi].books[bi];
+    const word = chapterWord(bk.book); // "Section" for D&C, else "Chapter"
+    const single = vols[vi].books.length === 1;
+    return (
+      <div>
+        {backBar(single ? "Standard works" : vols[vi].volume, () => {
+          if (single) {
+            setVi(null);
+            setBi(null);
+          } else {
+            setBi(null);
+          }
+        })}
+        {heading(bk.book)}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(5, 1fr)",
+            gap: "8px",
+          }}
+        >
+          {bk.chapters.map((ch, ci) => {
+            const here = loc.v === vi && loc.b === bi && loc.c === ci;
+            return (
+              <button
+                key={ci}
+                onClick={() => onGo({ v: vi, b: bi, c: ci })}
+                aria-label={word + " " + ch.chapter}
+                style={{
+                  padding: "13px 0",
+                  borderRadius: "10px",
+                  border: "1px solid " + (here ? accent : C.border),
+                  background: here ? accent : C.bg,
+                  color: here ? "#ffffff" : C.text,
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {ch.chapter}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: "11px", color: C.muted, marginTop: "14px" }}>
+          Tap a {word.toLowerCase()} to jump there.
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Books in the selected volume ----
+  if (vi !== null) {
+    return (
+      <div>
+        {backBar("Standard works", () => setVi(null))}
+        {heading(vols[vi].volume)}
+        {vols[vi].books.map((bk, k) => {
+          const here = loc.v === vi && loc.b === k;
+          return (
+            <button
+              key={k}
+              onClick={() => setBi(k)}
+              style={{ ...rowBtn, borderColor: here ? accent : C.border }}
+            >
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {bk.book}
+              </span>
+              <span style={{ color: C.muted, fontSize: "16px" }}>›</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ---- Standard works (top level) ----
   return (
     <div>
-      <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "14px" }}>
-        Jump to
-      </div>
-      <select
-        value={v}
-        onChange={(e) => {
-          setV(Number(e.target.value));
-          setB(0);
-          setC(0);
-        }}
-        style={selStyle}
-      >
-        {vols.map((vol, i) => (
-          <option key={i} value={i}>
-            {vol.volume}
-          </option>
-        ))}
-      </select>
-      <select
-        value={safeB}
-        onChange={(e) => {
-          setB(Number(e.target.value));
-          setC(0);
-        }}
-        style={selStyle}
-      >
-        {books.map((bk, i) => (
-          <option key={i} value={i}>
-            {bk.book}
-          </option>
-        ))}
-      </select>
-      <select
-        value={safeC}
-        onChange={(e) => setC(Number(e.target.value))}
-        style={selStyle}
-      >
-        {chapters.map((ch, i) => (
-          <option key={i} value={i}>
-            {chapterWord(books[safeB] ? books[safeB].book : "")} {ch.chapter}
-          </option>
-        ))}
-      </select>
-      <button
-        onClick={() => onGo({ v, b: safeB, c: safeC })}
-        style={{
-          width: "100%",
-          backgroundColor: C.text,
-          color: C.bg,
-          border: "none",
-          borderRadius: "10px",
-          padding: "13px",
-          fontSize: "15px",
-          fontWeight: 600,
-          cursor: "pointer",
-          fontFamily: "inherit",
-        }}
-      >
-        Go
-      </button>
+      {heading("Standard works")}
+      {vols.map((vol, k) => {
+        const here = loc.v === k;
+        return (
+          <button
+            key={k}
+            onClick={() => {
+              // Single-book volumes (Doctrine and Covenants) skip straight in.
+              if (vol.books.length === 1) {
+                setVi(k);
+                setBi(0);
+              } else {
+                setVi(k);
+              }
+            }}
+            style={{ ...rowBtn, borderColor: here ? accent : C.border }}
+          >
+            <span style={{ flex: 1, minWidth: 0 }}>{vol.volume}</span>
+            <span style={{ color: C.muted, fontSize: "16px" }}>›</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
