@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import {
   renderVerseCard,
   renderCompilationCard,
+  renderVersesCard,
   canvasURL,
   shareCanvas,
   CompTheme,
+  VersesCardEntry,
 } from "./shareCard";
 
 interface CC {
@@ -37,9 +39,10 @@ interface CompData {
 interface Props {
   C: CC;
   appDark: boolean;
-  kind: "verse" | "compilation";
+  kind: "verse" | "compilation" | "verses";
   verse?: VerseData;
   comp?: CompData;
+  verses?: VersesCardEntry[];
   onClose: () => void;
   onFlash: (m: string) => void;
 }
@@ -50,6 +53,7 @@ export default function SharePreview({
   kind,
   verse,
   comp,
+  verses,
   onClose,
   onFlash,
 }: Props) {
@@ -61,6 +65,9 @@ export default function SharePreview({
   const build = (): HTMLCanvasElement | null => {
     if (kind === "verse" && verse) {
       return renderVerseCard({ ...verse, dark: cardDark });
+    }
+    if (kind === "verses" && verses) {
+      return renderVersesCard({ verses, dark: cardDark });
     }
     if (kind === "compilation" && comp) {
       const hero =
@@ -99,6 +106,8 @@ export default function SharePreview({
     const caption =
       kind === "verse" && verse
         ? verse.phrase + " — " + verse.reference
+        : kind === "verses" && verses
+        ? verses.map((v) => v.reference).join(", ") + " — Scribal"
         : comp
         ? comp.scopeTitle +
           (comp.studyLabel.trim() ? " · " + comp.studyLabel.trim() : "") +
@@ -106,7 +115,11 @@ export default function SharePreview({
         : "Scribal";
     const r = await shareCanvas(
       c,
-      kind === "verse" ? "scribal-verse.png" : "scribal-study.png",
+      kind === "verse"
+        ? "scribal-verse.png"
+        : kind === "verses"
+        ? "scribal-verses.png"
+        : "scribal-study.png",
       caption
     );
     setBusy(false);
