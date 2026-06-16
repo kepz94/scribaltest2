@@ -20,6 +20,9 @@ interface Props {
   orderOf: (ref: string) => number;
   onJump: (ref: string) => void; // marks results jump directly
   onPickScripture: (ref: string) => void; // scripture results choose a book first
+  // When provided, a "Link" button lets the user multi-select scripture results
+  // and bundle them into one study; called with the chosen verse references.
+  onLinkConfirm?: (refs: string[]) => void;
 }
 
 const SCRIPTURE_CAP = 120;
@@ -103,12 +106,20 @@ export default function MobileSearch({
   orderOf,
   onJump,
   onPickScripture,
+  onLinkConfirm,
 }: Props) {
   const [mode, setMode] = useState<"scripture" | "marks">("scripture");
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
+  // Link-select: tick scripture results to bundle them into one study.
+  const [linkMode, setLinkMode] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const togglePick = (ref: string) =>
+    setPicked((p) =>
+      p.includes(ref) ? p.filter((x) => x !== ref) : [...p, ref]
+    );
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query), 200);
@@ -195,55 +206,81 @@ export default function MobileSearch({
     body: React.ReactNode,
     onClick: () => void,
     dotColor?: string,
-    theme?: string
+    theme?: string,
+    checked: boolean | null = null
   ) => (
     <button
       key={key}
       onClick={onClick}
       style={{
         textAlign: "left",
-        background: C.soft,
-        border: "1px solid " + C.border,
+        background: checked ? C.panel : C.soft,
+        border: "1px solid " + (checked ? COLOR_MAP[3] : C.border),
         borderRadius: "10px",
         padding: "11px 13px",
         cursor: "pointer",
         color: C.text,
         fontFamily: "inherit",
         width: "100%",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "10px",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "7px",
-          marginBottom: "5px",
-        }}
-      >
-        {dotColor && (
-          <span
-            style={{
-              width: "11px",
-              height: "11px",
-              borderRadius: "50%",
-              backgroundColor: dotColor,
-              flexShrink: 0,
-            }}
-          />
-        )}
-        <span style={{ fontSize: "11px", color: C.muted }}>{reference}</span>
-        {theme && (
-          <span style={{ fontSize: "11px", color: C.muted }}>· {theme}</span>
-        )}
-      </div>
-      <div
-        style={{
-          fontFamily: '"Times New Roman", Times, serif',
-          fontSize: "15px",
-          lineHeight: 1.5,
-        }}
-      >
-        {body}
+      {checked != null && (
+        <span
+          style={{
+            width: "20px",
+            height: "20px",
+            borderRadius: "6px",
+            border: "2px solid " + (checked ? COLOR_MAP[3] : C.muted),
+            background: checked ? COLOR_MAP[3] : "transparent",
+            color: "#fff",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "13px",
+            flexShrink: 0,
+            marginTop: "1px",
+          }}
+        >
+          {checked ? "✓" : ""}
+        </span>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            marginBottom: "5px",
+          }}
+        >
+          {dotColor && (
+            <span
+              style={{
+                width: "11px",
+                height: "11px",
+                borderRadius: "50%",
+                backgroundColor: dotColor,
+                flexShrink: 0,
+              }}
+            />
+          )}
+          <span style={{ fontSize: "11px", color: C.muted }}>{reference}</span>
+          {theme && (
+            <span style={{ fontSize: "11px", color: C.muted }}>· {theme}</span>
+          )}
+        </div>
+        <div
+          style={{
+            fontFamily: '"Times New Roman", Times, serif',
+            fontSize: "15px",
+            lineHeight: 1.5,
+          }}
+        >
+          {body}
+        </div>
       </div>
     </button>
   );
@@ -330,6 +367,32 @@ export default function MobileSearch({
         </div>
       )}
 
+      {mode === "scripture" && onLinkConfirm && (
+        <button
+          onClick={() => {
+            if (linkMode) {
+              setLinkMode(false);
+              setPicked([]);
+            } else setLinkMode(true);
+          }}
+          style={{
+            width: "100%",
+            padding: "11px",
+            marginBottom: "14px",
+            borderRadius: "10px",
+            border: "1px solid " + (linkMode ? COLOR_MAP[3] : C.border),
+            background: linkMode ? C.panel : C.soft,
+            color: linkMode ? COLOR_MAP[3] : C.text,
+            fontFamily: "inherit",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {linkMode ? "Cancel selection" : "⛓ Link verses into a study"}
+        </button>
+      )}
+
       {tooShort ? (
         <div style={{ fontSize: "13px", color: C.muted }}>
           Type to search scripture and your marks.
@@ -354,7 +417,13 @@ export default function MobileSearch({
                     r.reference,
                     r.reference,
                     highlight(r.text, terms, COLOR_MAP[3]),
-                    () => onPickScripture(r.reference)
+                    () =>
+                      linkMode
+                        ? togglePick(r.reference)
+                        : onPickScripture(r.reference),
+                    undefined,
+                    undefined,
+                    linkMode ? picked.includes(r.reference) : null
                   )
                 )
               : markResults.map((m) =>
@@ -367,6 +436,48 @@ export default function MobileSearch({
                     (colorLabels[m.color] || "").trim() || undefined
                   )
                 )}
+          </div>
+        </>
+      )}
+
+      {linkMode && onLinkConfirm && (
+        <>
+          <div style={{ height: "84px" }} />
+          <div
+            style={{
+              position: "fixed",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 210,
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "12px 16px calc(14px + env(safe-area-inset-bottom))",
+              background: C.panel,
+              borderTop: "1px solid " + C.border,
+            }}
+          >
+            <span style={{ flex: 1, fontSize: "13px", color: C.muted }}>
+              {picked.length} verse{picked.length === 1 ? "" : "s"} selected
+            </span>
+            <button
+              onClick={() => picked.length && onLinkConfirm(picked)}
+              disabled={!picked.length}
+              style={{
+                background: picked.length ? C.text : C.soft,
+                color: picked.length ? C.bg : C.muted,
+                border: "none",
+                borderRadius: "999px",
+                padding: "10px 20px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: picked.length ? "pointer" : "default",
+                fontFamily: "inherit",
+              }}
+            >
+              Next
+            </button>
           </div>
         </>
       )}
