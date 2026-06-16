@@ -57,6 +57,19 @@ const LINK_COLORS = [
   "#ec4899",
 ];
 
+// A chapter's scope key = its verse-reference prefix (e.g. "D&C 93", "John 1").
+// Marks store this prefix, so deriving scope from references — instead of book
+// name + chapter number — keeps D&C (whose refs say "D&C" while the book is
+// "Doctrine and Covenants") matching its own marks, links, and theme names.
+const refScope = (reference: string) => {
+  const i = reference.indexOf(":");
+  return i < 0 ? reference : reference.slice(0, i);
+};
+const chapterScopeKey = (bk: any, ch: any): string =>
+  ch && ch.verses && ch.verses[0]
+    ? refScope(ch.verses[0].reference)
+    : bk.book + " " + ch.chapter;
+
 // Backup / sync helpers — implementations live in ./sync (shared with desktop);
 // these thin wrappers pass in this shell's key list and device-local rules.
 function buildBackupString() {
@@ -487,7 +500,7 @@ export default function MobileApp() {
     vols.forEach((vol, v) =>
       vol.books.forEach((bk, b) =>
         bk.chapters.forEach((ch, c) => {
-          map.set(bk.book + " " + ch.chapter, { v, b, c, order });
+          map.set(chapterScopeKey(bk, ch), { v, b, c, order });
           order++;
         })
       )
@@ -607,7 +620,8 @@ export default function MobileApp() {
 
   const chapter = vols[loc.v].books[loc.b].chapters[loc.c];
   const bookName = vols[loc.v].books[loc.b].book;
-  const title = bookName + " " + chapter.chapter;
+  const displayTitle = bookName + " " + chapter.chapter;
+  const title = chapterScopeKey(vols[loc.v].books[loc.b], chapter);
 
   // Theme names are per chapter (study scope). Each chapter keeps its own
   // palette, so naming or clearing one chapter never touches another.
@@ -724,9 +738,10 @@ export default function MobileApp() {
   // Next chapter in canonical order (the one-tap "link with next").
   const nextLoc = curIndex >= 0 ? flat[curIndex + 1] : undefined;
   const nextTitle = nextLoc
-    ? vols[nextLoc.v].books[nextLoc.b].book +
-      " " +
-      vols[nextLoc.v].books[nextLoc.b].chapters[nextLoc.c].chapter
+    ? chapterScopeKey(
+        vols[nextLoc.v].books[nextLoc.b],
+        vols[nextLoc.v].books[nextLoc.b].chapters[nextLoc.c]
+      )
     : null;
   const linkWithNext = () => {
     if (!nextLoc || !nextTitle) return;
@@ -741,7 +756,7 @@ export default function MobileApp() {
   const pickChapters = pickBookObj ? pickBookObj.chapters : [];
   const targetScope =
     pickBookObj && pickC >= 0 && pickChapters[pickC]
-      ? pickBookObj.book + " " + pickChapters[pickC].chapter
+      ? chapterScopeKey(pickBookObj, pickChapters[pickC])
       : null;
   const previewLabels = targetScope
     ? scopedLabels[resolveScope(targetScope)] || {}
@@ -756,6 +771,11 @@ export default function MobileApp() {
     if (!targetScope || targetScope === title) return;
     linkChapters(title, targetScope);
     setLinkOpen(false);
+    // Take the user to the chapter they just picked (they expected to land
+    // there) — mirrors "link with next", which also jumps.
+    if (pickV >= 0 && pickB >= 0 && pickC >= 0) {
+      setLoc({ v: pickV, b: pickB, c: pickC });
+    }
     flash("Linked with " + targetScope);
   };
 
@@ -1398,7 +1418,7 @@ export default function MobileApp() {
               fontFamily: "inherit",
             }}
           >
-            {title}
+            {displayTitle}
             {activeBookId !== "master" && (
               <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
                 {"  · session"}
@@ -1566,7 +1586,7 @@ export default function MobileApp() {
               }}
             />
           )}
-          {title}
+          {displayTitle}
         </h2>
         <div
           style={{
@@ -1877,7 +1897,7 @@ export default function MobileApp() {
                   }}
                 />
               )}
-              {title}
+              {displayTitle}
             </div>
             <div
               style={{
@@ -3196,7 +3216,7 @@ export default function MobileApp() {
           }}
           onClose={() => setCompileOpen(false)}
           dark={dark}
-          title={title}
+          title={displayTitle}
           scope={resolveScope(title)}
           onFlash={flash}
         />
