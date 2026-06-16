@@ -23,6 +23,11 @@ interface Props {
   // When provided, a "Link" button lets the user multi-select scripture results
   // and bundle them into one study; called with the chosen verse references.
   onLinkConfirm?: (refs: string[]) => void;
+  // Adding verses to an existing keyword study: start already in link mode with
+  // the study's current verses pre-selected, and relabel the confirm button.
+  initialPicked?: string[];
+  startLinking?: boolean;
+  confirmLabel?: string;
 }
 
 const SCRIPTURE_CAP = 120;
@@ -107,6 +112,9 @@ export default function MobileSearch({
   onJump,
   onPickScripture,
   onLinkConfirm,
+  initialPicked,
+  startLinking,
+  confirmLabel,
 }: Props) {
   const [mode, setMode] = useState<"scripture" | "marks">("scripture");
   const [query, setQuery] = useState("");
@@ -114,8 +122,8 @@ export default function MobileSearch({
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
   // Link-select: tick scripture results to bundle them into one study.
-  const [linkMode, setLinkMode] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
+  const [linkMode, setLinkMode] = useState(!!startLinking);
+  const [picked, setPicked] = useState<string[]>(() => initialPicked || []);
   const togglePick = (ref: string) =>
     setPicked((p) =>
       p.includes(ref) ? p.filter((x) => x !== ref) : [...p, ref]
@@ -367,7 +375,7 @@ export default function MobileSearch({
         </div>
       )}
 
-      {mode === "scripture" && onLinkConfirm && (
+      {mode === "scripture" && onLinkConfirm && !startLinking && (
         <button
           onClick={() => {
             if (linkMode) {
@@ -502,7 +510,7 @@ export default function MobileSearch({
                 fontFamily: "inherit",
               }}
             >
-              Next
+              {confirmLabel || "Next"}
             </button>
           </div>
         </>
