@@ -1997,78 +1997,6 @@ export default function MobileApp() {
               </>
             )}
 
-            <div
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: C.muted,
-                marginBottom: "8px",
-              }}
-            >
-              Marked verses
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-                marginBottom: "20px",
-                maxHeight: "38vh",
-                overflowY: "auto",
-              }}
-            >
-              {chapterMarks
-                .slice()
-                .sort((a: Mark, b: Mark) => a.startIndex - b.startIndex)
-                .sort((a: Mark, b: Mark) => {
-                  const av = parseInt(
-                    (a.reference.match(/:(\d+)/) || [])[1] || "0",
-                    10
-                  );
-                  const bv = parseInt(
-                    (b.reference.match(/:(\d+)/) || [])[1] || "0",
-                    10
-                  );
-                  return av - bv;
-                })
-                .map((m: Mark) => (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      setLinkOpen(false);
-                      jumpToRef(m.reference);
-                    }}
-                    style={{
-                      textAlign: "left",
-                      background: C.soft,
-                      border: "1px solid " + C.border,
-                      borderLeft: "3px solid " + COLOR_MAP[m.color],
-                      borderRadius: "10px",
-                      padding: "9px 12px",
-                      cursor: "pointer",
-                      color: C.text,
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontFamily: '"Times New Roman", Times, serif',
-                        fontSize: "14px",
-                        lineHeight: 1.55,
-                        marginBottom: "3px",
-                      }}
-                    >
-                      {m.markedText}
-                    </div>
-                    <div style={{ fontSize: "11px", color: C.muted }}>
-                      {m.reference}
-                    </div>
-                  </button>
-                ))}
-            </div>
-
             {/* Combine this chapter into a study */}
             <div
               style={{
@@ -2143,32 +2071,47 @@ export default function MobileApp() {
                           display: "flex",
                           alignItems: "center",
                           gap: "8px",
+                          padding: "3px 0",
                         }}
                       >
-                        <button
-                          onClick={() => {
-                            if (!isCurrent) {
-                              jumpToScope(mScope);
-                              setLinkOpen(false);
-                            }
-                          }}
-                          disabled={isCurrent}
+                        <span
                           style={{
                             flex: 1,
-                            textAlign: "left",
-                            background: "transparent",
-                            border: "none",
-                            padding: "5px 0",
-                            cursor: isCurrent ? "default" : "pointer",
-                            color: "inherit",
-                            fontFamily: "inherit",
                             fontSize: "13px",
-                            opacity: isCurrent ? 0.6 : 1,
+                            fontWeight: isCurrent ? 600 : 500,
+                            opacity: isCurrent ? 0.7 : 1,
                           }}
                         >
                           {displayOf(mScope)}
-                          {isCurrent ? " · this chapter" : "  ↗"}
-                        </button>
+                          {isCurrent && (
+                            <span style={{ fontSize: "11px", fontWeight: 400 }}>
+                              {" "}
+                              · this chapter
+                            </span>
+                          )}
+                        </span>
+                        {!isCurrent && (
+                          <button
+                            onClick={() => {
+                              jumpToScope(mScope);
+                              setLinkOpen(false);
+                            }}
+                            style={{
+                              background: "#8b5cf6",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: "8px",
+                              padding: "7px 14px",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              flexShrink: 0,
+                            }}
+                          >
+                            Go to →
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             unlink(mScope);
@@ -2179,12 +2122,12 @@ export default function MobileApp() {
                             background: "transparent",
                             border: "1px solid " + C.border,
                             borderRadius: "8px",
-                            padding: "5px 10px",
+                            padding: "6px 10px",
                             fontSize: "12px",
                             fontWeight: 600,
                             cursor: "pointer",
                             fontFamily: "inherit",
-                            color: "inherit",
+                            color: C.muted,
                             flexShrink: 0,
                           }}
                         >
