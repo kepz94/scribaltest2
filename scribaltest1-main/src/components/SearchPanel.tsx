@@ -17,7 +17,7 @@ interface SearchPanelProps {
   currentBook: number;
   marks: Mark[];
   colorLabels: Record<number, string>;
-  labelFor: (reference: string, color: MarkColor) => string;
+  labelFor: (reference: string, color: MarkColor | null) => string;
   allMarks: ThemeMark[];
   onJump: (reference: string) => void;
   onJumpToMark: (bookId: string, reference: string) => void;
