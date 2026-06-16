@@ -465,6 +465,9 @@ export default function MobileApp() {
   // the book to restore on close, since the screen switches the active book.
   const [openStudyId, setOpenStudyId] = useState<string | null>(null);
   const prevBookForStudy = useRef<string | null>(null);
+  // When set, the search screen is open to ADD verses to this keyword study
+  // (its current verses are pre-selected); confirming merges the selection back.
+  const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -903,6 +906,24 @@ export default function MobileApp() {
   const onLinkConfirm = (refs: string[]) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    // Adding to an existing keyword study: merge the selection in (the study's
+    // verses were pre-selected, so `ordered` is the full, updated set), keep the
+    // name + theme colors, then reopen the study.
+    if (addToStudyId) {
+      const id = addToStudyId;
+      setSearchStudies((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, refs: ordered } : s))
+      );
+      const studyScope = "searchstudy:" + id;
+      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+        seedScopeLabels(studyScope, scopedLabels[ch] || {})
+      );
+      setAddToStudyId(null);
+      setSearchOpen(false);
+      setOpenStudyId(id);
+      flash("Verses updated");
+      return;
+    }
     setLinkDraftRefs(ordered);
     setDraftName("");
     setDraftSource("master");
@@ -3598,13 +3619,61 @@ export default function MobileApp() {
           <div
             style={{
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: addToStudyId ? "space-between" : "flex-end",
               alignItems: "center",
+              gap: "8px",
               padding: "calc(env(safe-area-inset-top) + 8px) 12px 6px",
             }}
           >
+            {addToStudyId && (
+              <div
+                style={{
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#0d9488"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                  <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                </svg>
+                <span
+                  style={{
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    color: C.text,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Add to “
+                  {searchStudies.find((s) => s.id === addToStudyId)?.name ||
+                    "study"}
+                  ”
+                </span>
+              </div>
+            )}
             <button
-              onClick={() => setSearchOpen(false)}
+              onClick={() => {
+                setSearchOpen(false);
+                if (addToStudyId) {
+                  const id = addToStudyId;
+                  setAddToStudyId(null);
+                  setOpenStudyId(id);
+                }
+              }}
               aria-label="Close search"
               style={{
                 background: "transparent",
@@ -3615,6 +3684,7 @@ export default function MobileApp() {
                 cursor: "pointer",
                 fontFamily: "inherit",
                 padding: "4px 8px",
+                flexShrink: 0,
               }}
             >
               ✕
@@ -3637,6 +3707,13 @@ export default function MobileApp() {
               onJump={jumpToRef}
               onPickScripture={(ref) => setChooseRef(ref)}
               onLinkConfirm={onLinkConfirm}
+              initialPicked={
+                addToStudyId
+                  ? searchStudies.find((s) => s.id === addToStudyId)?.refs || []
+                  : undefined
+              }
+              startLinking={!!addToStudyId}
+              confirmLabel={addToStudyId ? "Add to study" : undefined}
             />
           </div>
         </div>
@@ -3908,6 +3985,35 @@ export default function MobileApp() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      fontSize: "10.5px",
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      color: "#0d9488",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#0d9488"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                    </svg>
+                    Keyword study
+                  </div>
+                  <div
+                    style={{
                       fontSize: "16px",
                       fontWeight: 700,
                       whiteSpace: "nowrap",
@@ -3957,19 +4063,58 @@ export default function MobileApp() {
               >
                 <button
                   onClick={() => {
+                    setAddToStudyId(study.id);
+                    setOpenStudyId(null);
+                    setSearchOpen(true);
+                  }}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "7px",
+                    padding: "10px",
+                    borderRadius: "999px",
+                    border: "1px solid " + C.border,
+                    background: "transparent",
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#0d9488"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                  </svg>
+                  Add verses
+                </button>
+                <button
+                  onClick={() => {
                     setCompileStudy(study);
                     setCompileOpen(true);
                   }}
                   style={{
                     flex: 1,
                     padding: "10px",
-                    borderRadius: "10px",
-                    border: "1px solid " + C.border,
-                    background: C.soft,
-                    color: C.text,
+                    borderRadius: "999px",
+                    border: "none",
+                    background: C.text,
+                    color: C.bg,
                     fontFamily: "inherit",
                     fontSize: "13px",
-                    fontWeight: 600,
+                    fontWeight: 700,
                     cursor: "pointer",
                   }}
                 >
