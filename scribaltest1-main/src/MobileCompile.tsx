@@ -859,7 +859,7 @@ export default function MobileCompile({
                                       borderRadius: "8px",
                                       padding: "8px 10px",
                                       fontFamily: "inherit",
-                                      fontSize: "14px",
+                                      fontSize: "16px",
                                       lineHeight: 1.5,
                                       background: C.bg,
                                       color: C.text,
