@@ -23,7 +23,8 @@ interface Props {
   onJump: (ref: string) => void;
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
-  onSaveToVault: () => void;
+  onSave: (name: string) => void;
+  defaultName: string;
   onClose: () => void;
   dark: boolean;
   title: string;
@@ -62,7 +63,8 @@ export default function MobileCompile({
   onJump,
   notes,
   setNote,
-  onSaveToVault,
+  onSave,
+  defaultName,
   onClose,
   dark,
   title,
@@ -75,6 +77,7 @@ export default function MobileCompile({
   // note follows its verse whether viewed alone or inside a linked study.
   const verseNoteKey = (ref: string) => "versenote:" + ref;
   const [sortMode, setSortMode] = useState<SortMode>("order");
+  const [studyName, setStudyName] = useState(defaultName);
   const [view, setView] = useState<"focused" | "full">("focused");
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
@@ -410,10 +413,27 @@ export default function MobileCompile({
         >
           ‹
         </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "18px", fontWeight: 700 }}>Compile</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            value={studyName}
+            onChange={(e) => setStudyName(e.target.value)}
+            placeholder={defaultName}
+            aria-label="Study name"
+            style={{
+              width: "100%",
+              fontSize: "18px",
+              fontWeight: 700,
+              background: "transparent",
+              border: "none",
+              borderBottom: "1px dashed " + C.border,
+              color: C.text,
+              fontFamily: "inherit",
+              padding: "1px 0 3px",
+              outline: "none",
+            }}
+          />
           {title && (
-            <div style={{ fontSize: "12px", color: C.muted }}>
+            <div style={{ fontSize: "12px", color: C.muted, marginTop: "3px" }}>
               {studyScopes && studyScopes.length > 1
                 ? studyScopes.length + " chapters · " + studyScopes.join(", ")
                 : title + " · this chapter"}
@@ -442,7 +462,7 @@ export default function MobileCompile({
               Share
             </button>
             <button
-              onClick={onSaveToVault}
+              onClick={() => onSave(studyName.trim() || defaultName)}
               style={{
                 background: C.text,
                 color: C.bg,
@@ -455,7 +475,7 @@ export default function MobileCompile({
                 fontFamily: "inherit",
               }}
             >
-              Save to Vault
+              Save to Studies
             </button>
           </div>
         )}
