@@ -884,6 +884,7 @@ export default function MobileApp() {
     setHomeOpen(false);
     setSearchOpen(false);
     setMenuOpen(false);
+    setStudiesOpen(false);
   };
   const closeStudy = () => {
     setOpenStudyId(null);
@@ -4530,7 +4531,7 @@ export default function MobileApp() {
                       )}
                     {searchStudies.length > 0 &&
                       section(
-                        "Search studies",
+                        "Keyword studies",
                         "#0d9488",
                         searchStudies.map((ss) =>
                           row(
@@ -5299,7 +5300,7 @@ export default function MobileApp() {
                           )}
                         {searches.length > 0 &&
                           section(
-                            "Search studies",
+                            "Keyword studies",
                             searches.map((ss) =>
                               studyRow(
                                 ss.id,
