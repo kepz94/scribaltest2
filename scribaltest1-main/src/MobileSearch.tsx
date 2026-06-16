@@ -16,7 +16,10 @@ interface Palette {
 interface Props {
   C: Palette;
   marks: Mark[];
-  colorLabels: Record<number, string>;
+  // Resolves a mark's theme name the same way the rest of the app does
+  // (chapter-scoped name, not the book-wide color label), so search reflects
+  // the actual name shown when viewing that mark's chapter/study.
+  markLabel: (m: Mark) => string;
   orderOf: (ref: string) => number;
   onJump: (ref: string) => void; // marks results jump directly
   onPickScripture: (ref: string) => void; // scripture results choose a book first
@@ -107,7 +110,7 @@ function highlight(text: string, terms: string[], hlColor: string) {
 export default function MobileSearch({
   C,
   marks,
-  colorLabels,
+  markLabel,
   orderOf,
   onJump,
   onPickScripture,
@@ -171,10 +174,10 @@ export default function MobileSearch({
       .filter(
         (m) =>
           matcher.test(m.markedText.toLowerCase()) ||
-          matcher.test((colorLabels[m.color] || "").toLowerCase())
+          matcher.test(markLabel(m).toLowerCase())
       )
       .sort((a, b) => orderOf(a.reference) - orderOf(b.reference));
-  }, [mode, matcher, marks, colorLabels, orderOf]);
+  }, [mode, matcher, marks, markLabel, orderOf]);
 
   const seg = (active: boolean, label: string, onClick: () => void) => (
     <button
@@ -467,7 +470,7 @@ export default function MobileSearch({
                     highlight(m.markedText, terms, COLOR_MAP[3]),
                     () => onJump(m.reference),
                     COLOR_MAP[m.color],
-                    (colorLabels[m.color] || "").trim() || undefined
+                    markLabel(m).trim() || undefined
                   )
                 )}
           </div>
