@@ -25,6 +25,7 @@ interface Props {
   dark: boolean;
   title: string;
   scope: string;
+  studyScopes?: string[];
   onFlash: (msg: string) => void;
 }
 
@@ -44,6 +45,7 @@ export default function MobileCompile({
   dark,
   title,
   scope,
+  studyScopes,
   onFlash,
 }: Props) {
   const synthKey = (color: number) => "synthesis:" + scope + ":" + color;
@@ -297,7 +299,9 @@ export default function MobileCompile({
           <div style={{ fontSize: "18px", fontWeight: 700 }}>Compile</div>
           {title && (
             <div style={{ fontSize: "12px", color: C.muted }}>
-              {title} · this chapter
+              {studyScopes && studyScopes.length > 1
+                ? studyScopes.length + " chapters · " + studyScopes.join(", ")
+                : title + " · this chapter"}
             </div>
           )}
         </div>
