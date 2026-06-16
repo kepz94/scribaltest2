@@ -43,6 +43,20 @@ const MOBILE_APPLY_OPTS = {
   keepLocalIfPresent: ["scribal_mobile_loc"],
 };
 
+// A fresh id for a new link group.
+const newGroupId = () =>
+  "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+// Distinct colors so different link groups are visually distinguishable.
+const LINK_COLORS = [
+  "#8b5cf6",
+  "#0ea5e9",
+  "#f59e0b",
+  "#10b981",
+  "#ef4444",
+  "#ec4899",
+];
+
 // Backup / sync helpers — implementations live in ./sync (shared with desktop);
 // these thin wrappers pass in this shell's key list and device-local rules.
 function buildBackupString() {
@@ -252,6 +266,29 @@ export default function MobileApp() {
   const [penOpen, setPenOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [pickBookI, setPickBookI] = useState(-1);
+  const [pickChapI, setPickChapI] = useState(-1);
+  // Chapters in the same group are one study — they share theme names and
+  // compile together. Different groups stay independent. Same storage key as
+  // desktop, so a link made on one device's shell shows in the other.
+  const [chapterGroups, setChapterGroups] = useState<Record<string, string>>(
+    () => {
+      try {
+        const raw = JSON.parse(
+          localStorage.getItem("scribal_linked_chapters") || "{}"
+        );
+        return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+      } catch {
+        return {};
+      }
+    }
+  );
+  useEffect(() => {
+    localStorage.setItem(
+      "scribal_linked_chapters",
+      JSON.stringify(chapterGroups)
+    );
+  }, [chapterGroups]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
@@ -569,20 +606,23 @@ export default function MobileApp() {
   const bookName = vols[loc.v].books[loc.b].book;
   const title = bookName + " " + chapter.chapter;
 
-  // Pending "continue themes" carry → applied when you open the next chapter.
-  const carryRef = useRef<{
-    from: string;
-    labels: Record<number, string>;
-  } | null>(null);
-
   // Theme names are per chapter (study scope). Each chapter keeps its own
   // palette, so naming or clearing one chapter never touches another.
   const scopeOf = (ref: string) => {
     const i = ref.indexOf(":");
     return i < 0 ? ref : ref.slice(0, i);
   };
+  // A chapter's label scope: its group's shared scope if linked, else its own.
+  const resolveScope = (cs: string) =>
+    chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+  // Stable distinct color for each link group.
+  const groupColor = (gid: string) => {
+    const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
+    const i = ids.indexOf(gid);
+    return LINK_COLORS[(i < 0 ? 0 : i) % LINK_COLORS.length];
+  };
   const chapterColorName = (scope: string, color: MarkColor): string => {
-    const sl = scopedLabels[scope];
+    const sl = scopedLabels[resolveScope(scope)];
     if (sl && color in sl) return (sl[color] || "").trim();
     // fall back to a frozen per-mark label (saved/older studies)
     const fm = marks.find(
@@ -626,24 +666,99 @@ export default function MobileApp() {
     });
     return Array.from(map.values());
   })();
-  // "Continue these themes": carry this chapter's named palette into the NEXT
-  // chapter you open (applied once, fills blanks only).
-  const continueThemes = () => {
-    const carry: Record<number, string> = {};
-    chapterThemes.forEach((t) => {
-      if (t.name && !t.name.startsWith("Color ")) carry[t.color] = t.name;
-    });
-    carryRef.current = { from: title, labels: carry };
-    setLinkOpen(false);
-    flash("Themes will carry into your next chapter");
+  // ---- Link groups: combine chapters into one study (shared themes + compile) ----
+  const allBooks: { v: number; b: number; name: string }[] = [];
+  vols.forEach((vol, v) =>
+    vol.books.forEach((bk, b) => allBooks.push({ v, b, name: bk.book }))
+  );
+  const groupMembers = (cs: string): string[] =>
+    chapterGroups[cs]
+      ? Object.keys(chapterGroups)
+          .filter((s) => chapterGroups[s] === chapterGroups[cs])
+          .sort()
+      : [];
+  // Link chapter a (current) with chapter b. Never drops a study's theme names:
+  // seeding only fills blanks, so existing names survive a join or a merge.
+  const linkChapters = (a: string, b: string) => {
+    if (a === b) return;
+    const ga = chapterGroups[a];
+    const gb = chapterGroups[b];
+    if (ga && gb && ga === gb) return;
+    const next = { ...chapterGroups };
+    if (ga && gb) {
+      // merge b's study into a's
+      seedScopeLabels("group:" + ga, scopedLabels["group:" + gb] || {});
+      Object.keys(next).forEach((s) => {
+        if (next[s] === gb) next[s] = ga;
+      });
+    } else if (ga && !gb) {
+      seedScopeLabels("group:" + ga, scopedLabels[b] || {});
+      next[b] = ga;
+    } else if (!ga && gb) {
+      seedScopeLabels("group:" + gb, scopedLabels[a] || {});
+      next[a] = gb;
+    } else {
+      const gid = newGroupId();
+      seedScopeLabels("group:" + gid, scopedLabels[a] || {});
+      seedScopeLabels("group:" + gid, scopedLabels[b] || {});
+      next[a] = gid;
+      next[b] = gid;
+    }
+    setChapterGroups(next);
   };
-  // When the open chapter changes, apply any pending carry to it (fill-blank).
-  useEffect(() => {
-    const c = carryRef.current;
-    if (!c || c.from === title) return;
-    if (Object.keys(c.labels).length) seedScopeLabels(title, c.labels);
-    carryRef.current = null;
-  }, [title, seedScopeLabels]);
+  const unlink = (a: string) => {
+    const next = { ...chapterGroups };
+    delete next[a];
+    const counts: Record<string, number> = {};
+    Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    Object.keys(next).forEach((s) => {
+      if (counts[next[s]] < 2) delete next[s];
+    });
+    setChapterGroups(next);
+  };
+  const openLinkPrompt = () => {
+    setPickBookI(-1);
+    setPickChapI(-1);
+    setLinkOpen(true);
+  };
+  // Next chapter in canonical order (the one-tap "link with next").
+  const nextLoc = curIndex >= 0 ? flat[curIndex + 1] : undefined;
+  const nextTitle = nextLoc
+    ? vols[nextLoc.v].books[nextLoc.b].book +
+      " " +
+      vols[nextLoc.v].books[nextLoc.b].chapters[nextLoc.c].chapter
+    : null;
+  const linkWithNext = () => {
+    if (!nextLoc || !nextTitle) return;
+    linkChapters(title, nextTitle);
+    setLinkOpen(false);
+    setLoc(nextLoc);
+    flash("Linked with " + nextTitle);
+  };
+  // The chapter chosen in the book/chapter picker (the link target).
+  const pickBook = pickBookI >= 0 ? allBooks[pickBookI] : null;
+  const pickChapters = pickBook
+    ? vols[pickBook.v].books[pickBook.b].chapters
+    : [];
+  const targetScope =
+    pickBook && pickChapI >= 0 && pickChapters[pickChapI]
+      ? pickBook.name + " " + pickChapters[pickChapI].chapter
+      : null;
+  const previewLabels = targetScope
+    ? scopedLabels[resolveScope(targetScope)] || {}
+    : {};
+  const previewThemes = Object.keys(previewLabels)
+    .map((k) => ({
+      color: Number(k) as MarkColor,
+      name: previewLabels[Number(k)],
+    }))
+    .filter((t) => t.name && t.name.trim());
+  const confirmPick = () => {
+    if (!targetScope || targetScope === title) return;
+    linkChapters(title, targetScope);
+    setLinkOpen(false);
+    flash("Linked with " + targetScope);
+  };
 
   const updateProgress = (el: HTMLDivElement) => {
     const max = el.scrollHeight - el.clientHeight;
@@ -1257,9 +1372,9 @@ export default function MobileApp() {
               </span>
             )}
           </button>
-          {chapterMarks.length > 0 && (
+          {(
             <button
-              onClick={() => setLinkOpen(true)}
+              onClick={openLinkPrompt}
               style={{
                 ...navBtn(C, false),
                 display: "flex",
@@ -1369,6 +1484,19 @@ export default function MobileApp() {
             margin: "0 0 14px",
           }}
         >
+          {chapterGroups[title] && (
+            <span
+              style={{
+                display: "inline-block",
+                width: "0.55em",
+                height: "0.55em",
+                borderRadius: "50%",
+                background: groupColor(chapterGroups[title]),
+                marginRight: "0.4em",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
           {title}
         </h2>
         <div
@@ -1599,12 +1727,13 @@ export default function MobileApp() {
                   </div>
                   <input
                     value={
-                      scopedLabels[title] && pen.color in scopedLabels[title]
-                        ? scopedLabels[title][pen.color]
+                      scopedLabels[resolveScope(title)] &&
+                      pen.color in scopedLabels[resolveScope(title)]
+                        ? scopedLabels[resolveScope(title)][pen.color]
                         : chapterColorName(title, pen.color)
                     }
                     onChange={(e) =>
-                      setScopedLabel(title, pen.color, e.target.value)
+                      setScopedLabel(resolveScope(title), pen.color, e.target.value)
                     }
                     placeholder={"Name color " + pen.color + " (e.g. Covenant)"}
                     style={{
@@ -1659,8 +1788,26 @@ export default function MobileApp() {
           () => setLinkOpen(false),
           <div>
             <div
-              style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}
+              style={{
+                fontSize: "18px",
+                fontWeight: 700,
+                marginBottom: "2px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
             >
+              {chapterGroups[title] && (
+                <span
+                  style={{
+                    width: "12px",
+                    height: "12px",
+                    borderRadius: "50%",
+                    background: groupColor(chapterGroups[title]),
+                    flexShrink: 0,
+                  }}
+                />
+              )}
               {title}
             </div>
             <div
@@ -1792,8 +1939,256 @@ export default function MobileApp() {
                 ))}
             </div>
 
+            {/* Combine this chapter into a study */}
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "6px",
+              }}
+            >
+              Combine into a study
+            </div>
+            <div
+              style={{
+                fontSize: "11.5px",
+                color: C.muted,
+                lineHeight: 1.5,
+                marginBottom: "12px",
+              }}
+            >
+              Linked chapters share one set of theme names and compile together.
+            </div>
+
+            {chapterGroups[title] && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  background: C.soft,
+                  border: "1px solid " + C.border,
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  marginBottom: "12px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "12px",
+                    height: "12px",
+                    borderRadius: "50%",
+                    background: groupColor(chapterGroups[title]),
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1, fontSize: "13px" }}>
+                  Linked with{" "}
+                  {groupMembers(title)
+                    .filter((s) => s !== title)
+                    .join(", ")}
+                </span>
+                <button
+                  onClick={() => {
+                    unlink(title);
+                    setLinkOpen(false);
+                    flash("Chapter unlinked");
+                  }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid " + C.border,
+                    borderRadius: "8px",
+                    padding: "6px 10px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    color: "inherit",
+                  }}
+                >
+                  Unlink
+                </button>
+              </div>
+            )}
+
+            {nextTitle && (
+              <button
+                onClick={linkWithNext}
+                style={{
+                  width: "100%",
+                  background: "#8b5cf6",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "13px",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  marginBottom: "14px",
+                }}
+              >
+                Link with next chapter ({nextTitle}) →
+              </button>
+            )}
+
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "8px",
+              }}
+            >
+              Or link with another chapter
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <select
+                value={pickBookI}
+                onChange={(e) => {
+                  setPickBookI(Number(e.target.value));
+                  setPickChapI(-1);
+                }}
+                style={{
+                  flex: 2,
+                  minWidth: 0,
+                  boxSizing: "border-box",
+                  padding: "11px 10px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.soft,
+                  color: C.text,
+                  fontSize: "14px",
+                  fontFamily: "inherit",
+                }}
+              >
+                <option value={-1}>Choose a book…</option>
+                {allBooks.map((bk, i) => (
+                  <option key={i} value={i}>
+                    {bk.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={pickChapI}
+                disabled={pickBookI < 0}
+                onChange={(e) => setPickChapI(Number(e.target.value))}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  boxSizing: "border-box",
+                  padding: "11px 10px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.soft,
+                  color: C.text,
+                  fontSize: "14px",
+                  fontFamily: "inherit",
+                  opacity: pickBookI < 0 ? 0.5 : 1,
+                }}
+              >
+                <option value={-1}>Chapter…</option>
+                {pickChapters.map((ch, c) => (
+                  <option key={c} value={c}>
+                    {ch.chapter}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {targetScope && targetScope === title && (
+              <div
+                style={{ fontSize: "13px", color: C.muted, marginBottom: "8px" }}
+              >
+                That's the chapter you're on — pick a different one.
+              </div>
+            )}
+
+            {targetScope && targetScope !== title && (
+              <div
+                style={{
+                  border: "1px solid " + C.border,
+                  borderRadius: "10px",
+                  padding: "12px",
+                  marginBottom: "10px",
+                }}
+              >
+                {chapterGroups[targetScope] ? (
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      lineHeight: 1.5,
+                      marginBottom: previewThemes.length ? "10px" : "0",
+                    }}
+                  >
+                    <strong>{targetScope}</strong> is already linked with{" "}
+                    {groupMembers(targetScope)
+                      .filter((s) => s !== targetScope)
+                      .join(", ")}
+                    .
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      lineHeight: 1.5,
+                      marginBottom: previewThemes.length ? "10px" : "0",
+                    }}
+                  >
+                    Link <strong>{title}</strong> with{" "}
+                    <strong>{targetScope}</strong>.
+                  </div>
+                )}
+                {previewThemes.length > 0 && (
+                  <>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: C.muted,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      Themes you'll share:
+                    </div>
+                    <div
+                      style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}
+                    >
+                      {previewThemes.map((t, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            fontSize: "13px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "12px",
+                              height: "12px",
+                              borderRadius: "50%",
+                              backgroundColor: COLOR_MAP[t.color],
+                              flexShrink: 0,
+                            }}
+                          />
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             <button
-              onClick={continueThemes}
+              onClick={confirmPick}
+              disabled={!targetScope || targetScope === title}
               style={{
                 width: "100%",
                 background: "#8b5cf6",
@@ -1803,24 +2198,16 @@ export default function MobileApp() {
                 padding: "13px",
                 fontSize: "14px",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor:
+                  !targetScope || targetScope === title ? "default" : "pointer",
+                opacity: !targetScope || targetScope === title ? 0.5 : 1,
                 fontFamily: "inherit",
-                marginBottom: "6px",
               }}
             >
-              Continue these themes →
+              {targetScope && chapterGroups[targetScope]
+                ? "Add " + title + " to this study"
+                : "Link"}
             </button>
-            <div
-              style={{
-                fontSize: "11.5px",
-                color: C.muted,
-                textAlign: "center",
-                lineHeight: 1.5,
-              }}
-            >
-              Carries these theme names onto your pens so your next chapter picks
-              up right where this one left off.
-            </div>
           </div>
         )}
 
