@@ -95,11 +95,17 @@ const KEYFRAMES = `
   0%,100% { opacity:0.5; }
   50% { opacity:1; }
 }
+@keyframes stour-linkbar {
+  0%,18% { transform:scaleX(0); opacity:0; }
+  40% { opacity:0.4; }
+  70%,86% { transform:scaleX(1); opacity:0.4; }
+  100% { transform:scaleX(0); opacity:0; }
+}
 `;
 
 export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Props) {
   const [step, setStep] = useState(0);
-  const LAST = 5; // sign-in step index
+  const LAST = 6; // sign-in step index
 
   const dot: React.CSSProperties = {
     position: "absolute",
@@ -499,14 +505,90 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
     </span>
   );
 
+  const linkDemo = (
+    <div style={panel}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "10px",
+          marginBottom: "10px",
+        }}
+      >
+        <span
+          style={{
+            ...pill,
+            fontFamily: SERIF,
+            fontSize: "14px",
+            animation: "stour-gather 0.5s ease both",
+          }}
+        >
+          Matthew 5
+        </span>
+        <span
+          style={{
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            backgroundColor: C.soft,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {linkGlyph}
+        </span>
+        <span
+          style={{
+            ...pill,
+            fontFamily: SERIF,
+            fontSize: "14px",
+            animation: "stour-gather 0.5s ease both",
+            animationDelay: "0.12s",
+          }}
+        >
+          3 Nephi 12
+        </span>
+      </div>
+      <div style={{ position: "relative", height: "22px" }}>
+        <div
+          style={{
+            position: "absolute",
+            left: "12%",
+            right: "12%",
+            top: "10px",
+            height: "3px",
+            borderRadius: "2px",
+            backgroundColor: "#8b5cf6",
+            transformOrigin: "center",
+            animation: "stour-linkbar 2.8s infinite",
+          }}
+        />
+        <span
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "1px",
+            transform: "translateX(-50%)",
+            backgroundColor: C.panel,
+            padding: "0 8px",
+            fontSize: "10.5px",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            color: "#8b5cf6",
+            animation: "stour-fadein 2.8s infinite",
+          }}
+        >
+          ONE STUDY
+        </span>
+      </div>
+    </div>
+  );
+
   const moreDemo = (
     <div style={{ marginBottom: "14px" }}>
-      {featRow(
-        linkGlyph,
-        "Continue a study",
-        "Tap the link by the chapter name to carry its themes into your next chapter.",
-        0.05
-      )}
       {featRow(
         editGlyph,
         "Fine-tune a mark",
@@ -607,6 +689,19 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
       case 4:
         return (
           <div>
+            {title("Link chapters into one study")}
+            {linkDemo}
+            {body(
+              "Studying a theme across books? Open the link by the chapter name, pick another chapter, and Scribal takes you there — the two now read as one study."
+            )}
+            {body(
+              "Open that link anytime to jump between the chapters, or unlink any one. Compile then gathers every linked chapter's marks together, by theme."
+            )}
+          </div>
+        );
+      case 5:
+        return (
+          <div>
             {title("More as you go")}
             {moreDemo}
             {body(
@@ -614,7 +709,7 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
             )}
           </div>
         );
-      case 5:
+      case 6:
         return (
           <div>
             {title("Sync, or keep it local")}
@@ -735,7 +830,7 @@ export default function MobileTour({ C, driveConfigured, onSync, onLocal }: Prop
           padding: "8px 0 14px",
         }}
       >
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => (
           <span
             key={i}
             style={{
