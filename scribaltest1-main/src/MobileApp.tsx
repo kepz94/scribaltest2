@@ -1843,17 +1843,75 @@ export default function MobileApp() {
             overflow: "hidden",
           }}
         >
-          {/* Collapsed pill row */}
+          {/* Colors — always visible */}
+          <div style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setPen((p) => ({ ...p, color: c }))}
+                aria-label={"Color " + c}
+                style={{
+                  flex: 1,
+                  height: "30px",
+                  borderRadius: "8px",
+                  background:
+                    pen.tool === "highlight" ? HIGHLIGHT_MAP[c] : COLOR_MAP[c],
+                  border:
+                    pen.color === c
+                      ? "2px solid " + C.text
+                      : "1px solid " + C.border,
+                  cursor: "pointer",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Styles — always visible */}
+          <div
+            style={{
+              padding: "10px 14px 0",
+              display: "flex",
+              gap: "6px",
+              flexWrap: "wrap",
+            }}
+          >
+            {STYLE_LABELS.map((s) => {
+              const active = pen.tool === s.tool;
+              return (
+                <button
+                  key={s.tool}
+                  onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                  style={{
+                    padding: "7px 12px",
+                    borderRadius: "999px",
+                    whiteSpace: "nowrap",
+                    border: "1px solid " + (active ? C.text : C.border),
+                    background: active ? C.text : "transparent",
+                    color: active ? C.bg : C.text,
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Name-theme toggle — colors + styles stay open; the arrow reveals
+              the theme-name field for the armed color. */}
           <button
             onClick={() => setPenOpen((o) => !o)}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "12px",
+              gap: "10px",
               width: "100%",
               background: "transparent",
               border: "none",
-              padding: "12px 14px",
+              padding: "10px 14px",
               cursor: "pointer",
               color: C.text,
               fontFamily: "inherit",
@@ -1861,30 +1919,21 @@ export default function MobileApp() {
           >
             <span
               style={{
-                width: "22px",
-                height: "22px",
-                borderRadius: "7px",
-                backgroundColor: isEraser
-                  ? "transparent"
-                  : pen.tool === "highlight"
-                  ? HIGHLIGHT_MAP[pen.color]
-                  : COLOR_MAP[pen.color],
-                border: isEraser ? "1.5px dashed " + C.muted : "1px solid " + C.border,
-                flexShrink: 0,
+                flex: 1,
+                textAlign: "left",
+                fontSize: "12px",
+                color: C.muted,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
-            />
-            <div style={{ flex: 1, textAlign: "left" }}>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>
-                {isEraser
-                  ? "Eraser"
-                  : (STYLE_LABELS.find((s) => s.tool === pen.tool)?.label || "")}
-              </div>
-              <div style={{ fontSize: "11px", color: C.muted }}>
-                {isEraser
-                  ? "tap a mark to remove it"
-                  : armedName || "expand to name this theme"}
-              </div>
-            </div>
+            >
+              {isEraser
+                ? "Eraser · tap a mark to remove it"
+                : armedName
+                ? "Theme: " + armedName
+                : "Name this theme"}
+            </span>
             {isSession && !isEraser && (
               <span
                 style={{
@@ -1903,96 +1952,38 @@ export default function MobileApp() {
                 {activeBookName}
               </span>
             )}
-            <span style={{ color: C.muted, fontSize: "13px" }}>
-              {penOpen ? "▾" : "▴"}
-            </span>
+            {!isEraser && (
+              <span style={{ color: C.muted, fontSize: "13px" }}>
+                {penOpen ? "▾" : "▴"}
+              </span>
+            )}
           </button>
 
-          {/* Expanded tray */}
-          {penOpen && (
+          {penOpen && !isEraser && (
             <div style={{ padding: "0 14px 14px" }}>
-              <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
-                Color
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setPen((p) => ({ ...p, color: c }))}
-                    style={{
-                      width: "30px",
-                      height: "30px",
-                      borderRadius: "50%",
-                      backgroundColor: COLOR_MAP[c],
-                      border: "none",
-                      cursor: "pointer",
-                      boxShadow:
-                        pen.color === c
-                          ? "0 0 0 2px " + C.panel + ", 0 0 0 4px " + C.text
-                          : "0 0 0 1px " + C.border,
-                    }}
-                    aria-label={"Color " + c}
-                  />
-                ))}
-              </div>
-
-              {!isEraser && (
-                <div style={{ marginBottom: "16px" }}>
-                  <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
-                    Theme name
-                  </div>
-                  <input
-                    value={
-                      scopedLabels[resolveScope(title)] &&
-                      pen.color in scopedLabels[resolveScope(title)]
-                        ? scopedLabels[resolveScope(title)][pen.color]
-                        : chapterColorName(title, pen.color)
-                    }
-                    onChange={(e) =>
-                      setScopedLabel(resolveScope(title), pen.color, e.target.value)
-                    }
-                    placeholder={"Name color " + pen.color + " (e.g. Covenant)"}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "10px 12px",
-                      fontSize: "16px",
-                      borderRadius: "10px",
-                      border: "1px solid " + C.border,
-                      backgroundColor: C.bg,
-                      color: C.text,
-                      fontFamily: "inherit",
-                    }}
-                  />
-                </div>
-              )}
-
-              <div style={{ fontSize: "11px", color: C.muted, marginBottom: "8px" }}>
-                Style
-              </div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                {STYLE_LABELS.map((s) => {
-                  const active = pen.tool === s.tool;
-                  return (
-                    <button
-                      key={s.tool}
-                      onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: "999px",
-                        border: "1px solid " + (active ? C.text : C.border),
-                        backgroundColor: active ? C.text : "transparent",
-                        color: active ? C.bg : C.text,
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <input
+                value={
+                  scopedLabels[resolveScope(title)] &&
+                  pen.color in scopedLabels[resolveScope(title)]
+                    ? scopedLabels[resolveScope(title)][pen.color]
+                    : chapterColorName(title, pen.color)
+                }
+                onChange={(e) =>
+                  setScopedLabel(resolveScope(title), pen.color, e.target.value)
+                }
+                placeholder={"Name color " + pen.color + " (e.g. Covenant)"}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "10px 12px",
+                  fontSize: "16px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  backgroundColor: C.bg,
+                  color: C.text,
+                  fontFamily: "inherit",
+                }}
+              />
             </div>
           )}
         </div>
@@ -4052,8 +4043,7 @@ export default function MobileApp() {
                   style={{
                     display: "flex",
                     gap: "6px",
-                    overflowX: "auto",
-                    WebkitOverflowScrolling: "touch",
+                    flexWrap: "wrap",
                   }}
                 >
                   {STYLE_LABELS.map((s) => {
