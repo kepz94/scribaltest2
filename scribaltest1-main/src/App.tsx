@@ -911,8 +911,10 @@ export default function App() {
   const compileScopedLabels = scopedLabels[compileScope] || {};
 
   // The per-chapter (group-aware) theme name for any verse — used by search.
-  const labelFor = (reference: string, color: MarkColor) =>
-    scopedLabels[resolveScope(scopeOfRef(reference))]?.[color] || "";
+  const labelFor = (reference: string, color: MarkColor | null) =>
+    color == null
+      ? ""
+      : scopedLabels[resolveScope(scopeOfRef(reference))]?.[color] || "";
 
   const usedColors = COLORS.filter((c) =>
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
