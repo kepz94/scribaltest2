@@ -14,10 +14,9 @@ import MobileCompile from "./MobileCompile";
 import CompileAnimation from "./components/CompileAnimation";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
-import MobileVault from "./MobileVault";
 import MobileTour from "./MobileTour";
 import { useMarks } from "./hooks/useMarks";
-import { useVault, VaultEntry } from "./hooks/useVault";
+import { useVault } from "./hooks/useVault";
 import * as drive from "./googleDrive";
 import {
   CORE_KEYS,
@@ -260,7 +259,6 @@ export default function MobileApp() {
     addMark,
     deleteMark,
     updateMarkRange,
-    importStudy,
     freezeChapter,
     mergeRemoteBooks,
     undo,
@@ -276,8 +274,6 @@ export default function MobileApp() {
     entries: vaultEntries,
     addEntry: vaultAdd,
     updateEntry: vaultUpdate,
-    deleteEntry: vaultDelete,
-    renameEntry: vaultRename,
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
@@ -410,6 +406,8 @@ export default function MobileApp() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  // Which book is opened inside the Vault (null = the book list).
+  const [vaultBookId, setVaultBookId] = useState<string | null>(null);
   // Home launcher. Opens to Home on launch; flip the initial value to
   // `false` to open straight into reading instead.
   const [homeOpen, setHomeOpen] = useState(true);
@@ -1353,36 +1351,60 @@ export default function MobileApp() {
     }
   };
 
-  // ---- Restore a saved study from the Vault into the active book ----
-  // Safe / additive: it only ADDS marks that aren't already present, and only
-  // FILLS blank theme names + notes. It never overwrites a mark, a name, or a
-  // note you're currently using — so restoring can recover lost work without
-  // ever stomping good data.
-  const restoreFromVault = (entry: VaultEntry) => {
-    const curIds = new Set(marks.map((m) => m.id));
-    const added = (entry.marks || []).filter((m) => !curIds.has(m.id));
-    const mergedMarks = [...marks, ...added];
-
-    const mergedLabels: Record<number, string> = { ...colorLabels };
-    COLORS.forEach((c) => {
-      const cur = (mergedLabels[c] || "").trim();
-      const fromEntry = (entry.colorLabels && entry.colorLabels[c]) || "";
-      if (!cur && fromEntry.trim()) mergedLabels[c] = fromEntry; // fill blanks only
+  // ---- Migrate old Vault snapshots into the new live Studies list (once) ----
+  useEffect(() => {
+    if (localStorage.getItem("scribal_vault_migrated_v1")) return;
+    const recs: Study[] = [];
+    vaultEntries.forEach((e) => {
+      if (!e || !e.scopeKey || e.deleted) return;
+      if (e.scopeKey.indexOf("searchstudy:") === 0) return; // already a search study
+      const type: "chapter" | "linked" =
+        e.scopeKey.indexOf("group:") === 0 ? "linked" : "chapter";
+      const scopeRef =
+        type === "linked" ? e.scopeKey.slice("group:".length) : e.scopeKey;
+      let bookId = "master";
+      if (e.bookName && e.bookName !== "Master Book") {
+        const bk = books.find((b) => b.name === e.bookName);
+        if (!bk) return; // book is gone — skip
+        bookId = bk.id;
+      }
+      recs.push({
+        id: "study_mig_" + e.id,
+        type,
+        bookId,
+        name: e.name || scopeRef,
+        scopeRef,
+        compiledAt: e.updatedAt || e.createdAt || Date.now(),
+      });
     });
+    if (recs.length) {
+      setStudies((prev) => {
+        const have = new Set(
+          prev.map((s) => s.type + "|" + s.bookId + "|" + s.scopeRef)
+        );
+        const add = recs.filter(
+          (r) => !have.has(r.type + "|" + r.bookId + "|" + r.scopeRef)
+        );
+        return add.length ? [...add, ...prev] : prev;
+      });
+    }
+    try {
+      localStorage.setItem("scribal_vault_migrated_v1", "1");
+    } catch {}
+  }, [books, vaultEntries]);
 
-    const mergedNotes: Record<string, string> = { ...notes };
-    const en = entry.notes || {};
-    Object.keys(en).forEach((k) => {
-      if (!(mergedNotes[k] && mergedNotes[k].trim())) mergedNotes[k] = en[k]; // fill blanks only
+  // ---- Drop studies whose book no longer exists (any delete path) ----
+  useEffect(() => {
+    const ids = new Set(books.map((b) => b.id));
+    setStudies((prev) => {
+      const keep = prev.filter((s) => ids.has(s.bookId));
+      return keep.length === prev.length ? prev : keep;
     });
-
-    importStudy(mergedMarks, mergedLabels, mergedNotes);
-    flash(
-      added.length
-        ? "Restored " + added.length + (added.length === 1 ? " mark" : " marks")
-        : "Already in your book"
-    );
-  };
+    setSearchStudies((prev) => {
+      const keep = prev.filter((ss) => ids.has(ss.bookId));
+      return keep.length === prev.length ? prev : keep;
+    });
+  }, [books]);
 
   // ---- Close (delete) a session study book ----
   const closeSession = (id: string, name: string, markCount: number) => {
@@ -2857,8 +2879,10 @@ export default function MobileApp() {
             )}
             {homeTile(
               "Vault",
-              vaultEntries.length +
-                (vaultEntries.length === 1 ? " saved study" : " saved studies"),
+              (() => {
+                const n = books.filter((b) => !b.isMaster).length;
+                return n === 1 ? "1 session book" : n + " session books";
+              })(),
               <svg
                 width="22"
                 height="22"
@@ -4973,17 +4997,390 @@ export default function MobileApp() {
       )}
 
       {/* Vault (full-screen) */}
-      {vaultOpen && (
-        <MobileVault
-          entries={vaultEntries}
-          C={C}
-          onUpdate={vaultUpdate}
-          onDelete={vaultDelete}
-          onRename={vaultRename}
-          onRestore={restoreFromVault}
-          onClose={() => setVaultOpen(false)}
-        />
-      )}
+      {vaultOpen &&
+        (() => {
+          const bookMarksOf = (bid: string) =>
+            allMarks.filter((m) => m.bookId === bid);
+          const studiesInBook = (bid: string) =>
+            studies.filter((s) => s.bookId === bid);
+          const searchesInBook = (bid: string) =>
+            searchStudies.filter((ss) => ss.bookId === bid);
+          const countInBook = (bid: string) =>
+            studiesInBook(bid).length + searchesInBook(bid).length;
+          const countChapter = (s: Study) =>
+            bookMarksOf(s.bookId).filter(
+              (m) => scopeOf(m.reference) === s.scopeRef
+            ).length;
+          const countLinked = (s: Study) => {
+            const chs = Object.keys(chapterGroups).filter(
+              (c) => chapterGroups[c] === s.scopeRef
+            );
+            return bookMarksOf(s.bookId).filter((m) =>
+              chs.includes(scopeOf(m.reference))
+            ).length;
+          };
+          const countSearch = (ss: SearchStudy) =>
+            bookMarksOf(ss.bookId).filter((m) => ss.refs.includes(m.reference))
+              .length;
+
+          const selBook = vaultBookId
+            ? books.find((b) => b.id === vaultBookId) || null
+            : null;
+
+          const openFromVault = (fn: () => void) => {
+            setVaultOpen(false);
+            setVaultBookId(null);
+            fn();
+          };
+
+          // one tappable study row (reference only — opens the study)
+          const studyRow = (
+            key: string,
+            name: string,
+            meta: string,
+            accent: string,
+            onOpen: () => void
+          ) => (
+            <button
+              key={key}
+              onClick={onOpen}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderTop: "1px solid " + C.border,
+                padding: "12px 2px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <span
+                style={{
+                  width: "9px",
+                  height: "9px",
+                  borderRadius: "50%",
+                  background: accent,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {name}
+                </span>
+                <span style={{ fontSize: "11.5px", color: C.muted }}>
+                  {meta}
+                </span>
+              </span>
+              <span
+                style={{ color: C.muted, fontSize: "18px", flexShrink: 0 }}
+              >
+                ›
+              </span>
+            </button>
+          );
+
+          const section = (
+            title: string,
+            rows: React.ReactNode
+          ) => (
+            <div style={{ marginBottom: "20px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: C.muted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  marginBottom: "2px",
+                }}
+              >
+                {title}
+              </div>
+              {rows}
+            </div>
+          );
+
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 250,
+                backgroundColor: C.bg,
+                color: C.text,
+                display: "flex",
+                flexDirection: "column",
+                animation: "mob-fadein 0.18s ease",
+              }}
+            >
+              {/* header */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <button
+                  onClick={() =>
+                    vaultBookId ? setVaultBookId(null) : setVaultOpen(false)
+                  }
+                  aria-label="Back"
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    background: "transparent",
+                    border: "none",
+                    color: C.text,
+                    fontSize: "22px",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <div
+                  style={{
+                    fontSize: "17px",
+                    fontWeight: 700,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {selBook ? selBook.name : "Books"}
+                </div>
+              </div>
+
+              {/* body */}
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  padding: "16px 18px calc(20px + env(safe-area-inset-bottom))",
+                }}
+              >
+                {!selBook ? (
+                  // ---------------- BOOK LIST ----------------
+                  <>
+                    <div
+                      style={{
+                        fontSize: "12.5px",
+                        color: C.muted,
+                        lineHeight: 1.5,
+                        marginBottom: "14px",
+                      }}
+                    >
+                      Your books. Master is permanent. Deleting a session book
+                      also deletes its marks and its studies.
+                    </div>
+                    {books.map((b) => {
+                      const sc = countInBook(b.id);
+                      return (
+                        <div
+                          key={b.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            borderTop: "1px solid " + C.border,
+                          }}
+                        >
+                          <button
+                            onClick={() => setVaultBookId(b.id)}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              textAlign: "left",
+                              background: "transparent",
+                              border: "none",
+                              padding: "13px 2px",
+                              color: C.text,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <span style={{ fontSize: "18px", flexShrink: 0 }}>
+                              {b.isMaster ? "📕" : "📘"}
+                            </span>
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "14px",
+                                  fontWeight: 600,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {b.name}
+                                {b.isMaster ? "  ·  permanent" : ""}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "11.5px",
+                                  color: C.muted,
+                                }}
+                              >
+                                {sc + " stud" + (sc === 1 ? "y" : "ies")} ·{" "}
+                                {b.markCount +
+                                  " mark" +
+                                  (b.markCount === 1 ? "" : "s")}
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                color: C.muted,
+                                fontSize: "18px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              ›
+                            </span>
+                          </button>
+                          {!b.isMaster && (
+                            <button
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    'Delete "' +
+                                      b.name +
+                                      '" and everything in it? This removes the book, its marks, and its studies. This cannot be undone.'
+                                  )
+                                ) {
+                                  deleteBook(b.id);
+                                  if (vaultBookId === b.id)
+                                    setVaultBookId(null);
+                                }
+                              }}
+                              aria-label={"Delete " + b.name}
+                              style={{
+                                width: "40px",
+                                height: "46px",
+                                background: "transparent",
+                                border: "none",
+                                color: C.muted,
+                                fontSize: "16px",
+                                cursor: "pointer",
+                                flexShrink: 0,
+                              }}
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : (
+                  // ------------- ONE BOOK'S STUDIES -------------
+                  (() => {
+                    const chap = studiesInBook(selBook.id).filter(
+                      (s) => s.type === "chapter"
+                    );
+                    const linked = studiesInBook(selBook.id).filter(
+                      (s) => s.type === "linked"
+                    );
+                    const searches = searchesInBook(selBook.id);
+                    const tot =
+                      chap.length + linked.length + searches.length;
+                    if (tot === 0)
+                      return (
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: C.muted,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          No studies in this book yet. Open a chapter, mark it,
+                          and tap <b style={{ color: C.text }}>Compile</b> to
+                          record one here.
+                        </div>
+                      );
+                    return (
+                      <>
+                        {chap.length > 0 &&
+                          section(
+                            "Chapter studies",
+                            chap.map((s) =>
+                              studyRow(
+                                s.id,
+                                s.name,
+                                countChapter(s) +
+                                  " mark" +
+                                  (countChapter(s) === 1 ? "" : "s"),
+                                "#8b5cf6",
+                                () =>
+                                  openFromVault(() => openRecordedStudy(s))
+                              )
+                            )
+                          )}
+                        {linked.length > 0 &&
+                          section(
+                            "Linked studies",
+                            linked.map((s) =>
+                              studyRow(
+                                s.id,
+                                s.name,
+                                countLinked(s) +
+                                  " mark" +
+                                  (countLinked(s) === 1 ? "" : "s"),
+                                "#8b5cf6",
+                                () =>
+                                  openFromVault(() => openRecordedStudy(s))
+                              )
+                            )
+                          )}
+                        {searches.length > 0 &&
+                          section(
+                            "Search studies",
+                            searches.map((ss) =>
+                              studyRow(
+                                ss.id,
+                                ss.name,
+                                countSearch(ss) +
+                                  " mark" +
+                                  (countSearch(ss) === 1 ? "" : "s") +
+                                  " · " +
+                                  ss.refs.length +
+                                  " verse" +
+                                  (ss.refs.length === 1 ? "" : "s"),
+                                "#0d9488",
+                                () => openFromVault(() => openStudy(ss))
+                              )
+                            )
+                          )}
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* First-run tour */}
       {showTour && (
