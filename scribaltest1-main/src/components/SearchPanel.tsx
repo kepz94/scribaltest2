@@ -17,6 +17,7 @@ interface SearchPanelProps {
   currentBook: number;
   marks: Mark[];
   colorLabels: Record<number, string>;
+  labelFor: (reference: string, color: MarkColor) => string;
   allMarks: ThemeMark[];
   onJump: (reference: string) => void;
   onJumpToMark: (bookId: string, reference: string) => void;
@@ -55,6 +56,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     currentBook,
     marks,
     colorLabels,
+    labelFor,
     allMarks,
     onJump,
     onJumpToMark,
@@ -778,7 +780,9 @@ export default function SearchPanel(props: SearchPanelProps) {
                         marginTop: "4px",
                       }}
                     >
-                      {(r.label && r.label.trim()) || "Unnamed color"}
+                      {labelFor(r.reference, r.color) ||
+                        (r.label && r.label.trim()) ||
+                        "Unnamed color"}
                       {" · "}
                       {r.bookName}
                     </div>
