@@ -905,12 +905,17 @@ export function useMarks() {
         return {
           marks: [] as Mark[],
           colorLabels: defaultLabels(),
+          scopedLabels: {} as Record<string, Record<number, string>>,
           notes: {} as Record<string, string>,
           name: "",
         };
       return {
         marks: b.marks,
         colorLabels: b.colorLabels,
+        scopedLabels: (b.scopedLabels || {}) as Record<
+          string,
+          Record<number, string>
+        >,
         notes: b.notes,
         name: b.name,
       };
