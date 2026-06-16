@@ -252,6 +252,7 @@ export default function MobileApp() {
     marks,
     colorLabels,
     books,
+    allMarks,
     activeBookId,
     setActiveBook,
     createSession,
@@ -4394,7 +4395,7 @@ export default function MobileApp() {
       {studiesOpen &&
         (() => {
           const bookMarksOf = (bid: string) =>
-            books.find((b) => b.id === bid)?.marks || [];
+            allMarks.filter((m) => m.bookId === bid);
           const bookLabel = (bid: string) =>
             bid === "master"
               ? ""
@@ -5286,4 +5287,3 @@ function JumpPanel({
     </div>
   );
 }
-
