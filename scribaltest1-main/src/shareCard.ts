@@ -95,26 +95,70 @@ function paintBackground(ctx: CanvasRenderingContext2D, p: Palette) {
 }
 
 function paintBrand(ctx: CanvasRenderingContext2D, p: Palette, accent: string) {
+  // Footer signature: the "S" monogram + a one-line descriptor, centered.
   const cx = W / 2;
-  const y = H - 116;
-  const s = 46;
+  const y = H - 110;
+  const s = 40;
+  const gap = 15;
+  const tracking = 2;
+  const tagline = "A PLACE TO STUDY SCRIPTURE";
   ctx.save();
+  ctx.font = "600 19px " + SANS;
+  const tagW =
+    Array.from(tagline).reduce(
+      (acc, ch) => acc + ctx.measureText(ch).width + tracking,
+      0
+    ) - tracking;
+  const totalW = s + gap + tagW;
+  const startX = cx - totalW / 2;
+  const tileY = y - s / 2;
   ctx.fillStyle = p.text;
-  roundRect(ctx, cx - 92, y - s / 2, s, s, 12);
+  roundRect(ctx, startX, tileY, s, s, 11);
   ctx.fill();
   ctx.fillStyle = p.bg;
-  ctx.font = "600 26px " + SERIF;
+  ctx.font = "700 23px " + SERIF;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("S", cx - 92 + s / 2, y + 1);
+  ctx.fillText("S", startX + s / 2, y + 1);
   ctx.fillStyle = accent;
   ctx.beginPath();
-  ctx.arc(cx - 92 + s - 6, y - s / 2 + 6, 5, 0, Math.PI * 2);
+  ctx.arc(startX + s - 6, tileY + 6, 4.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = p.muted;
-  ctx.font = "600 30px " + SANS;
+  ctx.font = "600 19px " + SANS;
   ctx.textAlign = "left";
-  ctx.fillText("Scribal", cx - 92 + s + 16, y + 1);
+  ctx.textBaseline = "middle";
+  drawTrackedLeft(ctx, tagline, startX + s + gap, y + 1, tracking);
+  ctx.restore();
+}
+
+// Top nameplate so the card reads "Scribal" the instant it is seen.
+function paintMasthead(
+  ctx: CanvasRenderingContext2D,
+  p: Palette,
+  accent: string
+) {
+  const cx = W / 2;
+  ctx.save();
+  ctx.fillStyle = p.text;
+  ctx.font = "700 33px " + SERIF;
+  ctx.textBaseline = "alphabetic";
+  drawTracked(ctx, "SCRIBAL", cx, 106, 8);
+  // a hairline rule split by a small accent "jewel"
+  const ry = 130;
+  const half = 92;
+  ctx.strokeStyle = p.frame;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - half, ry);
+  ctx.lineTo(cx - 13, ry);
+  ctx.moveTo(cx + 13, ry);
+  ctx.lineTo(cx + half, ry);
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  ctx.arc(cx, ry, 4.5, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -178,6 +222,7 @@ export function renderVerseCard(o: VerseCardOpts): HTMLCanvasElement {
   if (!ctx) return canvas;
 
   paintBackground(ctx, p);
+  paintMasthead(ctx, p, accent);
   const padX = 130;
   const maxW = W - padX * 2;
 
@@ -271,6 +316,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const { canvas, ctx } = newCanvas();
   if (!ctx) return canvas;
   paintBackground(ctx, p);
+  paintMasthead(ctx, p, penHex(o.verses[0] ? o.verses[0].color : 7, o.dark));
 
   const verses = o.verses.slice(0, 4);
   const showNotes = !!o.showNotes;
@@ -284,7 +330,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const barW = 6;
   const contentX = padX + 22; // text begins to the right of the accent bar
   const maxW = W - contentX - padX;
-  const top = 150;
+  const top = 172;
   const bottom = H - 168; // leave room for the brand footer
   const budget = bottom - top;
 
