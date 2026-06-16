@@ -16,16 +16,26 @@ export interface VaultEntry {
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
   tags?: string[];
+  // Soft-delete marker: kept in storage (and synced) so a deletion isn't
+  // resurrected by a union-merge from the cloud. Hidden from the UI, and
+  // pruned after 90 days.
+  deleted?: boolean;
 }
 
 const KEY = "scribal_vault_v1";
+const TOMBSTONE_TTL = 1000 * 60 * 60 * 24 * 90; // keep hidden deletions 90 days
 
 const safeRead = (): VaultEntry[] => {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const cutoff = Date.now() - TOMBSTONE_TTL;
+    // drop deletions older than the TTL so the list can't grow forever
+    return parsed.filter(
+      (e: VaultEntry) => !(e && e.deleted && (e.updatedAt || 0) < cutoff)
+    );
   } catch {
     return [];
   }
@@ -72,7 +82,13 @@ export function useVault() {
   }, []);
 
   const deleteEntry = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    // Soft delete: mark it and bump updatedAt so the deletion wins any cloud
+    // merge. A hard remove would get resurrected by mergeRemote's union.
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, deleted: true, updatedAt: Date.now() } : e
+      )
+    );
   }, []);
 
   // Live merge of a remote vault snapshot — union by id, newer updatedAt wins.
@@ -115,8 +131,12 @@ export function useVault() {
     });
   }, []);
 
+  // Hide soft-deleted entries from the UI; they stay in storage so the
+  // deletion can sync and outlast a stale cloud merge.
+  const visibleEntries = entries.filter((e) => !e.deleted);
+
   return {
-    entries,
+    entries: visibleEntries,
     addEntry,
     updateEntry,
     renameEntry,
