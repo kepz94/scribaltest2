@@ -316,6 +316,9 @@ export default function MobileApp() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  // Home launcher. Opens to Home on launch; flip the initial value to
+  // `false` to open straight into reading instead.
+  const [homeOpen, setHomeOpen] = useState(true);
   const [editMark, setEditMark] = useState<{ id: string; reference: string } | null>(null);
   const [versePreview, setVersePreview] = useState<{
     phrase: string;
@@ -1336,6 +1339,52 @@ export default function MobileApp() {
     </div>
   );
 
+  // ---- Home launcher ----
+  // Each distinct link-group id with its member chapter scopes (real groups
+  // have 2+ members). Drives the "Linked studies" section on Home.
+  const linkedStudies = Array.from(new Set(Object.values(chapterGroups)))
+    .map((gid) => ({
+      gid,
+      members: Object.keys(chapterGroups)
+        .filter((s) => chapterGroups[s] === gid)
+        .sort(),
+    }))
+    .filter((g) => g.members.length >= 2);
+
+  const homeTile = (
+    label: string,
+    sub: string,
+    icon: React.ReactNode,
+    onClick: () => void
+  ) => (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        textAlign: "left",
+        background: C.panel,
+        border: "1px solid " + C.border,
+        borderRadius: "14px",
+        padding: "16px 14px",
+        minHeight: "112px",
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      <span style={{ color: "#8b5cf6", display: "inline-flex" }}>{icon}</span>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontSize: "15px", fontWeight: 700, marginBottom: "3px" }}>
+        {label}
+      </span>
+      <span style={{ fontSize: "11.5px", color: C.muted, lineHeight: 1.3 }}>
+        {sub}
+      </span>
+    </button>
+  );
+
   return (
     <div
       style={{
@@ -1477,11 +1526,29 @@ export default function MobileApp() {
             ›
           </button>
           <button
-            onClick={() => setMenuOpen(true)}
-            style={navBtn(C, false)}
-            aria-label="Menu"
+            onClick={() => setHomeOpen(true)}
+            style={{
+              ...navBtn(C, false),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            aria-label="Home"
           >
-            ☰
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={C.text}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 11.5 12 4l9 7.5" />
+              <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
+            </svg>
           </button>
         </div>
 
@@ -2349,6 +2416,323 @@ export default function MobileApp() {
             />
           </div>
         )}
+
+      {/* Home (full-screen launcher) */}
+      {homeOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            backgroundColor: C.bg,
+            color: C.text,
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            padding:
+              "calc(env(safe-area-inset-top) + 30px) 20px calc(env(safe-area-inset-bottom) + 30px)",
+            animation: "mob-fadein 0.2s ease",
+          }}
+        >
+          {/* Masthead */}
+          <div style={{ textAlign: "center", marginBottom: "24px" }}>
+            <div
+              style={{
+                fontFamily: '"Times New Roman", Times, serif',
+                fontSize: "30px",
+                fontWeight: 700,
+                letterSpacing: "0.16em",
+                color: C.text,
+              }}
+            >
+              SCRIBAL
+            </div>
+            <div
+              style={{
+                fontSize: "11px",
+                letterSpacing: "0.2em",
+                color: C.muted,
+                marginTop: "5px",
+                textTransform: "uppercase",
+              }}
+            >
+              A place to study scripture
+            </div>
+          </div>
+
+          {/* Continue reading — hero */}
+          <button
+            onClick={() => setHomeOpen(false)}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              background: C.panel,
+              border: "1px solid " + C.border,
+              borderLeft: "4px solid #8b5cf6",
+              borderRadius: "16px",
+              padding: "18px",
+              marginBottom: "14px",
+              color: C.text,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "11px",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "7px",
+              }}
+            >
+              Continue reading
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  fontFamily: '"Times New Roman", Times, serif',
+                  fontSize: "23px",
+                  fontWeight: 700,
+                }}
+              >
+                {displayTitle}
+              </span>
+              <span
+                style={{ marginLeft: "auto", color: "#8b5cf6", fontSize: "22px" }}
+              >
+                →
+              </span>
+            </div>
+          </button>
+
+          {/* Grid: Browse / Compile / Vault / Search */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "12px",
+              marginBottom: "14px",
+            }}
+          >
+            {homeTile(
+              "Browse books",
+              "Pick a book or chapter",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
+                <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setMenuOpen(true);
+              }
+            )}
+            {homeTile(
+              "Compile",
+              "Your marks by theme",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 3 3 8l9 5 9-5z" />
+                <path d="M3 13l9 5 9-5" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                startCompile();
+              }
+            )}
+            {homeTile(
+              "Vault",
+              vaultEntries.length +
+                (vaultEntries.length === 1 ? " saved study" : " saved studies"),
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="4" y="10" width="16" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setVaultOpen(true);
+              }
+            )}
+            {homeTile(
+              "Search",
+              "Scripture & your marks",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setSearchOpen(true);
+              }
+            )}
+          </div>
+
+          {/* Linked studies */}
+          <div
+            style={{
+              background: C.panel,
+              border: "1px solid " + C.border,
+              borderRadius: "14px",
+              padding: "14px",
+              marginBottom: "14px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: linkedStudies.length ? "4px" : "8px",
+              }}
+            >
+              <span style={{ color: "#8b5cf6", display: "inline-flex" }}>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                  <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                </svg>
+              </span>
+              <span style={{ fontSize: "15px", fontWeight: 700 }}>
+                Linked studies
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: "11.5px", color: C.muted }}>
+                {linkedStudies.length || ""}
+              </span>
+            </div>
+            {linkedStudies.length === 0 ? (
+              <div
+                style={{ fontSize: "12.5px", color: C.muted, lineHeight: 1.4 }}
+              >
+                Link two chapters into one study and they'll show up here.
+              </div>
+            ) : (
+              linkedStudies.map((g) => (
+                <button
+                  key={g.gid}
+                  onClick={() => {
+                    setHomeOpen(false);
+                    jumpToScope(g.members[0]);
+                    startCompile();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    borderTop: "1px solid " + C.border,
+                    padding: "12px 2px",
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "9px",
+                      height: "9px",
+                      borderRadius: "50%",
+                      background: groupColor(g.gid),
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {g.members.map(displayOf).join("  +  ")}
+                  </span>
+                  <span
+                    style={{ marginLeft: "auto", color: C.muted, fontSize: "16px" }}
+                  >
+                    ›
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* Settings — slim row */}
+          <button
+            onClick={() => {
+              setHomeOpen(false);
+              setSettingsOpen(true);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              width: "100%",
+              textAlign: "left",
+              background: "transparent",
+              border: "1px solid " + C.border,
+              borderRadius: "12px",
+              padding: "13px 14px",
+              color: C.text,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: "14px",
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>⚙</span>
+            Settings
+            <span style={{ flex: 1 }} />
+            <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
+              {connected ? "synced" : "sync & theme"}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Menu (book switch) */}
       {menuOpen &&
