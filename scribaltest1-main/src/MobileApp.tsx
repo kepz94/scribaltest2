@@ -235,6 +235,23 @@ const IconBook = ({ color, size = 17 }: { color: string; size?: number }) => (
   </svg>
 );
 
+const IconInfo = ({ color, size = 17 }: { color: string; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+  </svg>
+);
+
 // Look up a verse's text + number by reference, built once lazily — used to
 // render a search study's hand-picked verses (which span many chapters).
 let _verseIdx: Map<string, { text: string; verse: number }> | null = null;
@@ -312,7 +329,6 @@ export default function MobileApp() {
     addMark,
     deleteMark,
     updateMarkRange,
-    freezeChapter,
     mergeRemoteBooks,
     undo,
     canUndo,
@@ -325,8 +341,6 @@ export default function MobileApp() {
 
   const {
     entries: vaultEntries,
-    addEntry: vaultAdd,
-    updateEntry: vaultUpdate,
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
@@ -435,6 +449,8 @@ export default function MobileApp() {
   }, [studies]);
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
+  // Which study row (if any) is expanded to show its scope + themes peek.
+  const [infoStudyId, setInfoStudyId] = useState<string | null>(null);
   // Verses just picked in search, waiting for the source + name step.
   const [linkDraftRefs, setLinkDraftRefs] = useState<string[] | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -452,6 +468,9 @@ export default function MobileApp() {
   const [compileOpen, setCompileOpen] = useState(false);
   // When set, Compile + Save are scoped to this search study, not the chapter.
   const [compileStudy, setCompileStudy] = useState<SearchStudy | null>(null);
+  // When set, Compile is scoped to this recorded chapter/linked study (so the
+  // Studies list can jump straight to its compiled notes).
+  const [compileRec, setCompileRec] = useState<Study | null>(null);
   const [compileAnim, setCompileAnim] = useState<{
     show: boolean;
     duration: number;
@@ -1266,7 +1285,8 @@ export default function MobileApp() {
     }
     startCompile();
   };
-  // Open a recorded study from the Studies screen — go to its book + chapter.
+  // Open a recorded study from the Studies screen — jump straight to its
+  // compiled notes (the book is positioned underneath for when you close it).
   const openRecordedStudy = (s: Study) => {
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
     const chapter =
@@ -1282,126 +1302,12 @@ export default function MobileApp() {
     jumpToScope(chapter);
     setStudiesOpen(false);
     setHomeOpen(false);
+    setCompileStudy(null);
+    setCompileRec(s);
+    setCompileOpen(true);
   };
   const deleteStudy = (id: string) => {
     setStudies((prev) => prev.filter((s) => s.id !== id));
-  };
-
-  // ---- Save the current chapter's study to the Vault ----
-  // One file per chapter study: re-saving the same chapter updates that file
-  // instead of making a duplicate. Saving also locks in this chapter's theme
-  // names so reusing a color elsewhere never rewrites them.
-  const saveOutlineToVault = () => {
-    if (studyMarks.length === 0) {
-      flash("Nothing to save yet");
-      return;
-    }
-    const bookName =
-      books.find((b) => b.id === activeBookId)?.name || "Master Book";
-    const scopeKey = resolveScope(title); // group scope when linked
-    const seen = new Set<string>();
-    const compileTabs: {
-      id: string;
-      volume: number;
-      book: number;
-      chapter: number;
-    }[] = [];
-    studyMarks.forEach((m) => {
-      const chap = m.reference.replace(/:\d+$/, "");
-      if (seen.has(chap)) return;
-      const cl = chapterLoc.get(chap);
-      if (cl) {
-        seen.add(chap);
-        compileTabs.push({
-          id: "vtab_" + chap.replace(/\s+/g, "_"),
-          volume: cl.v,
-          book: cl.b,
-          chapter: cl.c,
-        });
-      }
-    });
-    const existing = vaultEntries.find(
-      (e) => e.scopeKey === scopeKey && e.bookName === bookName
-    );
-    const payload = {
-      view: "outline" as const,
-      bookName,
-      scopeKey,
-      compileTabs,
-      marks: studyMarks.slice(),
-      colorLabels: { ...scopeLabels },
-      notes: { ...notes },
-    };
-    if (existing) {
-      vaultUpdate(existing.id, payload);
-      flash("Updated " + scopeKey);
-    } else {
-      vaultAdd({
-        name: scopeKey,
-        tags: [],
-        ...payload,
-      });
-      flash("Saved " + scopeKey);
-    }
-    // Lock this chapter's theme names onto its marks.
-    freezeChapter(title);
-  };
-
-  // Save a search study to the Vault: its verses' marks under its own scope key,
-  // so re-saving updates the same file. (No freeze — the Vault entry already
-  // snapshots the study's theme names.)
-  const saveStudyToVault = (study: SearchStudy) => {
-    const sm = marks.filter((m) => study.refs.includes(m.reference));
-    if (sm.length === 0) {
-      flash("Nothing to save yet");
-      return;
-    }
-    const bookName =
-      books.find((b) => b.id === study.bookId)?.name || "Master Book";
-    const scopeKey = "searchstudy:" + study.id;
-    const seen = new Set<string>();
-    const compileTabs: {
-      id: string;
-      volume: number;
-      book: number;
-      chapter: number;
-    }[] = [];
-    sm.forEach((m) => {
-      const chap = m.reference.replace(/:\d+$/, "");
-      if (seen.has(chap)) return;
-      const cl = chapterLoc.get(chap);
-      if (cl) {
-        seen.add(chap);
-        compileTabs.push({
-          id: "vtab_" + chap.replace(/\s+/g, "_"),
-          volume: cl.v,
-          book: cl.b,
-          chapter: cl.c,
-        });
-      }
-    });
-    const labels: Record<number, string> = {};
-    COLORS.forEach((c) => {
-      const n = (scopedLabels[scopeKey]?.[c] || "").trim();
-      if (n) labels[c] = n;
-    });
-    const existing = vaultEntries.find((e) => e.scopeKey === scopeKey);
-    const payload = {
-      view: "outline" as const,
-      bookName,
-      scopeKey,
-      compileTabs,
-      marks: sm.slice(),
-      colorLabels: labels,
-      notes: { ...notes },
-    };
-    if (existing) {
-      vaultUpdate(existing.id, payload);
-      flash("Updated " + study.name);
-    } else {
-      vaultAdd({ name: study.name, tags: [], ...payload });
-      flash("Saved " + study.name);
-    }
   };
 
   // ---- Migrate old Vault snapshots into the new live Studies list (once) ----
@@ -4022,23 +3928,6 @@ export default function MobileApp() {
                 >
                   Compile
                 </button>
-                <button
-                  onClick={() => saveStudyToVault(study)}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: "10px",
-                    border: "1px solid " + C.border,
-                    background: C.soft,
-                    color: C.text,
-                    fontFamily: "inherit",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Save to Vault
-                </button>
               </div>
 
               <div
@@ -4276,6 +4165,83 @@ export default function MobileApp() {
           const countSearch = (ss: SearchStudy) =>
             bookMarksOf(ss.bookId).filter((m) => ss.refs.includes(m.reference))
               .length;
+          // Distinct theme colors used in a study, each with its name.
+          const themesFor = (
+            bid: string,
+            repScope: string,
+            refOk: (ref: string) => boolean
+          ) => {
+            const cols: number[] = [];
+            allMarks.forEach((m) => {
+              if (
+                m.bookId === bid &&
+                refOk(m.reference) &&
+                cols.indexOf(m.color) < 0
+              )
+                cols.push(m.color);
+            });
+            return cols
+              .sort((a, b) => a - b)
+              .map((c) => ({
+                color: c,
+                name: chapterColorName(repScope, c as MarkColor),
+              }));
+          };
+          // The expandable "more info" panel: what the study covers + its themes.
+          const detail = (
+            onWhat: string,
+            themes: { color: number; name: string }[]
+          ) => (
+            <div
+              style={{
+                padding: "0 8px 12px 21px",
+                fontSize: "12px",
+                color: C.muted,
+                lineHeight: 1.5,
+              }}
+            >
+              <div>
+                <span style={{ fontWeight: 700, color: C.text }}>On </span>
+                {onWhat}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  marginTop: "7px",
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ fontWeight: 700, color: C.text }}>Themes</span>
+                {themes.length === 0 ? (
+                  <span>nothing marked yet</span>
+                ) : (
+                  themes.map((t) => (
+                    <span
+                      key={t.color}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "10px",
+                          height: "10px",
+                          borderRadius: "50%",
+                          background: COLOR_MAP[t.color],
+                          flexShrink: 0,
+                        }}
+                      />
+                      {t.name || "Unnamed"}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          );
           const total =
             chapterRecs.length + linkedRecs.length + searchStudies.length;
 
@@ -4286,83 +4252,101 @@ export default function MobileApp() {
             accent: string,
             onOpen: () => void,
             onDelete: () => void,
-            icon?: React.ReactNode
+            icon?: React.ReactNode,
+            info?: React.ReactNode,
+            expanded?: boolean,
+            onInfo?: () => void
           ) => (
-            <div
-              key={key}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                borderTop: "1px solid " + C.border,
-              }}
-            >
-              <button
-                onClick={onOpen}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  textAlign: "left",
-                  background: "transparent",
-                  border: "none",
-                  padding: "12px 2px",
-                  color: C.text,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {icon ? (
-                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
-                    {icon}
+            <div key={key} style={{ borderTop: "1px solid " + C.border }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <button
+                  onClick={onOpen}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    padding: "12px 2px",
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {icon ? (
+                    <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                      {icon}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        width: "9px",
+                        height: "9px",
+                        borderRadius: "50%",
+                        background: accent,
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "13.5px",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {name}
+                    </span>
+                    <span style={{ fontSize: "11.5px", color: C.muted }}>
+                      {meta}
+                    </span>
                   </span>
-                ) : (
-                  <span
+                </button>
+                {onInfo && (
+                  <button
+                    onClick={onInfo}
+                    aria-label="Study details"
                     style={{
-                      width: "9px",
-                      height: "9px",
-                      borderRadius: "50%",
-                      background: accent,
+                      width: "36px",
+                      height: "40px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
                       flexShrink: 0,
                     }}
-                  />
-                )}
-                <span style={{ minWidth: 0 }}>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: "13.5px",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
                   >
-                    {name}
-                  </span>
-                  <span style={{ fontSize: "11.5px", color: C.muted }}>
-                    {meta}
-                  </span>
-                </span>
-              </button>
-              <button
-                onClick={onDelete}
-                aria-label="Delete study"
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                <IconTrash color={C.muted} />
-              </button>
+                    <IconInfo color={expanded ? accent : C.muted} />
+                  </button>
+                )}
+                <button
+                  onClick={onDelete}
+                  aria-label="Delete study"
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  <IconTrash color={C.muted} />
+                </button>
+              </div>
+              {expanded && info}
             </div>
           );
 
@@ -4475,7 +4459,21 @@ export default function MobileApp() {
                                 )
                               )
                                 deleteStudy(s.id);
-                            }
+                            },
+                            undefined,
+                            detail(
+                              displayOf(s.scopeRef),
+                              themesFor(
+                                s.bookId,
+                                s.scopeRef,
+                                (r) => scopeOf(r) === s.scopeRef
+                              )
+                            ),
+                            infoStudyId === s.id,
+                            () =>
+                              setInfoStudyId(
+                                infoStudyId === s.id ? null : s.id
+                              )
                           )
                         )
                       )}
@@ -4502,7 +4500,31 @@ export default function MobileApp() {
                                 )
                               )
                                 deleteStudy(s.id);
-                            }
+                            },
+                            <IconLink color="#8b5cf6" />,
+                            detail(
+                              Object.keys(chapterGroups)
+                                .filter((c) => chapterGroups[c] === s.scopeRef)
+                                .sort(
+                                  (a, b) =>
+                                    (chapterLoc.get(a)?.order ?? 0) -
+                                    (chapterLoc.get(b)?.order ?? 0)
+                                )
+                                .map(displayOf)
+                                .join("  +  "),
+                              themesFor(
+                                s.bookId,
+                                Object.keys(chapterGroups).filter(
+                                  (c) => chapterGroups[c] === s.scopeRef
+                                )[0] || s.scopeRef,
+                                (r) => chapterGroups[scopeOf(r)] === s.scopeRef
+                              )
+                            ),
+                            infoStudyId === s.id,
+                            () =>
+                              setInfoStudyId(
+                                infoStudyId === s.id ? null : s.id
+                              )
                           )
                         )
                       )}
@@ -4534,7 +4556,22 @@ export default function MobileApp() {
                               )
                                 deleteSearchStudy(ss.id);
                             },
-                            <IconLink color="#0d9488" />
+                            <IconLink color="#0d9488" />,
+                            detail(
+                              Array.from(
+                                new Set(ss.refs.map((r) => scopeOf(r)))
+                              ).join(", "),
+                              themesFor(
+                                ss.bookId,
+                                "searchstudy:" + ss.id,
+                                (r) => ss.refs.includes(r)
+                              )
+                            ),
+                            infoStudyId === ss.id,
+                            () =>
+                              setInfoStudyId(
+                                infoStudyId === ss.id ? null : ss.id
+                              )
                           )
                         )
                       )}
@@ -4624,27 +4661,56 @@ export default function MobileApp() {
       )}
       {compileOpen &&
         (() => {
+          const byOrder = (a: string, b: string) =>
+            (chapterLoc.get(a)?.order ?? 0) - (chapterLoc.get(b)?.order ?? 0);
           const cs = compileStudy;
-          const cMarks = cs
-            ? marks.filter((m) => cs.refs.includes(m.reference))
-            : studyMarks;
-          const cScopes = cs
-            ? Array.from(new Set(cs.refs.map((r) => scopeOf(r)))).sort(
-                (a, b) =>
-                  (chapterLoc.get(a)?.order ?? 0) -
-                  (chapterLoc.get(b)?.order ?? 0)
-              )
-            : studyScopes;
-          const cScope = cs ? "searchstudy:" + cs.id : resolveScope(title);
-          const cTitle = cs ? cs.name : displayTitle;
-          let cLabels = scopeLabels;
+          const cr = compileRec;
+          let cMarks: Mark[];
+          let cScopes: string[];
+          let cScope: string;
+          let cTitle: string;
+          let cLabels: Record<number, string>;
           if (cs) {
+            cScopes = Array.from(new Set(cs.refs.map((r) => scopeOf(r)))).sort(
+              byOrder
+            );
+            cMarks = marks.filter((m) => cs.refs.includes(m.reference));
+            cScope = "searchstudy:" + cs.id;
+            cTitle = cs.name;
             const o: Record<number, string> = {};
             COLORS.forEach((c) => {
               const n = (scopedLabels[cScope]?.[c] || "").trim();
               if (n) o[c] = n;
             });
             cLabels = o;
+          } else if (cr) {
+            cScopes = (
+              cr.type === "linked"
+                ? Object.keys(chapterGroups).filter(
+                    (c) => chapterGroups[c] === cr.scopeRef
+                  )
+                : [cr.scopeRef]
+            )
+              .slice()
+              .sort(byOrder);
+            cMarks = marks.filter((m) => cScopes.includes(scopeOf(m.reference)));
+            cScope =
+              cr.type === "linked"
+                ? "group:" + cr.scopeRef
+                : resolveScope(cr.scopeRef);
+            cTitle = cr.name;
+            const o: Record<number, string> = {};
+            COLORS.forEach((c) => {
+              const n = chapterColorName(cScopes[0] || cr.scopeRef, c);
+              if (n) o[c] = n;
+            });
+            cLabels = o;
+          } else {
+            cMarks = studyMarks;
+            cScopes = studyScopes;
+            cScope = resolveScope(title);
+            cTitle = displayTitle;
+            cLabels = scopeLabels;
           }
           return (
             <MobileCompile
@@ -4657,15 +4723,35 @@ export default function MobileApp() {
               onJump={jumpToRef}
               notes={notes}
               setNote={setNote}
-              onSaveToVault={() => {
-                if (cs) saveStudyToVault(cs);
-                else saveOutlineToVault();
+              defaultName={cTitle}
+              onSave={(nm) => {
+                const name = nm.trim();
+                if (cs) {
+                  setSearchStudies((prev) =>
+                    prev.map((s) =>
+                      s.id === cs.id ? { ...s, name: name || s.name } : s
+                    )
+                  );
+                } else if (cr) {
+                  recordStudy(cr.type, cr.scopeRef, name || cr.name);
+                } else if (chapterGroups[title]) {
+                  recordStudy(
+                    "linked",
+                    chapterGroups[title],
+                    name || groupMembers(title).map(displayOf).join("  +  ")
+                  );
+                } else {
+                  recordStudy("chapter", title, name || displayTitle);
+                }
+                flash("Saved to Studies");
                 setCompileOpen(false);
                 setCompileStudy(null);
+                setCompileRec(null);
               }}
               onClose={() => {
                 setCompileOpen(false);
                 setCompileStudy(null);
+                setCompileRec(null);
               }}
               dark={dark}
               title={cTitle}
@@ -5206,7 +5292,8 @@ export default function MobileApp() {
                                   (countLinked(s) === 1 ? "" : "s"),
                                 "#8b5cf6",
                                 () =>
-                                  openFromVault(() => openRecordedStudy(s))
+                                  openFromVault(() => openRecordedStudy(s)),
+                                <IconLink color="#8b5cf6" />
                               )
                             )
                           )}
