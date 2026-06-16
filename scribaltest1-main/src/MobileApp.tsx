@@ -182,6 +182,59 @@ interface Study {
   compiledAt: number;
 }
 
+// ---- Shared inline icons (line style, matches the rest of the app) ----
+const IconTrash = ({ color, size = 17 }: { color: string; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+  </svg>
+);
+
+// Same chain glyph the reading screen uses for linking.
+const IconLink = ({ color, size = 16 }: { color: string; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+  </svg>
+);
+
+const IconBook = ({ color, size = 17 }: { color: string; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </svg>
+);
+
 // Look up a verse's text + number by reference, built once lazily — used to
 // render a search study's hand-picked verses (which span many chapters).
 let _verseIdx: Map<string, { text: string; verse: number }> | null = null;
@@ -1645,17 +1698,6 @@ export default function MobileApp() {
   );
 
   // ---- Home launcher ----
-  // Each distinct link-group id with its member chapter scopes (real groups
-  // have 2+ members). Drives the "Linked studies" section on Home.
-  const linkedStudies = Array.from(new Set(Object.values(chapterGroups)))
-    .map((gid) => ({
-      gid,
-      members: Object.keys(chapterGroups)
-        .filter((s) => chapterGroups[s] === gid)
-        .sort(),
-    }))
-    .filter((g) => g.members.length >= 2);
-
   const homeTile = (
     label: string,
     sub: string,
@@ -2966,214 +3008,6 @@ export default function MobileApp() {
             )}
           </div>
 
-          {/* Linked studies */}
-          <div
-            style={{
-              background: C.panel,
-              border: "1px solid " + C.border,
-              borderRadius: "14px",
-              padding: "14px",
-              marginBottom: "14px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                marginBottom: linkedStudies.length ? "4px" : "8px",
-              }}
-            >
-              <span style={{ color: "#8b5cf6", display: "inline-flex" }}>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                  <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                </svg>
-              </span>
-              <span style={{ fontSize: "15px", fontWeight: 700 }}>
-                Linked studies
-              </span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: "11.5px", color: C.muted }}>
-                {linkedStudies.length || ""}
-              </span>
-            </div>
-            {linkedStudies.length === 0 ? (
-              <div
-                style={{ fontSize: "12.5px", color: C.muted, lineHeight: 1.4 }}
-              >
-                Link two chapters into one study and they'll show up here.
-              </div>
-            ) : (
-              linkedStudies.map((g) => (
-                <button
-                  key={g.gid}
-                  onClick={() => {
-                    setHomeOpen(false);
-                    jumpToScope(g.members[0]);
-                    startCompile();
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    width: "100%",
-                    textAlign: "left",
-                    background: "transparent",
-                    border: "none",
-                    borderTop: "1px solid " + C.border,
-                    padding: "12px 2px",
-                    color: C.text,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "9px",
-                      height: "9px",
-                      borderRadius: "50%",
-                      background: groupColor(g.gid),
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: "13.5px",
-                      fontWeight: 600,
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    {g.members.map(displayOf).join("  +  ")}
-                  </span>
-                  <span
-                    style={{ marginLeft: "auto", color: C.muted, fontSize: "16px" }}
-                  >
-                    ›
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-
-          {/* Search studies */}
-          <div
-            style={{
-              background: C.panel,
-              border: "1px solid " + C.border,
-              borderRadius: "14px",
-              padding: "14px",
-              marginBottom: "14px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                marginBottom: searchStudies.length ? "4px" : "8px",
-              }}
-            >
-              <span style={{ color: "#0d9488", display: "inline-flex" }}>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M21 21l-4.3-4.3" />
-                </svg>
-              </span>
-              <span style={{ fontSize: "15px", fontWeight: 700 }}>
-                Search studies
-              </span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: "11.5px", color: C.muted }}>
-                {searchStudies.length || ""}
-              </span>
-            </div>
-            {searchStudies.length === 0 ? (
-              <div
-                style={{ fontSize: "12.5px", color: C.muted, lineHeight: 1.4 }}
-              >
-                In Search, tap “Link verses into a study” to bundle results into
-                one study you can mark together.
-              </div>
-            ) : (
-              searchStudies.map((st) => (
-                <button
-                  key={st.id}
-                  onClick={() => openStudy(st)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    width: "100%",
-                    textAlign: "left",
-                    background: "transparent",
-                    border: "none",
-                    borderTop: "1px solid " + C.border,
-                    padding: "12px 2px",
-                    color: C.text,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "9px",
-                      height: "9px",
-                      borderRadius: "50%",
-                      background: "#0d9488",
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ minWidth: 0 }}>
-                    <span
-                      style={{
-                        display: "block",
-                        fontSize: "13.5px",
-                        fontWeight: 600,
-                        lineHeight: 1.35,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {st.name}
-                    </span>
-                    <span style={{ fontSize: "11.5px", color: C.muted }}>
-                      {st.refs.length} verse{st.refs.length === 1 ? "" : "s"}
-                    </span>
-                  </span>
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      color: C.muted,
-                      fontSize: "16px",
-                    }}
-                  >
-                    ›
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-
           {/* Study books — slim row (the study-book switcher) */}
           <button
             onClick={() => {
@@ -4147,15 +3981,16 @@ export default function MobileApp() {
                   style={{
                     width: "38px",
                     height: "38px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                     background: "transparent",
                     border: "none",
-                    color: C.muted,
-                    fontSize: "18px",
                     cursor: "pointer",
                     flexShrink: 0,
                   }}
                 >
-                  🗑
+                  <IconTrash color={C.muted} />
                 </button>
               </div>
 
@@ -4450,7 +4285,8 @@ export default function MobileApp() {
             meta: string,
             accent: string,
             onOpen: () => void,
-            onDelete: () => void
+            onDelete: () => void,
+            icon?: React.ReactNode
           ) => (
             <div
               key={key}
@@ -4477,15 +4313,21 @@ export default function MobileApp() {
                   fontFamily: "inherit",
                 }}
               >
-                <span
-                  style={{
-                    width: "9px",
-                    height: "9px",
-                    borderRadius: "50%",
-                    background: accent,
-                    flexShrink: 0,
-                  }}
-                />
+                {icon ? (
+                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                    {icon}
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      width: "9px",
+                      height: "9px",
+                      borderRadius: "50%",
+                      background: accent,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
                 <span style={{ minWidth: 0 }}>
                   <span
                     style={{
@@ -4510,15 +4352,16 @@ export default function MobileApp() {
                 style={{
                   width: "40px",
                   height: "40px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   background: "transparent",
                   border: "none",
-                  color: C.muted,
-                  fontSize: "16px",
                   cursor: "pointer",
                   flexShrink: 0,
                 }}
               >
-                🗑
+                <IconTrash color={C.muted} />
               </button>
             </div>
           );
@@ -4690,7 +4533,8 @@ export default function MobileApp() {
                                 )
                               )
                                 deleteSearchStudy(ss.id);
-                            }
+                            },
+                            <IconLink color="#0d9488" />
                           )
                         )
                       )}
@@ -5039,7 +4883,8 @@ export default function MobileApp() {
             name: string,
             meta: string,
             accent: string,
-            onOpen: () => void
+            onOpen: () => void,
+            icon?: React.ReactNode
           ) => (
             <button
               key={key}
@@ -5059,15 +4904,21 @@ export default function MobileApp() {
                 fontFamily: "inherit",
               }}
             >
-              <span
-                style={{
-                  width: "9px",
-                  height: "9px",
-                  borderRadius: "50%",
-                  background: accent,
-                  flexShrink: 0,
-                }}
-              />
+              {icon ? (
+                <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                  {icon}
+                </span>
+              ) : (
+                <span
+                  style={{
+                    width: "9px",
+                    height: "9px",
+                    borderRadius: "50%",
+                    background: accent,
+                    flexShrink: 0,
+                  }}
+                />
+              )}
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span
                   style={{
@@ -5221,8 +5072,12 @@ export default function MobileApp() {
                               fontFamily: "inherit",
                             }}
                           >
-                            <span style={{ fontSize: "18px", flexShrink: 0 }}>
-                              {b.isMaster ? "📕" : "📘"}
+                            <span
+                              style={{ display: "inline-flex", flexShrink: 0 }}
+                            >
+                              <IconBook
+                                color={b.isMaster ? C.text : C.muted}
+                              />
                             </span>
                             <span style={{ minWidth: 0, flex: 1 }}>
                               <span
@@ -5279,15 +5134,16 @@ export default function MobileApp() {
                               style={{
                                 width: "40px",
                                 height: "46px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
                                 background: "transparent",
                                 border: "none",
-                                color: C.muted,
-                                fontSize: "16px",
                                 cursor: "pointer",
                                 flexShrink: 0,
                               }}
                             >
-                              🗑
+                              <IconTrash color={C.muted} />
                             </button>
                           )}
                         </div>
@@ -5369,7 +5225,8 @@ export default function MobileApp() {
                                   " verse" +
                                   (ss.refs.length === 1 ? "" : "s"),
                                 "#0d9488",
-                                () => openFromVault(() => openStudy(ss))
+                                () => openFromVault(() => openStudy(ss)),
+                                <IconLink color="#0d9488" />
                               )
                             )
                           )}
