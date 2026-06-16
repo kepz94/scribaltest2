@@ -2600,6 +2600,48 @@ export default function MobileApp() {
                 setSearchOpen(true);
               }
             )}
+            {homeTile(
+              "Gestures & marking",
+              "How to mark & navigate",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 10V5.5a2 2 0 1 1 4 0V10" />
+                <path d="M12 10V8a2 2 0 1 1 4 0v6a6 6 0 0 1-6 6h-1a6 6 0 0 1-5.2-3L3 14.5a1.8 1.8 0 0 1 3.1-1.8L8 15" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setGesturesOpen(true);
+              }
+            )}
+            {homeTile(
+              "Features guide",
+              "Tour what Scribal does",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setShowTour(true);
+              }
+            )}
           </div>
 
           {/* Linked studies */}
@@ -2783,163 +2825,9 @@ export default function MobileApp() {
         sheet(
           () => setMenuOpen(false),
           <div>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                startCompile();
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "1px solid " + C.border,
-                borderRadius: "10px",
-                padding: "13px 14px",
-                marginBottom: "18px",
-                color: C.text,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: "14px",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>☰</span>
-              Compile
-              <span style={{ flex: 1 }} />
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                your marks by theme
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setSearchOpen(true);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "1px solid " + C.border,
-                borderRadius: "10px",
-                padding: "13px 14px",
-                marginBottom: "18px",
-                color: C.text,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: "14px",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>⌕</span>
-              Search
-              <span style={{ flex: 1 }} />
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                scripture &amp; your marks
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setSettingsOpen(true);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "1px solid " + C.border,
-                borderRadius: "10px",
-                padding: "13px 14px",
-                marginBottom: "18px",
-                color: C.text,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: "14px",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>⚙</span>
-              Settings
-              <span style={{ flex: 1 }} />
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                {connected ? "synced" : "sync &amp; theme"}
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setVaultOpen(true);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "1px solid " + C.border,
-                borderRadius: "10px",
-                padding: "13px 14px",
-                marginBottom: "18px",
-                color: C.text,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: "14px",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>❖</span>
-              Vault
-              <span style={{ flex: 1 }} />
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                {vaultEntries.length} saved
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setGesturesOpen(true);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "1px solid " + C.border,
-                borderRadius: "10px",
-                padding: "13px 14px",
-                marginBottom: "18px",
-                color: C.text,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: "14px",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>✸</span>
-              Gestures
-              <span style={{ flex: 1 }} />
-              <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                how to mark
-              </span>
-            </button>
 
             <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "4px" }}>
-              Study book
+              Study books
             </div>
             <div style={{ fontSize: "12px", color: C.muted, marginBottom: "14px" }}>
               One book open at a time on mobile.
@@ -3475,19 +3363,65 @@ export default function MobileApp() {
           })()
         )}
 
-      {/* Search */}
-      {searchOpen &&
-        sheet(
-          () => setSearchOpen(false),
-          <MobileSearch
-            C={C}
-            marks={marks}
-            colorLabels={colorLabels}
-            orderOf={orderOf}
-            onJump={jumpToRef}
-            onPickScripture={(ref) => setChooseRef(ref)}
-          />
-        )}
+      {/* Search (full-height so the input stays above the keyboard) */}
+      {searchOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 200,
+            backgroundColor: C.bg,
+            color: C.text,
+            display: "flex",
+            flexDirection: "column",
+            animation: "mob-fadein 0.18s ease",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              padding: "calc(env(safe-area-inset-top) + 8px) 12px 6px",
+            }}
+          >
+            <button
+              onClick={() => setSearchOpen(false)}
+              aria-label="Close search"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: C.muted,
+                fontSize: "22px",
+                lineHeight: 1,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                padding: "4px 8px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              padding: "0 18px calc(env(safe-area-inset-bottom) + 18px)",
+            }}
+          >
+            <MobileSearch
+              C={C}
+              marks={marks}
+              colorLabels={colorLabels}
+              orderOf={orderOf}
+              onJump={jumpToRef}
+              onPickScripture={(ref) => setChooseRef(ref)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Destination chooser (scripture search result) */}
       {chooseRef &&
