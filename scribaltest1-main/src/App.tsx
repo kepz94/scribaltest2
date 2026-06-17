@@ -46,6 +46,14 @@ import {
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
 } from "./sync";
+import {
+  initCloud,
+  onCloudState,
+  configureSync,
+  signIn as cloudSignIn,
+  signOutCloud,
+  noteLocalChange,
+} from "./cloudSync";
 
 // Everything this (desktop) shell backs up: the shared study data (CORE_KEYS)
 // plus the desktop-only layout / concept-map / walkthrough keys.
@@ -365,6 +373,15 @@ export default function App() {
   const [driveConnected, setDriveConnected] = useState(
     () => !!localStorage.getItem("scribal_drive_enabled")
   );
+
+  // Firebase cloud sync state (the seamless replacement for Drive). When signed
+  // in, sync is automatic + cross-device and the old Drive path stays dormant.
+  const [cloudSignedIn, setCloudSignedIn] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudEmail, setCloudEmail] = useState<string | null>(null);
+  // Hide the legacy Google Drive sign-in UI while we run on Firebase. The Drive
+  // code stays in place (so nothing breaks) but can't be triggered from the UI.
+  const SHOW_LEGACY_DRIVE = false;
   const [gateOpen, setGateOpen] = useState(
     () =>
       !localStorage.getItem("scribal_skip_welcome") &&
@@ -495,6 +512,33 @@ export default function App() {
     });
   }, [books]);
 
+  // Give cloud sync this shell's merge hooks + the keys it backs up.
+  useEffect(() => {
+    configureSync({
+      backupKeys: BACKUP_KEYS,
+      mergeRemoteBooks,
+      vaultMergeRemote,
+    });
+  }, [mergeRemoteBooks, vaultMergeRemote]);
+
+  // Start Firebase and mirror its sync state into the UI. Once signed in,
+  // Firestore's live listener + debounced push handle sync automatically.
+  useEffect(() => {
+    onCloudState((s) => {
+      setCloudSignedIn(s.signedIn);
+      setCloudSyncing(s.syncing);
+      setCloudEmail(s.email);
+      if (s.lastSync) setLastSync(s.lastSync);
+    });
+    initCloud();
+  }, []);
+
+  // Push local changes to Firebase (debounced inside cloudSync; only acts when
+  // signed in). The live counterpart to the Drive auto-save below.
+  useEffect(() => {
+    noteLocalChange();
+  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes]);
+
   // Auto-save to Google Drive (debounced, silent).
   // Reuses the token captured at sign-in — never requests a new one, so no popup.
   const autoSaveReady = useRef(false);
@@ -503,6 +547,7 @@ export default function App() {
       autoSaveReady.current = true;
       return; // don't auto-save (or flip to "stale") just from opening the app
     }
+    if (cloudSignedIn) return; // Firebase is handling sync — stay out of its way
     if (!localStorage.getItem("scribal_drive_enabled") && !drive.getToken())
       return; // not using Drive — nothing to do
 
@@ -520,12 +565,13 @@ export default function App() {
     }, 3000); // debounce 3 seconds after last change
 
     return () => clearTimeout(timer);
-  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes]);
+  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes, cloudSignedIn]);
 
   // Auto-pull the other device's changes when this tab opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
   // newer than what's here — it never clobbers newer local edits.
   useEffect(() => {
+    if (cloudSignedIn) return; // Firebase's live listener handles incoming changes
     const checkRemote = async () => {
       if (GOOGLE_CLIENT_ID.indexOf("PASTE_") === 0) return;
       if (!localStorage.getItem("scribal_drive_enabled") && !drive.getToken())
@@ -557,7 +603,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisible);
       clearInterval(pollId);
     };
-  }, []);
+  }, [cloudSignedIn]);
 
   const getChapter = useCallback(
     (t: { volume: number; book: number; chapter: number }) =>
@@ -1207,26 +1253,12 @@ export default function App() {
 
   // ---- Welcome gate (optional sign-in shown on app open) ----
   const gateContinueGoogle = async () => {
-    if (GOOGLE_CLIENT_ID.indexOf("PASTE_") === 0) {
-      setGateMsg("Google isn't set up yet (no client ID).");
-      return;
-    }
     setGateBusy(true);
     setGateMsg("Connecting…");
     try {
-      const token = await drive.connect(GOOGLE_CLIENT_ID);
-      localStorage.setItem("scribal_drive_enabled", "1");
-      setDriveConnected(true);
-      setGateMsg("Loading your study…");
-      const text = await drive.loadData(token);
+      await cloudSignIn();
       sessionStorage.setItem("scribal_gate_done", "1");
-      if (text) {
-        applyBackupString(text);
-        window.location.reload();
-      } else {
-        // nothing saved yet — keep local data, auto-save will push it up
-        setGateOpen(false);
-      }
+      setGateOpen(false);
     } catch (e: any) {
       setGateBusy(false);
       setGateMsg(
@@ -2299,29 +2331,25 @@ export default function App() {
                   })
                 : null;
               const stale = driveConnected && saveStatus === "stale";
-              const label = !driveConnected
+              const label = !cloudSignedIn
                 ? "Local only"
-                : saveStatus === "saving"
+                : cloudSyncing
                 ? "Saving…"
-                : stale
-                ? "Reconnect to sync"
                 : "Synced" + (timeStr ? " ✓ " + timeStr : " ✓");
-              const onClick = stale
-                ? reconnectDrive
-                : !driveConnected
+              const onClick = !cloudSignedIn
                 ? () => setBackupOpen(true)
+                : stale
+                ? reconnectDrive
                 : undefined;
               return (
                 <span
                   onClick={onClick}
                   title={
-                    !driveConnected
-                      ? "Not signed in — your study is saved on this device only. Click to sign in to Google."
-                      : stale
-                      ? "Your Google session expired — click to sign in and resume syncing"
+                    !cloudSignedIn
+                      ? "Saved on this device only — click to sign in with Google and sync across your devices."
                       : timeStr
-                      ? "Last synced to your Google Drive at " + timeStr
-                      : "Connected to your Google Drive"
+                      ? "Last synced at " + timeStr
+                      : "Synced to the cloud"
                   }
                   style={{
                     fontSize: "11px",
@@ -2329,9 +2357,9 @@ export default function App() {
                     padding: "4px 11px",
                     whiteSpace: "nowrap",
                     cursor: onClick ? "pointer" : "default",
-                    color: stale ? "var(--bg)" : "var(--muted)",
-                    backgroundColor: stale ? "var(--text)" : "transparent",
-                    border: stale ? "none" : "1px solid var(--border)",
+                    color: "var(--muted)",
+                    backgroundColor: "transparent",
+                    border: "1px solid var(--border)",
                   }}
                 >
                   {label}
@@ -2406,8 +2434,54 @@ export default function App() {
                         margin: "6px 4px",
                       }}
                     />
-                    <div
-                      onClick={connectDrive}
+                    {cloudSignedIn ? (
+                      <>
+                        <div
+                          style={{
+                            padding: "10px 12px",
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          ● Synced
+                          {cloudEmail ? " · " + cloudEmail : ""}
+                          {cloudSyncing ? " · saving…" : ""}
+                        </div>
+                        <div
+                          onClick={() => {
+                            signOutCloud().catch(() => {});
+                          }}
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            color: "var(--text)",
+                          }}
+                        >
+                          Sign out
+                        </div>
+                      </>
+                    ) : (
+                      <div
+                        onClick={() => {
+                          cloudSignIn().catch(() => {});
+                        }}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          color: "var(--text)",
+                        }}
+                      >
+                        🔑 Sign in with Google
+                      </div>
+                    )}
+                    {SHOW_LEGACY_DRIVE && (
+                      <>
+                        <div
+                          onClick={connectDrive}
                       style={{
                         padding: "10px 12px",
                         borderRadius: "8px",
@@ -2454,6 +2528,8 @@ export default function App() {
                     >
                       🔍 Check sync
                     </div>
+                      </>
+                    )}
                     {diag && (
                       <div
                         style={{
