@@ -75,6 +75,41 @@ const BACKUP_KEYS = [
   "scribal_last_compile_count",
 ]
 
+// Scale a hex color by intensity (0.6 = muted, 1.0 = normal, 1.5 = vivid)
+const scaleHexColor = (hex: string, intensity: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const hex2 = (n: number): string => {
+    const v = Math.round(Math.max(0, Math.min(255, n)));
+    const s = v.toString(16);
+    return s.length < 2 ? "0" + s : s;
+  };
+  return "#" + hex2(r * intensity) + hex2(g * intensity) + hex2(b * intensity);
+};
+
+const applyIntensityToTheme = (
+  themeObj: Record<string, string>,
+  intensity: number
+): Record<string, string> => {
+  const scaled = { ...themeObj };
+  // Scale pen colors (bold, circle, underline, italic)
+  for (let i = 1; i <= 7; i++) {
+    const key = `--pen${i}`;
+    if (scaled[key]) scaled[key] = scaleHexColor(scaled[key], intensity);
+  }
+  // Scale highlight colors (softer scaling for highlights)
+  for (let i = 1; i <= 7; i++) {
+    const key = `--hl${i}`;
+    if (scaled[key]) {
+      // Highlights scale less aggressively (lerp toward white at high intensity)
+      const hlIntensity = 1 + (intensity - 1) * 0.3;
+      scaled[key] = scaleHexColor(scaled[key], hlIntensity);
+    }
+  }
+  return scaled;
+};
+
 const LIGHT_THEME = {
   "--bg": "#f6f4ee",
   "--panel": "#ffffff",
@@ -438,9 +473,18 @@ export default function App() {
     );
   });
 
+  const [colorIntensity, setColorIntensity] = useState<number>(() => {
+    const saved = localStorage.getItem("scribal_color_intensity");
+    return saved ? parseFloat(saved) : 1.0;
+  });
+
   useEffect(() => {
     localStorage.setItem("scribal_theme", dark ? "dark" : "light");
   }, [dark]);
+
+  useEffect(() => {
+    localStorage.setItem("scribal_color_intensity", colorIntensity.toFixed(2));
+  }, [colorIntensity]);
 
   // Reading comfort (device-local; phones and desktop keep their own).
   const [reading, setReading] = useState<{
@@ -467,6 +511,7 @@ export default function App() {
     } catch {}
   }, [reading]);
   const [readingOpen, setReadingOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("scribal_tabs_v2", JSON.stringify(tabs));
@@ -478,7 +523,8 @@ export default function App() {
     localStorage.setItem("scribal_compile_view", compileView);
   }, [compileView]);
 
-  const theme = dark ? DARK_THEME : LIGHT_THEME;
+  const baseTheme = dark ? DARK_THEME : LIGHT_THEME;
+  const theme = applyIntensityToTheme(baseTheme, colorIntensity);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ||
     tabs[0] || {
@@ -2792,6 +2838,137 @@ export default function App() {
                     >
                       {reading.warm ? "Warm tone: on" : "Warm tone: off"}
                     </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ position: "relative" }}>
+              {roundUtil(
+                "🎨",
+                () => setColorOpen((o) => !o),
+                "Marks — color intensity / saturation"
+              )}
+              {colorOpen && (
+                <>
+                  <div
+                    onClick={() => setColorOpen(false)}
+                    style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "38px",
+                      right: 0,
+                      width: "280px",
+                      backgroundColor: "var(--panel)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "12px",
+                      boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+                      padding: "16px",
+                      zIndex: 41,
+                    }}
+                  >
+                    <div
+                      style={{
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                          display: "block",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Mark Saturation
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <input
+                          type="range"
+                          min="0.6"
+                          max="1.5"
+                          step="0.05"
+                          value={colorIntensity}
+                          onChange={(e) => setColorIntensity(parseFloat(e.target.value))}
+                          style={{
+                            flex: 1,
+                            cursor: "pointer",
+                          }}
+                        />
+                        <span
+                          style={{
+                            minWidth: "44px",
+                            textAlign: "right",
+                            fontSize: "12px",
+                            color: "var(--muted)",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {(colorIntensity * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          display: "flex",
+                          gap: "6px",
+                          fontSize: "11px",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>Soft</span>
+                        <span style={{ flex: 1, textAlign: "center" }}>Normal</span>
+                        <span style={{ flex: 1, textAlign: "right" }}>Bold</span>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        borderTop: "1px solid var(--border)",
+                        paddingTop: "12px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--muted)",
+                          display: "block",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        Preview:
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {COLORS.map((c) => (
+                          <div
+                            key={c}
+                            style={{
+                              width: "20px",
+                              height: "20px",
+                              backgroundColor: applyIntensityToTheme(
+                                dark ? DARK_THEME : LIGHT_THEME,
+                                colorIntensity
+                              )[`--hl${c}`],
+                              borderRadius: "4px",
+                              border: "1px solid var(--border)",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
