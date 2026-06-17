@@ -131,13 +131,41 @@ export default function MobileVerse({
       return attr === null ? -1 : Number(attr);
     };
 
+    // Like wordAt, but when the finger isn't directly over a word — e.g. in the
+    // empty space past the end of a short wrapped line like "of men." — snap to
+    // the closest word in THIS verse, strongly preferring the line the finger
+    // is on, then the nearest word along it. This is what lets a drag move down
+    // to the next line and catch it without tracing back to that line's left
+    // edge: drop onto a line anywhere and the selection follows.
+    const nearestWordAt = (x: number, y: number): number => {
+      const direct = wordAt(x, y);
+      if (direct >= 0) return direct;
+      const spans = el.querySelectorAll<HTMLElement>("[data-wi]");
+      let best = -1;
+      let bestScore = Infinity;
+      for (let i = 0; i < spans.length; i++) {
+        const r = spans[i].getBoundingClientRect();
+        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+        // Vertical distance dominates, so we lock onto the right line first and
+        // only then choose the nearest word horizontally along it.
+        const score = dy * 1000 + dx;
+        if (score < bestScore) {
+          bestScore = score;
+          const attr = spans[i].getAttribute("data-wi");
+          if (attr !== null) best = Number(attr);
+        }
+      }
+      return best;
+    };
+
     const covering = (tok: Token): Mark | undefined =>
       latest.current.verseMarks.find(
         (mk) => mk.startIndex < tok.end && mk.endIndex > tok.start
       );
 
     const extendTo = (x: number, y: number) => {
-      const wi = wordAt(x, y);
+      const wi = nearestWordAt(x, y);
       if (wi < 0) return;
       curTok.current = wi;
       const a = latest.current.toks[startTok.current];
