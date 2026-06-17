@@ -745,16 +745,18 @@ export default function MobileCompile({
                       return (
                         <button
                           onClick={() => setEditSynth(sk)}
+                          aria-label={"Add a thought about " + name}
                           style={{
                             width: "100%",
-                            textAlign: "left",
+                            textAlign: "center",
                             display: "flex",
                             alignItems: "center",
+                            justifyContent: "center",
                             gap: "8px",
                             background: "transparent",
                             border: "1px dashed " + C.border,
                             borderRadius: "10px",
-                            padding: "11px 12px",
+                            padding: "12px",
                             fontSize: "13.5px",
                             fontWeight: 600,
                             color: C.muted,
@@ -764,7 +766,7 @@ export default function MobileCompile({
                         >
                           <span
                             style={{
-                              fontSize: "16px",
+                              fontSize: "18px",
                               fontWeight: 700,
                               color: accent,
                               lineHeight: 1,
@@ -772,7 +774,6 @@ export default function MobileCompile({
                           >
                             +
                           </span>
-                          What do these verses say about {name}?
                         </button>
                       );
                     })()}
@@ -852,7 +853,7 @@ export default function MobileCompile({
                                 <div
                                   onClick={() => {
                                     setFlippedRef(ve.reference);
-                                    setEditNote(hasNote ? null : noteKey);
+                                    setEditNote(null);
                                   }}
                                   style={{
                                     ...faceBase,
@@ -1172,10 +1173,9 @@ export default function MobileCompile({
                                             fontFamily: "inherit",
                                           }}
                                         >
-                                          <span style={{ fontSize: "16px", fontWeight: 700, lineHeight: 1 }}>
+                                          <span style={{ fontSize: "22px", fontWeight: 700, lineHeight: 1 }}>
                                             +
                                           </span>
-                                          Add a note
                                         </button>
                                         <button
                                           onClick={() => setFlippedRef(null)}
