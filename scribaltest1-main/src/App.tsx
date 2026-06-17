@@ -75,17 +75,89 @@ const BACKUP_KEYS = [
   "scribal_last_compile_count",
 ]
 
-// Scale a hex color by intensity (0.6 = muted, 1.0 = normal, 1.5 = vivid)
-const scaleHexColor = (hex: string, intensity: number): string => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const hex2 = (n: number): string => {
-    const v = Math.round(Math.max(0, Math.min(255, n)));
-    const s = v.toString(16);
-    return s.length < 2 ? "0" + s : s;
+// --- Mark color intensity: make marks "pop" more or softer ---
+// Higher intensity boosts saturation and eases lightness toward the vivid
+// midpoint (deepening the color so it stands out); lower intensity mutes it.
+// Operating in HSL (not raw RGB) is what keeps high settings from washing out
+// toward white. Works in both light and dark themes, pens and highlights.
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+
+const hexToHsl = (hex: string): [number, number, number] => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  const d = max - min;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [h, s, l];
+};
+
+const hslToHex = (h: number, s: number, l: number): string => {
+  const hue2rgb = (p: number, q: number, t: number): number => {
+    let tt = t;
+    if (tt < 0) tt += 1;
+    if (tt > 1) tt -= 1;
+    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+    if (tt < 1 / 2) return q;
+    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+    return p;
   };
-  return "#" + hex2(r * intensity) + hex2(g * intensity) + hex2(b * intensity);
+  let r: number;
+  let g: number;
+  let b: number;
+  if (s === 0) {
+    r = l;
+    g = l;
+    b = l;
+  } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const to255 = (x: number): string => {
+    const v = Math.round(Math.max(0, Math.min(255, x * 255)));
+    const str = v.toString(16);
+    return str.length < 2 ? "0" + str : str;
+  };
+  return "#" + to255(r) + to255(g) + to255(b);
+};
+
+const adjustColor = (
+  hex: string,
+  intensity: number,
+  isHighlight: boolean
+): string => {
+  const hsl = hexToHsl(hex);
+  const h = hsl[0];
+  const s0 = hsl[1];
+  const l0 = hsl[2];
+  const t = intensity - 1; // -0.4 (soft) .. +0.5 (bold)
+  let s = s0;
+  let l = l0;
+  if (t >= 0) {
+    s = clamp01(s0 * (1 + t * 0.9));
+    const k = Math.min(1, t * 1.1);
+    l = l0 + (0.5 - l0) * k;
+  } else {
+    s = clamp01(s0 * (1 + t * 0.6));
+    const extreme = l0 >= 0.5 ? 1 : 0;
+    const k = Math.min(1, -t * 0.8);
+    l = l0 + (extreme - l0) * k;
+  }
+  if (isHighlight) l = Math.max(0.35, Math.min(0.95, l));
+  return hslToHex(h, clamp01(s), clamp01(l));
 };
 
 const applyIntensityToTheme = (
@@ -93,19 +165,11 @@ const applyIntensityToTheme = (
   intensity: number
 ): Record<string, string> => {
   const scaled = { ...themeObj };
-  // Scale pen colors (bold, circle, underline, italic)
   for (let i = 1; i <= 7; i++) {
-    const key = `--pen${i}`;
-    if (scaled[key]) scaled[key] = scaleHexColor(scaled[key], intensity);
-  }
-  // Scale highlight colors (softer scaling for highlights)
-  for (let i = 1; i <= 7; i++) {
-    const key = `--hl${i}`;
-    if (scaled[key]) {
-      // Highlights scale less aggressively (lerp toward white at high intensity)
-      const hlIntensity = 1 + (intensity - 1) * 0.3;
-      scaled[key] = scaleHexColor(scaled[key], hlIntensity);
-    }
+    const penKey = `--pen${i}`;
+    if (scaled[penKey]) scaled[penKey] = adjustColor(scaled[penKey], intensity, false);
+    const hlKey = `--hl${i}`;
+    if (scaled[hlKey]) scaled[hlKey] = adjustColor(scaled[hlKey], intensity, true);
   }
   return scaled;
 };
