@@ -31,6 +31,7 @@ import {
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
 } from "./sync";
+import { initCloud } from "./cloudSync";
 
 // Everything this (mobile) shell backs up: the shared study data (CORE_KEYS)
 // plus this device's reading position.
@@ -567,6 +568,13 @@ export default function MobileApp() {
   // Warm up Google sign-in early so the consent popup opens within the tap.
   useEffect(() => {
     if (DRIVE_CONFIGURED) drive.preloadGis();
+  }, []);
+
+  // Initialize Firebase cloud sync. For now this only starts Firebase and
+  // listens for an existing sign-in — it does not change how the app saves yet
+  // (the live two-way sync gets wired into the UI in the next step).
+  useEffect(() => {
+    initCloud();
   }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
