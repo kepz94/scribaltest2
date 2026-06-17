@@ -10,6 +10,7 @@ import ConceptMap from "./components/ConceptMap";
 import Vault from "./components/Vault";
 import PrintView from "./components/PrintView";
 import MapPrint from "./components/MapPrint";
+import ShareVerses from "./components/ShareVerses";
 import Walkthrough from "./components/Walkthrough";
 import CompileWalkthrough from "./components/CompileWalkthrough";
 import SearchWalkthrough from "./components/SearchWalkthrough";
@@ -499,6 +500,8 @@ export default function App() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
+  const [sharingVerses, setSharingVerses] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -1923,6 +1926,61 @@ export default function App() {
           onDone={finishCompileAnim}
         />
       )}
+      {sharingVerses && (
+        <ShareVerses
+          compileTabs={compileTabs}
+          marks={marks}
+          colorLabels={compileScopedLabels}
+          notes={notes}
+          dark={dark}
+          C={
+            dark
+              ? {
+                  bg: "#131210",
+                  panel: "#1d1c19",
+                  soft: "#232220",
+                  text: "#eae7de",
+                  muted: "#8d8a82",
+                  border: "#343229",
+                }
+              : {
+                  bg: "#f6f4ee",
+                  panel: "#ffffff",
+                  soft: "#efece4",
+                  text: "#1d1c18",
+                  muted: "#8d8a80",
+                  border: "#e2dfd6",
+                }
+          }
+          onClose={() => setSharingVerses(false)}
+          onFlash={(m) => {
+            setShareMsg(m);
+            setTimeout(() => setShareMsg(null), 2200);
+          }}
+        />
+      )}
+
+      {shareMsg && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 500,
+            background: "var(--text)",
+            color: "var(--bg)",
+            padding: "10px 18px",
+            borderRadius: "999px",
+            fontSize: "13.5px",
+            fontWeight: 600,
+            boxShadow: "0 8px 30px rgba(0,0,0,0.3)",
+          }}
+        >
+          {shareMsg}
+        </div>
+      )}
+
       {printData &&
         (printData.view === "map" ? (
           <MapPrint
@@ -3501,6 +3559,21 @@ export default function App() {
               }}
             >
               ⎙ Print / PDF
+            </button>
+
+            <button
+              onClick={() => setSharingVerses(true)}
+              style={{
+                padding: "9px 18px",
+                borderRadius: "999px",
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontSize: "13.5px",
+              }}
+            >
+              ⤴ Share image
             </button>
 
             {savedFlash && (
