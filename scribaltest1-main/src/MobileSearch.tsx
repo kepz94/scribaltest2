@@ -36,59 +36,49 @@ interface Props {
 const SCRIPTURE_CAP = 120;
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const wildcardSource = (term: string) =>
-  "\\b" + escapeRe(term).replace(/\\\*/g, "\\w*");
-// A plain term matches a WHOLE WORD (\bif\b), so "if" no longer hits inside
-// "strife" or "fifty". The * wildcard (e.g. if*) is how you match word prefixes.
-const termSource = (term: string) =>
-  term.includes("*") ? wildcardSource(term) : "\\b" + escapeRe(term) + "\\b";
+// Expand one word into a regex source. "*" becomes a word-wildcard
+// (bapti* -> baptism / baptize); a plain word is matched as written.
+const wordSource = (term: string) =>
+  term.includes("*") ? escapeRe(term).replace(/\\\*/g, "\\w*") : escapeRe(term);
 
-type TermTest = (txt: string) => boolean;
+// A sequence of words matched as an exact phrase: in order, flexible spacing,
+// with whole-word boundaries at the ends (so "at" won't hit inside "format").
+const phraseSource = (words: string[]) =>
+  "\\b" + words.map(wordSource).join("\\s+") + "\\b";
 
-// Parse a query into OR-groups of AND-terms. Space = AND, "OR" = new group,
-// "AND" is explicit, and "*" is a word-wildcard (bapti* -> baptism/baptize).
+// Parse a query into alternative phrases. A space makes an exact phrase
+// (words in order); "OR" separates alternatives; "*" is a word-wildcard.
 function buildMatcher(
   query: string
 ): { test: (t: string) => boolean; terms: string[] } | null {
   const lower = query.trim().toLowerCase();
   if (!lower) return null;
-  const allTerms: string[] = [];
-  const orGroups = lower
+  const sources = lower
     .split(/\s+or\s+/i)
-    .map((g) => g.trim())
-    .filter(Boolean);
-  const groups = orGroups
-    .map((g) => {
-      const cleaned = g.replace(/\s+and\s+/gi, " ");
-      const terms = cleaned
+    .map((g) =>
+      g
+        .trim()
         .split(/\s+/)
         .map((t) => t.trim())
-        .filter((t) => t.replace(/\*/g, "").length > 0);
-      terms.forEach((t) => allTerms.push(t));
-      return terms.map((term): TermTest => {
-        let re: RegExp;
-        try {
-          re = new RegExp(termSource(term), "i");
-        } catch {
-          return () => false;
-        }
-        return (txt) => re.test(txt);
-      });
-    })
-    .filter((g) => g.length > 0);
-  if (!groups.length) return null;
-  return {
-    test: (txt) => groups.some((group) => group.every((fn) => fn(txt))),
-    terms: allTerms,
-  };
+        .filter((t) => t.replace(/\*/g, "").length > 0)
+    )
+    .filter((words) => words.length > 0)
+    .map(phraseSource);
+  if (!sources.length) return null;
+  let re: RegExp;
+  try {
+    re = new RegExp(sources.join("|"), "i");
+  } catch {
+    return null;
+  }
+  return { test: (txt) => re.test(txt), terms: sources };
 }
 
 function highlight(text: string, terms: string[], hlColor: string) {
   if (!terms.length) return text;
-  // Highlight WHOLE WORDS only (same rule as the matcher), so "if" doesn't get
-  // lit up inside "strife" or "fifty". termSource adds the \b word boundaries
-  // for plain terms and expands * into a word-wildcard.
-  const src = terms.map((t) => termSource(t)).join("|");
+  // Highlight the matched phrase(s). The strings passed in are already regex
+  // sources from buildMatcher (whole-word phrase patterns), so use them directly.
+  const src = terms.join("|");
   let re: RegExp;
   try {
     re = new RegExp("(" + src + ")", "gi");
