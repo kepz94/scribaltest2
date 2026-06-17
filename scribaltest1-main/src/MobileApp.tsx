@@ -133,7 +133,7 @@ const MARK_VARS_LIGHT = {
   "--hl5": "#cfe2f7",
   "--hl6": "#e6d9f7",
   "--hl7": "#e0e0e0",
-} as React.CSSProperties;
+};
 
 const MARK_VARS_DARK = {
   "--pen1": "#ff7b72",
@@ -150,7 +150,36 @@ const MARK_VARS_DARK = {
   "--hl5": "#243d56",
   "--hl6": "#3d2b5c",
   "--hl7": "#3f3e3a",
-} as React.CSSProperties;
+};
+
+// Scale a hex color by intensity (0.6 = muted, 1.0 = normal, 1.5 = vivid).
+const scaleHexColor = (hex: string, intensity: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const hex2 = (n: number): string => {
+    const v = Math.round(Math.max(0, Math.min(255, n)));
+    const s = v.toString(16);
+    return s.length < 2 ? "0" + s : s;
+  };
+  return "#" + hex2(r * intensity) + hex2(g * intensity) + hex2(b * intensity);
+};
+
+// Scale the pen/highlight CSS vars by intensity. Highlights scale more gently
+// so light mode doesn't wash out at high intensity.
+const scaleMarkVars = (
+  vars: Record<string, string>,
+  intensity: number
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  const hlIntensity = 1 + (intensity - 1) * 0.3;
+  Object.keys(vars).forEach((key) => {
+    if (key.indexOf("--hl") === 0) out[key] = scaleHexColor(vars[key], hlIntensity);
+    else if (key.indexOf("--pen") === 0) out[key] = scaleHexColor(vars[key], intensity);
+    else out[key] = vars[key];
+  });
+  return out;
+};
 
 const STYLE_LABELS: { tool: Tool; label: string }[] = [
   { tool: "highlight", label: "Highlight" },
@@ -363,6 +392,19 @@ export default function MobileApp() {
     );
   });
   const C = dark ? PALETTE.dark : PALETTE.light;
+
+  // Mark color intensity (device-local; shared key with desktop). 1.0 = normal.
+  const [colorIntensity, setColorIntensity] = useState<number>(() => {
+    const saved = localStorage.getItem("scribal_color_intensity");
+    return saved ? parseFloat(saved) : 1.0;
+  });
+  useEffect(() => {
+    localStorage.setItem("scribal_color_intensity", colorIntensity.toFixed(2));
+  }, [colorIntensity]);
+  const markVars = scaleMarkVars(
+    dark ? MARK_VARS_DARK : MARK_VARS_LIGHT,
+    colorIntensity
+  );
 
   // Reading comfort: font scale, line spacing, warm (sepia) tone.
   const [reading, setReading] = useState<{
@@ -1722,7 +1764,7 @@ export default function MobileApp() {
         flexDirection: "column",
         overflow: "hidden",
         fontFamily: "system-ui, -apple-system, sans-serif",
-        ...(dark ? MARK_VARS_DARK : MARK_VARS_LIGHT),
+        ...(markVars as React.CSSProperties),
         ...({
           "--bg": C.bg,
           "--panel": C.panel,
@@ -3499,6 +3541,88 @@ export default function MobileApp() {
                   setDark(next);
                   localStorage.setItem("scribal_theme", next ? "dark" : "light");
                 })}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 0",
+                  }}
+                >
+                  <span style={{ fontSize: "14px", fontWeight: 600 }}>
+                    Mark color
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      disabled={colorIntensity <= 0.6}
+                      onClick={() =>
+                        setColorIntensity((v) => Math.max(0.6, +(v - 0.1).toFixed(2)))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: colorIntensity <= 0.6 ? 0.4 : 1,
+                      }}
+                    >
+                      −
+                    </button>
+                    <span
+                      style={{
+                        minWidth: "62px",
+                        textAlign: "center",
+                        fontSize: "13px",
+                        color: C.muted,
+                      }}
+                    >
+                      {colorIntensity <= 0.65
+                        ? "Soft"
+                        : colorIntensity >= 1.45
+                        ? "Bold"
+                        : Math.round(colorIntensity * 100) + "%"}
+                    </span>
+                    <button
+                      disabled={colorIntensity >= 1.5}
+                      onClick={() =>
+                        setColorIntensity((v) => Math.min(1.5, +(v + 0.1).toFixed(2)))
+                      }
+                      style={{
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "9px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: colorIntensity >= 1.5 ? 0.4 : 1,
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", padding: "0 0 4px 0" }}>
+                  {[1, 2, 3, 4, 5, 6, 7].map((c) => (
+                    <div
+                      key={c}
+                      style={{
+                        flex: 1,
+                        height: "18px",
+                        borderRadius: "4px",
+                        backgroundColor: markVars["--hl" + c],
+                        border: "1px solid " + C.border,
+                      }}
+                    />
+                  ))}
+                </div>
 
                 {label("Reading")}
                 <div
