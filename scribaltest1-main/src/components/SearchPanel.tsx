@@ -65,7 +65,7 @@ export default function SearchPanel(props: SearchPanelProps) {
   } = props;
 
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<Mode>("all");
+  const [mode, setMode] = useState<Mode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
   const [scope, setScope] = useState<Scope>("all");
   const [wholeWord, setWholeWord] = useState(false);
