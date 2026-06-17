@@ -82,22 +82,27 @@ function clampLines(lines: string[], max: number): string[] {
   return kept;
 }
 
-function paintBackground(ctx: CanvasRenderingContext2D, p: Palette) {
-  const g = ctx.createLinearGradient(0, 0, W, H);
+function paintBackground(ctx: CanvasRenderingContext2D, p: Palette, h = H) {
+  const g = ctx.createLinearGradient(0, 0, W, h);
   g.addColorStop(0, p.bg);
   g.addColorStop(1, p.bg2);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, W, h);
   ctx.strokeStyle = p.frame;
   ctx.lineWidth = 2;
-  roundRect(ctx, 46, 46, W - 92, H - 92, 26);
+  roundRect(ctx, 46, 46, W - 92, h - 92, 26);
   ctx.stroke();
 }
 
-function paintBrand(ctx: CanvasRenderingContext2D, p: Palette, accent: string) {
+function paintBrand(
+  ctx: CanvasRenderingContext2D,
+  p: Palette,
+  accent: string,
+  h = H
+) {
   // Footer signature: the "S" monogram + a one-line descriptor, centered.
   const cx = W / 2;
-  const y = H - 110;
+  const y = h - 110;
   const s = 40;
   const gap = 15;
   const tracking = 2;
@@ -197,10 +202,10 @@ function drawTrackedLeft(
   });
 }
 
-function newCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } {
+function newCanvas(h = H): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } {
   const canvas = document.createElement("canvas");
   canvas.width = W;
-  canvas.height = H;
+  canvas.height = h;
   return { canvas, ctx: canvas.getContext("2d") };
 }
 
@@ -315,8 +320,6 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const p = o.dark ? darkCard : lightCard;
   const { canvas, ctx } = newCanvas();
   if (!ctx) return canvas;
-  paintBackground(ctx, p);
-  paintMasthead(ctx, p, penHex(o.verses[0] ? o.verses[0].color : 7, o.dark));
 
   const verses = o.verses.slice(0, 4);
   const showNotes = !!o.showNotes;
@@ -326,13 +329,14 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
       : [];
   const showSynth = syntheses.length > 0;
 
-  const padX = 120;
+  const padX = 110;
   const barW = 6;
   const contentX = padX + 22; // text begins to the right of the accent bar
   const maxW = W - contentX - padX;
   const top = 172;
-  const bottom = H - 168; // leave room for the brand footer
-  const budget = bottom - top;
+  const FOOTER_SPACE = 168; // room beneath the content for the brand footer
+  const MIN_H = 1080; // a light card is never shorter than this
+  const MAX_H = 2600; // a heavy card is never taller than this
 
   const refSize = 27;
   const themeSize = 21;
@@ -413,17 +417,37 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     return { blocks, synthItems, total };
   };
 
-  const baseByCount: { [k: number]: number } = { 1: 52, 2: 46, 3: 40, 4: 36 };
-  let size = baseByCount[verses.length] || 36;
-  const floor = showNotes || showSynth ? 18 : 22;
+  // Comfortable, readable text sized by how many verses are on the card.
+  const baseByCount: { [k: number]: number } = { 1: 48, 2: 44, 3: 42, 4: 40 };
+  const maxSize = 64;
+  const minSize = 22;
+  const minContent = MIN_H - top - FOOTER_SPACE;
+  const maxContent = MAX_H - top - FOOTER_SPACE;
+  let size = baseByCount[verses.length] || 40;
   let lay = measure(size);
-  while (lay.total > budget && size > floor) {
+  // Grow a light card's text so it fills a standard-height card.
+  while (size < maxSize && measure(size + 2).total <= minContent) {
+    size += 2;
+    lay = measure(size);
+  }
+  // Shrink a very heavy card so it never exceeds the maximum height.
+  while (size > minSize && lay.total > maxContent) {
     size -= 2;
     lay = measure(size);
   }
 
-  // Center the stack vertically when there's spare room.
-  let y = top + (lay.total < budget ? (budget - lay.total) / 2 : 0);
+  // Grow the canvas to fit the content (clamped) rather than cramming the
+  // content into a fixed height — no empty top/bottom and no overflow.
+  const cardH = Math.round(
+    Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
+  );
+  canvas.height = cardH;
+  paintBackground(ctx, p, cardH);
+  paintMasthead(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
+
+  // Top-align; center only when content is shorter than the card (light cards).
+  const contentBudget = cardH - top - FOOTER_SPACE;
+  let y = top + Math.max(0, (contentBudget - lay.total) / 2);
 
   lay.blocks.forEach((b) => {
     const accent = penHex(b.v.color, o.dark);
@@ -545,7 +569,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     });
   }
 
-  paintBrand(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
+  paintBrand(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark), cardH);
   return canvas;
 }
 
