@@ -46,32 +46,50 @@ const wordSource = (term: string) =>
 const phraseSource = (words: string[]) =>
   "\\b" + words.map(wordSource).join("\\s+") + "\\b";
 
-// Parse a query into alternative phrases. A space makes an exact phrase
-// (words in order); "OR" separates alternatives; "*" is a word-wildcard.
+// Parse a query into alternatives (OR) of AND-parts (&), where each part is an
+// exact phrase (words in order). "*" is a word-wildcard. Examples:
+//   at that day        -> the exact phrase
+//   faith & hope       -> both words, anywhere, in any order
+//   good works & faith -> the phrase "good works" AND the word "faith"
+//   mercy OR grace     -> either one
 function buildMatcher(
   query: string
 ): { test: (t: string) => boolean; terms: string[] } | null {
   const lower = query.trim().toLowerCase();
   if (!lower) return null;
-  const sources = lower
-    .split(/\s+or\s+/i)
+  const allSources: string[] = [];
+  const groups = lower
+    .split(/\s+or\s+/i) // OR -> alternative groups
     .map((g) =>
       g
-        .trim()
-        .split(/\s+/)
-        .map((t) => t.trim())
-        .filter((t) => t.replace(/\*/g, "").length > 0)
+        .split("&") // & -> AND parts within a group
+        .map((part) =>
+          part
+            .trim()
+            .split(/\s+/) // spaces -> words of an exact phrase
+            .map((t) => t.trim())
+            .filter((t) => t.replace(/\*/g, "").length > 0)
+        )
+        .filter((words) => words.length > 0)
+        .map(phraseSource)
     )
-    .filter((words) => words.length > 0)
-    .map(phraseSource);
-  if (!sources.length) return null;
-  let re: RegExp;
-  try {
-    re = new RegExp(sources.join("|"), "i");
-  } catch {
-    return null;
-  }
-  return { test: (txt) => re.test(txt), terms: sources };
+    .filter((parts) => parts.length > 0);
+  if (!groups.length) return null;
+  const compiled = groups.map((parts) =>
+    parts.map((src) => {
+      allSources.push(src);
+      try {
+        return new RegExp(src, "i");
+      } catch {
+        return null;
+      }
+    })
+  );
+  return {
+    test: (txt) =>
+      compiled.some((parts) => parts.every((re) => (re ? re.test(txt) : false))),
+    terms: allSources,
+  };
 }
 
 function highlight(text: string, terms: string[], hlColor: string) {
