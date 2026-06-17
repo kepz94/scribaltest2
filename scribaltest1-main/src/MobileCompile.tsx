@@ -87,6 +87,9 @@ export default function MobileCompile({
   const [editNote, setEditNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
+  // Which theme cards are expanded in the share picker (collapsed by default,
+  // so themes are the headline and verses are a tap away).
+  const [pickOpen, setPickOpen] = useState<string[]>([]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
@@ -1294,108 +1297,200 @@ export default function MobileCompile({
               padding: "12px 16px calc(20px + env(safe-area-inset-bottom))",
             }}
           >
-            {shareableVerses.map((sv) => {
-              const on = picked.includes(sv.key);
-              const atCap = !on && picked.length >= 4;
-              const preview = sv.phrases[0] ? sv.phrases[0].text : "";
+            {groups.map((g) => {
+              const versesForTheme = verseEntriesFor(g.marks);
+              if (versesForTheme.length === 0) return null;
+              const open = pickOpen.includes(g.key);
+              const pickedInTheme = versesForTheme.filter((ve) =>
+                picked.includes(g.key + "|" + ve.reference)
+              ).length;
               return (
-                <button
-                  key={sv.key}
-                  onClick={() => togglePick(sv.key)}
+                <div
+                  key={g.key}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "10px",
-                    width: "100%",
-                    textAlign: "left",
-                    background: on ? C.soft : "transparent",
-                    border:
-                      "1px solid " +
-                      (on ? COLOR_MAP[sv.color as MarkColor] : C.border),
-                    borderRadius: "12px",
-                    padding: "11px 12px",
-                    marginBottom: "8px",
-                    cursor: "pointer",
-                    color: C.text,
-                    fontFamily: "inherit",
-                    opacity: atCap ? 0.45 : 1,
+                    marginBottom: "12px",
+                    border: "1px solid " + C.border,
+                    borderRadius: "14px",
+                    backgroundColor: C.panel,
+                    overflow: "hidden",
                   }}
                 >
-                  <span
+                  {/* theme header (tap to reveal verses) */}
+                  <button
+                    onClick={() =>
+                      setPickOpen((prev) =>
+                        prev.includes(g.key)
+                          ? prev.filter((k) => k !== g.key)
+                          : [...prev, g.key]
+                      )
+                    }
                     style={{
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "6px",
-                      border:
-                        "2px solid " +
-                        (on ? COLOR_MAP[sv.color as MarkColor] : C.muted),
-                      background: on
-                        ? COLOR_MAP[sv.color as MarkColor]
-                        : "transparent",
-                      color: "#fff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "13px",
-                      flexShrink: 0,
-                      marginTop: "1px",
-                    }}
-                  >
-                    {on ? "✓" : ""}
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
                       display: "flex",
-                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "10px",
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      padding: "14px 14px",
+                      cursor: "pointer",
+                      color: C.text,
+                      fontFamily: "inherit",
                     }}
                   >
                     <span
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "7px",
-                        marginBottom: "3px",
+                        width: "15px",
+                        height: "15px",
+                        borderRadius: "50%",
+                        backgroundColor: COLOR_MAP[g.color as MarkColor],
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
+                      {g.name}
+                    </span>
+                    {pickedInTheme > 0 && (
                       <span
                         style={{
-                          width: "9px",
-                          height: "9px",
-                          borderRadius: "50%",
-                          backgroundColor: COLOR_MAP[sv.color as MarkColor],
-                          flexShrink: 0,
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: COLOR_MAP[g.color as MarkColor],
                         }}
-                      />
-                      <span style={{ fontSize: "12.5px", fontWeight: 700 }}>
-                        {sv.reference}
+                      >
+                        {pickedInTheme} picked
                       </span>
-                      <span style={{ fontSize: "11px", color: C.muted }}>
-                        {sv.theme}
-                      </span>
+                    )}
+                    <span style={{ fontSize: "11.5px", color: C.muted }}>
+                      {versesForTheme.length}{" "}
+                      {versesForTheme.length === 1 ? "verse" : "verses"}
                     </span>
                     <span
-                      style={
-                        {
-                          fontFamily: '"Times New Roman", Times, serif',
-                          fontSize: "14px",
-                          lineHeight: 1.5,
-                          color: C.text,
-                          overflow: "hidden",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                        } as CSSProperties
-                      }
+                      style={{
+                        fontSize: "12px",
+                        color: C.muted,
+                        transform: open ? "rotate(90deg)" : "none",
+                        transition: "transform 0.15s",
+                      }}
                     >
-                      “{preview}”
-                      {sv.phrases.length > 1
-                        ? " +" + (sv.phrases.length - 1) + " more"
-                        : ""}
+                      ›
                     </span>
-                  </span>
-                </button>
+                  </button>
+
+                  {open && (
+                    <div style={{ padding: "0 12px 8px" }}>
+                      {versesForTheme.map((ve) => {
+                        const key = g.key + "|" + ve.reference;
+                        const on = picked.includes(key);
+                        const atCap = !on && picked.length >= 4;
+                        const phrases = ve.marks.map((m) => ({
+                          text: m.markedText,
+                          style: m.style,
+                        }));
+                        const preview = phrases[0] ? phrases[0].text : "";
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => togglePick(key)}
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: "10px",
+                              width: "100%",
+                              textAlign: "left",
+                              background: on ? C.soft : "transparent",
+                              border:
+                                "1px solid " +
+                                (on
+                                  ? COLOR_MAP[g.color as MarkColor]
+                                  : C.border),
+                              borderRadius: "10px",
+                              padding: "10px 11px",
+                              marginBottom: "8px",
+                              cursor: "pointer",
+                              color: C.text,
+                              fontFamily: "inherit",
+                              opacity: atCap ? 0.45 : 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "20px",
+                                height: "20px",
+                                borderRadius: "6px",
+                                border:
+                                  "2px solid " +
+                                  (on
+                                    ? COLOR_MAP[g.color as MarkColor]
+                                    : C.muted),
+                                background: on
+                                  ? COLOR_MAP[g.color as MarkColor]
+                                  : "transparent",
+                                color: "#fff",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "13px",
+                                flexShrink: 0,
+                                marginTop: "1px",
+                              }}
+                            >
+                              {on ? "✓" : ""}
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                display: "flex",
+                                flexDirection: "column",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "12.5px",
+                                  fontWeight: 700,
+                                  marginBottom: "3px",
+                                }}
+                              >
+                                {ve.reference}
+                              </span>
+                              <span
+                                style={
+                                  {
+                                    fontFamily:
+                                      '"Times New Roman", Times, serif',
+                                    fontSize: "14px",
+                                    lineHeight: 1.5,
+                                    color: C.text,
+                                    overflow: "hidden",
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: "vertical",
+                                  } as CSSProperties
+                                }
+                              >
+                                “{preview}”
+                                {phrases.length > 1
+                                  ? " +" + (phrases.length - 1) + " more"
+                                  : ""}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
             <button
