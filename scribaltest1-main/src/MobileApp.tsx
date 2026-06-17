@@ -31,7 +31,14 @@ import {
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
 } from "./sync";
-import { initCloud } from "./cloudSync";
+import {
+  initCloud,
+  onCloudState,
+  configureSync,
+  signIn as cloudSignIn,
+  signOutCloud,
+  noteLocalChange,
+} from "./cloudSync";
 
 // Everything this (mobile) shell backs up: the shared study data (CORE_KEYS)
 // plus this device's reading position.
@@ -536,6 +543,15 @@ export default function MobileApp() {
   const [diag, setDiag] = useState("");
   const [barHidden, setBarHidden] = useState(false);
 
+  // Firebase cloud sync state (the seamless replacement for Drive). When signed
+  // in, sync is automatic + cross-device and the old Drive path stays dormant.
+  const [cloudSignedIn, setCloudSignedIn] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudEmail, setCloudEmail] = useState<string | null>(null);
+  // Hide the legacy Google Drive sign-in UI while we run on Firebase. The Drive
+  // code stays in place (so nothing breaks) but can't be triggered from the UI.
+  const SHOW_LEGACY_DRIVE = false;
+
   // Track which marks were created during this app session, so Compile can
   // surface "what you just worked on." Re-seeds when the active book changes,
   // so switching books never falsely flags everything as new.
@@ -570,10 +586,26 @@ export default function MobileApp() {
     if (DRIVE_CONFIGURED) drive.preloadGis();
   }, []);
 
-  // Initialize Firebase cloud sync. For now this only starts Firebase and
-  // listens for an existing sign-in — it does not change how the app saves yet
-  // (the live two-way sync gets wired into the UI in the next step).
+  // Give cloud sync this shell's merge hooks + the keys it backs up. Re-runs if
+  // the hooks change identity (cheap — it only stores references).
   useEffect(() => {
+    configureSync({
+      backupKeys: BACKUP_KEYS,
+      mergeRemoteBooks,
+      vaultMergeRemote,
+    });
+  }, [mergeRemoteBooks, vaultMergeRemote]);
+
+  // Start Firebase and mirror its sync state into the UI. Once a user is signed
+  // in, Firestore's live listener + debounced push handle sync automatically;
+  // there's no "sync now" and no reconnect cue (the login refreshes silently).
+  useEffect(() => {
+    onCloudState((s) => {
+      setCloudSignedIn(s.signedIn);
+      setCloudSyncing(s.syncing);
+      setCloudEmail(s.email);
+      if (s.lastSync) setLastSync(s.lastSync);
+    });
     initCloud();
   }, []);
 
@@ -1531,6 +1563,12 @@ export default function MobileApp() {
   // surface a sign-in popup, so token refresh is now user-initiated via the
   // reconnect cue. The stored token is used directly while it is still valid.)
 
+  // Push local changes to Firebase (debounced inside cloudSync; only acts when
+  // signed in). This is the live counterpart to the Drive auto-save below.
+  useEffect(() => {
+    noteLocalChange();
+  }, [marks, colorLabels, scopedLabels, notes]);
+
   // Auto-save to Drive on changes, refreshing the token as needed (no popup).
   const autoSaveReady = useRef(false);
   useEffect(() => {
@@ -1538,6 +1576,7 @@ export default function MobileApp() {
       autoSaveReady.current = true;
       return;
     }
+    if (cloudSignedIn) return; // Firebase is handling sync — stay out of its way
     if (!connected) return;
     if (pullPending.current) return;
     const t = setTimeout(() => {
@@ -1562,12 +1601,13 @@ export default function MobileApp() {
         .finally(() => setSyncBusy(false));
     }, 1500);
     return () => clearTimeout(t);
-  }, [marks, colorLabels, scopedLabels, notes, connected]);
+  }, [marks, colorLabels, scopedLabels, notes, connected, cloudSignedIn]);
 
   // Auto-pull the other device's changes when the app opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
   // newer than what's here — it never clobbers newer local edits.
   useEffect(() => {
+    if (cloudSignedIn) return; // Firebase's live listener handles incoming changes
     if (!connected || !DRIVE_CONFIGURED) return;
     const checkRemote = async () => {
       // Use the stored token while it's valid. Do NOT trigger a silent refresh
@@ -1599,7 +1639,7 @@ export default function MobileApp() {
       document.removeEventListener("visibilitychange", onVisible);
       clearInterval(pollId);
     };
-  }, [connected]);
+  }, [connected, cloudSignedIn]);
 
   // ---- shared sheet backdrop ----
   const sheet = (onClose: () => void, children: React.ReactNode) => (
@@ -1876,12 +1916,11 @@ export default function MobileApp() {
                 width: "7px",
                 height: "7px",
                 borderRadius: "50%",
-                backgroundColor:
-                  !DRIVE_CONFIGURED || !connected
-                    ? C.muted
-                    : syncBusy
-                    ? "#e0a32e"
-                    : "#3a9d4e",
+                backgroundColor: !cloudSignedIn
+                  ? C.muted
+                  : cloudSyncing
+                  ? "#e0a32e"
+                  : "#3a9d4e",
                 flexShrink: 0,
               }}
             />
@@ -1894,9 +1933,9 @@ export default function MobileApp() {
                 whiteSpace: "nowrap",
               }}
             >
-              {!DRIVE_CONFIGURED || !connected
+              {!cloudSignedIn
                 ? "Saved on this phone"
-                : syncBusy
+                : cloudSyncing
                 ? "Saving…"
                 : "Synced " + relTime(lastSync)}
             </span>
@@ -1942,7 +1981,7 @@ export default function MobileApp() {
             </span>
           </button>
         </div>
-        {DRIVE_CONFIGURED && connected && needsReconnect && (
+        {!cloudSignedIn && DRIVE_CONFIGURED && connected && needsReconnect && (
           <button
             onClick={syncNow}
             disabled={syncBusy}
@@ -3332,7 +3371,50 @@ export default function MobileApp() {
                 <div style={{ fontSize: "16px", fontWeight: 700 }}>Settings</div>
 
                 {label("Sync")}
-                {connected ? (
+                {cloudSignedIn ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        marginBottom: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <span style={{ color: COLOR_MAP[4] }}>●</span>
+                      {cloudSyncing
+                        ? "Syncing…"
+                        : "Synced" + (cloudEmail ? " · " + cloudEmail : "")}
+                    </div>
+                    {actionBtn("Sign out", () => {
+                      signOutCloud().catch(() => {});
+                    })}
+                  </>
+                ) : (
+                  <>
+                    {actionBtn(
+                      "Sign in with Google",
+                      () => {
+                        cloudSignIn().catch(() => {});
+                      },
+                      { primary: true }
+                    )}
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: C.muted,
+                        lineHeight: 1.5,
+                        marginTop: "6px",
+                      }}
+                    >
+                      Sign in once and your study stays in sync across every
+                      device automatically — no “sync now” to remember, and it
+                      keeps working offline.
+                    </div>
+                  </>
+                )}
+                {SHOW_LEGACY_DRIVE && (connected ? (
                   <>
                     <div
                       style={{
@@ -3398,7 +3480,7 @@ export default function MobileApp() {
                       </div>
                     )}
                   </>
-                )}
+                ))}
                 {syncMsg && (
                   <div
                     style={{
@@ -5538,16 +5620,11 @@ export default function MobileApp() {
           driveConfigured={DRIVE_CONFIGURED}
           onSync={async () => {
             localStorage.setItem("scribal_mobile_onboarded", "1");
-            // Sign-in pulls data and reloads; this flag re-opens the gestures
-            // sheet after the reload so it isn't wiped.
-            localStorage.setItem("scribal_mobile_show_gestures", "1");
             setShowTour(false);
-            await driveConnect();
-            // Only reached if no reload happened (e.g. first-ever sign-in).
             try {
-              localStorage.removeItem("scribal_mobile_show_gestures");
+              await cloudSignIn();
             } catch {
-              /* ignore */
+              /* popup dismissed — fine, they can sign in later from Settings */
             }
             setGesturesOpen(true);
           }}
