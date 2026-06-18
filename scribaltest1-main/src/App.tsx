@@ -509,6 +509,13 @@ export default function App() {
   // "Which open tabs do you want to link this one with?" prompt.
   const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
+  const [pickV, setPickV] = useState(-1);
+  const [pickB, setPickB] = useState(-1);
+  const [pickC, setPickC] = useState(-1);
+  const [linkedCompilePrompt, setLinkedCompilePrompt] = useState<{
+    gid: string;
+    tabId: string;
+  } | null>(null);
 
   // Floating-toolbar position/orientation — ONE shared value across every open
   // tab, so the toolbar doesn't jump when you switch tabs.
@@ -1002,6 +1009,9 @@ export default function App() {
         )
       : [];
     setLinkSelected(pre);
+    setPickV(-1);
+    setPickB(-1);
+    setPickC(-1);
     setLinkPromptTabId(t.id);
   };
 
@@ -1225,6 +1235,14 @@ export default function App() {
 
   const startCompile = () => {
     setCompileStudyId(null);
+    const gid =
+      activeTab && !activeTab.studyId
+        ? chapterGroups[chapterScopeOf(activeTab)]
+        : undefined;
+    if (gid) {
+      setLinkedCompilePrompt({ gid, tabId: activeTab.id });
+      return;
+    }
     const units = compileUnits();
     // Only one thing open (a single chapter, or a single linked group) — just
     // compile it. More than one separate thing — ask first.
@@ -1238,6 +1256,77 @@ export default function App() {
   const chooseCompileUnit = (u: { label: string; tabIds: string[] }) => {
     setCompilePrompt(null);
     runCompile(u.tabIds);
+  };
+
+  // Compile the whole linked study: open every chapter in the group (even ones
+  // not currently in a tab), then compile them together.
+  const compileLinkedAll = (gid: string) => {
+    setLinkedCompilePrompt(null);
+    const scopes = Object.keys(chapterGroups).filter(
+      (c) => chapterGroups[c] === gid
+    );
+    const locs = scopes
+      .map((sc) => chapterLoc.get(sc))
+      .filter(Boolean) as {
+      volume: number;
+      book: number;
+      chapter: number;
+    }[];
+    if (!locs.length) return;
+    const tabIds: string[] = [];
+    setTabs((prev) => {
+      let next = prev;
+      locs.forEach((loc) => {
+        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+        tabIds.push(id);
+        if (!next.some((t) => t.id === id))
+          next = [
+            ...next,
+            {
+              id,
+              volume: loc.volume,
+              book: loc.book,
+              chapter: loc.chapter,
+              bookId: activeBookId,
+            },
+          ];
+      });
+      return next;
+    });
+    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    runCompile(tabIds);
+  };
+
+  // Study just this chapter on its own: copy its marks into a fresh session
+  // book and compile only it, leaving the linked study untouched.
+  const compileJustThisSession = (tabId: string) => {
+    setLinkedCompilePrompt(null);
+    const t = tabs.find((x) => x.id === tabId);
+    if (!t) return;
+    const cs = chapterScopeOf(t);
+    const refs = vols[t.volume].books[t.book].chapters[t.chapter].verses.map(
+      (v) => v.reference
+    );
+    const id = createSession(cs);
+    absorb(id, activeBookId, refs);
+    setActiveBook(id);
+    const newTabId = makeTabId(id, t.volume, t.book, t.chapter);
+    setTabs((prev) =>
+      prev.some((x) => x.id === newTabId)
+        ? prev
+        : [
+            ...prev,
+            {
+              id: newTabId,
+              volume: t.volume,
+              book: t.book,
+              chapter: t.chapter,
+              bookId: id,
+            },
+          ]
+    );
+    setActiveTabId(newTabId);
+    runCompile([newTabId]);
   };
 
   const finishCompileAnim = () => {
@@ -1655,15 +1744,15 @@ export default function App() {
     <button
       onClick={onClick}
       style={{
-        height: "36px",
-        padding: "0 18px",
+        height: "40px",
+        padding: "0 20px",
         backgroundColor: primary ? "var(--text)" : "transparent",
         color: primary ? "var(--bg)" : "var(--text)",
         border: primary ? "none" : "1px solid var(--border)",
         borderRadius: "999px",
         cursor: "pointer",
-        fontSize: "13.5px",
-        fontWeight: 500,
+        fontSize: "14.5px",
+        fontWeight: 600,
         display: "flex",
         alignItems: "center",
         whiteSpace: "nowrap",
@@ -1685,14 +1774,14 @@ export default function App() {
       disabled={disabled}
       title={title}
       style={{
-        width: "36px",
-        height: "36px",
+        width: "40px",
+        height: "40px",
         borderRadius: "50%",
         border: "1px solid var(--border)",
         backgroundColor: "transparent",
         color: "var(--muted)",
         cursor: disabled ? "default" : "pointer",
-        fontSize: "17px",
+        fontSize: "18px",
         lineHeight: 1,
         opacity: disabled ? 0.35 : 1,
         display: "flex",
@@ -1706,17 +1795,17 @@ export default function App() {
   );
 
   const pillStyle: React.CSSProperties = {
-    height: "36px",
-    padding: "0 14px",
+    height: "40px",
+    padding: "0 16px",
     borderRadius: "999px",
     border: "1px solid var(--border)",
     backgroundColor: "transparent",
     color: "var(--muted)",
     cursor: "pointer",
-    fontSize: "12.5px",
+    fontSize: "14px",
     display: "flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "7px",
     flexShrink: 0,
   };
 
@@ -2232,77 +2321,376 @@ export default function App() {
               boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
             }}
           >
-            <div
-              style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}
-            >
-              Link{" "}
-              {(() => {
-                const t = tabs.find((x) => x.id === linkPromptTabId);
-                return t ? tabLabel(t) : "this chapter";
-              })()}{" "}
-              with…
-            </div>
-            <div
-              style={{ fontSize: "13px", opacity: 0.7, marginBottom: "16px" }}
-            >
-              Pick the open tabs to study together. They'll share one set of
-              themes and compile as one. Leave all unchecked to unlink.
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-                maxHeight: "320px",
-                overflowY: "auto",
-              }}
-            >
-              {tabs
+            {(() => {
+              const t = tabs.find((x) => x.id === linkPromptTabId);
+              if (!t) return null;
+              const cs = chapterScopeOf(t);
+              const gid = chapterGroups[cs];
+              const gColor = gid ? groupColor(gid) : "#8b5cf6";
+              const members = gid
+                ? Object.keys(chapterGroups)
+                    .filter((s) => chapterGroups[s] === gid && s !== cs)
+                    .sort()
+                : [];
+              const chMarks = marks.filter(
+                (m) => scopeOfRef(m.reference) === cs
+              );
+              const themeMap = new Map<
+                string,
+                { color: MarkColor; name: string; count: number }
+              >();
+              chMarks.forEach((m) => {
+                const sc = scopedLabels[resolveScope(scopeOfRef(m.reference))];
+                const raw =
+                  (sc && m.color in sc ? sc[m.color] : colorLabels[m.color]) ||
+                  "";
+                const nm = raw.trim();
+                const key = nm ? "n:" + nm : "c:" + m.color;
+                const e = themeMap.get(key);
+                if (e) e.count += 1;
+                else
+                  themeMap.set(key, {
+                    color: m.color,
+                    name: nm || "Color " + m.color,
+                    count: 1,
+                  });
+              });
+              const themes = Array.from(themeMap.values());
+              const openRows = tabs
                 .filter((x) => x.id !== linkPromptTabId)
-                .map((x) => {
-                  const cs = chapterScopeOf(x);
-                  const on = linkSelected.includes(cs);
-                  return (
-                    <button
-                      key={x.id}
-                      onClick={() => toggleLinkSelect(cs)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        textAlign: "left",
-                        padding: "12px 14px",
-                        borderRadius: "10px",
-                        border: on
-                          ? "2px solid var(--text)"
-                          : "1px solid var(--border)",
-                        background: "var(--bg)",
-                        color: "var(--text)",
-                        fontSize: "14px",
-                        fontWeight: on ? 600 : 400,
-                        cursor: "pointer",
-                      }}
-                    >
+                .map((x) => ({
+                  scope: chapterScopeOf(x),
+                  label: tabLabel(x),
+                  open: true,
+                }));
+              const openSet = new Set(openRows.map((o) => o.scope));
+              const linkRows = [
+                ...openRows,
+                ...linkSelected
+                  .filter((s) => !openSet.has(s) && s !== cs)
+                  .map((s) => ({ scope: s, label: s, open: false })),
+              ];
+              const eyebrow: React.CSSProperties = {
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                marginBottom: "8px",
+              };
+              const selStyle: React.CSSProperties = {
+                boxSizing: "border-box",
+                width: "100%",
+                padding: "11px 10px",
+                borderRadius: "10px",
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: "14px",
+                fontFamily: "inherit",
+              };
+              return (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "9px",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    {gid && (
                       <span
                         style={{
-                          width: "16px",
-                          height: "16px",
-                          borderRadius: "4px",
-                          border: "1px solid currentColor",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
+                          width: "12px",
+                          height: "12px",
+                          borderRadius: "50%",
+                          background: gColor,
                           flexShrink: 0,
-                          fontSize: "11px",
+                        }}
+                      />
+                    )}
+                    <span style={{ fontSize: "17px", fontWeight: 700 }}>
+                      {tabLabel(t)}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      color: "var(--muted)",
+                      marginBottom: members.length ? "4px" : "16px",
+                    }}
+                  >
+                    {chMarks.length}{" "}
+                    {chMarks.length === 1 ? "marking" : "markings"} in this
+                    chapter
+                  </div>
+                  {members.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: "12.5px",
+                        color: "var(--muted)",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      Linked with{" "}
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        {members.join(", ")}
+                      </span>
+                    </div>
+                  )}
+
+                  {themes.length > 0 && (
+                    <>
+                      <div style={eyebrow}>Themes here</div>
+                      <div style={{ marginBottom: "18px" }}>
+                        {themes.map((th, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              padding: "6px 0",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "14px",
+                                height: "14px",
+                                borderRadius: "50%",
+                                backgroundColor: COLOR_MAP[th.color],
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                flex: 1,
+                                fontSize: "14px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {th.name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                              }}
+                            >
+                              {th.count} {th.count === 1 ? "mark" : "marks"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  <div style={eyebrow}>Combine into a study</div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      lineHeight: 1.5,
+                      marginBottom: "12px",
+                    }}
+                  >
+                    Linked chapters share one set of theme names and compile as
+                    one. Check the chapters to study together; uncheck to unlink.
+                  </div>
+                  {linkRows.length === 0 ? (
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: "var(--muted)",
+                        padding: "4px 0",
+                      }}
+                    >
+                      Open another chapter in a tab to link it with this one.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        maxHeight: "260px",
+                        overflowY: "auto",
+                      }}
+                    >
+                      {linkRows.map((r) => {
+                        const on = linkSelected.includes(r.scope);
+                        return (
+                          <button
+                            key={r.scope}
+                            onClick={() => toggleLinkSelect(r.scope)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              textAlign: "left",
+                              padding: "11px 13px",
+                              borderRadius: "10px",
+                              border: on
+                                ? "2px solid " + gColor
+                                : "1px solid var(--border)",
+                              background: "var(--bg)",
+                              color: "var(--text)",
+                              fontSize: "14px",
+                              fontWeight: on ? 600 : 400,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "16px",
+                                height: "16px",
+                                borderRadius: "4px",
+                                border: on
+                                  ? "1px solid " + gColor
+                                  : "1px solid var(--muted)",
+                                background: on ? gColor : "transparent",
+                                color: "#fff",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                                fontSize: "11px",
+                              }}
+                            >
+                              {on ? "✓" : ""}
+                            </span>
+                            <span style={{ flex: 1 }}>
+                              {r.label}
+                              {!r.open && (
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  {" "}
+                                  · not open
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div style={{ ...eyebrow, marginTop: "18px" }}>
+                    Or link any chapter
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    <select
+                      value={pickV}
+                      onChange={(e) => {
+                        setPickV(Number(e.target.value));
+                        setPickB(-1);
+                        setPickC(-1);
+                      }}
+                      style={selStyle}
+                    >
+                      <option value={-1}>Choose a volume…</option>
+                      {vols.map((vol, v) => (
+                        <option key={v} value={v}>
+                          {vol.volume}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={pickB}
+                      disabled={pickV < 0}
+                      onChange={(e) => {
+                        setPickB(Number(e.target.value));
+                        setPickC(-1);
+                      }}
+                      style={{ ...selStyle, opacity: pickV < 0 ? 0.5 : 1 }}
+                    >
+                      <option value={-1}>Choose a book…</option>
+                      {(pickV >= 0 ? vols[pickV].books : []).map((bk, b) => (
+                        <option key={b} value={b}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={pickC}
+                      disabled={pickB < 0}
+                      onChange={(e) => setPickC(Number(e.target.value))}
+                      style={{ ...selStyle, opacity: pickB < 0 ? 0.5 : 1 }}
+                    >
+                      <option value={-1}>Choose a chapter…</option>
+                      {(pickV >= 0 && pickB >= 0
+                        ? vols[pickV].books[pickB].chapters
+                        : []
+                      ).map((ch, c) => (
+                        <option key={c} value={c}>
+                          {ch.chapter}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {(() => {
+                    if (pickV < 0 || pickB < 0 || pickC < 0) return null;
+                    const ref =
+                      vols[pickV].books[pickB].chapters[pickC].verses[0]
+                        ?.reference || "";
+                    const ts = scopeOfRef(ref);
+                    if (ts === cs) {
+                      return (
+                        <div
+                          style={{
+                            fontSize: "12.5px",
+                            color: "var(--muted)",
+                            marginTop: "8px",
+                          }}
+                        >
+                          That's the chapter you're on — pick another.
+                        </div>
+                      );
+                    }
+                    const already = linkSelected.includes(ts);
+                    return (
+                      <button
+                        onClick={() => {
+                          if (!already)
+                            setLinkSelected((prev) => [...prev, ts]);
+                          setPickV(-1);
+                          setPickB(-1);
+                          setPickC(-1);
+                        }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          padding: "11px",
+                          borderRadius: "10px",
+                          border: "none",
+                          background: gColor,
+                          color: "#fff",
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
                         }}
                       >
-                        {on ? "✓" : ""}
-                      </span>
-                      {tabLabel(x)}
-                    </button>
-                  );
-                })}
-            </div>
+                        {already
+                          ? ts + " is already in the list"
+                          : "Add " + ts + " to this study"}
+                      </button>
+                    );
+                  })()}
+                </>
+              );
+            })()}
             <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
               <button
                 onClick={applyLinkPrompt}
@@ -2338,6 +2726,187 @@ export default function App() {
           </div>
         </div>
       )}
+      {linkedCompilePrompt &&
+        (() => {
+          const { gid, tabId } = linkedCompilePrompt;
+          const t = tabs.find((x) => x.id === tabId);
+          const thisScope = t ? chapterScopeOf(t) : "";
+          const members = Object.keys(chapterGroups)
+            .filter((c) => chapterGroups[c] === gid)
+            .sort();
+          const others = members.filter((s) => s !== thisScope);
+          const gColor = groupColor(gid);
+          const thisLabel = t ? tabLabel(t) : "This chapter";
+          const option = (
+            title: string,
+            hint: string,
+            onClick: () => void,
+            primary: boolean
+          ) => (
+            <button
+              onClick={onClick}
+              style={{
+                textAlign: "left",
+                padding: "14px 16px",
+                borderRadius: "12px",
+                border:
+                  "1px solid " + (primary ? "var(--text)" : "var(--border)"),
+                background: primary ? "var(--soft)" : "var(--bg)",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <div style={{ fontSize: "15px", fontWeight: 600 }}>{title}</div>
+              <div
+                style={{
+                  fontSize: "12.5px",
+                  color: "var(--muted)",
+                  marginTop: "3px",
+                  lineHeight: 1.5,
+                }}
+              >
+                {hint}
+              </div>
+            </button>
+          );
+          return (
+            <div
+              onClick={() => setLinkedCompilePrompt(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1001,
+                padding: "20px",
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  width: "100%",
+                  maxWidth: "480px",
+                  boxShadow: "0 16px 50px rgba(0,0,0,0.4)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "13px",
+                      height: "13px",
+                      borderRadius: "50%",
+                      background: gColor,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: "18px", fontWeight: 700 }}>
+                    Linked study
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "13.5px",
+                    color: "var(--muted)",
+                    marginBottom: "16px",
+                  }}
+                >
+                  {thisLabel} is linked with {others.length}{" "}
+                  {others.length === 1 ? "other chapter" : "other chapters"}.
+                </div>
+
+                <div
+                  style={{
+                    background: "var(--soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "12px",
+                    padding: "12px 14px",
+                    marginBottom: "20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                  }}
+                >
+                  {members.map((s) => (
+                    <div
+                      key={s}
+                      style={{
+                        fontSize: "13.5px",
+                        fontWeight: s === thisScope ? 600 : 500,
+                      }}
+                    >
+                      {s}
+                      {s === thisScope && (
+                        <span
+                          style={{
+                            fontSize: "11.5px",
+                            fontWeight: 400,
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {" "}
+                          · this chapter
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+                >
+                  {option(
+                    "Compile the linked study",
+                    "All " +
+                      members.length +
+                      " chapters together, sharing one set of themes.",
+                    () => compileLinkedAll(gid),
+                    true
+                  )}
+                  {option(
+                    "Just this chapter, in a new session",
+                    "Study " +
+                      thisLabel +
+                      " on its own — its marks are copied into a new session book, leaving the linked study untouched.",
+                    () => compileJustThisSession(tabId),
+                    false
+                  )}
+                </div>
+
+                <div style={{ textAlign: "right", marginTop: "16px" }}>
+                  <button
+                    onClick={() => setLinkedCompilePrompt(null)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {saveStudyPrompt && (
         <div
           onClick={() => setSaveStudyPrompt(null)}
@@ -2736,8 +3305,8 @@ export default function App() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "16px",
-          padding: "15px 26px",
+          gap: "18px",
+          padding: "18px 30px",
           backgroundColor: "var(--panel)",
           borderBottom: "1px solid var(--border)",
           position: "sticky",
@@ -2758,15 +3327,15 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
               style={{
-                width: "30px",
-                height: "30px",
-                borderRadius: "9px",
+                width: "34px",
+                height: "34px",
+                borderRadius: "10px",
                 backgroundColor: "var(--text)",
                 color: "var(--bg)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "15px",
+                fontSize: "17px",
                 flexShrink: 0,
               }}
             >
@@ -2775,7 +3344,7 @@ export default function App() {
             <h2
               style={{
                 margin: 0,
-                fontSize: "19px",
+                fontSize: "22px",
                 letterSpacing: "3px",
                 fontWeight: 600,
               }}
@@ -2792,8 +3361,8 @@ export default function App() {
               onClick={() => setBookMenuOpen((o) => !o)}
               title="Switch study book"
               style={{
-                height: "36px",
-                padding: "0 14px",
+                height: "40px",
+                padding: "0 16px",
                 borderRadius: "999px",
                 border: isMasterActive
                   ? "1px solid var(--border)"
@@ -3072,36 +3641,6 @@ export default function App() {
               Search
             </button>
             <button
-              onClick={() => setMode("vault")}
-              title="Open your Notes Vault"
-              style={{
-                ...pillStyle,
-                border:
-                  mode === "vault"
-                    ? "1px solid var(--text)"
-                    : "1px solid var(--border)",
-                backgroundColor:
-                  mode === "vault" ? "var(--soft)" : "transparent",
-                color: "var(--text)",
-              }}
-            >
-              <span style={{ fontSize: "13px" }}>❑</span>
-              Vault
-              {entries.length > 0 && (
-                <span
-                  style={{
-                    fontSize: "10px",
-                    color: "var(--muted)",
-                    backgroundColor: "var(--bg)",
-                    borderRadius: "999px",
-                    padding: "0 6px",
-                  }}
-                >
-                  {entries.length}
-                </span>
-              )}
-            </button>
-            <button
               onClick={() => setStudiesOpen(true)}
               title="Every study you've done"
               style={pillStyle}
@@ -3176,16 +3715,16 @@ export default function App() {
             <div style={{ position: "relative" }}>
               <button
                 onClick={() => setBackupOpen((o) => !o)}
-                title="More — color key, shortcuts, walkthroughs, back up & restore"
+                title="More — display, study books, color key, shortcuts, walkthroughs, back up"
                 style={{
-                  width: "36px",
-                  height: "36px",
+                  width: "40px",
+                  height: "40px",
                   borderRadius: "50%",
                   border: "1px solid var(--border)",
                   backgroundColor: "transparent",
                   color: "var(--muted)",
                   cursor: "pointer",
-                  fontSize: "20px",
+                  fontSize: "22px",
                   lineHeight: 1,
                   display: "flex",
                   alignItems: "center",
@@ -3215,6 +3754,40 @@ export default function App() {
                       zIndex: 41,
                     }}
                   >
+                    <div
+                      onClick={() => setDark(!dark)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      {dark ? "☀ Light mode" : "🌙 Dark mode"}
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setMode("vault");
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      ❑ Study books &amp; Vault
+                    </div>
+                    <div
+                      style={{
+                        height: "1px",
+                        backgroundColor: "var(--border)",
+                        margin: "6px 4px",
+                      }}
+                    />
                     <div
                       onClick={() => {
                         setBackupOpen(false);
@@ -3446,11 +4019,6 @@ export default function App() {
 
           {/* View / mode group */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {roundUtil(
-              dark ? "☀" : "🌙",
-              () => setDark(!dark),
-              dark ? "Switch to light mode" : "Switch to dark mode"
-            )}
             <div style={{ position: "relative" }}>
               {roundUtil(
                 "Aa",
@@ -3868,7 +4436,7 @@ export default function App() {
                 }}
               >
                 {tabLabel(t)}
-                {tabs.length > 1 && !t.studyId && (
+                {!t.studyId && (
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
