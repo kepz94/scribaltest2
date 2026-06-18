@@ -4649,8 +4649,25 @@ export default function App() {
           }}
         >
           {usedColors.length === 0 ? (
-            <span style={{ color: "var(--muted)", opacity: 0.55 }}>
-              Highlight verses to start naming your colors
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                color: "var(--muted)",
+                opacity: 0.6,
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-flex",
+                  color: "#8b5cf6",
+                  opacity: 0.75,
+                }}
+              >
+                <IconDrop size={13} />
+              </span>
+              Highlight a verse, then name its color here
             </span>
           ) : (
             usedColors.map((c) => {
@@ -4847,11 +4864,66 @@ export default function App() {
               </p>
 
               {groups.length === 0 && (
-                <p style={{ color: "var(--muted)", fontSize: "13px" }}>
-                  {activeTab.studyId
-                    ? "No marks on this study yet."
-                    : "No marks on this chapter yet."}
-                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    textAlign: "center",
+                    padding: "30px 16px",
+                    gap: "9px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "46px",
+                      height: "46px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid var(--border)",
+                      color: "var(--muted)",
+                      opacity: 0.8,
+                    }}
+                  >
+                    <svg
+                      width="22"
+                      height="22"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 8h14" />
+                      <path d="M5 12h10" />
+                      <path d="M5 16h7" />
+                    </svg>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      color: "var(--text)",
+                    }}
+                  >
+                    Nothing marked yet
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      lineHeight: 1.6,
+                      maxWidth: "230px",
+                    }}
+                  >
+                    {activeTab.studyId
+                      ? "Highlight or underline verses in this study and they'll show up here."
+                      : "Highlight or underline verses and they'll show up here."}
+                  </div>
+                </div>
               )}
 
               {groups.map((group) => (
