@@ -5192,7 +5192,20 @@ export default function MobileApp() {
             cMarks = studyMarks;
             cScopes = studyScopes;
             cScope = resolveScope(title);
-            cTitle = displayTitle;
+            // If a study for this chapter (or its linked group) was already
+            // saved, show that saved name instead of the bare chapter label —
+            // otherwise the name you gave reverts and re-saving overwrites it.
+            const gid = chapterGroups[title];
+            const existing = studies.find((s) =>
+              gid
+                ? s.type === "linked" &&
+                  s.bookId === activeBookId &&
+                  s.scopeRef === gid
+                : s.type === "chapter" &&
+                  s.bookId === activeBookId &&
+                  s.scopeRef === title
+            );
+            cTitle = existing ? existing.name : displayTitle;
             cLabels = scopeLabels;
           }
           return (
