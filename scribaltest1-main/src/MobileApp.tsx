@@ -1423,7 +1423,8 @@ export default function MobileApp() {
   const recordStudy = (
     type: "chapter" | "linked",
     scopeRef: string,
-    name: string
+    name: string,
+    rename: boolean = true
   ) => {
     const bookId = activeBookId;
     setStudies((prev) => {
@@ -1433,7 +1434,11 @@ export default function MobileApp() {
       );
       if (i >= 0) {
         const next = prev.slice();
-        next[i] = { ...next[i], name, compiledAt: now };
+        next[i] = {
+          ...next[i],
+          name: rename ? name : next[i].name,
+          compiledAt: now,
+        };
         return next;
       }
       return [
@@ -1457,17 +1462,13 @@ export default function MobileApp() {
     const gid = chapterGroups[title];
     const type: "chapter" | "linked" = gid ? "linked" : "chapter";
     const scopeRef = gid || title;
-    const existing = studies.find(
-      (s) =>
-        s.type === type && s.bookId === activeBookId && s.scopeRef === scopeRef
-    );
     const defName = gid
       ? groupMembers(title).map(displayOf).join("  +  ")
       : displayTitle;
-    // Preserve a name you've already given this study — only fall back to the
-    // chapter label(s) when no study exists yet. (Otherwise re-compiling an
-    // existing study would overwrite its name with the bare chapter names.)
-    recordStudy(type, scopeRef, existing ? existing.name : defName);
+    // Compiling lists the study, but must NOT rename one you've already named.
+    // rename = false → the default name is only used when first creating it;
+    // an existing study keeps whatever you called it.
+    recordStudy(type, scopeRef, defName, false);
     startCompile();
   };
   // Open a recorded study from the Studies screen — jump straight to its
