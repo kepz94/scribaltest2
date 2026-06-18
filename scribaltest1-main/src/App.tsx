@@ -1842,8 +1842,8 @@ export default function App() {
       style={{
         height: "40px",
         padding: "0 20px",
-        backgroundColor: primary ? "var(--text)" : "transparent",
-        color: primary ? "var(--bg)" : "var(--text)",
+        backgroundColor: primary ? ICON_ACCENT : "transparent",
+        color: primary ? "#fff" : "var(--text)",
         border: primary ? "none" : "1px solid var(--border)",
         borderRadius: "999px",
         cursor: "pointer",
@@ -1931,8 +1931,8 @@ export default function App() {
         cursor: "pointer",
         fontSize: "13.5px",
         fontWeight: active ? 600 : 400,
-        backgroundColor: active ? "var(--text)" : "transparent",
-        color: active ? "var(--bg)" : "var(--muted)",
+        backgroundColor: active ? ICON_ACCENT : "transparent",
+        color: active ? "#fff" : "var(--muted)",
         transition: "all 0.15s",
         whiteSpace: "nowrap",
       }}
@@ -2292,8 +2292,8 @@ export default function App() {
                 padding: "13px 16px",
                 borderRadius: "10px",
                 border: "none",
-                backgroundColor: "var(--text)",
-                color: "var(--bg)",
+                backgroundColor: ICON_ACCENT,
+                color: "#fff",
                 fontSize: "15px",
                 fontWeight: 600,
                 cursor: gateBusy ? "default" : "pointer",
@@ -2799,8 +2799,8 @@ export default function App() {
                   padding: "11px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "var(--text)",
-                  color: "var(--bg)",
+                  background: ICON_ACCENT,
+                  color: "#fff",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor: "pointer",
@@ -2850,7 +2850,7 @@ export default function App() {
                 padding: "14px 16px",
                 borderRadius: "12px",
                 border:
-                  "1px solid " + (primary ? "var(--text)" : "var(--border)"),
+                  "1px solid " + (primary ? ICON_ACCENT : "var(--border)"),
                 background: primary ? "var(--soft)" : "var(--bg)",
                 color: "var(--text)",
                 cursor: "pointer",
@@ -3071,7 +3071,8 @@ export default function App() {
                     padding: "12px 14px",
                     borderRadius: "10px",
                     border:
-                      "1px solid " + (o.primary ? "var(--text)" : "var(--border)"),
+                      "1px solid " +
+                      (o.primary ? ICON_ACCENT : "var(--border)"),
                     background: o.primary ? "var(--soft)" : "var(--bg)",
                     color: "var(--text)",
                     cursor: "pointer",
@@ -3352,8 +3353,8 @@ export default function App() {
                   padding: "10px 18px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "var(--text)",
-                  color: "var(--bg)",
+                  background: ICON_ACCENT,
+                  color: "#fff",
                   cursor: "pointer",
                   fontSize: "13.5px",
                   fontWeight: 700,
@@ -3467,7 +3468,7 @@ export default function App() {
                 borderRadius: "999px",
                 border: isMasterActive
                   ? "1px solid var(--border)"
-                  : "1px solid var(--pen5)",
+                  : "1px solid " + ICON_ACCENT,
                 backgroundColor: isMasterActive ? "transparent" : "var(--soft)",
                 color: "var(--text)",
                 cursor: "pointer",
@@ -3478,15 +3479,15 @@ export default function App() {
                 gap: "8px",
               }}
             >
-              <span style={{ fontSize: "13px" }}>❖</span>
+              <span style={{ color: ICON_ACCENT, fontSize: "13px" }}>❖</span>
               {activeBookName}
               {!isMasterActive && (
                 <span
                   style={{
                     fontSize: "9px",
                     letterSpacing: "1px",
-                    color: "var(--pen5)",
-                    border: "1px solid var(--pen5)",
+                    color: ICON_ACCENT,
+                    border: "1px solid " + ICON_ACCENT,
                     borderRadius: "999px",
                     padding: "1px 6px",
                   }}
@@ -4539,8 +4540,8 @@ export default function App() {
                   cursor: "pointer",
                   fontSize: "13px",
                   fontWeight: active ? 600 : 400,
-                  backgroundColor: active ? "var(--text)" : "var(--panel)",
-                  color: active ? "var(--bg)" : "var(--text)",
+                  backgroundColor: active ? ICON_ACCENT : "var(--panel)",
+                  color: active ? "#fff" : "var(--text)",
                   border: linked
                     ? "2px solid " + linkColor
                     : "1px solid var(--border)",
@@ -4732,7 +4733,7 @@ export default function App() {
                     minWidth: 0,
                     borderRight: multi ? "1px solid var(--border)" : "none",
                     outline:
-                      multi && isActive ? "2px solid var(--text)" : "none",
+                      multi && isActive ? "2px solid " + ICON_ACCENT : "none",
                     outlineOffset: "-2px",
                     overflowY: multi ? "auto" : "visible",
                     height: multi ? "calc(100vh - 150px)" : "auto",
@@ -4961,8 +4962,8 @@ export default function App() {
                   padding: "0 18px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "var(--text)",
-                  color: "var(--bg)",
+                  background: ICON_ACCENT,
+                  color: "#fff",
                   cursor: "pointer",
                   fontSize: "14px",
                   fontWeight: 700,
