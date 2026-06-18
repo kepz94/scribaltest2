@@ -40,6 +40,20 @@ type Action =
     }
   | { type: "deleteMark"; id: string }
   | {
+      type: "addMany";
+      items: {
+        reference: string;
+        verseText: string;
+        markedText: string;
+        startIndex: number;
+        endIndex: number;
+        style: MarkStyle;
+        color: MarkColor;
+      }[];
+    }
+  | { type: "deleteMany"; ids: string[] }
+  | { type: "recolorMark"; id: string; color: MarkColor }
+  | {
       type: "updateMarkRange";
       id: string;
       startIndex: number;
@@ -306,6 +320,85 @@ function reducer(state: State, action: Action): State {
         timestamp: Date.now(),
       };
       return withActiveMarks([...survivors, newMark], true);
+    }
+
+    case "addMany": {
+      const GAP = 1;
+      let nextMarks = active.marks;
+      action.items.forEach((it) => {
+        let ms = it.startIndex;
+        let me = it.endIndex;
+        const survivors = nextMarks.filter((m) => {
+          if (
+            m.reference !== it.reference ||
+            m.color !== it.color ||
+            m.style !== it.style
+          )
+            return true;
+          const touches = m.startIndex <= me + GAP && m.endIndex >= ms - GAP;
+          if (touches) {
+            ms = Math.min(ms, m.startIndex);
+            me = Math.max(me, m.endIndex);
+            return false;
+          }
+          return true;
+        });
+        const newMark: Mark = {
+          id: "mark_" + Date.now() + "_" + rand(),
+          reference: it.reference,
+          verseText: it.verseText,
+          markedText: it.verseText.slice(ms, me),
+          startIndex: ms,
+          endIndex: me,
+          style: it.style,
+          color: it.color,
+          timestamp: Date.now(),
+        };
+        nextMarks = [...survivors, newMark];
+      });
+      return withActiveMarks(nextMarks, true);
+    }
+
+    case "deleteMany": {
+      const idset = new Set(action.ids);
+      return withActiveMarks(
+        active.marks.filter((m) => !idset.has(m.id)),
+        true
+      );
+    }
+
+    case "recolorMark": {
+      const target = active.marks.find((m) => m.id === action.id);
+      if (!target) return state;
+      const GAP = 1;
+      let ms = target.startIndex;
+      let me = target.endIndex;
+      const survivors = active.marks.filter((m) => {
+        if (m.id === action.id) return false;
+        if (
+          m.reference !== target.reference ||
+          m.color !== action.color ||
+          m.style !== target.style
+        )
+          return true;
+        const touches = m.startIndex <= me + GAP && m.endIndex >= ms - GAP;
+        if (touches) {
+          ms = Math.min(ms, m.startIndex);
+          me = Math.max(me, m.endIndex);
+          return false;
+        }
+        return true;
+      });
+      const recolored: Mark = {
+        ...target,
+        id: "mark_" + Date.now() + "_" + rand(),
+        color: action.color,
+        startIndex: ms,
+        endIndex: me,
+        markedText: target.verseText.slice(ms, me),
+        timestamp: Date.now(),
+      };
+      return withActiveMarks([...survivors, recolored], true);
     }
 
     case "deleteMark":
@@ -801,6 +894,29 @@ export function useMarks() {
     (id: string) => dispatch({ type: "deleteMark", id }),
     []
   );
+  const addMarks = useCallback(
+    (
+      items: {
+        reference: string;
+        verseText: string;
+        markedText: string;
+        startIndex: number;
+        endIndex: number;
+        style: MarkStyle;
+        color: MarkColor;
+      }[]
+    ) => dispatch({ type: "addMany", items }),
+    []
+  );
+  const deleteMarks = useCallback(
+    (ids: string[]) => dispatch({ type: "deleteMany", ids }),
+    []
+  );
+  const recolorMark = useCallback(
+    (id: string, color: MarkColor) =>
+      dispatch({ type: "recolorMark", id, color }),
+    []
+  );
 
   const updateMarkRange = useCallback(
     (
@@ -929,6 +1045,9 @@ export function useMarks() {
     notes: active.notes,
     addMark,
     deleteMark,
+    addMarks,
+    deleteMarks,
+    recolorMark,
     updateMarkRange,
     deleteMarkGroup,
     clearMarks,
