@@ -36,6 +36,7 @@ const GROUPS: Group[] = [
 export default function Shortcuts({ onClose }: ShortcutsProps) {
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -49,6 +50,7 @@ export default function Shortcuts({ onClose }: ShortcutsProps) {
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: "var(--panel)",
