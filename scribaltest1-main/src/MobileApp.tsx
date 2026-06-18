@@ -1454,15 +1454,20 @@ export default function MobileApp() {
       flash("Mark something first, then compile");
       return;
     }
-    if (chapterGroups[title]) {
-      recordStudy(
-        "linked",
-        chapterGroups[title],
-        groupMembers(title).map(displayOf).join("  +  ")
-      );
-    } else {
-      recordStudy("chapter", title, displayTitle);
-    }
+    const gid = chapterGroups[title];
+    const type: "chapter" | "linked" = gid ? "linked" : "chapter";
+    const scopeRef = gid || title;
+    const existing = studies.find(
+      (s) =>
+        s.type === type && s.bookId === activeBookId && s.scopeRef === scopeRef
+    );
+    const defName = gid
+      ? groupMembers(title).map(displayOf).join("  +  ")
+      : displayTitle;
+    // Preserve a name you've already given this study — only fall back to the
+    // chapter label(s) when no study exists yet. (Otherwise re-compiling an
+    // existing study would overwrite its name with the bare chapter names.)
+    recordStudy(type, scopeRef, existing ? existing.name : defName);
     startCompile();
   };
   // Open a recorded study from the Studies screen — jump straight to its
