@@ -28,6 +28,8 @@ export const DRIVE_CONFIGURED = GOOGLE_CLIENT_ID.indexOf("PASTE_") !== 0;
 export const CORE_KEYS = [
   "scribal_books_v1",
   "scribal_vault_v1",
+  "scribal_studies_v1",
+  "scribal_search_studies",
   "scribal_marks",
   "scribal_labels",
   "scribal_notes",
@@ -42,6 +44,10 @@ export type PushResult = "pushed" | "adopted" | "blocked" | "fail";
 // Functions the calling shell supplies from its useMarks / useVault hooks.
 type MergeBooks = (json: string) => void;
 type MergeVault = (json: string | null | undefined) => void;
+// Live-merges the study keys (recorded + keyword studies) that aren't books or
+// vault. The calling shell supplies this so a study created on one device shows
+// up on the other without a reload. Receives the parsed key->value backup map.
+type MergeOther = (data: Record<string, string | null>) => void;
 
 export interface ApplyOptions {
   // Keys that are device-local scratch and must never be written from a backup.
@@ -167,7 +173,8 @@ export function applyBackupString(text: string, opts: ApplyOptions = {}) {
 export function applyRemoteLive(
   text: string,
   mergeRemoteBooks: MergeBooks,
-  vaultMergeRemote: MergeVault
+  vaultMergeRemote: MergeVault,
+  mergeOther?: MergeOther
 ) {
   try {
     const p = JSON.parse(text);
@@ -175,6 +182,7 @@ export function applyRemoteLive(
     if (!data || typeof data !== "object") return;
     if (data["scribal_books_v1"]) mergeRemoteBooks(data["scribal_books_v1"]);
     if (data["scribal_vault_v1"]) vaultMergeRemote(data["scribal_vault_v1"]);
+    if (mergeOther) mergeOther(data);
     if (p.exportedAt) {
       try {
         localStorage.setItem("scribal_sync_seen", p.exportedAt);
@@ -193,7 +201,8 @@ export function applyRemoteLive(
 export async function pushToDrive(
   keys: string[],
   mergeRemoteBooks: MergeBooks,
-  vaultMergeRemote: MergeVault
+  vaultMergeRemote: MergeVault,
+  mergeOther?: MergeOther
 ): Promise<PushResult> {
   const remoteText = await withFreshToken((tok) => drive.loadData(tok));
   const base = Date.parse(localStorage.getItem("scribal_sync_seen") || "") || 0;
@@ -215,7 +224,7 @@ export async function pushToDrive(
   // Rule 1 — we're behind the cloud.
   if (remoteText && remoteAt && remoteAt > base) {
     if (remoteMarks === 0 && localMarks > 0) return "blocked";
-    applyRemoteLive(remoteText, mergeRemoteBooks, vaultMergeRemote);
+    applyRemoteLive(remoteText, mergeRemoteBooks, vaultMergeRemote, mergeOther);
     return "adopted";
   }
 
@@ -238,7 +247,8 @@ export async function pushToDrive(
 // Returns true if a newer cloud copy was merged in.
 export async function pullIfNewer(
   mergeRemoteBooks: MergeBooks,
-  vaultMergeRemote: MergeVault
+  vaultMergeRemote: MergeVault,
+  mergeOther?: MergeOther
 ): Promise<boolean> {
   const text = await withFreshToken((tok) => drive.loadData(tok));
   if (!text) return false;
@@ -254,7 +264,7 @@ export async function pullIfNewer(
       );
       const remoteMarks = countBookMarksFromJson(booksFromBackup(text));
       if (remoteMarks === 0 && localMarks > 0) return false;
-      applyRemoteLive(text, mergeRemoteBooks, vaultMergeRemote);
+      applyRemoteLive(text, mergeRemoteBooks, vaultMergeRemote, mergeOther);
       return true;
     }
   } catch {}
