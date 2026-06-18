@@ -18,6 +18,7 @@ export default function ColorKey({
 
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -31,6 +32,7 @@ export default function ColorKey({
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: "var(--panel)",
