@@ -1,6 +1,7 @@
 import { useState } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
+import NoteField from "./NoteField";
 import {
   Mark,
   MarkColor,
@@ -522,28 +523,15 @@ export default function Outline(props: OutlineProps) {
                           </div>
                         )}
 
-                        <textarea
-                          value={(notes && notes[noteKey]) || ""}
-                          onChange={(e) => setNote(noteKey, e.target.value)}
-                          placeholder="Your thoughts on this verse…"
-                          rows={1}
-                          style={{
-                            marginLeft: "30px",
-                            marginTop: "8px",
-                            width: "calc(100% - 30px)",
-                            boxSizing: "border-box",
-                            padding: "8px 11px",
-                            border: "1px solid var(--border)",
-                            borderRadius: "8px",
-                            fontSize: "13px",
-                            fontFamily: "system-ui, sans-serif",
-                            resize: "vertical",
-                            backgroundColor: "var(--soft)",
-                            color: "var(--text)",
-                            outline: "none",
-                            minHeight: "38px",
-                          }}
-                        />
+                        <div style={{ marginLeft: "30px", marginTop: "8px" }}>
+                          <NoteField
+                            value={(notes && notes[noteKey]) || ""}
+                            onChange={(t) => setNote(noteKey, t)}
+                            accent={COLOR_MAP[color]}
+                            placeholder="Write a note…"
+                            addLabel="Add a note about this verse"
+                          />
+                        </div>
                       </div>
                     );
                   })}
