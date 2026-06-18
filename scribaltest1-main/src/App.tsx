@@ -1015,10 +1015,24 @@ export default function App() {
     setLinkPromptTabId(t.id);
   };
 
+  // Every chapter already linked to this scope (or just the scope itself if it
+  // isn't linked yet). Adding any one of them should bring the whole group.
+  const groupScopesOf = (cs: string): string[] => {
+    const g = chapterGroups[cs];
+    return g
+      ? Object.keys(chapterGroups).filter((k) => chapterGroups[k] === g)
+      : [cs];
+  };
+
   const toggleLinkSelect = (cs: string) =>
-    setLinkSelected((prev) =>
-      prev.includes(cs) ? prev.filter((s) => s !== cs) : [...prev, cs]
-    );
+    setLinkSelected((prev) => {
+      if (prev.includes(cs)) return prev.filter((s) => s !== cs);
+      // Linking with a chapter that's already in a group links with the entire
+      // group, so the chapters that aren't open in a tab are never dropped.
+      const set = new Set(prev);
+      groupScopesOf(cs).forEach((s) => set.add(s));
+      return Array.from(set);
+    });
 
   // Apply the prompt: the clicked tab is linked with exactly the checked tabs.
   // Checking none unlinks it. Any old groups left with one chapter dissolve.
@@ -2663,7 +2677,11 @@ export default function App() {
                       <button
                         onClick={() => {
                           if (!already)
-                            setLinkSelected((prev) => [...prev, ts]);
+                            setLinkSelected((prev) => {
+                              const set = new Set(prev);
+                              groupScopesOf(ts).forEach((s) => set.add(s));
+                              return Array.from(set);
+                            });
                           setPickV(-1);
                           setPickB(-1);
                           setPickC(-1);
