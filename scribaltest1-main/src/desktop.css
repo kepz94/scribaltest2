@@ -55,6 +55,45 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+/* ----- Refined scrollbars (only on real pointers, so touch keeps its
+   native overlay scrollbars and no gutter is forced on mobile) ----- */
+@media (hover: hover) and (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(127, 127, 127, 0.35) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(127, 127, 127, 0.32);
+    border-radius: 999px;
+    /* transparent border + padding-box clip makes the thumb read as a
+       slim, inset pill with breathing room around it. */
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(127, 127, 127, 0.55);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* ----- On-brand text selection (the purple accent at low opacity) ----- */
+::selection {
+  background: rgba(139, 92, 246, 0.25);
+}
+::-moz-selection {
+  background: rgba(139, 92, 246, 0.25);
+}
+
 /* ----- Entrance animations (added via className on overlays) ----- */
 @keyframes scribalPop {
   from {
