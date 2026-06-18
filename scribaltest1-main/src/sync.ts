@@ -30,6 +30,7 @@ export const CORE_KEYS = [
   "scribal_vault_v1",
   "scribal_studies_v1",
   "scribal_search_studies",
+  "scribal_linked_chapters",
   "scribal_marks",
   "scribal_labels",
   "scribal_notes",
