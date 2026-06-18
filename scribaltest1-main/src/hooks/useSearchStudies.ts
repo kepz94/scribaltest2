@@ -64,6 +64,29 @@ export function useSearchStudies() {
     setStudies((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  // Merge a remote keyword-studies snapshot into ours: add any study the other
+  // device has that we don't (matched by id). Additive only — a local study (or
+  // a local rename) is never overwritten or removed by a sync.
+  const mergeRemote = useCallback((raw: string | null | undefined) => {
+    if (!raw) return;
+    let remote: SearchStudy[];
+    try {
+      const parsed = JSON.parse(raw);
+      remote = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return;
+    }
+    if (!remote.length) return;
+    setStudies((prev) => {
+      const have = new Set(prev.map((s) => s.id));
+      const additions = remote.filter((s) => s && s.id && !have.has(s.id));
+      if (!additions.length) return prev; // idempotent
+      return [...prev, ...additions].sort(
+        (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+      );
+    });
+  }, []);
+
   return {
     studies,
     addStudy,
@@ -71,5 +94,6 @@ export function useSearchStudies() {
     renameStudy,
     deleteStudy,
     setStudies,
+    mergeRemote,
   };
 }
