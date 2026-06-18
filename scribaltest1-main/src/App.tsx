@@ -880,7 +880,18 @@ export default function App() {
     }, 3000); // debounce 3 seconds after last change
 
     return () => clearTimeout(timer);
-  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes, cloudSignedIn]);
+  }, [
+    marks,
+    tabs,
+    activeTabId,
+    colorLabels,
+    scopedLabels,
+    notes,
+    chapterGroups,
+    recordedStudies,
+    searchStudies,
+    cloudSignedIn,
+  ]);
 
   // Auto-pull the other device's changes when this tab opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
