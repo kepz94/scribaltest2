@@ -14,7 +14,15 @@ export interface SearchStudy {
   // device edited most recently win. Optional for back-compat (treated as
   // createdAt when absent).
   updatedAt?: number;
+  // When the study was deleted. Counts as deleted only while it's the newest
+  // action (>= updatedAt), so a later edit/rename revives it. Carried in the
+  // record so a delete on one device propagates to the other.
+  deletedAt?: number;
 }
+
+// Hidden iff its delete is its newest action.
+export const isSearchStudyDeleted = (s: SearchStudy): boolean =>
+  !!s.deletedAt && s.deletedAt >= (s.updatedAt || s.createdAt || 0);
 
 // Same key the mobile app uses, so the two stay in sync through the shared
 // backup/restore path.
@@ -72,8 +80,12 @@ export function useSearchStudies() {
     );
   }, []);
 
+  // Soft-delete: tombstone the study (kept, stamped) so the deletion syncs; it's
+  // filtered out of the returned list below.
   const deleteStudy = useCallback((id: string) => {
-    setStudies((prev) => prev.filter((s) => s.id !== id));
+    setStudies((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
+    );
   }, []);
 
   // Merge a remote keyword-studies snapshot into ours:
@@ -106,13 +118,14 @@ export function useSearchStudies() {
         }
         const lAt = local.updatedAt || local.createdAt || 0;
         const rAt = r.updatedAt || r.createdAt || 0;
-        if (rAt > lAt) {
-          byId.set(r.id, {
-            ...local,
-            name: r.name,
-            refs: r.refs,
-            updatedAt: rAt,
-          });
+        const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
+        const contentChanged = rAt > lAt;
+        if (contentChanged || deletedAt !== (local.deletedAt || 0)) {
+          const merged: SearchStudy = contentChanged
+            ? { ...local, name: r.name, refs: r.refs, updatedAt: rAt }
+            : { ...local };
+          if (deletedAt) merged.deletedAt = deletedAt;
+          byId.set(r.id, merged);
           changed = true;
         }
       });
@@ -123,8 +136,12 @@ export function useSearchStudies() {
     });
   }, []);
 
+  // Consumers see only live studies; the full list (with tombstones) is
+  // persisted + synced so deletions propagate between devices.
+  const visibleStudies = studies.filter((s) => !isSearchStudyDeleted(s));
+
   return {
-    studies,
+    studies: visibleStudies,
     addStudy,
     updateStudy,
     renameStudy,
