@@ -38,36 +38,71 @@ export const CORE_KEYS = [
   "scribal_active_tab_v2",
   "scribal_theme",
   "scribal_compile_view",
+  // Per-scope timestamp of the last link/unlink action. Travels with
+  // scribal_linked_chapters so that UNLINKING (not just linking) converges
+  // across devices — see mergeLinkGroups.
+  "scribal_linked_chapters_at",
+  // Mark colour intensity (saturation). A shared display setting, so it syncs
+  // and marks look the same on every device.
+  "scribal_color_intensity",
 ];
 
-// Merge a remote chapter-link map into the local one by UNION (connected
-// components): two chapters belong to the same group if they're linked together
-// on EITHER device. Each resulting group reuses the lexicographically smallest
-// group id present among its members in either map, so the id is stable and
-// computed identically on both devices — they converge on the same grouping
-// instead of disagreeing (the old additive "local wins" merge couldn't reconcile
-// a regrouping and left the two devices split).
+// Merge a remote chapter-link map into the local one. Two chapters belong to the
+// same group if they're linked on EITHER device (union of connected components),
+// so a link made anywhere survives and both devices converge on the same grouping
+// AND the same group id (the lexicographically smallest id among the group's
+// members — computed identically on both sides).
 //
-// Input/return shape is the same Record<scope, groupId> the app keeps in state,
-// so callers just do setChapterGroups((prev) => mergeLinkGroups(prev, raw)).
-// Returns `prev` unchanged when nothing differs, to stay idempotent (no sync
-// ping-pong). Note: this is purely additive about *links* — an unlink made on
-// one device isn't propagated by it (a stale membership on the other device
-// re-forms the link); unlink-sync would need per-scope tombstones.
+// UNLINKING also converges, via a companion per-scope timestamp map (`prevAt` /
+// the remote "scribal_linked_chapters_at"): for each chapter we trust whichever
+// device touched it most recently. If the newer side has the chapter unlinked, it
+// stays unlinked even though the older side still lists it — which is exactly
+// what the old union-only merge couldn't do. Stamps are merged forward (max) so
+// the tombstone keeps defending the unlink on later syncs.
+//
+// Returns the SAME object references when nothing changed, so callers can set
+// state unconditionally and let React bail out (no sync ping-pong).
 export function mergeLinkGroups(
-  prev: Record<string, string>,
-  remoteRaw: string | null | undefined
-): Record<string, string> {
-  let remote: Record<string, string> = {};
+  prevGroups: Record<string, string>,
+  prevAt: Record<string, number>,
+  remoteGroupsRaw: string | null | undefined,
+  remoteAtRaw: string | null | undefined
+): { groups: Record<string, string>; at: Record<string, number> } {
+  const pAt = prevAt || {};
+  let remoteGroups: Record<string, string> = {};
+  let remoteAt: Record<string, number> = {};
   try {
-    const parsed = JSON.parse(remoteRaw || "{}");
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      remote = parsed as Record<string, string>;
+    const g = JSON.parse(remoteGroupsRaw || "{}");
+    if (g && typeof g === "object" && !Array.isArray(g)) remoteGroups = g;
   } catch {
-    return prev;
+    /* keep empty */
+  }
+  try {
+    const a = JSON.parse(remoteAtRaw || "{}");
+    if (a && typeof a === "object" && !Array.isArray(a)) remoteAt = a;
+  } catch {
+    /* keep empty */
   }
 
-  // --- union-find over every scope seen in either map ---
+  // 1) Per scope: decide current linked-ness by whichever side acted last, and
+  //    carry the freshest timestamp forward.
+  const scopes = new Set<string>([
+    ...Object.keys(prevGroups),
+    ...Object.keys(pAt),
+    ...Object.keys(remoteGroups),
+    ...Object.keys(remoteAt),
+  ]);
+  const linkedNow: Record<string, boolean> = {};
+  const mergedAt: Record<string, number> = {};
+  scopes.forEach((s) => {
+    const lAt = pAt[s] || 0;
+    const rAt = remoteAt[s] || 0;
+    linkedNow[s] = rAt > lAt ? s in remoteGroups : s in prevGroups;
+    const at = Math.max(lAt, rAt);
+    if (at) mergedAt[s] = at;
+  });
+
+  // 2) Union-find over both maps' memberships — but only chapters still linked.
   const parent: Record<string, string> = {};
   const find = (x: string): string => {
     let r = x;
@@ -88,10 +123,10 @@ export function mergeLinkGroups(
     if (ra < rb) parent[rb] = ra;
     else parent[ra] = rb;
   };
-  // Connect all scopes that share a group id within a single map.
   const linkByGid = (map: Record<string, string>) => {
     const byGid: Record<string, string[]> = {};
     Object.keys(map).forEach((s) => {
+      if (!linkedNow[s]) return; // unlinked more recently on the other device
       const g = map[s];
       if (typeof g !== "string" || !g) return;
       (byGid[g] = byGid[g] || []).push(s);
@@ -101,38 +136,44 @@ export function mergeLinkGroups(
       for (let i = 1; i < members.length; i++) union(members[0], members[i]);
     });
   };
-  linkByGid(prev);
-  linkByGid(remote);
+  linkByGid(prevGroups);
+  linkByGid(remoteGroups);
 
-  // --- gather components, then pick each one's stable id ---
+  // 3) Each component (of 2+) becomes a group keyed by its smallest member id.
   const components: Record<string, string[]> = {};
   Object.keys(parent).forEach((s) => {
     const r = find(s);
     (components[r] = components[r] || []).push(s);
   });
-
-  const next: Record<string, string> = {};
+  const groups: Record<string, string> = {};
   Object.keys(components).forEach((root) => {
     const members = components[root];
     if (members.length < 2) return; // a lone chapter isn't a group
     const gids: string[] = [];
     members.forEach((s) => {
-      if (prev[s]) gids.push(prev[s]);
-      if (remote[s]) gids.push(remote[s]);
+      if (prevGroups[s]) gids.push(prevGroups[s]);
+      if (remoteGroups[s]) gids.push(remoteGroups[s]);
     });
     gids.sort();
-    const gid = gids[0]; // smallest existing id — identical on both devices
+    const gid = gids[0];
     members.forEach((s) => {
-      next[s] = gid;
+      groups[s] = gid;
     });
   });
 
-  // Idempotency: if the result matches what we already have, keep the old object.
-  const pk = Object.keys(prev);
-  const nk = Object.keys(next);
-  if (pk.length === nk.length && pk.every((k) => prev[k] === next[k]))
-    return prev;
-  return next;
+  // Idempotency: hand back the original objects when unchanged.
+  const gk = Object.keys(prevGroups);
+  const ngk = Object.keys(groups);
+  const groupsSame =
+    gk.length === ngk.length && gk.every((k) => prevGroups[k] === groups[k]);
+  const ak = Object.keys(pAt);
+  const nak = Object.keys(mergedAt);
+  const atSame =
+    ak.length === nak.length && ak.every((k) => pAt[k] === mergedAt[k]);
+  return {
+    groups: groupsSame ? prevGroups : groups,
+    at: atSame ? pAt : mergedAt,
+  };
 }
 
 export type PushResult = "pushed" | "adopted" | "blocked" | "fail";
