@@ -5,6 +5,7 @@ import { COLOR_MAP, MarkColor } from "../types";
 export type StudyRow = {
   id: string;
   kind: "chapter" | "linked" | "keyword";
+  bookId: string;
   name: string;
   meta: string;
   themes: { color: number; name: string }[];
