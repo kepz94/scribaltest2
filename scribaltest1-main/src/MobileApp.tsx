@@ -1466,11 +1466,16 @@ export default function MobileApp() {
     books.find((b) => b.id === activeBookId)?.name || "Master Book";
 
   const [toast, setToast] = useState("");
+  const [toastTone, setToastTone] = useState<"default" | "success">("default");
   const toastTimer = useRef<number | null>(null);
-  const flash = (msg: string) => {
+  const flash = (msg: string, tone: "default" | "success" = "default") => {
     setToast(msg);
+    setToastTone(tone);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), 1400);
+    toastTimer.current = window.setTimeout(
+      () => setToast(""),
+      tone === "success" ? 2200 : 1500
+    );
   };
 
   const [manage, setManage] = useState<{
@@ -2066,6 +2071,7 @@ export default function MobileApp() {
         @keyframes mob-fadein { from { opacity: 0; } to { opacity: 1; } }
         @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes mob-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes mob-toast-in { 0% { opacity: 0; transform: translateX(-50%) translateY(16px) scale(0.9); } 55% { opacity: 1; } 100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
         /* Native-feel tap polish: no default grey flash on any tap, and every
            button gets a quick pressed state + smooth state transitions. */
         * { -webkit-tap-highlight-color: transparent; }
@@ -5483,7 +5489,7 @@ export default function MobileApp() {
                 } else {
                   recordStudy("chapter", title, name || displayTitle);
                 }
-                flash("Saved to Studies");
+                flash("Saved to Studies", "success");
                 setCompileOpen(false);
                 setCompileStudy(null);
                 setCompileRec(null);
@@ -6152,24 +6158,51 @@ export default function MobileApp() {
       {/* Quiet feedback toast */}
       {toast && (
         <div
+          key={toast + toastTone}
           style={{
             position: "fixed",
             left: "50%",
             bottom: "calc(96px + env(safe-area-inset-bottom))",
             transform: "translateX(-50%)",
-            zIndex: 120,
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            gap: "9px",
             backgroundColor: C.text,
             color: C.bg,
             borderRadius: "999px",
-            padding: "8px 16px",
-            fontSize: "13px",
+            padding: toastTone === "success" ? "11px 20px 11px 13px" : "9px 16px",
+            fontSize: toastTone === "success" ? "14.5px" : "13px",
             fontWeight: 600,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+            boxShadow: "0 8px 26px rgba(0,0,0,0.30)",
             pointerEvents: "none",
             whiteSpace: "nowrap",
+            maxWidth: "calc(100vw - 32px)",
+            animation: "mob-toast-in 0.34s cubic-bezier(0.22,1,0.36,1)",
           }}
         >
-          {toast}
+          {toastTone === "success" && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "20px",
+                height: "20px",
+                borderRadius: "999px",
+                backgroundColor: "#22c55e",
+                color: "#fff",
+                fontSize: "12px",
+                fontWeight: 800,
+                flex: "0 0 auto",
+              }}
+            >
+              ✓
+            </span>
+          )}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {toast}
+          </span>
         </div>
       )}
     </div>
