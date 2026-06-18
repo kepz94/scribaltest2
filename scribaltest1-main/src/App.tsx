@@ -4,6 +4,7 @@ import { useVault } from "./hooks/useVault";
 import VerseViewer from "./components/VerseViewer";
 import * as drive from "./googleDrive";
 import CornellNotes from "./components/CornellNotes";
+import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import ConceptMap from "./components/ConceptMap";
@@ -3426,22 +3427,7 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
-            <div
-              style={{
-                width: "34px",
-                height: "34px",
-                borderRadius: "10px",
-                backgroundColor: ICON_ACCENT,
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "18px",
-                flexShrink: 0,
-              }}
-            >
-              ✦
-            </div>
+            <ScribalMark size={36} />
             <h2
               style={{
                 margin: 0,
