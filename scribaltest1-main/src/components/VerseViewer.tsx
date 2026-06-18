@@ -769,6 +769,10 @@ export default function VerseViewer(props: VerseViewerProps) {
             transition: "background-color 0.25s, color 0.25s",
           }}
         >
+          <div
+            className="scribal-swap"
+            key={selectedVolume + "-" + selectedBook + "-" + selectedChapter}
+          >
           {studyRefs ? studyBody : currentChapter?.verses.map((verse) => (
             <div
               key={verse.reference}
@@ -790,6 +794,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               />
             </div>
           ))}
+          </div>
         </div>
 
         <p
