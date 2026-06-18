@@ -4705,11 +4705,12 @@ export default function App() {
                       fontSize: "11.5px",
                       padding: "2px 6px",
                       borderRadius: "6px",
-                      border: "1px solid var(--border)",
+                      border: "1px solid #8b5cf6",
+                      boxShadow: "0 0 0 2px rgba(139,92,246,0.18)",
                       background: "var(--bg)",
                       color: "var(--text)",
                       outline: "none",
-                      width: "120px",
+                      width: "130px",
                     }}
                   />
                 ) : (
@@ -4718,14 +4719,50 @@ export default function App() {
                       setEditingColor(c);
                       setColorDraft(activeScopedLabels[c] || "");
                     }}
-                    title="Click to name this color"
+                    title={
+                      activeScopedLabels[c]?.trim()
+                        ? "Click to rename this color"
+                        : "Click to name this color"
+                    }
+                    className="scribal-colorchip"
                     style={{
-                      color: "var(--muted)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      color: activeScopedLabels[c]?.trim()
+                        ? "var(--text)"
+                        : "var(--muted)",
+                      fontStyle: activeScopedLabels[c]?.trim()
+                        ? "normal"
+                        : "italic",
                       cursor: "pointer",
-                      borderBottom: "1px dashed var(--border)",
+                      borderBottom: "1px dashed var(--muted)",
+                      paddingBottom: "1px",
+                      lineHeight: 1.2,
+                      transition: "border-color 0.15s, color 0.15s",
                     }}
                   >
-                    {activeScopedLabels[c]?.trim() ? activeScopedLabels[c] : "Name…"}
+                    {activeScopedLabels[c]?.trim()
+                      ? activeScopedLabels[c]
+                      : "Name this color"}
+                    <span
+                      className="scribal-colorchip-pen"
+                      style={{ display: "inline-flex", flexShrink: 0 }}
+                    >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </span>
                   </span>
                 )}
               </span>
