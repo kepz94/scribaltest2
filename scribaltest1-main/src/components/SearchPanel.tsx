@@ -342,6 +342,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
   return (
     <div
+      className="scribal-fade"
       onMouseDown={onClose}
       style={{
         position: "fixed",
@@ -355,6 +356,7 @@ export default function SearchPanel(props: SearchPanelProps) {
       }}
     >
       <div
+        className="scribal-rise"
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: "100%",
