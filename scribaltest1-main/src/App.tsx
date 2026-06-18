@@ -21,7 +21,7 @@ import VaultWalkthrough from "./components/VaultWalkthrough";
 import TabsWalkthrough from "./components/TabsWalkthrough";
 import BooksWalkthrough from "./components/BooksWalkthrough";
 import HelpMenu, { HelpPick } from "./components/HelpMenu";
-import FeatureList from "./components/FeatureList";
+import DesktopFeatureGuide from "./components/DesktopFeatureGuide";
 
 type FeatureKey = "compile" | "search" | "vault" | "tabs" | "books";
 import ColorKey from "./components/ColorKey";
@@ -2068,7 +2068,7 @@ export default function App() {
         />
       )}
       {showFeatureList && (
-        <FeatureList onClose={() => setShowFeatureList(false)} />
+        <DesktopFeatureGuide onClose={() => setShowFeatureList(false)} />
       )}
       {showColorKey && (
         <ColorKey
@@ -3608,17 +3608,24 @@ export default function App() {
                         : "Link this chapter — choose which open tabs to link it with"
                     }
                     style={{
-                      fontSize: "12px",
+                      display: "inline-flex",
                       lineHeight: 1,
-                      opacity: linked ? 1 : 0.4,
-                      color: linked
-                        ? linkColor
-                        : active
-                        ? "var(--bg)"
-                        : "var(--text)",
+                      opacity: linked ? 1 : 0.45,
                     }}
                   >
-                    🔗
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#8b5cf6"
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                    </svg>
                   </span>
                 )}
                 {tabs.length > 1 && (
