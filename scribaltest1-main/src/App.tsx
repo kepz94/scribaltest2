@@ -445,6 +445,7 @@ export default function App() {
   };
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
+  const [compileStudyId, setCompileStudyId] = useState<string | null>(null);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
   const [selectedColor, setSelectedColor] = useState<MarkColor>(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1158,7 +1159,20 @@ export default function App() {
     setCompileAnim({ show: true, duration });
   };
 
+  const startStudyCompile = (study: SearchStudy) => {
+    setCompileStudyId(study.id);
+    const lastCount = Number(
+      localStorage.getItem("scribal_last_compile_count") || "0"
+    );
+    const currentCount = marks.length;
+    const delta = Math.max(0, currentCount - lastCount);
+    const duration = delta > 8 ? 2500 : 1000;
+    localStorage.setItem("scribal_last_compile_count", String(currentCount));
+    setCompileAnim({ show: true, duration });
+  };
+
   const startCompile = () => {
+    setCompileStudyId(null);
     const units = compileUnits();
     // Only one thing open (a single chapter, or a single linked group) — just
     // compile it. More than one separate thing — ask first.
@@ -1198,7 +1212,47 @@ export default function App() {
   const compileScope = compileTabs[0]
     ? resolveScope(chapterScopeOf(compileTabs[0]))
     : "";
-  const compileScopedLabels = scopedLabels[compileScope] || {};
+
+  // When compiling a keyword study, override what the compile views + print see
+  // (its spanned chapters and only its marks) without touching the chapter
+  // compile selection. The study's theme names live under its own scope, so
+  // the names set in the study tab's reader carry straight into the compile.
+  const compileStudy =
+    compileStudyId != null
+      ? searchStudies.find((s) => s.id === compileStudyId) || null
+      : null;
+  const studyCompileTabs: Tab[] = [];
+  if (compileStudy) {
+    const seen = new Set<string>();
+    compileStudy.refs.forEach((r) => {
+      const loc = refLoc.get(r);
+      if (!loc) return;
+      const key = loc.volume + ":" + loc.book + ":" + loc.chapter;
+      if (seen.has(key)) return;
+      seen.add(key);
+      studyCompileTabs.push({
+        id: "studycompile_" + key,
+        volume: loc.volume,
+        book: loc.book,
+        chapter: loc.chapter,
+        bookId: compileStudy.bookId,
+      });
+    });
+  }
+  const studyRefSet = compileStudy
+    ? new Set(compileStudy.refs as string[])
+    : null;
+  const effectiveCompileTabs = compileStudy ? studyCompileTabs : compileTabs;
+  const effectiveScope = compileStudy
+    ? "searchstudy:" + compileStudy.id
+    : compileScope;
+  const effectiveScopedLabels = scopedLabels[effectiveScope] || {};
+  const effectiveMarks =
+    compileStudy && studyRefSet
+      ? getBook(compileStudy.bookId).marks.filter((m) =>
+          studyRefSet.has(m.reference)
+        )
+      : marks;
 
   // The per-chapter (group-aware) theme name for any verse — used by search.
   const labelFor = (reference: string, color: MarkColor | null) =>
@@ -1211,24 +1265,37 @@ export default function App() {
   );
 
   const openSaveDialog = () => {
-    if (compileTabs.length === 0) {
-      alert("Select at least one tab to save.");
+    if (effectiveCompileTabs.length === 0) {
+      alert("Nothing to save yet.");
       return;
     }
-    const first = compileTabs[0] ? tabLabel(compileTabs[0]) : "";
-    const extra = compileTabs.length > 1 ? " +" + (compileTabs.length - 1) : "";
+    const first = compileStudy
+      ? "📑 " + compileStudy.name
+      : effectiveCompileTabs[0]
+      ? tabLabel(effectiveCompileTabs[0])
+      : "";
+    const extra =
+      !compileStudy && effectiveCompileTabs.length > 1
+        ? " +" + (effectiveCompileTabs.length - 1)
+        : "";
     setSaveName(VIEW_NAMES[compileView] + " — " + first + extra);
     setShowSaveDialog(true);
   };
 
   const confirmSave = () => {
     const selectedRefs = new Set<string>();
-    compileTabs.forEach((t) => {
-      vols[t.volume].books[t.book].chapters[t.chapter].verses.forEach((v) =>
-        selectedRefs.add(v.reference)
-      );
-    });
-    const snapMarks = marks.filter((m) => selectedRefs.has(m.reference));
+    if (compileStudy && studyRefSet) {
+      studyRefSet.forEach((r) => selectedRefs.add(r));
+    } else {
+      compileTabs.forEach((t) => {
+        vols[t.volume].books[t.book].chapters[t.chapter].verses.forEach((v) =>
+          selectedRefs.add(v.reference)
+        );
+      });
+    }
+    const snapMarks = effectiveMarks.filter((m) =>
+      selectedRefs.has(m.reference)
+    );
     const snapNotes: Record<string, string> = {};
     Object.keys(notes).forEach((k) => {
       const ref = k.split("|").pop();
@@ -1239,14 +1306,14 @@ export default function App() {
       name: saveName.trim() || "Untitled note",
       view: compileView,
       bookName: activeBookName,
-      compileTabs: compileTabs.map((t) => ({
+      compileTabs: effectiveCompileTabs.map((t) => ({
         id: t.id,
         volume: t.volume,
         book: t.book,
         chapter: t.chapter,
       })),
       marks: snapMarks,
-      colorLabels: { ...compileScopedLabels },
+      colorLabels: { ...effectiveScopedLabels },
       notes: snapNotes,
     });
 
@@ -1316,18 +1383,25 @@ export default function App() {
   };
 
   const handlePrintLive = () => {
-    if (compileTabs.length === 0) {
-      alert("Select at least one tab to print.");
+    if (effectiveCompileTabs.length === 0) {
+      alert("Nothing to print yet.");
       return;
     }
-    const first = compileTabs[0] ? tabLabel(compileTabs[0]) : "";
-    const extra = compileTabs.length > 1 ? " +" + (compileTabs.length - 1) : "";
+    const first = compileStudy
+      ? "📑 " + compileStudy.name
+      : effectiveCompileTabs[0]
+      ? tabLabel(effectiveCompileTabs[0])
+      : "";
+    const extra =
+      !compileStudy && effectiveCompileTabs.length > 1
+        ? " +" + (effectiveCompileTabs.length - 1)
+        : "";
     setPrintData({
       view: compileView,
       title: VIEW_NAMES[compileView] + " — " + first + extra,
-      compileTabs,
-      marks,
-      colorLabels: compileScopedLabels,
+      compileTabs: effectiveCompileTabs,
+      marks: effectiveMarks,
+      colorLabels: effectiveScopedLabels,
       notes,
     });
   };
@@ -1646,15 +1720,17 @@ export default function App() {
   );
 
   const sharedCompileProps = {
-    tabs,
-    compileTabs,
-    compileSelection,
+    tabs: compileStudy ? effectiveCompileTabs : tabs,
+    compileTabs: effectiveCompileTabs,
+    compileSelection: compileStudy
+      ? effectiveCompileTabs.map((t) => t.id)
+      : compileSelection,
     onToggleCompileTab: toggleCompileTab,
     hideTabPicker: true,
-    marks,
-    colorLabels: compileScopedLabels,
+    marks: effectiveMarks,
+    colorLabels: effectiveScopedLabels,
     setColorLabel: (c: MarkColor, l: string) =>
-      setScopedLabel(compileScope, c, l),
+      setScopedLabel(effectiveScope, c, l),
     onJumpToReference: jumpToReference,
   };
 
@@ -2041,9 +2117,9 @@ export default function App() {
       )}
       {sharingVerses && (
         <ShareVerses
-          compileTabs={compileTabs}
-          marks={marks}
-          colorLabels={compileScopedLabels}
+          compileTabs={effectiveCompileTabs}
+          marks={effectiveMarks}
+          colorLabels={effectiveScopedLabels}
           notes={notes}
           dark={dark}
           C={
@@ -3345,9 +3421,28 @@ export default function App() {
               actionButton(sidebarOpen ? "Hide marks" : "Show marks", () =>
                 setSidebarOpen(!sidebarOpen)
               )}
-            {mode === "read" && actionButton("Compile →", startCompile, true)}
+            {mode === "read" &&
+              actionButton(
+                "Compile →",
+                activeTab.studyId
+                  ? () => {
+                      const st = searchStudies.find(
+                        (s) => s.id === activeTab.studyId
+                      );
+                      if (st) startStudyCompile(st);
+                    }
+                  : startCompile,
+                true
+              )}
             {mode === "compile" &&
-              actionButton("← Back to Reading", () => setMode("read"), true)}
+              actionButton(
+                "← Back to Reading",
+                () => {
+                  setMode("read");
+                  setCompileStudyId(null);
+                },
+                true
+              )}
             {mode === "vault" &&
               actionButton("← Close Vault", () => setMode("read"), true)}
           </div>
