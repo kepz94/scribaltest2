@@ -31,6 +31,9 @@ interface Props {
   scope: string;
   studyScopes?: string[];
   onFlash: (msg: string) => void;
+  // Rename a theme (color) for this study's scope. Optional so older callers
+  // still type-check; when supplied, active theme names become editable inline.
+  onRenameTheme?: (color: number, name: string) => void;
 }
 
 type SortMode = "order" | "points";
@@ -71,7 +74,12 @@ export default function MobileCompile({
   scope,
   studyScopes,
   onFlash,
+  onRenameTheme,
 }: Props) {
+  // Inline theme-name editing on the outline. Only one name edits at a time; the
+  // draft is committed (saved) on blur so we don't churn the store per keystroke.
+  const [editingTheme, setEditingTheme] = useState<number | null>(null);
+  const [themeDraft, setThemeDraft] = useState("");
   const synthKey = (color: number) => "synthesis:" + scope + ":" + color;
   // Per-verse notes live in the same store, keyed by the verse reference, so a
   // note follows its verse whether viewed alone or inside a linked study.
@@ -616,17 +624,15 @@ export default function MobileCompile({
                     overflow: "hidden",
                   }}
                 >
-                  {/* header row (tap to expand verses) */}
-                  <button
+                  {/* header row: tap to expand; active theme names edit inline */}
+                  <div
                     onClick={() => toggle(g.key)}
+                    role="button"
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: "10px",
                       width: "100%",
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
                       padding: "14px 14px 10px",
                       cursor: "pointer",
                       color: C.text,
@@ -642,21 +648,73 @@ export default function MobileCompile({
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ fontSize: "15px", fontWeight: 700, flex: 1 }}>
-                      {name}
-                    </span>
+                    {onRenameTheme && g.key.indexOf("c:") === 0 ? (
+                      <input
+                        value={
+                          editingTheme === c
+                            ? themeDraft
+                            : (colorLabels[c] || "").trim()
+                        }
+                        onChange={(e) => setThemeDraft(e.target.value)}
+                        onFocus={() => {
+                          setEditingTheme(c);
+                          setThemeDraft((colorLabels[c] || "").trim());
+                        }}
+                        onBlur={() => {
+                          if (editingTheme === c) {
+                            const v = themeDraft.trim();
+                            if (v !== (colorLabels[c] || "").trim())
+                              onRenameTheme(c, v);
+                            setEditingTheme(null);
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")
+                            (e.target as HTMLInputElement).blur();
+                        }}
+                        placeholder={"Color " + c}
+                        aria-label="Theme name"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontSize: "15px",
+                          fontWeight: 700,
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: "1px dashed " + C.border,
+                          color: C.text,
+                          fontFamily: "inherit",
+                          padding: "1px 0 2px",
+                          outline: "none",
+                        }}
+                      />
+                    ) : (
+                      <span
+                        style={{ fontSize: "15px", fontWeight: 700, flex: 1 }}
+                      >
+                        {name}
+                      </span>
+                    )}
                     {newCount > 0 && (
                       <span
                         style={{
                           fontSize: "10.5px",
                           fontWeight: 700,
                           color: COLOR_MAP[c as MarkColor],
+                          flexShrink: 0,
                         }}
                       >
                         {newCount} new
                       </span>
                     )}
-                    <span style={{ fontSize: "11.5px", color: C.muted }}>
+                    <span
+                      style={{
+                        fontSize: "11.5px",
+                        color: C.muted,
+                        flexShrink: 0,
+                      }}
+                    >
                       {list.length} {list.length === 1 ? "mark" : "marks"}
                       {sortMode === "points" ? " · " + pts + " pts" : ""}
                     </span>
@@ -666,11 +724,12 @@ export default function MobileCompile({
                         color: C.muted,
                         transform: isOpen ? "rotate(90deg)" : "none",
                         transition: "transform 0.15s",
+                        flexShrink: 0,
                       }}
                     >
                       ›
                     </span>
-                  </button>
+                  </div>
 
                   {/* synthesis-first: the conclusion sits up top */}
                   <div style={{ padding: "0 14px 14px" }}>
