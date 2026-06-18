@@ -453,13 +453,23 @@ export default function App() {
     deleteStudy,
     renameStudy,
     setStudies: setSearchStudies,
+    mergeRemote: mergeSearchRemote,
   } = useSearchStudies();
   const {
     studies: recordedStudies,
     recordStudy,
     deleteStudy: deleteRecordedStudy,
     setStudies: setRecordedStudies,
+    mergeRemote: mergeRecordedRemote,
   } = useStudies();
+
+  // Live-merge the study lists from a pulled cloud backup (recorded + keyword
+  // studies). Additive union by id, so syncing only ever ADDS studies made on
+  // another device — it can't delete or overwrite local ones.
+  const mergeRemoteStudies = (data: Record<string, string | null>) => {
+    mergeRecordedRemote(data["scribal_studies_v1"]);
+    mergeSearchRemote(data["scribal_search_studies"]);
+  };
 
   // Restore a manual backup file into localStorage. (Drive sync uses the shared
   // pushToDrive / pullIfNewer paths directly.) Implementation lives in ./sync.
@@ -468,7 +478,12 @@ export default function App() {
   // The single safe path for writing to Drive (rules: staleness + emptiness).
   // Lives in ./sync so desktop and mobile share one implementation.
   const pushToDrive = () =>
-    syncPushToDrive(BACKUP_KEYS, mergeRemoteBooks, vaultMergeRemote);
+    syncPushToDrive(
+      BACKUP_KEYS,
+      mergeRemoteBooks,
+      vaultMergeRemote,
+      mergeRemoteStudies
+    );
 
   const [mode, setMode] = useState<Mode>("read");
   const [compileView, setCompileView] = useState<CompileView>(
@@ -862,7 +877,11 @@ export default function App() {
       } catch {
         /* silent refresh unavailable right now — fine */
       }
-      const pulled = await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
+      const pulled = await syncPullIfNewer(
+        mergeRemoteBooks,
+        vaultMergeRemote,
+        mergeRemoteStudies
+      );
       if (pulled) setLastSync(Date.now());
     };
     const onVisible = () => {
