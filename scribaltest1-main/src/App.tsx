@@ -17,7 +17,6 @@ import { useStudies, Study } from "./hooks/useStudies";
 import Walkthrough from "./components/Walkthrough";
 import CompileWalkthrough from "./components/CompileWalkthrough";
 import SearchWalkthrough from "./components/SearchWalkthrough";
-import VaultWalkthrough from "./components/VaultWalkthrough";
 import TabsWalkthrough from "./components/TabsWalkthrough";
 import BooksWalkthrough from "./components/BooksWalkthrough";
 import HelpMenu, { HelpPick } from "./components/HelpMenu";
@@ -354,6 +353,7 @@ export default function App() {
     renameBook,
     deleteBook,
     getBook,
+    absorb,
     mergeRemoteBooks,
   } = useMarks();
 
@@ -366,6 +366,7 @@ export default function App() {
     studies: searchStudies,
     addStudy,
     deleteStudy,
+    renameStudy,
     setStudies: setSearchStudies,
   } = useSearchStudies();
   const {
@@ -465,6 +466,19 @@ export default function App() {
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
   const [compileStudyId, setCompileStudyId] = useState<string | null>(null);
+  const [compileName, setCompileName] = useState("");
+  const [savedToStudies, setSavedToStudies] = useState(false);
+  const [compileSettingsOpen, setCompileSettingsOpen] = useState(false);
+  const [saveStudyPrompt, setSaveStudyPrompt] = useState<{
+    info: {
+      type: "chapter" | "linked";
+      bookId: string;
+      scopeRef: string;
+      refs: string[];
+      defaultName: string;
+    };
+    existing: Study;
+  } | null>(null);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
   const [selectedColor, setSelectedColor] = useState<MarkColor>(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1163,34 +1177,29 @@ export default function App() {
     return units;
   };
 
-  const runCompile = (tabIds: string[], skipRecord?: boolean) => {
+  const runCompile = (tabIds: string[]) => {
     const ids = tabIds.length ? tabIds : tabs.map((t) => t.id);
     setCompileSelection(ids);
-    // Compile is the save — record this chapter or linked group as a study so
-    // it shows in the Studies hub (mirrors the mobile flow). Reopening an
-    // existing study from the hub passes skipRecord so its date doesn't churn.
-    const unitTabs = skipRecord ? [] : tabs.filter((t) => ids.includes(t.id));
+    // Saving is now an explicit step (Save to Studies). Seed the name field
+    // from an existing record for this scope, else the chapter label(s).
+    const unitTabs = tabs.filter((t) => ids.includes(t.id));
+    let defName = unitTabs.map((t) => tabLabel(t)).join("  +  ");
     if (unitTabs.length) {
       const gid = chapterGroups[chapterScopeOf(unitTabs[0])];
-      if (
-        gid &&
-        unitTabs.every((t) => chapterGroups[chapterScopeOf(t)] === gid)
-      ) {
-        recordStudy(
-          "linked",
-          unitTabs[0].bookId,
-          gid,
-          unitTabs.map((t) => tabLabel(t)).join("  +  ")
-        );
-      } else if (unitTabs.length === 1) {
-        recordStudy(
-          "chapter",
-          unitTabs[0].bookId,
-          chapterScopeOf(unitTabs[0]),
-          tabLabel(unitTabs[0])
-        );
-      }
+      const isLinked =
+        !!gid &&
+        unitTabs.every((t) => chapterGroups[chapterScopeOf(t)] === gid);
+      const type: "chapter" | "linked" = isLinked ? "linked" : "chapter";
+      const scopeRef = isLinked ? gid : chapterScopeOf(unitTabs[0]);
+      const ex = recordedStudies.find(
+        (s) =>
+          s.type === type &&
+          s.bookId === activeBookId &&
+          s.scopeRef === scopeRef
+      );
+      if (ex) defName = ex.name;
     }
+    setCompileName(defName);
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -1203,6 +1212,7 @@ export default function App() {
 
   const startStudyCompile = (study: SearchStudy) => {
     setCompileStudyId(study.id);
+    setCompileName(study.name);
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -1346,7 +1356,7 @@ export default function App() {
       return next;
     });
     if (tabIds[0]) setActiveTabId(tabIds[0]);
-    runCompile(tabIds, true);
+    runCompile(tabIds);
   };
 
   // ---- keyword (search) studies ----
@@ -1675,14 +1685,14 @@ export default function App() {
       disabled={disabled}
       title={title}
       style={{
-        width: "32px",
-        height: "32px",
+        width: "36px",
+        height: "36px",
         borderRadius: "50%",
         border: "1px solid var(--border)",
         backgroundColor: "transparent",
         color: "var(--muted)",
         cursor: disabled ? "default" : "pointer",
-        fontSize: "15px",
+        fontSize: "17px",
         lineHeight: 1,
         opacity: disabled ? 0.35 : 1,
         display: "flex",
@@ -1745,6 +1755,104 @@ export default function App() {
       {label}
     </button>
   );
+
+  // ---- Save to Studies: the explicit gate for what's listed in Studies ----
+  const flashSaved = () => {
+    setSavedToStudies(true);
+    window.setTimeout(() => setSavedToStudies(false), 2200);
+  };
+
+  // The chapter/linked unit currently being compiled (null for keyword studies).
+  const getCompileInfo = (idsArg?: string[]) => {
+    if (compileStudy) return null;
+    const ids =
+      idsArg && idsArg.length
+        ? idsArg
+        : compileSelection.length
+        ? compileSelection
+        : tabs.map((t) => t.id);
+    const unitTabs = tabs.filter((t) => ids.includes(t.id));
+    if (!unitTabs.length) return null;
+    const gid = chapterGroups[chapterScopeOf(unitTabs[0])];
+    const isLinked =
+      !!gid && unitTabs.every((t) => chapterGroups[chapterScopeOf(t)] === gid);
+    const type: "chapter" | "linked" = isLinked ? "linked" : "chapter";
+    const scopeRef = isLinked ? gid : chapterScopeOf(unitTabs[0]);
+    const refs: string[] = [];
+    unitTabs.forEach((t) => {
+      vols[t.volume].books[t.book].chapters[t.chapter].verses.forEach((v) =>
+        refs.push(v.reference)
+      );
+    });
+    return {
+      type,
+      bookId: activeBookId,
+      scopeRef,
+      refs,
+      defaultName: unitTabs.map((t) => tabLabel(t)).join("  +  "),
+    };
+  };
+
+  const saveToStudies = () => {
+    const nm = compileName.trim() || "Untitled study";
+    if (compileStudy) {
+      renameStudy(compileStudy.id, nm);
+      flashSaved();
+      return;
+    }
+    const info = getCompileInfo();
+    if (!info) return;
+    const existing = recordedStudies.find(
+      (s) =>
+        s.type === info.type &&
+        s.bookId === info.bookId &&
+        s.scopeRef === info.scopeRef
+    );
+    if (existing) {
+      setSaveStudyPrompt({ info, existing });
+    } else {
+      recordStudy(info.type, info.bookId, info.scopeRef, nm);
+      flashSaved();
+    }
+  };
+
+  // Prompt actions when a study for this scope already exists.
+  const saveAddToExisting = () => {
+    if (!saveStudyPrompt) return;
+    const { info } = saveStudyPrompt;
+    recordStudy(
+      info.type,
+      info.bookId,
+      info.scopeRef,
+      compileName.trim() || info.defaultName
+    );
+    setSaveStudyPrompt(null);
+    flashSaved();
+  };
+
+  const saveAsNewKept = () => {
+    if (!saveStudyPrompt) return;
+    const { info } = saveStudyPrompt;
+    const nm = compileName.trim() || info.defaultName;
+    const id = createSession(nm);
+    absorb(id, info.bookId, info.refs); // copy the current marks into the new book
+    setActiveBook(id);
+    recordStudy(info.type, id, info.scopeRef, nm);
+    setSaveStudyPrompt(null);
+    flashSaved();
+  };
+
+  const saveAsNewFresh = () => {
+    if (!saveStudyPrompt) return;
+    const { info } = saveStudyPrompt;
+    const nm = compileName.trim() || info.defaultName;
+    const id = createSession(nm);
+    setActiveBook(id);
+    recordStudy(info.type, id, info.scopeRef, nm);
+    setSaveStudyPrompt(null);
+    setMode("read");
+    setCompileStudyId(null);
+  };
 
   // Build a row for every study (chapter, linked, keyword) with live counts and
   // theme names. Shared by the Studies hub and the books Vault.
@@ -2050,9 +2158,6 @@ export default function App() {
       {featureWalk === "search" && (
         <SearchWalkthrough onClose={closeFeatureWalk} />
       )}
-      {featureWalk === "vault" && (
-        <VaultWalkthrough onClose={closeFeatureWalk} />
-      )}
       {featureWalk === "tabs" && <TabsWalkthrough onClose={closeFeatureWalk} />}
       {featureWalk === "books" && (
         <BooksWalkthrough onClose={closeFeatureWalk} />
@@ -2233,6 +2338,111 @@ export default function App() {
           </div>
         </div>
       )}
+      {saveStudyPrompt && (
+        <div
+          onClick={() => setSaveStudyPrompt(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--panel)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "22px",
+              width: "100%",
+              maxWidth: "460px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{ fontSize: "16px", fontWeight: 700, marginBottom: "6px" }}
+            >
+              A study for this already exists
+            </div>
+            <div style={{ fontSize: "13px", opacity: 0.75, marginBottom: "18px" }}>
+              “{saveStudyPrompt.existing.name}” · {saveStudyPrompt.info.defaultName}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+              {[
+                {
+                  title: "Add to the existing study",
+                  hint: "Update it in place — no duplicate.",
+                  onClick: saveAddToExisting,
+                  primary: true,
+                },
+                {
+                  title: "New study, verses kept",
+                  hint: "Copy these marks into a new session book.",
+                  onClick: saveAsNewKept,
+                  primary: false,
+                },
+                {
+                  title: "New study in a fresh session",
+                  hint: "Start over on these chapters in a new session book.",
+                  onClick: saveAsNewFresh,
+                  primary: false,
+                },
+              ].map((o) => (
+                <button
+                  key={o.title}
+                  onClick={o.onClick}
+                  style={{
+                    textAlign: "left",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border:
+                      "1px solid " + (o.primary ? "var(--text)" : "var(--border)"),
+                    background: o.primary ? "var(--soft)" : "var(--bg)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div style={{ fontSize: "14px", fontWeight: 600 }}>
+                    {o.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      marginTop: "2px",
+                    }}
+                  >
+                    {o.hint}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div style={{ textAlign: "right", marginTop: "16px" }}>
+              <button
+                onClick={() => setSaveStudyPrompt(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {compilePrompt && (
         <div
           onClick={() => setCompilePrompt(null)}
@@ -3614,8 +3824,8 @@ export default function App() {
                     }}
                   >
                     <svg
-                      width="13"
-                      height="13"
+                      width="15"
+                      height="15"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="#8b5cf6"
@@ -3965,67 +4175,195 @@ export default function App() {
         <div>
           <div
             style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: "12px",
+              maxWidth: "920px",
+              margin: "0 auto",
               padding: "16px 16px 0",
-              flexWrap: "wrap",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
             }}
           >
             <div
               style={{
                 display: "flex",
-                border: "1px solid var(--border)",
-                borderRadius: "999px",
-                overflow: "hidden",
-                backgroundColor: "var(--panel)",
+                alignItems: "center",
+                gap: "10px",
                 flexWrap: "wrap",
               }}
             >
-              {viewTabButton(compileView === "cornell", "Cornell Notes", () =>
-                setCompileView("cornell")
+              <input
+                value={compileName}
+                onChange={(e) => setCompileName(e.target.value)}
+                placeholder="Name this study"
+                style={{
+                  flex: 1,
+                  minWidth: "180px",
+                  height: "40px",
+                  padding: "0 14px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  fontSize: "15px",
+                  fontFamily: "inherit",
+                  outline: "none",
+                }}
+              />
+              <button
+                onClick={saveToStudies}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  height: "40px",
+                  padding: "0 18px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: "var(--text)",
+                  color: "var(--bg)",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                }}
+              >
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <path d="M17 21v-8H7v8M7 3v5h8" />
+                </svg>
+                Save to Studies
+              </button>
+              {savedToStudies && (
+                <span
+                  style={{
+                    fontSize: "13.5px",
+                    color: "#0d9488",
+                    fontWeight: 600,
+                  }}
+                >
+                  Saved ✓
+                </span>
               )}
-              {viewTabButton(compileView === "outline", "Outline", () =>
-                setCompileView("outline")
-              )}
-              {viewTabButton(compileView === "charting", "Charting", () =>
-                setCompileView("charting")
-              )}
-              {viewTabButton(compileView === "map", "Concept Map", () =>
-                setCompileView("map")
-              )}
+              <div style={{ position: "relative", marginLeft: "auto" }}>
+                <button
+                  onClick={() => setCompileSettingsOpen((o) => !o)}
+                  title="Print & share"
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontSize: "20px",
+                    lineHeight: 1,
+                  }}
+                >
+                  ⋯
+                </button>
+                {compileSettingsOpen && (
+                  <>
+                    <div
+                      onClick={() => setCompileSettingsOpen(false)}
+                      style={{ position: "fixed", inset: 0, zIndex: 50 }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "46px",
+                        right: 0,
+                        zIndex: 51,
+                        background: "var(--panel)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+                        padding: "6px",
+                        width: "190px",
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setCompileSettingsOpen(false);
+                          handlePrintLive();
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "9px 11px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: "13.5px",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        ⎙ Print / PDF
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCompileSettingsOpen(false);
+                          setSharingVerses(true);
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "9px 11px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: "13.5px",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        ⤴ Share image
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
-            <button
-              onClick={handlePrintLive}
-              style={{
-                padding: "9px 18px",
-                borderRadius: "999px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: "13.5px",
-              }}
-            >
-              ⎙ Print / PDF
-            </button>
-
-            <button
-              onClick={() => setSharingVerses(true)}
-              style={{
-                padding: "9px 18px",
-                borderRadius: "999px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: "13.5px",
-              }}
-            >
-              ⤴ Share image
-            </button>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                  backgroundColor: "var(--panel)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {viewTabButton(compileView === "cornell", "Cornell Notes", () =>
+                  setCompileView("cornell")
+                )}
+                {viewTabButton(compileView === "outline", "Outline", () =>
+                  setCompileView("outline")
+                )}
+                {viewTabButton(compileView === "charting", "Charting", () =>
+                  setCompileView("charting")
+                )}
+                {viewTabButton(compileView === "map", "Concept Map", () =>
+                  setCompileView("map")
+                )}
+              </div>
+            </div>
           </div>
 
           {compileView === "cornell" && (
