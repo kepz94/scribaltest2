@@ -11,7 +11,6 @@ import Vault from "./components/Vault";
 import PrintView from "./components/PrintView";
 import MapPrint from "./components/MapPrint";
 import ShareVerses from "./components/ShareVerses";
-import StudyReader from "./components/StudyReader";
 import SearchStudiesList from "./components/SearchStudiesList";
 import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
 import Walkthrough from "./components/Walkthrough";
@@ -255,6 +254,21 @@ vols.forEach((v, vi) =>
 );
 const orderOfRef = (ref: string) => refOrderIndex.get(ref) ?? 1e12;
 
+// Where each verse lives, so a study tab can open at its first verse's location.
+const refLoc = new Map<
+  string,
+  { volume: number; book: number; chapter: number }
+>();
+vols.forEach((v, vi) =>
+  v.books.forEach((b, bi) =>
+    b.chapters.forEach((c, ci) =>
+      c.verses.forEach((ve) =>
+        refLoc.set(ve.reference, { volume: vi, book: bi, chapter: ci })
+      )
+    )
+  )
+);
+
 // The per-chapter label scope for a tab, e.g. "Genesis 1". Unique per chapter.
 const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
   scopeOfRef(
@@ -339,7 +353,6 @@ export default function App() {
   const {
     studies: searchStudies,
     addStudy,
-    renameStudy,
     deleteStudy,
   } = useSearchStudies();
 
@@ -375,6 +388,7 @@ export default function App() {
               book: t.book,
               chapter: t.chapter,
               bookId,
+              studyId: t.studyId,
             };
           });
         }
@@ -529,10 +543,8 @@ export default function App() {
   const [sharingVerses, setSharingVerses] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [studiesOpen, setStudiesOpen] = useState(false);
-  const [openStudyId, setOpenStudyId] = useState<string | null>(null);
   const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
   const [studyDraftName, setStudyDraftName] = useState("");
-  const prevBookForStudy = useRef<string | null>(null);
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -755,8 +767,12 @@ export default function App() {
     []
   );
   const tabLabel = useCallback(
-    (t: Tab) => vols[t.volume].books[t.book].book + " " + getChapter(t).chapter,
-    [getChapter]
+    (t: Tab) =>
+      t.studyId
+        ? "📑 " +
+          (searchStudies.find((s) => s.id === t.studyId)?.name || "Study")
+        : vols[t.volume].books[t.book].book + " " + getChapter(t).chapter,
+    [getChapter, searchStudies]
   );
 
   useEffect(() => {
@@ -1235,17 +1251,27 @@ export default function App() {
   };
 
   // ---- keyword (search) studies ----
-  const openSearchStudy = (study: SearchStudy) => {
-    prevBookForStudy.current = activeBookId;
-    if (study.bookId !== activeBookId) setActiveBook(study.bookId);
+  // Open a study as its own tab — desktop is tab-based, not a full-screen screen.
+  const openStudyTab = (study: SearchStudy) => {
     setStudiesOpen(false);
-    setOpenStudyId(study.id);
-  };
-  const closeSearchStudy = () => {
-    setOpenStudyId(null);
-    const prev = prevBookForStudy.current;
-    if (prev && prev !== activeBookId) setActiveBook(prev);
-    prevBookForStudy.current = null;
+    const loc = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
+    const tabId = "studytab_" + study.id;
+    setTabs((prev) =>
+      prev.some((t) => t.id === tabId)
+        ? prev
+        : [
+            ...prev,
+            {
+              id: tabId,
+              volume: loc ? loc.volume : 0,
+              book: loc ? loc.book : 0,
+              chapter: loc ? loc.chapter : 0,
+              bookId: study.bookId,
+              studyId: study.id,
+            },
+          ]
+    );
+    setActiveTabId(tabId);
   };
   const onLinkStudy = (refs: string[]) => {
     if (!refs.length) return;
@@ -1259,7 +1285,29 @@ export default function App() {
     if (!refs || !refs.length) return;
     const study = addStudy(studyDraftName, activeBookId, refs);
     setStudyDraftRefs(null);
-    openSearchStudy(study);
+    openStudyTab(study);
+  };
+  // Deleting a study also closes any tab that was showing it.
+  const removeStudy = (id: string) => {
+    deleteStudy(id);
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.studyId !== id);
+      if (next.length === prev.length) return prev;
+      if (next.length === 0) {
+        const fb = {
+          id: makeTabId("master", 0, 0, 0),
+          volume: 0,
+          book: 0,
+          chapter: 0,
+          bookId: "master",
+        };
+        setActiveTabId(fb.id);
+        return [fb];
+      }
+      if (!next.some((t) => t.id === activeTabId))
+        setActiveTabId(next[next.length - 1].id);
+      return next;
+    });
   };
 
   const handlePrintLive = () => {
@@ -2044,8 +2092,8 @@ export default function App() {
       {studiesOpen && (
         <SearchStudiesList
           studies={searchStudies}
-          onOpen={openSearchStudy}
-          onDelete={deleteStudy}
+          onOpen={openStudyTab}
+          onDelete={removeStudy}
           onClose={() => setStudiesOpen(false)}
         />
       )}
@@ -2152,28 +2200,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {openStudyId &&
-        (() => {
-          const st = searchStudies.find((s) => s.id === openStudyId);
-          if (!st) return null;
-          return (
-            <StudyReader
-              study={st}
-              marks={getBook(st.bookId).marks}
-              onMark={addMark}
-              onEraseMark={deleteMark}
-              colorLabels={scopedLabels["searchstudy:" + st.id] || {}}
-              setColorLabel={(c, l) =>
-                setScopedLabel("searchstudy:" + st.id, c, l)
-              }
-              onRename={(n) => renameStudy(st.id, n)}
-              onClose={closeSearchStudy}
-              dark={dark}
-              fontScale={reading.fontScale}
-            />
-          );
-        })()}
 
       {printData &&
         (printData.view === "map" ? (
@@ -3341,7 +3367,7 @@ export default function App() {
           {tabs.map((t) => {
             const active = t.id === activeTabId;
             const gid = chapterGroups[chapterScopeOf(t)];
-            const linked = !!gid;
+            const linked = !t.studyId && !!gid;
             const linkColor = gid ? groupColor(gid) : "#8b5cf6";
             return (
               <div
@@ -3365,7 +3391,7 @@ export default function App() {
                 }}
               >
                 {tabLabel(t)}
-                {tabs.length > 1 && (
+                {tabs.length > 1 && !t.studyId && (
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
@@ -3530,6 +3556,9 @@ export default function App() {
             {tabs.map((t) => {
               const isActive = t.id === activeTabId;
               const multi = tabs.length > 1;
+              const study = t.studyId
+                ? searchStudies.find((s) => s.id === t.studyId)
+                : undefined;
               return (
                 <div
                   key={t.id}
@@ -3569,6 +3598,10 @@ export default function App() {
                     warm={reading.warm}
                     dark={dark}
                     sidebarOpen={sidebarOpen}
+                    studyRefs={
+                      study ? study.refs : t.studyId ? [] : undefined
+                    }
+                    studyTitle={study ? study.name : "Study"}
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
                   />
