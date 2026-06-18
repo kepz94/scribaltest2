@@ -729,18 +729,34 @@ export default function SearchPanel(props: SearchPanelProps) {
                       setSelectedRefs(new Set());
                     }}
                     style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
                       padding: "6px 14px",
                       borderRadius: "999px",
                       border: "none",
-                      background: "var(--text)",
-                      color: "var(--bg)",
+                      background: "#0d9488",
+                      color: "#fff",
                       cursor: "pointer",
                       fontSize: "12.5px",
                       fontWeight: 700,
                       fontFamily: "inherit",
                     }}
                   >
-                    Link into a study →
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                    </svg>
+                    Link verses into a study
                   </button>
                 </div>
               )}
@@ -790,7 +806,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           height: "15px",
                           cursor: "pointer",
                           flexShrink: 0,
-                          accentColor: "var(--text)",
+                          accentColor: "#0d9488",
                         }}
                       />
                     )}
