@@ -53,8 +53,8 @@ export default function NoteField({
           <button
             onClick={() => setEditing(false)}
             style={{
-              background: "var(--text)",
-              color: "var(--bg)",
+              background: "#8b5cf6",
+              color: "#fff",
               border: "none",
               borderRadius: "8px",
               padding: "7px 16px",
