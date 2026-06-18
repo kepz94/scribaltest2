@@ -2252,6 +2252,7 @@ export default function App() {
     >
       {gateOpen && (
         <div
+          className="scribal-fade"
           style={{
             position: "fixed",
             inset: 0,
@@ -2877,6 +2878,7 @@ export default function App() {
           );
           return (
             <div
+              className="scribal-fade"
               onClick={() => setLinkedCompilePrompt(null)}
               style={{
                 position: "fixed",
@@ -2890,6 +2892,7 @@ export default function App() {
               }}
             >
               <div
+                className="scribal-rise"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   background: "var(--panel)",
