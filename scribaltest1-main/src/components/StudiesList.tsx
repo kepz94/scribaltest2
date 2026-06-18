@@ -27,6 +27,7 @@ const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
 export default function StudiesList({ rows, onClose }: Props) {
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -41,6 +42,7 @@ export default function StudiesList({ rows, onClose }: Props) {
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
