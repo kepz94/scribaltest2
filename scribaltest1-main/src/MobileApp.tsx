@@ -633,6 +633,22 @@ export default function MobileApp() {
           );
         });
     } catch {}
+    // Chapter-link groups (which chapters compile together / share theme names).
+    try {
+      const rg = JSON.parse(data["scribal_linked_chapters"] || "{}");
+      if (rg && typeof rg === "object" && !Array.isArray(rg))
+        setChapterGroups((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          Object.keys(rg).forEach((scope) => {
+            if (typeof rg[scope] === "string" && !(scope in next)) {
+              next[scope] = rg[scope];
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+    } catch {}
   };
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
