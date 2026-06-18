@@ -2071,6 +2071,9 @@ export default function MobileApp() {
         * { -webkit-tap-highlight-color: transparent; }
         button { transition: opacity .12s ease, transform .08s ease, background-color .15s ease, border-color .15s ease; touch-action: manipulation; }
         button:active:not(:disabled) { opacity: .55; }
+        /* iOS auto-zooms (and stays zoomed) when a focused field is under 16px.
+           Baseline every form control at 16px so a tap never zooms the page. */
+        input, textarea, select { font-size: 16px; }
       `}</style>
 
       {/* Chapter progress line (always visible) */}
@@ -2880,7 +2883,7 @@ export default function MobileApp() {
                   border: "1px solid " + C.border,
                   background: C.soft,
                   color: C.text,
-                  fontSize: "14px",
+                  fontSize: "16px",
                   fontFamily: "inherit",
                 }}
               >
@@ -2906,7 +2909,7 @@ export default function MobileApp() {
                   border: "1px solid " + C.border,
                   background: C.soft,
                   color: C.text,
-                  fontSize: "14px",
+                  fontSize: "16px",
                   fontFamily: "inherit",
                   opacity: pickV < 0 ? 0.5 : 1,
                 }}
@@ -2930,7 +2933,7 @@ export default function MobileApp() {
                   border: "1px solid " + C.border,
                   background: C.soft,
                   color: C.text,
-                  fontSize: "14px",
+                  fontSize: "16px",
                   fontFamily: "inherit",
                   opacity: pickB < 0 ? 0.5 : 1,
                 }}
@@ -4410,7 +4413,7 @@ export default function MobileApp() {
                       width: "100%",
                       boxSizing: "border-box",
                       padding: "11px",
-                      fontSize: "15px",
+                      fontSize: "16px",
                       borderRadius: "10px",
                       border: "1px solid " + C.border,
                       backgroundColor: C.bg,
