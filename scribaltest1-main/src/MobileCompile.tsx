@@ -678,7 +678,7 @@ export default function MobileCompile({
                         style={{
                           flex: 1,
                           minWidth: 0,
-                          fontSize: "15px",
+                          fontSize: "16px",
                           fontWeight: 700,
                           background: "transparent",
                           border: "none",
