@@ -16,7 +16,6 @@ const WALKS: { key: HelpPick; label: string; desc: string }[] = [
   { key: "main", label: "How to use Scribal", desc: "The core: marking with intention" },
   { key: "compile", label: "Compile", desc: "Four ways to study your marks" },
   { key: "search", label: "Search", desc: "Find words and your marks" },
-  { key: "vault", label: "Vault", desc: "Save and organize studies" },
   { key: "tabs", label: "Tabs", desc: "Multiple passages, linking" },
   { key: "books", label: "Master & sessions", desc: "Independent layers of marks" },
 ];
