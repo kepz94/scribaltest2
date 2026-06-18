@@ -286,8 +286,8 @@ export default function DesktopFeatureGuide({ onClose }: Props) {
           style={{
             padding: "4px 11px",
             borderRadius: 999,
-            background: "var(--text)",
-            color: "var(--bg)",
+            background: PURP,
+            color: "#fff",
             fontSize: 10.5,
             fontWeight: 700,
           }}
@@ -572,8 +572,8 @@ export default function DesktopFeatureGuide({ onClose }: Props) {
           <button
             onClick={onClose}
             style={{
-              backgroundColor: "var(--text)",
-              color: "var(--bg)",
+              backgroundColor: PURP,
+              color: "#fff",
               border: "none",
               borderRadius: 8,
               padding: "8px 18px",
