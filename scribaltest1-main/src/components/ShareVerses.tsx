@@ -148,6 +148,7 @@ export default function ShareVerses({
 
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -161,6 +162,7 @@ export default function ShareVerses({
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
