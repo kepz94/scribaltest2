@@ -3807,8 +3807,14 @@ export default function App() {
                     color: "var(--muted)",
                     backgroundColor: "transparent",
                     border: "1px solid var(--border)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
                   }}
                 >
+                  {cloudSignedIn && cloudSyncing && (
+                    <span className="scribal-spinner" />
+                  )}
                   {label}
                 </span>
               );
