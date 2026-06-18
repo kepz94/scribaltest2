@@ -2066,6 +2066,11 @@ export default function MobileApp() {
         @keyframes mob-fadein { from { opacity: 0; } to { opacity: 1; } }
         @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes mob-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        /* Native-feel tap polish: no default grey flash on any tap, and every
+           button gets a quick pressed state + smooth state transitions. */
+        * { -webkit-tap-highlight-color: transparent; }
+        button { transition: opacity .12s ease, transform .08s ease, background-color .15s ease, border-color .15s ease; touch-action: manipulation; }
+        button:active:not(:disabled) { opacity: .55; }
       `}</style>
 
       {/* Chapter progress line (always visible) */}
@@ -5481,6 +5486,9 @@ export default function MobileApp() {
               title={cTitle}
               scope={cScope}
               onFlash={flash}
+              onRenameTheme={(color, name) =>
+                setScopedLabel(cScope, color as MarkColor, name)
+              }
             />
           );
         })()}
