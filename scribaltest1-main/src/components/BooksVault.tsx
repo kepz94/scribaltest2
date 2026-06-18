@@ -64,6 +64,7 @@ export default function BooksVault({
 
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -78,6 +79,7 @@ export default function BooksVault({
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
