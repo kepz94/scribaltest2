@@ -282,6 +282,9 @@ interface SearchStudy {
   // Last time the user changed this study (rename or verse-set edit). Drives
   // two-way sync: on merge the most-recently-edited side's name + refs win.
   updatedAt?: number;
+  // Delete tombstone — counts as deleted only while newest (>= updatedAt); a
+  // later edit revives it. Carried in the record so the delete syncs.
+  deletedAt?: number;
 }
 
 // A recorded study (chapter or linked). Live: its marks are always the book's
@@ -298,7 +301,19 @@ interface Study {
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
   nameAt?: number;
+  // Delete tombstone — deleted only while newest (>= nameAt and compiledAt); a
+  // later re-compile or rename revives it. Carried in the record so it syncs.
+  deletedAt?: number;
 }
+
+// A recorded study is hidden iff its delete is its newest action.
+const isStudyDeleted = (s: Study): boolean =>
+  !!s.deletedAt &&
+  s.deletedAt >= (s.nameAt || 0) &&
+  s.deletedAt >= (s.compiledAt || 0);
+// A keyword study is hidden iff its delete is its newest action.
+const isSearchDeleted = (s: SearchStudy): boolean =>
+  !!s.deletedAt && s.deletedAt >= (s.updatedAt || s.createdAt || 0);
 
 // ---- Shared inline icons (line style, matches the rest of the app) ----
 const IconTrash = ({ color, size = 17 }: { color: string; size?: number }) => (
@@ -609,12 +624,16 @@ export default function MobileApp() {
               local.compiledAt || 0,
               rs.compiledAt || 0
             );
+            const deletedAt = Math.max(local.deletedAt || 0, rs.deletedAt || 0);
             if (
               name !== local.name ||
               nameAt !== (local.nameAt || 0) ||
-              compiledAt !== (local.compiledAt || 0)
+              compiledAt !== (local.compiledAt || 0) ||
+              deletedAt !== (local.deletedAt || 0)
             ) {
-              byId.set(rs.id, { ...local, name, nameAt, compiledAt });
+              const merged: Study = { ...local, name, nameAt, compiledAt };
+              if (deletedAt) merged.deletedAt = deletedAt;
+              byId.set(rs.id, merged);
               changed = true;
             }
           });
@@ -641,13 +660,14 @@ export default function MobileApp() {
             }
             const lAt = local.updatedAt || local.createdAt || 0;
             const rAt = rs.updatedAt || rs.createdAt || 0;
-            if (rAt > lAt) {
-              byId.set(rs.id, {
-                ...local,
-                name: rs.name,
-                refs: rs.refs,
-                updatedAt: rAt,
-              });
+            const deletedAt = Math.max(local.deletedAt || 0, rs.deletedAt || 0);
+            const contentChanged = rAt > lAt;
+            if (contentChanged || deletedAt !== (local.deletedAt || 0)) {
+              const merged: SearchStudy = contentChanged
+                ? { ...local, name: rs.name, refs: rs.refs, updatedAt: rAt }
+                : { ...local };
+              if (deletedAt) merged.deletedAt = deletedAt;
+              byId.set(rs.id, merged);
               changed = true;
             }
           });
@@ -801,6 +821,7 @@ export default function MobileApp() {
       backupKeys: BACKUP_KEYS,
       mergeRemoteBooks,
       vaultMergeRemote,
+      mergeRemoteStudies,
     });
   }, [mergeRemoteBooks, vaultMergeRemote]);
 
@@ -1147,7 +1168,9 @@ export default function MobileApp() {
     prevBookForStudy.current = null;
   };
   const deleteSearchStudy = (id: string) => {
-    setSearchStudies((prev) => prev.filter((s) => s.id !== id));
+    setSearchStudies((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
+    );
     if (openStudyId === id) closeStudy();
   };
   // Search → "Next": stash the picked verses and open the source + name step.
@@ -1595,7 +1618,9 @@ export default function MobileApp() {
     setCompileOpen(true);
   };
   const deleteStudy = (id: string) => {
-    setStudies((prev) => prev.filter((s) => s.id !== id));
+    setStudies((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
+    );
   };
 
   // ---- Migrate old Vault snapshots into the new live Studies list (once) ----
@@ -1795,7 +1820,7 @@ export default function MobileApp() {
   // signed in). This is the live counterpart to the Drive auto-save below.
   useEffect(() => {
     noteLocalChange();
-  }, [marks, colorLabels, scopedLabels, notes]);
+  }, [marks, colorLabels, scopedLabels, notes, chapterGroups, studies, searchStudies]);
 
   // Auto-save to Drive on changes, refreshing the token as needed (no popup).
   const autoSaveReady = useRef(false);
@@ -4763,8 +4788,10 @@ export default function MobileApp() {
             bid === "master"
               ? ""
               : books.find((b) => b.id === bid)?.name || "Session";
-          const chapterRecs = studies.filter((s) => s.type === "chapter");
-          const linkedRecs = studies.filter((s) => s.type === "linked");
+          const liveStudies = studies.filter((s) => !isStudyDeleted(s));
+          const liveSearch = searchStudies.filter((s) => !isSearchDeleted(s));
+          const chapterRecs = liveStudies.filter((s) => s.type === "chapter");
+          const linkedRecs = liveStudies.filter((s) => s.type === "linked");
           const countChapter = (s: Study) =>
             bookMarksOf(s.bookId).filter(
               (m) => scopeOf(m.reference) === s.scopeRef
@@ -4863,7 +4890,7 @@ export default function MobileApp() {
             </div>
           );
           const total =
-            chapterRecs.length + linkedRecs.length + searchStudies.length;
+            chapterRecs.length + linkedRecs.length + liveSearch.length;
 
           const row = (
             key: string,
@@ -5148,11 +5175,11 @@ export default function MobileApp() {
                           )
                         )
                       )}
-                    {searchStudies.length > 0 &&
+                    {liveSearch.length > 0 &&
                       section(
                         "Keyword studies",
                         "#0d9488",
-                        searchStudies.map((ss) =>
+                        liveSearch.map((ss) =>
                           row(
                             ss.id,
                             ss.name,
