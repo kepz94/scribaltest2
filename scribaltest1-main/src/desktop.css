@@ -210,3 +210,22 @@ textarea:focus-visible {
     opacity: 0.5;
   }
 }
+
+/* Color-legend chips: signal that a color name is editable. On pointer
+   devices the pencil stays hidden until hover, when it fades in and the
+   underline turns brand-purple. On touch (no hover) the pencil is always
+   visible since there's nothing to reveal it. */
+@media (hover: hover) and (pointer: fine) {
+  .scribal-colorchip-pen {
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+  .scribal-colorchip:hover .scribal-colorchip-pen {
+    opacity: 1;
+    color: #8b5cf6;
+  }
+  .scribal-colorchip:hover {
+    border-bottom-color: #8b5cf6 !important;
+    color: var(--text) !important;
+  }
+}
