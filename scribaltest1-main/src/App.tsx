@@ -50,6 +50,7 @@ import {
   applyBackupString as syncApplyBackupString,
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
+  mergeLinkGroups,
 } from "./sync";
 import {
   initCloud,
@@ -469,24 +470,13 @@ export default function App() {
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
     mergeRecordedRemote(data["scribal_studies_v1"]);
     mergeSearchRemote(data["scribal_search_studies"]);
-    // Chapter-link groups (which chapters compile together). Without these a
-    // linked study can't assemble on this device and its shared theme names
-    // (stored under a "group:<id>" scope) can't be found.
+    // Chapter-link groups (which chapters compile together). Union-merge so a
+    // link made on either device survives, the grouping converges, and the
+    // group's shared theme names (stored under a "group:<id>" scope) resolve.
     try {
-      const rg = JSON.parse(data["scribal_linked_chapters"] || "{}");
-      if (rg && typeof rg === "object" && !Array.isArray(rg)) {
-        setChapterGroups((prev) => {
-          let changed = false;
-          const next = { ...prev };
-          Object.keys(rg).forEach((scope) => {
-            if (typeof rg[scope] === "string" && !(scope in next)) {
-              next[scope] = rg[scope];
-              changed = true;
-            }
-          });
-          return changed ? next : prev;
-        });
-      }
+      setChapterGroups((prev) =>
+        mergeLinkGroups(prev, data["scribal_linked_chapters"])
+      );
     } catch {
       /* ignore malformed link data */
     }
@@ -1191,10 +1181,27 @@ export default function App() {
       });
       return;
     }
-    const gid = newGroupId();
     const all = [csT, ...members];
-    // carry names into the new group's palette (fill blanks, clicked tab first)
-    all.forEach((ms) => seedScopeLabels("group:" + gid, scopedLabels[ms] || {}));
+    // Reuse an existing group's id when one is involved, so the id stays stable
+    // across devices and the group's themes aren't orphaned; only mint a new id
+    // when none of these chapters were grouped yet. Picking the smallest existing
+    // id matches how the cross-device merge chooses, keeping both consistent.
+    const existingGids = Array.from(
+      new Set(
+        all
+          .map((s) => chapterGroups[s])
+          .filter((g): g is string => typeof g === "string" && !!g)
+      )
+    ).sort();
+    const gid = existingGids.length ? existingGids[0] : newGroupId();
+    // Carry theme names into the chosen group's palette, reading each chapter
+    // from its CURRENT label scope — a grouped chapter's themes live under its
+    // "group:<id>" scope, so seed from there (not its bare scope) or they'd be
+    // lost when groups merge/extend. Fill-blanks only, so existing names survive.
+    all.forEach((ms) => {
+      const eff = chapterGroups[ms] ? "group:" + chapterGroups[ms] : ms;
+      seedScopeLabels("group:" + gid, scopedLabels[eff] || {});
+    });
     setChapterGroups((prev) => {
       const next = { ...prev };
       all.forEach((ms) => {
