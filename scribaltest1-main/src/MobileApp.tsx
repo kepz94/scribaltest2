@@ -572,6 +572,48 @@ export default function MobileApp() {
       localStorage.setItem("scribal_studies_v1", JSON.stringify(studies));
     } catch {}
   }, [studies]);
+
+  // Live-merge the study lists from a pulled cloud backup. Additive union by id:
+  // recorded studies keep the newest compiledAt; keyword studies add remote-only
+  // ones. A sync can only ever ADD studies made on another device — never delete
+  // or overwrite a local one.
+  const mergeRemoteStudies = (data: Record<string, string | null>) => {
+    try {
+      const r = JSON.parse(data["scribal_studies_v1"] || "[]");
+      const remote: Study[] = Array.isArray(r) ? r : [];
+      if (remote.length)
+        setStudies((prev) => {
+          const byId = new Map<string, Study>();
+          prev.forEach((s) => byId.set(s.id, s));
+          let changed = false;
+          remote.forEach((s) => {
+            if (!s || !s.id) return;
+            const ex = byId.get(s.id);
+            if (!ex || (s.compiledAt || 0) > (ex.compiledAt || 0)) {
+              byId.set(s.id, s);
+              changed = true;
+            }
+          });
+          if (!changed) return prev;
+          return Array.from(byId.values()).sort(
+            (a, b) => (b.compiledAt || 0) - (a.compiledAt || 0)
+          );
+        });
+    } catch {}
+    try {
+      const r = JSON.parse(data["scribal_search_studies"] || "[]");
+      const remote: SearchStudy[] = Array.isArray(r) ? r : [];
+      if (remote.length)
+        setSearchStudies((prev) => {
+          const have = new Set(prev.map((s) => s.id));
+          const additions = remote.filter((s) => s && s.id && !have.has(s.id));
+          if (!additions.length) return prev;
+          return [...prev, ...additions].sort(
+            (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+          );
+        });
+    } catch {}
+  };
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
   // Which study row (if any) is expanded to show its scope + themes peek.
@@ -1579,7 +1621,12 @@ export default function MobileApp() {
   //      synced from, adopt the cloud copy instead of overwriting it.
   //   2. Emptiness — never replace a cloud copy that has marks with an empty one.
   const pushToDrive = () =>
-    syncPushToDrive(BACKUP_KEYS, mergeRemoteBooks, vaultMergeRemote);
+    syncPushToDrive(
+      BACKUP_KEYS,
+      mergeRemoteBooks,
+      vaultMergeRemote,
+      mergeRemoteStudies
+    );
 
   const driveConnect = async () => {
     if (!DRIVE_CONFIGURED) {
@@ -1741,7 +1788,11 @@ export default function MobileApp() {
         return;
       }
       setNeedsReconnect(false);
-      const pulled = await syncPullIfNewer(mergeRemoteBooks, vaultMergeRemote);
+      const pulled = await syncPullIfNewer(
+        mergeRemoteBooks,
+        vaultMergeRemote,
+        mergeRemoteStudies
+      );
       if (pulled) setLastSync(Date.now());
     };
     const onVisible = () => {
