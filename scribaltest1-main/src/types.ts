@@ -102,4 +102,5 @@ export interface Tab {
   book: number;
   chapter: number;
   bookId: string; // which StudyBook ("session") this tab reads/writes; "master" by default
+  studyId?: string; // set => this tab is a keyword study, rendering its picked verses
 }
