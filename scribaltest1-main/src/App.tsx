@@ -823,6 +823,7 @@ export default function App() {
       backupKeys: BACKUP_KEYS,
       mergeRemoteBooks,
       vaultMergeRemote,
+      mergeRemoteStudies,
     });
   }, [mergeRemoteBooks, vaultMergeRemote]);
 
@@ -842,7 +843,17 @@ export default function App() {
   // signed in). The live counterpart to the Drive auto-save below.
   useEffect(() => {
     noteLocalChange();
-  }, [marks, tabs, activeTabId, colorLabels, scopedLabels, notes]);
+  }, [
+    marks,
+    tabs,
+    activeTabId,
+    colorLabels,
+    scopedLabels,
+    notes,
+    chapterGroups,
+    recordedStudies,
+    searchStudies,
+  ]);
 
   // Auto-save to Google Drive (debounced, silent).
   // Reuses the token captured at sign-in — never requests a new one, so no popup.
