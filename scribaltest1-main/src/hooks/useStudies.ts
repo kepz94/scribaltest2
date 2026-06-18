@@ -66,9 +66,10 @@ export function useStudies() {
   const deleteStudy = (id: string) =>
     setStudies((prev) => prev.filter((s) => s.id !== id));
 
-  // Merge a remote studies snapshot (from another device's backup) into ours:
-  // union by id, newest compiledAt wins. Purely additive — never deletes a
-  // local study, so a sync can only ever ADD studies the other device made.
+  // Merge a remote studies snapshot (from another device's backup) into ours.
+  // ADDITIVE ONLY: add a study whose id we've never seen; never modify or replace
+  // one we already have. So a sync can only ever ADD a study made on another
+  // device — it can never change a name, timestamp, or anything on a local study.
   const mergeRemote = (raw: string | null | undefined) => {
     if (!raw) return;
     let remote: Study[];
@@ -80,19 +81,10 @@ export function useStudies() {
     }
     if (!remote.length) return;
     setStudies((prev) => {
-      const byId = new Map<string, Study>();
-      prev.forEach((s) => byId.set(s.id, s));
-      let changed = false;
-      remote.forEach((s) => {
-        if (!s || !s.id) return;
-        const ex = byId.get(s.id);
-        if (!ex || (s.compiledAt || 0) > (ex.compiledAt || 0)) {
-          byId.set(s.id, s);
-          changed = true;
-        }
-      });
-      if (!changed) return prev; // idempotent — don't churn sync
-      return Array.from(byId.values()).sort(
+      const have = new Set(prev.map((s) => s.id));
+      const additions = remote.filter((s) => s && s.id && !have.has(s.id));
+      if (!additions.length) return prev; // idempotent — don't churn sync
+      return [...prev, ...additions].sort(
         (a, b) => (b.compiledAt || 0) - (a.compiledAt || 0)
       );
     });
