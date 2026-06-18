@@ -2823,8 +2823,12 @@ export default function App() {
                     <select
                       value={pickV}
                       onChange={(e) => {
-                        setPickV(Number(e.target.value));
-                        setPickB(-1);
+                        const v = Number(e.target.value);
+                        setPickV(v);
+                        // D&C (any single-book volume) has no book to choose, so
+                        // auto-select its one book — leaving just volume + section.
+                        const single = v >= 0 && vols[v].books.length === 1;
+                        setPickB(single ? 0 : -1);
                         setPickC(-1);
                       }}
                       style={selStyle}
@@ -2836,29 +2840,34 @@ export default function App() {
                         </option>
                       ))}
                     </select>
-                    <select
-                      value={pickB}
-                      disabled={pickV < 0}
-                      onChange={(e) => {
-                        setPickB(Number(e.target.value));
-                        setPickC(-1);
-                      }}
-                      style={{ ...selStyle, opacity: pickV < 0 ? 0.5 : 1 }}
-                    >
-                      <option value={-1}>Choose a book…</option>
-                      {(pickV >= 0 ? vols[pickV].books : []).map((bk, b) => (
-                        <option key={b} value={b}>
-                          {bk.book}
-                        </option>
-                      ))}
-                    </select>
+                    {pickV >= 0 && vols[pickV].books.length > 1 && (
+                      <select
+                        value={pickB}
+                        onChange={(e) => {
+                          setPickB(Number(e.target.value));
+                          setPickC(-1);
+                        }}
+                        style={selStyle}
+                      >
+                        <option value={-1}>Choose a book…</option>
+                        {vols[pickV].books.map((bk, b) => (
+                          <option key={b} value={b}>
+                            {bk.book}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <select
                       value={pickC}
                       disabled={pickB < 0}
                       onChange={(e) => setPickC(Number(e.target.value))}
                       style={{ ...selStyle, opacity: pickB < 0 ? 0.5 : 1 }}
                     >
-                      <option value={-1}>Choose a chapter…</option>
+                      <option value={-1}>
+                        {pickV >= 0 && vols[pickV].books.length === 1
+                          ? "Choose a section…"
+                          : "Choose a chapter…"}
+                      </option>
                       {(pickV >= 0 && pickB >= 0
                         ? vols[pickV].books[pickB].chapters
                         : []
