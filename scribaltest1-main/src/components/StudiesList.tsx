@@ -1,70 +1,235 @@
-import { useEffect, useState } from "react";
+import { COLOR_MAP, MarkColor } from "../types";
 
-// A recorded study = a compiled chapter or linked group. Keyword studies live
-// separately in useSearchStudies; the Studies hub shows all three together.
-// This store shares its localStorage key + shape with the mobile app, so a
-// study compiled on either device shows up on the other.
-export interface Study {
+// One row in the Studies hub. App computes these (live counts + theme names)
+// and hands them over ready to render.
+export type StudyRow = {
   id: string;
-  type: "chapter" | "linked";
-  bookId: string;
+  kind: "chapter" | "linked" | "keyword";
   name: string;
-  scopeRef: string; // chapter scope ("Genesis 1") for chapter; link-group id for linked
-  compiledAt: number;
+  meta: string;
+  themes: { color: number; name: string }[];
+  onOpen: () => void;
+  onDelete: () => void;
+};
+
+interface Props {
+  rows: StudyRow[];
+  onClose: () => void;
 }
 
-const KEY = "scribal_studies_v1";
+const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
+  { kind: "chapter", label: "Chapter studies", icon: "📖" },
+  { kind: "linked", label: "Linked studies", icon: "🔗" },
+  { kind: "keyword", label: "Keyword studies", icon: "📑" },
+];
 
-export function useStudies() {
-  const [studies, setStudies] = useState<Study[]>(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) || "[]");
-      return Array.isArray(raw) ? raw : [];
-    } catch {
-      return [];
-    }
-  });
+export default function StudiesList({ rows, onClose }: Props) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 360,
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: "60px 20px",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: "580px",
+          background: "var(--bg)",
+          color: "var(--text)",
+          borderRadius: "16px",
+          border: "1px solid var(--border)",
+          overflow: "hidden",
+          boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "16px 18px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <span style={{ fontSize: "18px" }}>📚</span>
+          <div style={{ flex: 1, fontSize: "16px", fontWeight: 700 }}>
+            Studies
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border)",
+              color: "var(--text)",
+              borderRadius: "999px",
+              padding: "8px 14px",
+              fontSize: "13px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Close
+          </button>
+        </div>
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(studies));
-    } catch {}
-  }, [studies]);
+        <div style={{ padding: "10px 14px 16px" }}>
+          {rows.length === 0 && (
+            <div
+              style={{
+                color: "var(--muted)",
+                textAlign: "center",
+                padding: "34px 16px",
+                fontSize: "14px",
+                lineHeight: 1.6,
+              }}
+            >
+              No studies yet. Compile a chapter or a linked group to record it
+              here, or bundle search results into a keyword study.
+            </div>
+          )}
 
-  // Compile is the save: record this chapter/linked group, or refresh an
-  // existing record's name + timestamp.
-  const recordStudy = (
-    type: "chapter" | "linked",
-    bookId: string,
-    scopeRef: string,
-    name: string
-  ) => {
-    setStudies((prev) => {
-      const now = Date.now();
-      const i = prev.findIndex(
-        (s) => s.type === type && s.bookId === bookId && s.scopeRef === scopeRef
-      );
-      if (i >= 0) {
-        const next = prev.slice();
-        next[i] = { ...next[i], name, compiledAt: now };
-        return next;
-      }
-      return [
-        {
-          id: "study_" + now + "_" + Math.random().toString(36).slice(2, 7),
-          type,
-          bookId,
-          name,
-          scopeRef,
-          compiledAt: now,
-        },
-        ...prev,
-      ];
-    });
-  };
+          {SECTIONS.map((sec) => {
+            const items = rows.filter((r) => r.kind === sec.kind);
+            if (items.length === 0) return null;
+            return (
+              <div key={sec.kind} style={{ marginTop: "14px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "7px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    margin: "0 2px 8px",
+                  }}
+                >
+                  <span>{sec.icon}</span>
+                  {sec.label}
+                  <span style={{ opacity: 0.7 }}>({items.length})</span>
+                </div>
 
-  const deleteStudy = (id: string) =>
-    setStudies((prev) => prev.filter((s) => s.id !== id));
+                {items.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "10px",
+                      padding: "11px 12px",
+                      borderRadius: "12px",
+                      border: "1px solid var(--border)",
+                      background: "var(--panel)",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <button
+                      onClick={r.onOpen}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        textAlign: "left",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text)",
+                        fontFamily: "inherit",
+                        padding: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "15px",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {r.name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "11.5px",
+                          color: "var(--muted)",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {r.meta}
+                      </div>
+                      {r.themes.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "8px",
+                            marginTop: "7px",
+                          }}
+                        >
+                          {r.themes.map((t) => (
+                            <span
+                              key={t.color}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: "10px",
+                                  height: "10px",
+                                  borderRadius: "50%",
+                                  background: COLOR_MAP[t.color as MarkColor],
+                                  flexShrink: 0,
+                                }}
+                              />
+                              {t.name || "Unnamed"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
 
-  return { studies, recordStudy, deleteStudy, setStudies };
+                    <button
+                      onClick={r.onDelete}
+                      title="Remove from Studies"
+                      style={{
+                        flexShrink: 0,
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "50%",
+                        border: "1px solid var(--border)",
+                        background: "transparent",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                        fontSize: "16px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
