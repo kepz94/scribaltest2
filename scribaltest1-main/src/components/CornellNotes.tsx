@@ -1,6 +1,7 @@
 import { useState } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
+import NoteField from "./NoteField";
 import {
   Mark,
   MarkColor,
@@ -473,25 +474,12 @@ export default function CornellNotes(props: CornellNotesProps) {
                     )}
 
                     {recall !== "hideNotes" && (
-                      <textarea
+                      <NoteField
                         value={(notes && notes[noteKey]) || ""}
-                        onChange={(e) => setNote(noteKey, e.target.value)}
-                        placeholder="Your thoughts on this verse…"
-                        rows={1}
-                        style={{
-                          width: "100%",
-                          boxSizing: "border-box",
-                          padding: "10px 12px",
-                          border: "1px solid var(--border)",
-                          borderRadius: "8px",
-                          fontSize: "13.5px",
-                          fontFamily: "system-ui, sans-serif",
-                          resize: "vertical",
-                          backgroundColor: "var(--soft)",
-                          color: "var(--text)",
-                          outline: "none",
-                          minHeight: "42px",
-                        }}
+                        onChange={(t) => setNote(noteKey, t)}
+                        accent={COLOR_MAP[color]}
+                        placeholder="Write a note…"
+                        addLabel="Add a note about this verse"
                       />
                     )}
 
@@ -525,34 +513,19 @@ export default function CornellNotes(props: CornellNotesProps) {
           }}
         >
           <h3 style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Synthesis</h3>
-          <textarea
-            value={
-              (notes &&
-                notes["synthesis|" + compileTabs.map(tabLabel).join("+")]) ||
-              ""
-            }
-            onChange={(e) =>
-              setNote(
-                "synthesis|" + compileTabs.map(tabLabel).join("+"),
-                e.target.value
-              )
-            }
-            placeholder="What do these chapters teach you, based on what you marked?"
-            style={{
-              width: "100%",
-              minHeight: "120px",
-              boxSizing: "border-box",
-              padding: "14px",
-              border: "1px solid var(--border)",
-              borderRadius: "10px",
-              fontSize: "14px",
-              fontFamily: "system-ui, sans-serif",
-              resize: "vertical",
-              backgroundColor: "var(--soft)",
-              color: "var(--text)",
-              outline: "none",
-            }}
-          />
+          {(() => {
+            const synthKey =
+              "synthesis|" + compileTabs.map(tabLabel).join("+");
+            return (
+              <NoteField
+                value={(notes && notes[synthKey]) || ""}
+                onChange={(t) => setNote(synthKey, t)}
+                accent="var(--text)"
+                placeholder="Write your conclusion…"
+                addLabel="Add your synthesis"
+              />
+            );
+          })()}
         </div>
       )}
     </div>
