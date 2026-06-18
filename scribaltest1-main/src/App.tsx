@@ -470,15 +470,27 @@ export default function App() {
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
     mergeRecordedRemote(data["scribal_studies_v1"]);
     mergeSearchRemote(data["scribal_search_studies"]);
-    // Chapter-link groups (which chapters compile together). Union-merge so a
-    // link made on either device survives, the grouping converges, and the
-    // group's shared theme names (stored under a "group:<id>" scope) resolve.
+    // Chapter-link groups + their per-scope timestamps. Converges links AND
+    // unlinks; reads current state via refs so this long-lived merge (held by the
+    // Firebase listener) never works off stale mount-time values.
     try {
-      setChapterGroups((prev) =>
-        mergeLinkGroups(prev, data["scribal_linked_chapters"])
+      const merged = mergeLinkGroups(
+        chapterGroupsRef.current,
+        chapterGroupsAtRef.current,
+        data["scribal_linked_chapters"],
+        data["scribal_linked_chapters_at"]
       );
+      setChapterGroups(merged.groups);
+      setChapterGroupsAt(merged.at);
     } catch {
       /* ignore malformed link data */
+    }
+    // Mark colour intensity — a shared display setting, so adopt the incoming
+    // value and marks look the same on every device.
+    const ci = data["scribal_color_intensity"];
+    if (ci != null) {
+      const v = parseFloat(ci);
+      if (!Number.isNaN(v)) setColorIntensity((cur) => (cur === v ? cur : v));
     }
   };
 
@@ -563,6 +575,53 @@ export default function App() {
       JSON.stringify(chapterGroups)
     );
   }, [chapterGroups]);
+
+  // Per-scope timestamp of the last link/unlink action. Carried alongside
+  // chapterGroups so that unlinking (not just linking) converges across devices.
+  const [chapterGroupsAt, setChapterGroupsAt] = useState<
+    Record<string, number>
+  >(() => {
+    try {
+      const raw = JSON.parse(
+        localStorage.getItem("scribal_linked_chapters_at") || "{}"
+      );
+      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      "scribal_linked_chapters_at",
+      JSON.stringify(chapterGroupsAt)
+    );
+  }, [chapterGroupsAt]);
+
+  // Live mirrors so the (long-lived) sync merge can read the CURRENT groups +
+  // timestamps without a stale closure capturing mount-time values.
+  const chapterGroupsRef = useRef(chapterGroups);
+  const chapterGroupsAtRef = useRef(chapterGroupsAt);
+  useEffect(() => {
+    chapterGroupsRef.current = chapterGroups;
+    chapterGroupsAtRef.current = chapterGroupsAt;
+  }, [chapterGroups, chapterGroupsAt]);
+
+  // Stamp "changed now" for every scope whose group membership differs between
+  // prev and next — this is what makes a link OR an unlink propagate.
+  const stampGroupChanges = (
+    prevG: Record<string, string>,
+    nextG: Record<string, string>
+  ) => {
+    const now = Date.now();
+    setChapterGroupsAt((prevAt) => {
+      const nextAt = { ...prevAt };
+      const seen = new Set([...Object.keys(prevG), ...Object.keys(nextG)]);
+      seen.forEach((s) => {
+        if (prevG[s] !== nextG[s]) nextAt[s] = now;
+      });
+      return nextAt;
+    });
+  };
 
   // A chapter's label scope: its group's shared scope if linked, else its own.
   const resolveScope = (chapterScope: string) =>
@@ -839,11 +898,11 @@ export default function App() {
     initCloud();
   }, []);
 
-  // Push local changes to Firebase (debounced inside cloudSync; only acts when
-  // signed in). The live counterpart to the Drive auto-save below.
-  useEffect(() => {
-    noteLocalChange();
-  }, [
+  // One list of the local data whose change should trigger a sync push. Both the
+  // Firebase push (below) and the Drive auto-save (further down) use this exact
+  // array, so the two can never drift apart again — adding a new synced field
+  // means adding it here once.
+  const syncData = [
     marks,
     tabs,
     activeTabId,
@@ -851,9 +910,18 @@ export default function App() {
     scopedLabels,
     notes,
     chapterGroups,
+    chapterGroupsAt,
     recordedStudies,
     searchStudies,
-  ]);
+    colorIntensity,
+  ];
+
+  // Push local changes to Firebase (debounced inside cloudSync; only acts when
+  // signed in). The live counterpart to the Drive auto-save below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    noteLocalChange();
+  }, syncData);
 
   // Auto-save to Google Drive (debounced, silent).
   // Reuses the token captured at sign-in — never requests a new one, so no popup.
@@ -881,18 +949,8 @@ export default function App() {
     }, 3000); // debounce 3 seconds after last change
 
     return () => clearTimeout(timer);
-  }, [
-    marks,
-    tabs,
-    activeTabId,
-    colorLabels,
-    scopedLabels,
-    notes,
-    chapterGroups,
-    recordedStudies,
-    searchStudies,
-    cloudSignedIn,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...syncData, cloudSignedIn]);
 
   // Auto-pull the other device's changes when this tab opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
@@ -1180,16 +1238,16 @@ export default function App() {
     if (!t) return;
     const csT = chapterScopeOf(t);
     if (members.length === 0) {
-      setChapterGroups((prev) => {
-        const next = { ...prev };
-        delete next[csT];
-        const counts: Record<string, number> = {};
-        Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
-        Object.keys(next).forEach((s) => {
-          if (counts[next[s]] < 2) delete next[s];
-        });
-        return next;
+      const prev = chapterGroups;
+      const next = { ...prev };
+      delete next[csT];
+      const counts: Record<string, number> = {};
+      Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+      Object.keys(next).forEach((s) => {
+        if (counts[next[s]] < 2) delete next[s];
       });
+      stampGroupChanges(prev, next); // record the unlink so it syncs
+      setChapterGroups(next);
       return;
     }
     const all = [csT, ...members];
@@ -1213,18 +1271,18 @@ export default function App() {
       const eff = chapterGroups[ms] ? "group:" + chapterGroups[ms] : ms;
       seedScopeLabels("group:" + gid, scopedLabels[eff] || {});
     });
-    setChapterGroups((prev) => {
-      const next = { ...prev };
-      all.forEach((ms) => {
-        next[ms] = gid;
-      });
-      const counts: Record<string, number> = {};
-      Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
-      Object.keys(next).forEach((s) => {
-        if (next[s] !== gid && counts[next[s]] < 2) delete next[s];
-      });
-      return next;
+    const prev = chapterGroups;
+    const next = { ...prev };
+    all.forEach((ms) => {
+      next[ms] = gid;
     });
+    const counts: Record<string, number> = {};
+    Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    Object.keys(next).forEach((s) => {
+      if (next[s] !== gid && counts[next[s]] < 2) delete next[s];
+    });
+    stampGroupChanges(prev, next); // record the link so it syncs
+    setChapterGroups(next);
   };
 
   const locateReference = (reference: string) => {
