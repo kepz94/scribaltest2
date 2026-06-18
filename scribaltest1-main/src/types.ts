@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export type MarkStyle = "bold" | "circle" | "underline" | "italic" | "highlight";
 export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-export type Tool = MarkStyle | "eraser";
+export type Tool = MarkStyle | "eraser" | "pointer";
 
 export interface Mark {
   id: string;
@@ -45,6 +45,7 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
   i: "italic",
   h: "highlight",
   e: "eraser",
+  p: "pointer",
 };
 
 export const COLOR_MAP: Record<MarkColor, string> = {
