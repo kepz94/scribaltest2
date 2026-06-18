@@ -1811,7 +1811,17 @@ export default function MobileApp() {
         .finally(() => setSyncBusy(false));
     }, 1500);
     return () => clearTimeout(t);
-  }, [marks, colorLabels, scopedLabels, notes, connected, cloudSignedIn]);
+  }, [
+    marks,
+    colorLabels,
+    scopedLabels,
+    notes,
+    chapterGroups,
+    studies,
+    searchStudies,
+    connected,
+    cloudSignedIn,
+  ]);
 
   // Auto-pull the other device's changes when the app opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
