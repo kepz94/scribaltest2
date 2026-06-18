@@ -15,7 +15,19 @@ export interface Study {
   // sync: on merge, the name from whichever device edited it most recently wins.
   // Optional for backward-compat; treated as compiledAt when absent.
   nameAt?: number;
+  // When the study was deleted. A study counts as deleted only while this is the
+  // most recent action on it (>= nameAt and compiledAt), so a later re-compile or
+  // rename naturally revives it. Carrying the tombstone in the record is what
+  // lets a delete on one device propagate to the other.
+  deletedAt?: number;
 }
+
+// A study is hidden iff its delete is its newest action (so re-compiling or
+// renaming after a delete brings it back).
+export const isStudyDeleted = (s: Study): boolean =>
+  !!s.deletedAt &&
+  s.deletedAt >= (s.nameAt || 0) &&
+  s.deletedAt >= (s.compiledAt || 0);
 
 const KEY = "scribal_studies_v1";
 
@@ -77,8 +89,12 @@ export function useStudies() {
     });
   };
 
+  // Soft-delete: tombstone the study (keep the record, stamped) so the deletion
+  // travels to other devices. It's filtered out of the returned list below.
   const deleteStudy = (id: string) =>
-    setStudies((prev) => prev.filter((s) => s.id !== id));
+    setStudies((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
+    );
 
   // Merge a remote studies snapshot (from another device's backup) into ours.
   //  - A study we've never seen (new id) is added.
@@ -113,12 +129,16 @@ export function useStudies() {
         const name = rNameAt > lNameAt ? r.name : local.name;
         const nameAt = Math.max(lNameAt, rNameAt);
         const compiledAt = Math.max(local.compiledAt || 0, r.compiledAt || 0);
+        const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
         if (
           name !== local.name ||
           nameAt !== (local.nameAt || 0) ||
-          compiledAt !== (local.compiledAt || 0)
+          compiledAt !== (local.compiledAt || 0) ||
+          deletedAt !== (local.deletedAt || 0)
         ) {
-          byId.set(r.id, { ...local, name, nameAt, compiledAt });
+          const merged: Study = { ...local, name, nameAt, compiledAt };
+          if (deletedAt) merged.deletedAt = deletedAt;
+          byId.set(r.id, merged);
           changed = true;
         }
       });
@@ -129,5 +149,15 @@ export function useStudies() {
     });
   };
 
-  return { studies, recordStudy, deleteStudy, setStudies, mergeRemote };
+  // Consumers see only live studies; the full list (with tombstones) is what's
+  // persisted and synced, so deletions still propagate between devices.
+  const visibleStudies = studies.filter((s) => !isStudyDeleted(s));
+
+  return {
+    studies: visibleStudies,
+    recordStudy,
+    deleteStudy,
+    setStudies,
+    mergeRemote,
+  };
 }
