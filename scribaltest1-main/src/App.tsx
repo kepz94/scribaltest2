@@ -2026,12 +2026,14 @@ export default function App() {
   // Prompt actions when a study for this scope already exists.
   const saveAddToExisting = () => {
     if (!saveStudyPrompt) return;
-    const { info } = saveStudyPrompt;
+    const { info, existing } = saveStudyPrompt;
     recordStudy(
       info.type,
       info.bookId,
       info.scopeRef,
-      compileName.trim() || info.defaultName
+      // Keep the name it already has unless the user typed a new one — never
+      // silently reset a named study back to the default.
+      compileName.trim() || existing.name
     );
     setSaveStudyPrompt(null);
     flashSaved();
