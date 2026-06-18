@@ -291,6 +291,9 @@ interface Study {
   name: string;
   scopeRef: string; // chapter title (chapter) or link-group id (linked)
   compiledAt: number;
+  // When the name was last set by the user (create or rename). Drives rename
+  // sync; treated as compiledAt when absent (older records).
+  nameAt?: number;
 }
 
 // ---- Shared inline icons (line style, matches the rest of the app) ----
@@ -573,20 +576,46 @@ export default function MobileApp() {
     } catch {}
   }, [studies]);
 
-  // Live-merge the study lists from a pulled cloud backup. ADDITIVE ONLY: add a
-  // study whose id we've never seen; never modify or replace one we already have.
-  // A sync can only ever ADD studies made on another device — it can never change
-  // a name or remove a local study.
+  // Live-merge the study lists from a pulled cloud backup.
+  //  - Recorded studies: add unseen ones; for a study both devices have, take the
+  //    NAME from whichever set it most recently (nameAt) and advance compiledAt.
+  //    A plain re-compile never moves nameAt, so it can't overwrite a rename.
+  //  - Keyword studies: additive (add unseen ones only).
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
     try {
       const r = JSON.parse(data["scribal_studies_v1"] || "[]");
       const remote: Study[] = Array.isArray(r) ? r : [];
       if (remote.length)
         setStudies((prev) => {
-          const have = new Set(prev.map((s) => s.id));
-          const additions = remote.filter((s) => s && s.id && !have.has(s.id));
-          if (!additions.length) return prev;
-          return [...prev, ...additions].sort(
+          const byId = new Map<string, Study>(prev.map((s) => [s.id, s]));
+          let changed = false;
+          remote.forEach((rs) => {
+            if (!rs || !rs.id) return;
+            const local = byId.get(rs.id);
+            if (!local) {
+              byId.set(rs.id, rs);
+              changed = true;
+              return;
+            }
+            const lNameAt = local.nameAt || local.compiledAt || 0;
+            const rNameAt = rs.nameAt || rs.compiledAt || 0;
+            const name = rNameAt > lNameAt ? rs.name : local.name;
+            const nameAt = Math.max(lNameAt, rNameAt);
+            const compiledAt = Math.max(
+              local.compiledAt || 0,
+              rs.compiledAt || 0
+            );
+            if (
+              name !== local.name ||
+              nameAt !== (local.nameAt || 0) ||
+              compiledAt !== (local.compiledAt || 0)
+            ) {
+              byId.set(rs.id, { ...local, name, nameAt, compiledAt });
+              changed = true;
+            }
+          });
+          if (!changed) return prev;
+          return Array.from(byId.values()).sort(
             (a, b) => (b.compiledAt || 0) - (a.compiledAt || 0)
           );
         });
@@ -1467,9 +1496,14 @@ export default function MobileApp() {
       );
       if (i >= 0) {
         const next = prev.slice();
+        const cur = next[i];
+        const nameChanged = rename && name !== cur.name;
         next[i] = {
-          ...next[i],
-          name: rename ? name : next[i].name,
+          ...cur,
+          name: rename ? name : cur.name,
+          // Move nameAt only on a genuine rename, so re-compiling never lets a
+          // stale name win a rename sync from another device.
+          nameAt: nameChanged ? now : cur.nameAt || cur.compiledAt || now,
           compiledAt: now,
         };
         return next;
@@ -1482,6 +1516,7 @@ export default function MobileApp() {
           name,
           scopeRef,
           compiledAt: now,
+          nameAt: now,
         },
         ...prev,
       ];
