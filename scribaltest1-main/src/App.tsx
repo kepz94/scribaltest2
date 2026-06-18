@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import "./desktop.css";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import VerseViewer from "./components/VerseViewer";
@@ -2241,6 +2242,7 @@ export default function App() {
       style={
         {
           ...theme,
+          "--hb": dark ? "1.18" : "0.95",
           minHeight: "100vh",
           backgroundColor: "var(--bg)",
           color: "var(--text)",
@@ -2393,6 +2395,7 @@ export default function App() {
       )}
       {linkPromptTabId && (
         <div
+          className="scribal-fade"
           onClick={() => setLinkPromptTabId(null)}
           style={{
             position: "fixed",
@@ -2406,6 +2409,7 @@ export default function App() {
           }}
         >
           <div
+            className="scribal-rise"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "var(--panel)",
@@ -3010,6 +3014,7 @@ export default function App() {
 
       {saveStudyPrompt && (
         <div
+          className="scribal-fade"
           onClick={() => setSaveStudyPrompt(null)}
           style={{
             position: "fixed",
@@ -3023,6 +3028,7 @@ export default function App() {
           }}
         >
           <div
+            className="scribal-rise"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "var(--panel)",
@@ -3116,6 +3122,7 @@ export default function App() {
 
       {compilePrompt && (
         <div
+          className="scribal-fade"
           onClick={() => setCompilePrompt(null)}
           style={{
             position: "fixed",
@@ -3129,6 +3136,7 @@ export default function App() {
           }}
         >
           <div
+            className="scribal-rise"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "var(--panel)",
@@ -3240,6 +3248,7 @@ export default function App() {
 
       {shareMsg && (
         <div
+          className="scribal-rise"
           style={{
             position: "fixed",
             bottom: "24px",
@@ -3268,6 +3277,7 @@ export default function App() {
 
       {studyDraftRefs && (
         <div
+          className="scribal-fade"
           onClick={() => setStudyDraftRefs(null)}
           style={{
             position: "fixed",
@@ -3281,6 +3291,7 @@ export default function App() {
           }}
         >
           <div
+            className="scribal-rise"
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
@@ -3494,6 +3505,7 @@ export default function App() {
                   style={{ position: "fixed", inset: 0, zIndex: 40 }}
                 />
                 <div
+                  className="scribal-pop"
                   style={{
                     position: "absolute",
                     top: "40px",
@@ -3827,6 +3839,7 @@ export default function App() {
                     style={{ position: "fixed", inset: 0, zIndex: 40 }}
                   />
                   <div
+                    className="scribal-pop"
                     style={{
                       position: "absolute",
                       top: "38px",
@@ -4118,6 +4131,7 @@ export default function App() {
                     style={{ position: "fixed", inset: 0, zIndex: 40 }}
                   />
                   <div
+                    className="scribal-pop"
                     style={{
                       position: "absolute",
                       top: "38px",
@@ -4330,6 +4344,7 @@ export default function App() {
                     style={{ position: "fixed", inset: 0, zIndex: 40 }}
                   />
                   <div
+                    className="scribal-pop"
                     style={{
                       position: "absolute",
                       top: "38px",
