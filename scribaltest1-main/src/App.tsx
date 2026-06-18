@@ -1655,7 +1655,7 @@ export default function App() {
     <button
       onClick={onClick}
       style={{
-        height: "32px",
+        height: "36px",
         padding: "0 18px",
         backgroundColor: primary ? "var(--text)" : "transparent",
         color: primary ? "var(--bg)" : "var(--text)",
@@ -1706,7 +1706,7 @@ export default function App() {
   );
 
   const pillStyle: React.CSSProperties = {
-    height: "32px",
+    height: "36px",
     padding: "0 14px",
     borderRadius: "999px",
     border: "1px solid var(--border)",
@@ -2792,7 +2792,7 @@ export default function App() {
               onClick={() => setBookMenuOpen((o) => !o)}
               title="Switch study book"
               style={{
-                height: "32px",
+                height: "36px",
                 padding: "0 14px",
                 borderRadius: "999px",
                 border: isMasterActive
@@ -3171,19 +3171,29 @@ export default function App() {
                 </span>
               );
             })()}
-            {roundUtil("?", () => setShowHelpMenu(true), "Walkthroughs & features")}
-            {roundUtil("🎨", () => setShowColorKey(true), "Color key")}
-            {roundUtil("⌨", () => setShowShortcuts(true), "Keyboard shortcuts")}
             {roundUtil("↶", undo, "Undo (Ctrl/Cmd+Z)", !canUndo)}
             {roundUtil("↷", redo, "Redo (Ctrl/Cmd+Shift+Z)", !canRedo)}
             <div style={{ position: "relative" }}>
               <button
                 onClick={() => setBackupOpen((o) => !o)}
-                title="Back up or restore your study"
-                style={pillStyle}
+                title="More — color key, shortcuts, walkthroughs, back up & restore"
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "transparent",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "20px",
+                  lineHeight: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
               >
-                Backup
-                <span style={{ fontSize: "9px" }}>▼</span>
+                ⋯
               </button>
               {backupOpen && (
                 <>
@@ -3196,7 +3206,7 @@ export default function App() {
                       position: "absolute",
                       top: "38px",
                       right: 0,
-                      width: "210px",
+                      width: "240px",
                       backgroundColor: "var(--panel)",
                       border: "1px solid var(--border)",
                       borderRadius: "12px",
@@ -3205,6 +3215,58 @@ export default function App() {
                       zIndex: 41,
                     }}
                   >
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setShowHelpMenu(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      ❔ Walkthroughs & features
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setShowColorKey(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      🎨 Color key
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setShowShortcuts(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      ⌨ Keyboard shortcuts
+                    </div>
+                    <div
+                      style={{
+                        height: "1px",
+                        backgroundColor: "var(--border)",
+                        margin: "6px 4px",
+                      }}
+                    />
                     <div
                       onClick={exportData}
                       style={{
