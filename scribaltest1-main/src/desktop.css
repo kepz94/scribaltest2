@@ -177,6 +177,23 @@ textarea:focus-visible {
   animation: scribalRise 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ----- Inline spinner (for the "Saving…" indicator) ----- */
+@keyframes scribalSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.scribal-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: scribalSpin 0.7s linear infinite;
+  opacity: 0.8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scribal-pop,
   .scribal-fade,
@@ -185,5 +202,11 @@ textarea:focus-visible {
   .scribal-fade-plain,
   .scribal-rise-plain {
     animation: none;
+  }
+  .scribal-spinner {
+    /* Show a static ring instead of spinning when motion is reduced. */
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.5;
   }
 }
