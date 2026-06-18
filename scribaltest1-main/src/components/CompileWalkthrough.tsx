@@ -156,7 +156,7 @@ export default function CompileWalkthrough({ onClose }: Props) {
                   style={{
                     height: "100%",
                     width: shown ? (c.n / max) * 100 + "%" : "0%",
-                    backgroundColor: "var(--pen5)",
+                    backgroundColor: "#8b5cf6",
                     borderRadius: "5px",
                     transition: `width 0.6s ${i * 140}ms`,
                   }}
