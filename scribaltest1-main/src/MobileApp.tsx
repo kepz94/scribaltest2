@@ -11,6 +11,7 @@ import {
 } from "./types";
 import MobileVerse from "./MobileVerse";
 import MobileCompile from "./MobileCompile";
+import ScribalMark from "./components/ScribalMark";
 import CompileAnimation from "./components/CompileAnimation";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
@@ -2932,6 +2933,15 @@ export default function MobileApp() {
         >
           {/* Masthead */}
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginBottom: "14px",
+              }}
+            >
+              <ScribalMark size={68} />
+            </div>
             <div
               style={{
                 fontFamily: '"Times New Roman", Times, serif',
