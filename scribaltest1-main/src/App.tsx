@@ -7,11 +7,11 @@ import CornellNotes from "./components/CornellNotes";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import ConceptMap from "./components/ConceptMap";
-import Vault from "./components/Vault";
 import PrintView from "./components/PrintView";
 import MapPrint from "./components/MapPrint";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
+import BooksVault, { VaultBook } from "./components/BooksVault";
 import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
 import { useStudies, Study } from "./hooks/useStudies";
 import Walkthrough from "./components/Walkthrough";
@@ -359,10 +359,6 @@ export default function App() {
 
   const {
     entries,
-    addEntry,
-    updateEntry,
-    renameEntry,
-    deleteEntry,
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
@@ -370,11 +366,13 @@ export default function App() {
     studies: searchStudies,
     addStudy,
     deleteStudy,
+    setStudies: setSearchStudies,
   } = useSearchStudies();
   const {
     studies: recordedStudies,
     recordStudy,
     deleteStudy: deleteRecordedStudy,
+    setStudies: setRecordedStudies,
   } = useStudies();
 
   // Restore a manual backup file into localStorage. (Drive sync uses the shared
@@ -559,9 +557,6 @@ export default function App() {
   const [editingColor, setEditingColor] = useState<MarkColor | null>(null);
   const [colorDraft, setColorDraft] = useState("");
 
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [saveName, setSaveName] = useState("");
-  const [savedFlash, setSavedFlash] = useState(false);
   const [sharingVerses, setSharingVerses] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [studiesOpen, setStudiesOpen] = useState(false);
@@ -1311,64 +1306,6 @@ export default function App() {
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
   );
 
-  const openSaveDialog = () => {
-    if (effectiveCompileTabs.length === 0) {
-      alert("Nothing to save yet.");
-      return;
-    }
-    const first = compileStudy
-      ? "📑 " + compileStudy.name
-      : effectiveCompileTabs[0]
-      ? tabLabel(effectiveCompileTabs[0])
-      : "";
-    const extra =
-      !compileStudy && effectiveCompileTabs.length > 1
-        ? " +" + (effectiveCompileTabs.length - 1)
-        : "";
-    setSaveName(VIEW_NAMES[compileView] + " — " + first + extra);
-    setShowSaveDialog(true);
-  };
-
-  const confirmSave = () => {
-    const selectedRefs = new Set<string>();
-    if (compileStudy && studyRefSet) {
-      studyRefSet.forEach((r) => selectedRefs.add(r));
-    } else {
-      compileTabs.forEach((t) => {
-        vols[t.volume].books[t.book].chapters[t.chapter].verses.forEach((v) =>
-          selectedRefs.add(v.reference)
-        );
-      });
-    }
-    const snapMarks = effectiveMarks.filter((m) =>
-      selectedRefs.has(m.reference)
-    );
-    const snapNotes: Record<string, string> = {};
-    Object.keys(notes).forEach((k) => {
-      const ref = k.split("|").pop();
-      if (ref && selectedRefs.has(ref)) snapNotes[k] = notes[k];
-    });
-
-    addEntry({
-      name: saveName.trim() || "Untitled note",
-      view: compileView,
-      bookName: activeBookName,
-      compileTabs: effectiveCompileTabs.map((t) => ({
-        id: t.id,
-        volume: t.volume,
-        book: t.book,
-        chapter: t.chapter,
-      })),
-      marks: snapMarks,
-      colorLabels: { ...effectiveScopedLabels },
-      notes: snapNotes,
-    });
-
-    setShowSaveDialog(false);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2200);
-  };
-
   // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
   // book and compile them fresh (live, from current marks).
   const openRecordedStudy = (s: Study) => {
@@ -1808,6 +1745,187 @@ export default function App() {
       {label}
     </button>
   );
+
+  // Build a row for every study (chapter, linked, keyword) with live counts and
+  // theme names. Shared by the Studies hub and the books Vault.
+  const buildStudyRows = (): StudyRow[] => {
+    const bookMarksOf = (bid: string) =>
+      allMarks.filter((m) => m.bookId === bid);
+    const bookLabel = (bid: string) =>
+      bid === "master"
+        ? ""
+        : books.find((b) => b.id === bid)?.name || "Session";
+    const fmtDate = (ms: number) =>
+      new Date(ms).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    const themesFor = (
+      bid: string,
+      repScope: string,
+      refOk: (ref: string) => boolean
+    ) => {
+      const bk = getBook(bid);
+      const scoped = bk.scopedLabels[resolveScope(repScope)];
+      const nameFor = (c: MarkColor) =>
+        scoped && c in scoped
+          ? (scoped[c] || "").trim()
+          : (bk.colorLabels[c] || "").trim();
+      const cols: number[] = [];
+      allMarks.forEach((m) => {
+        if (
+          m.bookId === bid &&
+          refOk(m.reference) &&
+          cols.indexOf(m.color) < 0
+        )
+          cols.push(m.color);
+      });
+      return cols
+        .sort((a, b) => a - b)
+        .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
+    };
+    const markWord = (n: number) => (n === 1 ? " mark" : " marks");
+    const withBook = (bl: string) => (bl ? " · " + bl : "");
+    const rows: StudyRow[] = [];
+
+    recordedStudies
+      .filter((s) => s.type === "chapter")
+      .forEach((s) => {
+        const refOk = (ref: string) => scopeOfRef(ref) === s.scopeRef;
+        const n = bookMarksOf(s.bookId).filter((m) =>
+          refOk(m.reference)
+        ).length;
+        rows.push({
+          id: s.id,
+          kind: "chapter",
+          bookId: s.bookId,
+          name: s.name,
+          meta:
+            n +
+            markWord(n) +
+            withBook(bookLabel(s.bookId)) +
+            " · " +
+            fmtDate(s.compiledAt),
+          themes: themesFor(s.bookId, s.scopeRef, refOk),
+          onOpen: () => openRecordedStudy(s),
+          onDelete: () => deleteRecordedStudy(s.id),
+        });
+      });
+
+    recordedStudies
+      .filter((s) => s.type === "linked")
+      .forEach((s) => {
+        const chs = Object.keys(chapterGroups).filter(
+          (c) => chapterGroups[c] === s.scopeRef
+        );
+        const refOk = (ref: string) => chs.includes(scopeOfRef(ref));
+        const n = bookMarksOf(s.bookId).filter((m) =>
+          refOk(m.reference)
+        ).length;
+        rows.push({
+          id: s.id,
+          kind: "linked",
+          bookId: s.bookId,
+          name: s.name,
+          meta:
+            n +
+            markWord(n) +
+            withBook(bookLabel(s.bookId)) +
+            " · " +
+            fmtDate(s.compiledAt),
+          themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
+          onOpen: () => openRecordedStudy(s),
+          onDelete: () => deleteRecordedStudy(s.id),
+        });
+      });
+
+    searchStudies.forEach((ss) => {
+      const refSet = new Set(ss.refs);
+      const refOk = (ref: string) => refSet.has(ref);
+      rows.push({
+        id: ss.id,
+        kind: "keyword",
+        bookId: ss.bookId,
+        name: ss.name,
+        meta:
+          ss.refs.length +
+          " verses" +
+          withBook(bookLabel(ss.bookId)) +
+          " · " +
+          fmtDate(ss.createdAt),
+        themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
+        onOpen: () => openStudyTab(ss),
+        onDelete: () => removeStudy(ss.id),
+      });
+    });
+
+    return rows;
+  };
+
+  // One-time: migrate old saved Vault snapshots into the live Studies list, so
+  // nothing is lost when the Vault becomes the session-books browser.
+  useEffect(() => {
+    if (localStorage.getItem("scribal_vault_migrated_v1")) return;
+    const recs: Study[] = [];
+    entries.forEach((e) => {
+      if (!e || e.deleted) return;
+      let type: "chapter" | "linked";
+      let scopeRef: string;
+      if (e.scopeKey) {
+        if (e.scopeKey.indexOf("searchstudy:") === 0) return;
+        type = e.scopeKey.indexOf("group:") === 0 ? "linked" : "chapter";
+        scopeRef =
+          type === "linked" ? e.scopeKey.slice("group:".length) : e.scopeKey;
+      } else if (e.compileTabs && e.compileTabs.length === 1) {
+        type = "chapter";
+        scopeRef = chapterScopeOf(e.compileTabs[0]);
+      } else {
+        return; // can't safely map a multi-chapter snapshot without a scope key
+      }
+      let bookId = "master";
+      if (e.bookName && e.bookName !== "Master Book") {
+        const bk = books.find((b) => b.name === e.bookName);
+        if (!bk) return; // book is gone — skip
+        bookId = bk.id;
+      }
+      recs.push({
+        id: "study_mig_" + e.id,
+        type,
+        bookId,
+        name: e.name || scopeRef,
+        scopeRef,
+        compiledAt: e.updatedAt || e.createdAt || Date.now(),
+      });
+    });
+    if (recs.length) {
+      setRecordedStudies((prev) => {
+        const have = new Set(
+          prev.map((s) => s.type + "|" + s.bookId + "|" + s.scopeRef)
+        );
+        const add = recs.filter(
+          (r) => !have.has(r.type + "|" + r.bookId + "|" + r.scopeRef)
+        );
+        return add.length ? [...add, ...prev] : prev;
+      });
+    }
+    try {
+      localStorage.setItem("scribal_vault_migrated_v1", "1");
+    } catch {}
+  }, [books, entries, setRecordedStudies]);
+
+  // Drop studies whose book no longer exists (any delete path).
+  useEffect(() => {
+    const ids = new Set(books.map((b) => b.id));
+    setRecordedStudies((prev) => {
+      const keep = prev.filter((s) => ids.has(s.bookId));
+      return keep.length === prev.length ? prev : keep;
+    });
+    setSearchStudies((prev) => {
+      const keep = prev.filter((ss) => ids.has(ss.bookId));
+      return keep.length === prev.length ? prev : keep;
+    });
+  }, [books, setRecordedStudies, setSearchStudies]);
 
   const sharedCompileProps = {
     tabs: compileStudy ? effectiveCompileTabs : tabs,
@@ -2260,122 +2378,12 @@ export default function App() {
         </div>
       )}
 
-      {studiesOpen &&
-        (() => {
-          const bookMarksOf = (bid: string) =>
-            allMarks.filter((m) => m.bookId === bid);
-          const bookLabel = (bid: string) =>
-            bid === "master"
-              ? ""
-              : books.find((b) => b.id === bid)?.name || "Session";
-          const fmtDate = (ms: number) =>
-            new Date(ms).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            });
-          // Distinct theme colors used, read from the study's OWN book so names
-          // are right even when a different book is active.
-          const themesFor = (
-            bid: string,
-            repScope: string,
-            refOk: (ref: string) => boolean
-          ) => {
-            const bk = getBook(bid);
-            const scoped = bk.scopedLabels[resolveScope(repScope)];
-            const nameFor = (c: MarkColor) =>
-              scoped && c in scoped
-                ? (scoped[c] || "").trim()
-                : (bk.colorLabels[c] || "").trim();
-            const cols: number[] = [];
-            allMarks.forEach((m) => {
-              if (
-                m.bookId === bid &&
-                refOk(m.reference) &&
-                cols.indexOf(m.color) < 0
-              )
-                cols.push(m.color);
-            });
-            return cols
-              .sort((a, b) => a - b)
-              .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
-          };
-          const markWord = (n: number) => (n === 1 ? " mark" : " marks");
-          const withBook = (bl: string) => (bl ? " · " + bl : "");
-          const rows: StudyRow[] = [];
-
-          recordedStudies
-            .filter((s) => s.type === "chapter")
-            .forEach((s) => {
-              const refOk = (ref: string) => scopeOfRef(ref) === s.scopeRef;
-              const n = bookMarksOf(s.bookId).filter((m) =>
-                refOk(m.reference)
-              ).length;
-              rows.push({
-                id: s.id,
-                kind: "chapter",
-                name: s.name,
-                meta:
-                  n +
-                  markWord(n) +
-                  withBook(bookLabel(s.bookId)) +
-                  " · " +
-                  fmtDate(s.compiledAt),
-                themes: themesFor(s.bookId, s.scopeRef, refOk),
-                onOpen: () => openRecordedStudy(s),
-                onDelete: () => deleteRecordedStudy(s.id),
-              });
-            });
-
-          recordedStudies
-            .filter((s) => s.type === "linked")
-            .forEach((s) => {
-              const chs = Object.keys(chapterGroups).filter(
-                (c) => chapterGroups[c] === s.scopeRef
-              );
-              const refOk = (ref: string) => chs.includes(scopeOfRef(ref));
-              const n = bookMarksOf(s.bookId).filter((m) =>
-                refOk(m.reference)
-              ).length;
-              rows.push({
-                id: s.id,
-                kind: "linked",
-                name: s.name,
-                meta:
-                  n +
-                  markWord(n) +
-                  withBook(bookLabel(s.bookId)) +
-                  " · " +
-                  fmtDate(s.compiledAt),
-                themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
-                onOpen: () => openRecordedStudy(s),
-                onDelete: () => deleteRecordedStudy(s.id),
-              });
-            });
-
-          searchStudies.forEach((ss) => {
-            const refSet = new Set(ss.refs);
-            const refOk = (ref: string) => refSet.has(ref);
-            rows.push({
-              id: ss.id,
-              kind: "keyword",
-              name: ss.name,
-              meta:
-                ss.refs.length +
-                " verses" +
-                withBook(bookLabel(ss.bookId)) +
-                " · " +
-                fmtDate(ss.createdAt),
-              themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-              onOpen: () => openStudyTab(ss),
-              onDelete: () => removeStudy(ss.id),
-            });
-          });
-
-          return (
-            <StudiesList rows={rows} onClose={() => setStudiesOpen(false)} />
-          );
-        })()}
+      {studiesOpen && (
+        <StudiesList
+          rows={buildStudyRows()}
+          onClose={() => setStudiesOpen(false)}
+        />
+      )}
 
       {studyDraftRefs && (
         <div
@@ -2500,107 +2508,6 @@ export default function App() {
             onClose={() => setPrintData(null)}
           />
         ))}
-
-      {showSaveDialog && (
-        <div
-          onMouseDown={() => setShowSaveDialog(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 140,
-            backgroundColor: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px",
-          }}
-        >
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: "420px",
-              backgroundColor: "var(--panel)",
-              borderRadius: "16px",
-              border: "1px solid var(--border)",
-              padding: "22px",
-              boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "11px",
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                marginBottom: "6px",
-              }}
-            >
-              Save to Vault
-            </div>
-            <h3 style={{ margin: "0 0 14px 0", fontWeight: 500 }}>
-              Name this {VIEW_NAMES[compileView]}
-            </h3>
-            <input
-              autoFocus
-              value={saveName}
-              onChange={(e) => setSaveName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmSave();
-              }}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                border: "1px solid var(--border)",
-                borderRadius: "10px",
-                padding: "11px 13px",
-                fontSize: "15px",
-                background: "var(--bg)",
-                color: "var(--text)",
-                outline: "none",
-                marginBottom: "16px",
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "10px",
-              }}
-            >
-              <button
-                onClick={() => setShowSaveDialog(false)}
-                style={{
-                  padding: "9px 18px",
-                  borderRadius: "999px",
-                  border: "1px solid var(--border)",
-                  background: "transparent",
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmSave}
-                style={{
-                  padding: "9px 20px",
-                  borderRadius: "999px",
-                  border: "none",
-                  background: "var(--text)",
-                  color: "var(--bg)",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <input
         ref={fileInputRef}
@@ -4084,21 +3991,6 @@ export default function App() {
             </div>
 
             <button
-              onClick={openSaveDialog}
-              style={{
-                padding: "9px 18px",
-                borderRadius: "999px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: "13.5px",
-              }}
-            >
-              ★ Save to Vault
-            </button>
-
-            <button
               onClick={handlePrintLive}
               style={{
                 padding: "9px 18px",
@@ -4127,12 +4019,6 @@ export default function App() {
             >
               ⤴ Share image
             </button>
-
-            {savedFlash && (
-              <span style={{ fontSize: "13px", color: "var(--pen4)" }}>
-                Saved ✓
-              </span>
-            )}
           </div>
 
           {compileView === "cornell" && (
@@ -4150,25 +4036,43 @@ export default function App() {
         </div>
       )}
 
-      {mode === "vault" && (
-        <Vault
-          entries={entries}
-          onUpdateEntry={updateEntry}
-          onRename={renameEntry}
-          onDelete={deleteEntry}
-          onJumpToReference={jumpToReference}
-          onPrint={(entry) =>
-            setPrintData({
-              view: entry.view as "cornell" | "outline" | "charting",
-              title: entry.name,
-              compileTabs: entry.compileTabs as Tab[],
-              marks: entry.marks,
-              colorLabels: entry.colorLabels,
-              notes: entry.notes,
-            })
-          }
-        />
-      )}
+      {mode === "vault" &&
+        (() => {
+          const all = buildStudyRows();
+          const vaultBooks: VaultBook[] = [...books]
+            .sort((a, b) =>
+              a.isMaster
+                ? -1
+                : b.isMaster
+                ? 1
+                : (b.lastStudiedAt || 0) - (a.lastStudiedAt || 0)
+            )
+            .map((b) => ({
+              id: b.id,
+              name: b.name,
+              isMaster: !!b.isMaster,
+              active: b.id === activeBookId,
+              rows: all.filter((r) => r.bookId === b.id),
+            }));
+          return (
+            <BooksVault
+              books={vaultBooks}
+              onSetActive={setActiveBook}
+              onNewSession={() => {
+                const id = createSession(
+                  "Session · " + fmtShortDate(Date.now())
+                );
+                setActiveBook(id);
+              }}
+              onRename={(id, name) => renameBook(id, name)}
+              onDelete={(id) => {
+                if (id === activeBookId) setActiveBook("master");
+                deleteBook(id);
+              }}
+              onClose={() => setMode("read")}
+            />
+          );
+        })()}
     </div>
   );
 }
