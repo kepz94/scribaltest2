@@ -463,12 +463,33 @@ export default function App() {
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
 
-  // Live-merge the study lists from a pulled cloud backup (recorded + keyword
-  // studies). Additive union by id, so syncing only ever ADDS studies made on
-  // another device — it can't delete or overwrite local ones.
+  // Live-merge from a pulled cloud backup: the study lists (recorded + keyword)
+  // and the chapter-link groups. All additive — syncing only ADDS studies/links
+  // made on another device; it never deletes or overwrites local ones.
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
     mergeRecordedRemote(data["scribal_studies_v1"]);
     mergeSearchRemote(data["scribal_search_studies"]);
+    // Chapter-link groups (which chapters compile together). Without these a
+    // linked study can't assemble on this device and its shared theme names
+    // (stored under a "group:<id>" scope) can't be found.
+    try {
+      const rg = JSON.parse(data["scribal_linked_chapters"] || "{}");
+      if (rg && typeof rg === "object" && !Array.isArray(rg)) {
+        setChapterGroups((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          Object.keys(rg).forEach((scope) => {
+            if (typeof rg[scope] === "string" && !(scope in next)) {
+              next[scope] = rg[scope];
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+      }
+    } catch {
+      /* ignore malformed link data */
+    }
   };
 
   // Restore a manual backup file into localStorage. (Drive sync uses the shared
@@ -4603,7 +4624,7 @@ export default function App() {
                       height="15"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke="#8b5cf6"
+                      stroke={active ? "#fff" : "#8b5cf6"}
                       strokeWidth={2.4}
                       strokeLinecap="round"
                       strokeLinejoin="round"
