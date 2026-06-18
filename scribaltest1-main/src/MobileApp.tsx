@@ -573,29 +573,20 @@ export default function MobileApp() {
     } catch {}
   }, [studies]);
 
-  // Live-merge the study lists from a pulled cloud backup. Additive union by id:
-  // recorded studies keep the newest compiledAt; keyword studies add remote-only
-  // ones. A sync can only ever ADD studies made on another device — never delete
-  // or overwrite a local one.
+  // Live-merge the study lists from a pulled cloud backup. ADDITIVE ONLY: add a
+  // study whose id we've never seen; never modify or replace one we already have.
+  // A sync can only ever ADD studies made on another device — it can never change
+  // a name or remove a local study.
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
     try {
       const r = JSON.parse(data["scribal_studies_v1"] || "[]");
       const remote: Study[] = Array.isArray(r) ? r : [];
       if (remote.length)
         setStudies((prev) => {
-          const byId = new Map<string, Study>();
-          prev.forEach((s) => byId.set(s.id, s));
-          let changed = false;
-          remote.forEach((s) => {
-            if (!s || !s.id) return;
-            const ex = byId.get(s.id);
-            if (!ex || (s.compiledAt || 0) > (ex.compiledAt || 0)) {
-              byId.set(s.id, s);
-              changed = true;
-            }
-          });
-          if (!changed) return prev;
-          return Array.from(byId.values()).sort(
+          const have = new Set(prev.map((s) => s.id));
+          const additions = remote.filter((s) => s && s.id && !have.has(s.id));
+          if (!additions.length) return prev;
+          return [...prev, ...additions].sort(
             (a, b) => (b.compiledAt || 0) - (a.compiledAt || 0)
           );
         });
