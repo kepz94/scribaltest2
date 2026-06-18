@@ -89,15 +89,61 @@ export default function StudiesList({ rows, onClose }: Props) {
           {rows.length === 0 && (
             <div
               style={{
-                color: "var(--muted)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
                 textAlign: "center",
-                padding: "34px 16px",
-                fontSize: "14px",
-                lineHeight: 1.6,
+                padding: "40px 16px",
+                gap: "11px",
               }}
             >
-              No studies yet. Compile a chapter or a linked group to record it
-              here, or bundle search results into a keyword study.
+              <div
+                style={{
+                  width: "52px",
+                  height: "52px",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "1px solid var(--border)",
+                  color: "var(--muted)",
+                  opacity: 0.8,
+                }}
+              >
+                <svg
+                  width="25"
+                  height="25"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3 3 8l9 5 9-5z" />
+                  <path d="M3 13l9 5 9-5" />
+                </svg>
+              </div>
+              <div
+                style={{
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  color: "var(--text)",
+                }}
+              >
+                No studies yet
+              </div>
+              <div
+                style={{
+                  color: "var(--muted)",
+                  fontSize: "13px",
+                  lineHeight: 1.6,
+                  maxWidth: "260px",
+                }}
+              >
+                Compile a chapter or a linked group to record it here, or bundle
+                search results into a keyword study.
+              </div>
             </div>
           )}
 
