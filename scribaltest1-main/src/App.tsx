@@ -2252,7 +2252,7 @@ export default function App() {
     >
       {gateOpen && (
         <div
-          className="scribal-fade"
+          className="scribal-fade-plain"
           style={{
             position: "fixed",
             inset: 0,
@@ -3251,13 +3251,13 @@ export default function App() {
 
       {shareMsg && (
         <div
-          className="scribal-rise"
+          className="scribal-rise-plain"
           style={{
             position: "fixed",
             bottom: "24px",
             left: "50%",
             transform: "translateX(-50%)",
-            zIndex: 500,
+            zIndex: 5000,
             background: "var(--text)",
             color: "var(--bg)",
             padding: "10px 18px",
