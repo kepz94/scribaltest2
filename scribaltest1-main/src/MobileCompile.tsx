@@ -1,4 +1,4 @@
-import { useState, CSSProperties } from "react";
+import { useState, useRef, CSSProperties } from "react";
 import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
@@ -87,6 +87,22 @@ export default function MobileCompile({
   const [editNote, setEditNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
+  // Hide the header + toggles while reading down through verses (and bring
+  // them back when scrolling up), so a long study isn't half-covered by chrome.
+  const [headHidden, setHeadHidden] = useState(false);
+  const lastY = useRef(0);
+  const onScroll = (y: number) => {
+    if (y > lastY.current + 6 && y > 40) setHeadHidden(true);
+    else if (y < lastY.current - 6) setHeadHidden(false);
+    lastY.current = y;
+  };
+  const collapse = (hidden: boolean, max: number): CSSProperties => ({
+    maxHeight: hidden ? 0 : max,
+    opacity: hidden ? 0 : 1,
+    overflow: "hidden",
+    transition: "max-height 0.3s ease, opacity 0.2s ease",
+    flexShrink: 0,
+  });
   // Which theme cards are expanded in the share picker (collapsed by default,
   // so themes are the headline and verses are a tap away).
   const [pickOpen, setPickOpen] = useState<string[]>([]);
@@ -394,13 +410,23 @@ export default function MobileCompile({
         animation: "mob-fadein 0.2s ease",
       }}
     >
-      {/* header */}
+      {/* permanent notch strip — content never hides under the status bar */}
+      <div
+        style={{
+          height: "env(safe-area-inset-top)",
+          flexShrink: 0,
+          backgroundColor: C.bg,
+        }}
+      />
+
+      {/* header (collapses on scroll-down) */}
+      <div style={collapse(headHidden, 500)}>
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           gap: "12px",
-          padding: "calc(12px + env(safe-area-inset-top)) 14px 12px",
+          padding: "12px 14px 12px",
           borderBottom: "1px solid " + C.border,
         }}
       >
@@ -495,6 +521,7 @@ export default function MobileCompile({
           </div>
         )}
       </div>
+      </div>
 
       {liveMarks.length === 0 ? (
         <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
@@ -503,7 +530,8 @@ export default function MobileCompile({
         </div>
       ) : (
         <>
-          {/* view + sort toggles */}
+          {/* view + sort toggles (collapse with the header) */}
+          <div style={collapse(headHidden, 200)}>
           <div
             style={{
               padding: "12px 16px 4px",
@@ -537,9 +565,11 @@ export default function MobileCompile({
               {seg(sortMode === "points", "By points", () => setSortMode("points"))}
             </div>
           </div>
+          </div>
 
           {/* categories */}
           <div
+            onScroll={(e) => onScroll((e.target as HTMLDivElement).scrollTop)}
             style={{
               flex: 1,
               overflowY: "auto",
