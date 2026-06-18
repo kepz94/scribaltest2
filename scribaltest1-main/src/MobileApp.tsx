@@ -2871,8 +2871,12 @@ export default function MobileApp() {
               <select
                 value={pickV}
                 onChange={(e) => {
-                  setPickV(Number(e.target.value));
-                  setPickB(-1);
+                  const v = Number(e.target.value);
+                  setPickV(v);
+                  // D&C (any single-book volume) has no book to pick — auto-pick
+                  // its one book, leaving just volume + section.
+                  const single = v >= 0 && vols[v].books.length === 1;
+                  setPickB(single ? 0 : -1);
                   setPickC(-1);
                 }}
                 style={{
@@ -2894,33 +2898,33 @@ export default function MobileApp() {
                   </option>
                 ))}
               </select>
-              <select
-                value={pickB}
-                disabled={pickV < 0}
-                onChange={(e) => {
-                  setPickB(Number(e.target.value));
-                  setPickC(-1);
-                }}
-                style={{
-                  boxSizing: "border-box",
-                  width: "100%",
-                  padding: "11px 10px",
-                  borderRadius: "10px",
-                  border: "1px solid " + C.border,
-                  background: C.soft,
-                  color: C.text,
-                  fontSize: "16px",
-                  fontFamily: "inherit",
-                  opacity: pickV < 0 ? 0.5 : 1,
-                }}
-              >
-                <option value={-1}>Choose a book…</option>
-                {(pickVol ? pickVol.books : []).map((bk, b) => (
-                  <option key={b} value={b}>
-                    {bk.book}
-                  </option>
-                ))}
-              </select>
+              {pickVol && pickVol.books.length > 1 && (
+                <select
+                  value={pickB}
+                  onChange={(e) => {
+                    setPickB(Number(e.target.value));
+                    setPickC(-1);
+                  }}
+                  style={{
+                    boxSizing: "border-box",
+                    width: "100%",
+                    padding: "11px 10px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    fontSize: "16px",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <option value={-1}>Choose a book…</option>
+                  {pickVol.books.map((bk, b) => (
+                    <option key={b} value={b}>
+                      {bk.book}
+                    </option>
+                  ))}
+                </select>
+              )}
               <select
                 value={pickC}
                 disabled={pickB < 0}
@@ -2938,7 +2942,11 @@ export default function MobileApp() {
                   opacity: pickB < 0 ? 0.5 : 1,
                 }}
               >
-                <option value={-1}>Choose a chapter…</option>
+                <option value={-1}>
+                  {pickVol && pickVol.books.length === 1
+                    ? "Choose a section…"
+                    : "Choose a chapter…"}
+                </option>
                 {pickChapters.map((ch, c) => (
                   <option key={c} value={c}>
                     {ch.chapter}
