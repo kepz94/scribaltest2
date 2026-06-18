@@ -1890,7 +1890,6 @@ export default function MobileApp() {
 
   // Push local changes to Firebase (debounced inside cloudSync; only acts when
   // signed in). This is the live counterpart to the Drive auto-save below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     noteLocalChange();
   }, syncData);
@@ -1927,7 +1926,6 @@ export default function MobileApp() {
         .finally(() => setSyncBusy(false));
     }, 1500);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...syncData, connected, cloudSignedIn]);
 
   // Auto-pull the other device's changes when the app opens or regains focus.
