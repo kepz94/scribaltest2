@@ -22,6 +22,17 @@ interface VerseViewerProps {
     color: MarkColor
   ) => void;
   onEraseMark: (markId: string) => void;
+  onMarkMany: (
+    items: {
+      reference: string;
+      verseText: string;
+      markedText: string;
+      startIndex: number;
+      endIndex: number;
+      style: MarkStyle;
+      color: MarkColor;
+    }[]
+  ) => void;
   marks: Mark[];
   showToolbar?: boolean;
   toolbarPos: { x: number; y: number };
@@ -45,6 +56,15 @@ interface VerseViewerProps {
 }
 
 type Orientation = "vertical" | "horizontal";
+
+type AppliedRange = {
+  reference: string;
+  verseText: string;
+  markedText: string;
+  startIndex: number;
+  endIndex: number;
+};
+
 const vols = scriptures.volumes;
 
 // Every verse reference -> number, text, and chapter title. Study tabs render
@@ -78,8 +98,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     selectedColor,
     onChangeTool,
     onChangeColor,
-    onMark,
     onEraseMark,
+    onMarkMany,
     marks,
     showToolbar = true,
     panelMode = false,
@@ -224,6 +244,61 @@ export default function VerseViewer(props: VerseViewerProps) {
   const clampY = (y: number, h: number) =>
     Math.max(56, Math.min(y, window.innerHeight - h - TB_GAP));
 
+  // Walk every verse the selection touches and return the covered character
+  // range within each — so a selection that crosses verses marks all of them.
+  const computeRanges = (range: Range): AppliedRange[] => {
+    const body = bodyRef.current;
+    const out: AppliedRange[] = [];
+    if (!body) return out;
+    const els = Array.from(body.querySelectorAll("[data-verse-ref]"));
+    els.forEach((el) => {
+      if (typeof range.intersectsNode !== "function" || !range.intersectsNode(el))
+        return;
+      const reference = el.getAttribute("data-verse-ref");
+      if (!reference) return;
+      const verse = studyRefs
+        ? verseByRef.get(reference)
+        : currentChapter?.verses.find((v) => v.reference === reference);
+      if (!verse) return;
+      const textSpan = el.querySelector("[data-verse-text]");
+      if (!textSpan) return;
+      let startIndex = 0;
+      let endIndex = verse.text.length;
+      if (textSpan.contains(range.startContainer)) {
+        const r = document.createRange();
+        r.selectNodeContents(textSpan);
+        try {
+          r.setEnd(range.startContainer, range.startOffset);
+        } catch {
+          return;
+        }
+        startIndex = r.toString().length;
+      }
+      if (textSpan.contains(range.endContainer)) {
+        const r = document.createRange();
+        r.selectNodeContents(textSpan);
+        try {
+          r.setEnd(range.endContainer, range.endOffset);
+        } catch {
+          return;
+        }
+        endIndex = r.toString().length;
+      }
+      startIndex = Math.max(0, Math.min(startIndex, verse.text.length));
+      endIndex = Math.max(0, Math.min(endIndex, verse.text.length));
+      if (endIndex > startIndex) {
+        out.push({
+          reference,
+          verseText: verse.text,
+          markedText: verse.text.slice(startIndex, endIndex),
+          startIndex,
+          endIndex,
+        });
+      }
+    });
+    return out;
+  };
+
   useEffect(() => {
     if (!jumpTarget) return;
     const tryScroll = () => {
@@ -332,49 +407,28 @@ export default function VerseViewer(props: VerseViewerProps) {
   };
 
   const handleMouseUp = () => {
-    if (erasing || dragging) return;
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-    const selectedText = selection.toString();
-    if (!selectedText.trim()) return;
-
-    let node: Node | null = selection.anchorNode;
-    while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode;
-    let el = node as HTMLElement | null;
-    while (el && !el.getAttribute("data-verse-ref")) el = el.parentElement;
-    if (!el) return;
-
-    const reference = el.getAttribute("data-verse-ref");
-    if (!reference) return;
-    const verse = studyRefs
-      ? verseByRef.get(reference)
-      : currentChapter?.verses.find((v) => v.reference === reference);
-    if (!verse) return;
-    const textSpan = el.querySelector("[data-verse-text]");
-    if (!textSpan) return;
-
-    const range = selection.getRangeAt(0);
-    const preRange = range.cloneRange();
-    preRange.selectNodeContents(textSpan);
-    preRange.setEnd(range.startContainer, range.startOffset);
-    const startIndex = preRange.toString().length;
-    const endIndex = Math.min(
-      startIndex + selectedText.length,
-      verse.text.length
-    );
-    if (startIndex >= endIndex) return;
-
-    const markedText = verse.text.slice(startIndex, endIndex);
-    onMark(
-      reference,
-      verse.text,
-      markedText,
-      startIndex,
-      endIndex,
-      selectedTool as MarkStyle,
-      selectedColor
-    );
-    selection.removeAllRanges();
+    // Pointer tool (and eraser) leave the selection alone, so you can read and
+    // copy without marking. A pen tool marks instantly — one motion, done.
+    if (selectedTool === "pointer" || erasing || dragging) return;
+    try {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+      if (!selection.toString().trim()) return;
+      const range = selection.getRangeAt(0);
+      const ranges = computeRanges(range);
+      if (ranges.length) {
+        onMarkMany(
+          ranges.map((r) => ({
+            ...r,
+            style: selectedTool as MarkStyle,
+            color: selectedColor,
+          }))
+        );
+        selection.removeAllRanges();
+      }
+    } catch {
+      /* selection geometry unavailable — leave the selection as-is */
+    }
   };
 
   const isV = orientation === "vertical";
@@ -623,6 +677,14 @@ export default function VerseViewer(props: VerseViewerProps) {
         >
           {isV ? "⋮⋮" : "⠿"}
         </div>
+        {divider}
+        {toolButton(
+          "pointer",
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 4l7.07 17 2.51-7.39L21 11.07z" />
+          </svg>,
+          "p"
+        )}
         {divider}
         {toolButton("bold", <b>B</b>, "b")}
         {toolButton(
@@ -895,7 +957,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             fontFamily: "system-ui, sans-serif",
           }}
         >
-          Shortcuts: 1–7 colors · B C U I H styles · E eraser
+          Shortcuts: 1–7 colors · B C U I H styles · E erase · P select
         </p>
       </div>
 
