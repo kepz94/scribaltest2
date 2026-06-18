@@ -527,6 +527,7 @@ export default function DesktopFeatureGuide({ onClose }: Props) {
 
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -540,6 +541,7 @@ export default function DesktopFeatureGuide({ onClose }: Props) {
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: "var(--panel)",
