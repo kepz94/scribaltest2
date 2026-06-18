@@ -38,12 +38,35 @@ interface VerseViewerProps {
   warm?: boolean;
   dark?: boolean;
   sidebarOpen?: boolean;
+  studyRefs?: string[];
+  studyTitle?: string;
   jumpTarget: string | null;
   onJumpHandled: () => void;
 }
 
 type Orientation = "vertical" | "horizontal";
 const vols = scriptures.volumes;
+
+// Every verse reference -> number, text, and chapter title. Study tabs render
+// hand-picked verses that span many chapters, so they look these up here.
+const verseByRef = new Map<
+  string,
+  { verse: number; text: string; chapterTitle: string }
+>();
+vols.forEach((v) =>
+  v.books.forEach((b) =>
+    b.chapters.forEach((c) => {
+      const ct = b.book + " " + c.chapter;
+      c.verses.forEach((ve) =>
+        verseByRef.set(ve.reference, {
+          verse: ve.verse,
+          text: ve.text,
+          chapterTitle: ct,
+        })
+      );
+    })
+  )
+);
 
 export default function VerseViewer(props: VerseViewerProps) {
   const {
@@ -65,6 +88,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     warm = false,
     dark = false,
     sidebarOpen = false,
+    studyRefs,
+    studyTitle,
     jumpTarget,
     onJumpHandled,
     toolbarPos: pos,
@@ -253,7 +278,9 @@ export default function VerseViewer(props: VerseViewerProps) {
 
     const reference = el.getAttribute("data-verse-ref");
     if (!reference) return;
-    const verse = currentChapter?.verses.find((v) => v.reference === reference);
+    const verse = studyRefs
+      ? verseByRef.get(reference)
+      : currentChapter?.verses.find((v) => v.reference === reference);
     if (!verse) return;
     const textSpan = el.querySelector("[data-verse-text]");
     if (!textSpan) return;
@@ -417,6 +444,59 @@ export default function VerseViewer(props: VerseViewerProps) {
     </div>
   );
 
+  // Study tabs render their verses with a heading whenever the chapter
+  // changes, so cross-chapter sets stay readable.
+  const studyBody = (studyRefs || [])
+    .filter((r) => verseByRef.has(r))
+    .reduce<{ chapterTitle: string; refs: string[] }[]>((groups, r) => {
+      const ct = verseByRef.get(r)!.chapterTitle;
+      const last = groups[groups.length - 1];
+      if (last && last.chapterTitle === ct) last.refs.push(r);
+      else groups.push({ chapterTitle: ct, refs: [r] });
+      return groups;
+    }, [])
+    .map((g) => (
+      <div key={g.chapterTitle}>
+        <div
+          style={{
+            fontSize: "12px",
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            fontFamily: "system-ui, sans-serif",
+            margin: "18px 0 10px",
+          }}
+        >
+          {g.chapterTitle}
+        </div>
+        {g.refs.map((r) => {
+          const info = verseByRef.get(r)!;
+          return (
+            <div
+              key={r}
+              style={{
+                borderRadius: "6px",
+                transition: "background-color 0.6s",
+                backgroundColor:
+                  flashRef === r ? "var(--soft)" : "transparent",
+                margin: "0 -8px",
+                padding: "0 8px",
+              }}
+            >
+              <MarkedVerse
+                reference={r}
+                verseNumber={info.verse}
+                text={info.text}
+                marks={marks}
+                onEraseMark={erasing ? onEraseMark : undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
+    ));
+
   return (
     <div style={{ position: "relative" }}>
       {showToolbar && (
@@ -569,6 +649,20 @@ export default function VerseViewer(props: VerseViewerProps) {
           margin: "0 auto",
         }}
       >
+        {studyRefs ? (
+          <div style={{ marginBottom: "18px", textAlign: "center" }}>
+            <span
+              style={{
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "var(--muted)",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              📑 {studyTitle || "Study"}
+            </span>
+          </div>
+        ) : (
         <div
           style={{
             display: "flex",
@@ -645,6 +739,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               )}
           </div>
         </div>
+        )}
 
         {erasing && (
           <p
@@ -674,7 +769,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             transition: "background-color 0.25s, color 0.25s",
           }}
         >
-          {currentChapter?.verses.map((verse) => (
+          {studyRefs ? studyBody : currentChapter?.verses.map((verse) => (
             <div
               key={verse.reference}
               style={{
@@ -712,7 +807,7 @@ export default function VerseViewer(props: VerseViewerProps) {
 
       {/* Floating chapter arrows — pinned beside the text so you never scroll
           up to the dropdown. Single-pane reading only. */}
-      {!panelMode && panelBox && !atStart && (
+      {!panelMode && !studyRefs && panelBox && !atStart && (
         <button
           onClick={() => stepChapter(-1)}
           title="Previous chapter"
@@ -722,7 +817,7 @@ export default function VerseViewer(props: VerseViewerProps) {
           ‹
         </button>
       )}
-      {!panelMode && panelBox && !atEnd && (
+      {!panelMode && !studyRefs && panelBox && !atEnd && (
         <button
           onClick={() => stepChapter(1)}
           title="Next chapter"
