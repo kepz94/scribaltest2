@@ -9,6 +9,11 @@ export interface SearchStudy {
   bookId: string; // "master" or a session book id — which book holds the marks
   refs: string[]; // verse references, kept in scripture order
   createdAt: number;
+  // Last time the user changed this study's content (renamed it, or edited its
+  // verse set). Drives two-way sync: on merge, the name + refs from whichever
+  // device edited most recently win. Optional for back-compat (treated as
+  // createdAt when absent).
+  updatedAt?: number;
 }
 
 // Same key the mobile app uses, so the two stay in sync through the shared
@@ -41,6 +46,7 @@ export function useSearchStudies() {
         bookId,
         refs,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
       setStudies((prev) => [study, ...prev]);
       return study;
@@ -50,13 +56,19 @@ export function useSearchStudies() {
 
   const updateStudy = useCallback((id: string, partial: Partial<SearchStudy>) => {
     setStudies((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...partial } : s))
+      prev.map((s) =>
+        s.id === id ? { ...s, ...partial, updatedAt: Date.now() } : s
+      )
     );
   }, []);
 
   const renameStudy = useCallback((id: string, name: string) => {
     setStudies((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, name: name.trim() || s.name } : s))
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, name: name.trim() || s.name, updatedAt: Date.now() }
+          : s
+      )
     );
   }, []);
 
@@ -64,9 +76,13 @@ export function useSearchStudies() {
     setStudies((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  // Merge a remote keyword-studies snapshot into ours: add any study the other
-  // device has that we don't (matched by id). Additive only — a local study (or
-  // a local rename) is never overwritten or removed by a sync.
+  // Merge a remote keyword-studies snapshot into ours:
+  //  - A study we've never seen (new id) is added.
+  //  - A study we both have: its name + verse set are taken from whichever device
+  //    edited it most recently (updatedAt). A local study is otherwise untouched.
+  // This gives two-way rename + verse-edit sync. Deletions are NOT propagated (a
+  // study removed on one device can reappear from the other) — deliberate, so a
+  // sync can never silently lose a saved study.
   const mergeRemote = useCallback((raw: string | null | undefined) => {
     if (!raw) return;
     let remote: SearchStudy[];
@@ -78,10 +94,30 @@ export function useSearchStudies() {
     }
     if (!remote.length) return;
     setStudies((prev) => {
-      const have = new Set(prev.map((s) => s.id));
-      const additions = remote.filter((s) => s && s.id && !have.has(s.id));
-      if (!additions.length) return prev; // idempotent
-      return [...prev, ...additions].sort(
+      const byId = new Map<string, SearchStudy>(prev.map((s) => [s.id, s]));
+      let changed = false;
+      remote.forEach((r) => {
+        if (!r || !r.id) return;
+        const local = byId.get(r.id);
+        if (!local) {
+          byId.set(r.id, r);
+          changed = true;
+          return;
+        }
+        const lAt = local.updatedAt || local.createdAt || 0;
+        const rAt = r.updatedAt || r.createdAt || 0;
+        if (rAt > lAt) {
+          byId.set(r.id, {
+            ...local,
+            name: r.name,
+            refs: r.refs,
+            updatedAt: rAt,
+          });
+          changed = true;
+        }
+      });
+      if (!changed) return prev; // idempotent
+      return Array.from(byId.values()).sort(
         (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
       );
     });
