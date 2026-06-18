@@ -23,6 +23,7 @@ const WALKS: { key: HelpPick; label: string; desc: string }[] = [
 export default function HelpMenu({ onPick, onFeatureList, onClose }: Props) {
   return (
     <div
+      className="scribal-fade"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -36,6 +37,7 @@ export default function HelpMenu({ onPick, onFeatureList, onClose }: Props) {
       }}
     >
       <div
+        className="scribal-rise"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: "var(--panel)",
