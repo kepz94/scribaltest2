@@ -36,6 +36,14 @@ select {
   select:hover {
     filter: brightness(var(--hb, 0.96));
   }
+  /* Many interactive elements (menu items, study/book rows, the color-name
+     chips in the legend) are clickable <div>/<span>s, not <button>s — but
+     they're all styled inline with cursor:pointer, so this reaches them and
+     gives the same gentle background highlight on hover. */
+  [style*="cursor: pointer"]:hover,
+  [style*="cursor:pointer"]:hover {
+    box-shadow: inset 0 0 0 999px rgba(127, 127, 127, 0.08);
+  }
 }
 
 /* A small press affordance. */
