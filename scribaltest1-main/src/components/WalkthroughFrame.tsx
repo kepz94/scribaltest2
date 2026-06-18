@@ -116,8 +116,8 @@ export default function WalkthroughFrame({
               <button
                 onClick={onNext}
                 style={{
-                  backgroundColor: "var(--text)",
-                  color: "var(--bg)",
+                  backgroundColor: "#8b5cf6",
+                  color: "#fff",
                   border: "none",
                   borderRadius: "9px",
                   padding: "10px 22px",
