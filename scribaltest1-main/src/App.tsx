@@ -415,6 +415,7 @@ export default function App() {
     marks,
     addMark,
     deleteMark,
+    addMarks,
     deleteMarkGroup,
     clearMarks,
     undo,
@@ -4815,6 +4816,7 @@ export default function App() {
                     onChangeColor={setSelectedColor}
                     onMark={addMark}
                     onEraseMark={deleteMark}
+                    onMarkMany={addMarks}
                     marks={getBook(t.bookId).marks}
                     showToolbar={isActive}
                     toolbarPos={toolbarPos}
