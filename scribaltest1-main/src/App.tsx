@@ -5113,18 +5113,20 @@ export default function App() {
             </div>
           </div>
 
-          {compileView === "cornell" && (
-            <CornellNotes
-              {...sharedCompileProps}
-              notes={notes}
-              setNote={setNote}
-            />
-          )}
-          {compileView === "outline" && (
-            <Outline {...sharedCompileProps} notes={notes} setNote={setNote} />
-          )}
-          {compileView === "charting" && <Charting {...sharedCompileProps} />}
-          {compileView === "map" && <ConceptMap {...sharedCompileProps} />}
+          <div className="scribal-swap" key={compileView}>
+            {compileView === "cornell" && (
+              <CornellNotes
+                {...sharedCompileProps}
+                notes={notes}
+                setNote={setNote}
+              />
+            )}
+            {compileView === "outline" && (
+              <Outline {...sharedCompileProps} notes={notes} setNote={setNote} />
+            )}
+            {compileView === "charting" && <Charting {...sharedCompileProps} />}
+            {compileView === "map" && <ConceptMap {...sharedCompileProps} />}
+          </div>
         </div>
       )}
 
