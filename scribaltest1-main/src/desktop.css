@@ -137,6 +137,12 @@ textarea:focus-visible {
   animation: scribalPop 0.16s ease-out;
   transform-origin: top;
 }
+/* Content that swaps in place (compile views, a chapter's verses) — fade it
+   in on change. Opacity-only on purpose, so it never disturbs sticky/fixed
+   descendants the way a transform would. */
+.scribal-swap {
+  animation: scribalFade 0.22s ease;
+}
 /* Backdrops: gently fade the dimmer in. */
 .scribal-fade {
   animation: scribalFade 0.16s ease-out;
@@ -175,6 +181,7 @@ textarea:focus-visible {
   .scribal-pop,
   .scribal-fade,
   .scribal-rise,
+  .scribal-swap,
   .scribal-fade-plain,
   .scribal-rise-plain {
     animation: none;
