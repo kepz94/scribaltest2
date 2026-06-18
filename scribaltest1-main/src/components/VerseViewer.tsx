@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import { Mark, MarkStyle, MarkColor, Tool, COLORS, COLOR_MAP } from "../types";
@@ -208,7 +208,21 @@ export default function VerseViewer(props: VerseViewerProps) {
   const [flashRef, setFlashRef] = useState<string | null>(null);
 
   const [dragging, setDragging] = useState(false);
+  const [dockHint, setDockHint] = useState<"left" | "right" | "top" | null>(
+    null
+  );
   const dragOffset = useRef({ x: 0, y: 0 });
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  // After a drop flips orientation, the toolbar's measured size changes; this
+  // records which edge to re-pin flush against once the new size is laid out.
+  const rePin = useRef<"left" | "right" | "top" | null>(null);
+
+  const TB_GAP = 12; // gap from the viewport edge when docked
+  const TOP_DOCK_Y = 110; // y when docked along the top
+  const clampX = (x: number, w: number) =>
+    Math.max(TB_GAP, Math.min(x, window.innerWidth - w - TB_GAP));
+  const clampY = (y: number, h: number) =>
+    Math.max(56, Math.min(y, window.innerHeight - h - TB_GAP));
 
   useEffect(() => {
     if (!jumpTarget) return;
@@ -230,24 +244,46 @@ export default function VerseViewer(props: VerseViewerProps) {
   useEffect(() => {
     if (!dragging) return;
     const onMove = (e: MouseEvent) => {
-      let x = e.clientX - dragOffset.current.x;
-      let y = e.clientY - dragOffset.current.y;
-      x = Math.max(0, Math.min(x, window.innerWidth - 80));
-      y = Math.max(56, Math.min(y, window.innerHeight - 80));
+      const el = toolbarRef.current;
+      const w = el ? el.offsetWidth : 56;
+      const h = el ? el.offsetHeight : 56;
+      const x = clampX(e.clientX - dragOffset.current.x, w);
+      const y = clampY(e.clientY - dragOffset.current.y, h);
       setPos({ x, y });
+      // Show which edge it will dock to on release.
+      const dLeft = x;
+      const dRight = window.innerWidth - (x + w);
+      const dTop = y - 56;
+      const nearest = Math.min(dLeft, dRight, dTop);
+      setDockHint(nearest === dTop ? "top" : dLeft <= dRight ? "left" : "right");
     };
     const onUp = () => {
       setDragging(false);
+      setDockHint(null);
+      const el = toolbarRef.current;
+      const w = el ? el.offsetWidth : 56;
+      const h = el ? el.offsetHeight : 56;
       setPos((p) => {
-        let { x, y } = p;
-        if (x < 40) {
-          x = 12;
-          setOrientation("vertical");
-        } else if (y < 120) {
-          y = 110;
+        const dLeft = p.x;
+        const dRight = window.innerWidth - (p.x + w);
+        const dTop = p.y - 56;
+        const nearest = Math.min(dLeft, dRight, dTop);
+        if (nearest === dTop) {
+          rePin.current = "top";
           setOrientation("horizontal");
+          return { x: clampX(p.x, w), y: TOP_DOCK_Y };
         }
-        return { x, y };
+        if (dLeft <= dRight) {
+          rePin.current = "left";
+          setOrientation("vertical");
+          return { x: TB_GAP, y: clampY(p.y, h) };
+        }
+        rePin.current = "right";
+        setOrientation("vertical");
+        return {
+          x: Math.max(TB_GAP, window.innerWidth - w - TB_GAP),
+          y: clampY(p.y, h),
+        };
       });
     };
     window.addEventListener("mousemove", onMove);
@@ -257,6 +293,38 @@ export default function VerseViewer(props: VerseViewerProps) {
       window.removeEventListener("mouseup", onUp);
     };
   }, [dragging]);
+
+  // After a dock flips orientation, the measured size is new — re-pin the
+  // toolbar flush against the chosen edge so right-docking stays exact.
+  useLayoutEffect(() => {
+    const side = rePin.current;
+    if (!side) return;
+    rePin.current = null;
+    const el = toolbarRef.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    setPos((p) => {
+      let { x, y } = p;
+      if (side === "left") x = TB_GAP;
+      else if (side === "right")
+        x = Math.max(TB_GAP, window.innerWidth - w - TB_GAP);
+      else if (side === "top") y = TOP_DOCK_Y;
+      return { x: clampX(x, w), y: clampY(y, h) };
+    });
+  }, [orientation]);
+
+  // Keep the toolbar on-screen when the window is resized.
+  useEffect(() => {
+    const onResize = () => {
+      const el = toolbarRef.current;
+      const w = el ? el.offsetWidth : 56;
+      const h = el ? el.offsetHeight : 56;
+      setPos((p) => ({ x: clampX(p.x, w), y: clampY(p.y, h) }));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const startDrag = (e: React.MouseEvent) => {
     dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
@@ -499,8 +567,27 @@ export default function VerseViewer(props: VerseViewerProps) {
 
   return (
     <div style={{ position: "relative" }}>
+      {showToolbar && dragging && dockHint && (
+        <div
+          style={{
+            position: "fixed",
+            zIndex: 49,
+            pointerEvents: "none",
+            background: "#8b5cf6",
+            opacity: 0.55,
+            boxShadow: "0 0 14px rgba(139,92,246,0.7)",
+            transition: "opacity 0.15s",
+            ...(dockHint === "left"
+              ? { left: 0, top: "54px", bottom: 0, width: "5px" }
+              : dockHint === "right"
+              ? { right: 0, top: "54px", bottom: 0, width: "5px" }
+              : { top: "52px", left: 0, right: 0, height: "5px" }),
+          }}
+        />
+      )}
       {showToolbar && (
       <div
+        ref={toolbarRef}
         style={{
           position: "fixed",
           left: pos.x,
@@ -518,12 +605,14 @@ export default function VerseViewer(props: VerseViewerProps) {
             ? "0 12px 36px rgba(0,0,0,0.28)"
             : "0 6px 22px rgba(0,0,0,0.14)",
           userSelect: "none",
-          transition: dragging ? "none" : "box-shadow 0.15s",
+          transition: dragging
+            ? "none"
+            : "left 0.24s cubic-bezier(0.22,1,0.36,1), top 0.24s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s",
         }}
       >
         <div
           onMouseDown={startDrag}
-          title="Drag to move · drop near the left or top edge to dock"
+          title="Drag to move · drop near any edge to dock"
           style={{
             cursor: "grab",
             color: "var(--muted)",
