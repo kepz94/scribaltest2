@@ -1,5 +1,5 @@
 import React from "react";
-import { Mark, markStyleCSS } from "../types";
+import { Mark, markStyleCSS, STYLE_POINTS } from "../types";
 
 interface MarkedVerseProps {
   reference: string;
@@ -57,9 +57,17 @@ export default function MarkedVerse({
             return <React.Fragment key={seg.start}>{segText}</React.Fragment>;
           }
 
-          const mark = seg.applicable[0];
-          const style = markStyleCSS(mark.style, mark.color);
-
+          // Layer every mark covering this slice so a highlight + underline
+          // (etc.) are all visible, instead of only the first one.
+          const ordered = [...seg.applicable].sort(
+            (a, b) => STYLE_POINTS[a.style] - STYLE_POINTS[b.style]
+          );
+          const style: React.CSSProperties = {};
+          ordered.forEach((m) =>
+            Object.assign(style, markStyleCSS(m.style, m.color))
+          );
+          // The most recently added mark on this slice is the erase target.
+          const pickMark = seg.applicable[seg.applicable.length - 1];
           if (onEraseMark) {
             style.cursor = "pointer";
           }
@@ -69,9 +77,7 @@ export default function MarkedVerse({
               key={seg.start}
               style={style}
               title={onEraseMark ? "Click to erase this mark" : undefined}
-              onClick={
-                onEraseMark ? () => onEraseMark(mark.id) : undefined
-              }
+              onClick={onEraseMark ? () => onEraseMark(pickMark.id) : undefined}
             >
               {segText}
             </span>
