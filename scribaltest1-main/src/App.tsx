@@ -11,6 +11,9 @@ import Vault from "./components/Vault";
 import PrintView from "./components/PrintView";
 import MapPrint from "./components/MapPrint";
 import ShareVerses from "./components/ShareVerses";
+import StudyReader from "./components/StudyReader";
+import SearchStudiesList from "./components/SearchStudiesList";
+import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
 import Walkthrough from "./components/Walkthrough";
 import CompileWalkthrough from "./components/CompileWalkthrough";
 import SearchWalkthrough from "./components/SearchWalkthrough";
@@ -236,6 +239,22 @@ const scopeOfRef = (ref: string) => {
 
 const vols = scriptures.volumes;
 
+// Reference -> scripture order, so hand-picked study verses sort canonically.
+const refOrderIndex = new Map<string, number>();
+vols.forEach((v, vi) =>
+  v.books.forEach((b, bi) =>
+    b.chapters.forEach((c, ci) =>
+      c.verses.forEach((ve, vei) =>
+        refOrderIndex.set(
+          ve.reference,
+          ((vi * 1000 + bi) * 1000 + ci) * 1000 + vei
+        )
+      )
+    )
+  )
+);
+const orderOfRef = (ref: string) => refOrderIndex.get(ref) ?? 1e12;
+
 // The per-chapter label scope for a tab, e.g. "Genesis 1". Unique per chapter.
 const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
   scopeOfRef(
@@ -316,6 +335,13 @@ export default function App() {
     deleteEntry,
     mergeRemote: vaultMergeRemote,
   } = useVault();
+
+  const {
+    studies: searchStudies,
+    addStudy,
+    renameStudy,
+    deleteStudy,
+  } = useSearchStudies();
 
   // Restore a manual backup file into localStorage. (Drive sync uses the shared
   // pushToDrive / pullIfNewer paths directly.) Implementation lives in ./sync.
@@ -502,6 +528,11 @@ export default function App() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [sharingVerses, setSharingVerses] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [studiesOpen, setStudiesOpen] = useState(false);
+  const [openStudyId, setOpenStudyId] = useState<string | null>(null);
+  const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
+  const [studyDraftName, setStudyDraftName] = useState("");
+  const prevBookForStudy = useRef<string | null>(null);
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -1203,6 +1234,34 @@ export default function App() {
     setTimeout(() => setSavedFlash(false), 2200);
   };
 
+  // ---- keyword (search) studies ----
+  const openSearchStudy = (study: SearchStudy) => {
+    prevBookForStudy.current = activeBookId;
+    if (study.bookId !== activeBookId) setActiveBook(study.bookId);
+    setStudiesOpen(false);
+    setOpenStudyId(study.id);
+  };
+  const closeSearchStudy = () => {
+    setOpenStudyId(null);
+    const prev = prevBookForStudy.current;
+    if (prev && prev !== activeBookId) setActiveBook(prev);
+    prevBookForStudy.current = null;
+  };
+  const onLinkStudy = (refs: string[]) => {
+    if (!refs.length) return;
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    setStudyDraftRefs(ordered);
+    setStudyDraftName("");
+    setShowSearch(false);
+  };
+  const createStudyFromDraft = () => {
+    const refs = studyDraftRefs;
+    if (!refs || !refs.length) return;
+    const study = addStudy(studyDraftName, activeBookId, refs);
+    setStudyDraftRefs(null);
+    openSearchStudy(study);
+  };
+
   const handlePrintLive = () => {
     if (compileTabs.length === 0) {
       alert("Select at least one tab to print.");
@@ -1696,6 +1755,7 @@ export default function App() {
             setShowSearch(false);
           }}
           onJumpToMark={jumpToMark}
+          onLinkStudy={onLinkStudy}
           onOpenNewTab={(ref) => {
             openInNewTab(ref);
             setShowSearch(false);
@@ -1980,6 +2040,140 @@ export default function App() {
           {shareMsg}
         </div>
       )}
+
+      {studiesOpen && (
+        <SearchStudiesList
+          studies={searchStudies}
+          onOpen={openSearchStudy}
+          onDelete={deleteStudy}
+          onClose={() => setStudiesOpen(false)}
+        />
+      )}
+
+      {studyDraftRefs && (
+        <div
+          onClick={() => setStudyDraftRefs(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 380,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: "16px",
+              border: "1px solid var(--border)",
+              padding: "20px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div style={{ fontSize: "16px", fontWeight: 700 }}>
+              Name this study
+            </div>
+            <div
+              style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: "3px" }}
+            >
+              {studyDraftRefs.length}{" "}
+              {studyDraftRefs.length === 1 ? "verse" : "verses"} · marks save to{" "}
+              {activeBookName}
+            </div>
+            <input
+              autoFocus
+              value={studyDraftName}
+              onChange={(e) => setStudyDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") createStudyFromDraft();
+              }}
+              placeholder="e.g. Covenant"
+              style={{
+                width: "100%",
+                marginTop: "14px",
+                padding: "11px 13px",
+                borderRadius: "10px",
+                border: "1px solid var(--border)",
+                background: "var(--panel)",
+                color: "var(--text)",
+                fontSize: "15px",
+                fontFamily: "inherit",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "16px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => setStudyDraftRefs(null)}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: "13.5px",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createStudyFromDraft}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: "var(--text)",
+                  color: "var(--bg)",
+                  cursor: "pointer",
+                  fontSize: "13.5px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                }}
+              >
+                Create study
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {openStudyId &&
+        (() => {
+          const st = searchStudies.find((s) => s.id === openStudyId);
+          if (!st) return null;
+          return (
+            <StudyReader
+              study={st}
+              marks={getBook(st.bookId).marks}
+              onMark={addMark}
+              onEraseMark={deleteMark}
+              colorLabels={scopedLabels["searchstudy:" + st.id] || {}}
+              setColorLabel={(c, l) =>
+                setScopedLabel("searchstudy:" + st.id, c, l)
+              }
+              onRename={(n) => renameStudy(st.id, n)}
+              onClose={closeSearchStudy}
+              dark={dark}
+              fontScale={reading.fontScale}
+            />
+          );
+        })()}
 
       {printData &&
         (printData.view === "map" ? (
@@ -2482,6 +2676,27 @@ export default function App() {
                   }}
                 >
                   {entries.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setStudiesOpen(true)}
+              title="Your keyword studies"
+              style={pillStyle}
+            >
+              <span style={{ fontSize: "13px" }}>📑</span>
+              Studies
+              {searchStudies.length > 0 && (
+                <span
+                  style={{
+                    fontSize: "10px",
+                    color: "var(--muted)",
+                    backgroundColor: "var(--bg)",
+                    borderRadius: "999px",
+                    padding: "0 6px",
+                  }}
+                >
+                  {searchStudies.length}
                 </span>
               )}
             </button>
