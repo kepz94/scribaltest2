@@ -31,6 +31,7 @@ import {
   applyBackupString as syncApplyBackupString,
   pushToDrive as syncPushToDrive,
   pullIfNewer as syncPullIfNewer,
+  mergeLinkGroups,
 } from "./sync";
 import {
   initCloud,
@@ -278,6 +279,9 @@ interface SearchStudy {
   bookId: string; // "master" or a session book id — which book holds the marks
   refs: string[]; // verse references, kept in scripture order
   createdAt: number;
+  // Last time the user changed this study (rename or verse-set edit). Drives
+  // two-way sync: on merge the most-recently-edited side's name + refs win.
+  updatedAt?: number;
 }
 
 // A recorded study (chapter or linked). Live: its marks are always the book's
@@ -625,29 +629,40 @@ export default function MobileApp() {
       const remote: SearchStudy[] = Array.isArray(r) ? r : [];
       if (remote.length)
         setSearchStudies((prev) => {
-          const have = new Set(prev.map((s) => s.id));
-          const additions = remote.filter((s) => s && s.id && !have.has(s.id));
-          if (!additions.length) return prev;
-          return [...prev, ...additions].sort(
+          const byId = new Map<string, SearchStudy>(prev.map((s) => [s.id, s]));
+          let changed = false;
+          remote.forEach((rs) => {
+            if (!rs || !rs.id) return;
+            const local = byId.get(rs.id);
+            if (!local) {
+              byId.set(rs.id, rs);
+              changed = true;
+              return;
+            }
+            const lAt = local.updatedAt || local.createdAt || 0;
+            const rAt = rs.updatedAt || rs.createdAt || 0;
+            if (rAt > lAt) {
+              byId.set(rs.id, {
+                ...local,
+                name: rs.name,
+                refs: rs.refs,
+                updatedAt: rAt,
+              });
+              changed = true;
+            }
+          });
+          if (!changed) return prev;
+          return Array.from(byId.values()).sort(
             (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
           );
         });
     } catch {}
-    // Chapter-link groups (which chapters compile together / share theme names).
+    // Chapter-link groups: union-merge so a link made on either device survives
+    // and the grouping converges to the same ids on both.
     try {
-      const rg = JSON.parse(data["scribal_linked_chapters"] || "{}");
-      if (rg && typeof rg === "object" && !Array.isArray(rg))
-        setChapterGroups((prev) => {
-          let changed = false;
-          const next = { ...prev };
-          Object.keys(rg).forEach((scope) => {
-            if (typeof rg[scope] === "string" && !(scope in next)) {
-              next[scope] = rg[scope];
-              changed = true;
-            }
-          });
-          return changed ? next : prev;
-        });
+      setChapterGroups((prev) =>
+        mergeLinkGroups(prev, data["scribal_linked_chapters"])
+      );
     } catch {}
   };
   // The Studies screen (lists every study done, by type).
@@ -1145,7 +1160,9 @@ export default function MobileApp() {
     if (addToStudyId) {
       const id = addToStudyId;
       setSearchStudies((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, refs: ordered } : s))
+        prev.map((s) =>
+          s.id === id ? { ...s, refs: ordered, updatedAt: Date.now() } : s
+        )
       );
       const studyScope = "searchstudy:" + id;
       Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
@@ -1180,6 +1197,7 @@ export default function MobileApp() {
       bookId,
       refs,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     setSearchStudies((prev) => [study, ...prev]);
     // Give the study its own theme palette, seeded from the chapters it spans
@@ -5344,7 +5362,9 @@ export default function MobileApp() {
                 if (cs) {
                   setSearchStudies((prev) =>
                     prev.map((s) =>
-                      s.id === cs.id ? { ...s, name: name || s.name } : s
+                      s.id === cs.id
+                        ? { ...s, name: name || s.name, updatedAt: Date.now() }
+                        : s
                     )
                   );
                 } else if (cr) {
