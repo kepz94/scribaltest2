@@ -1,0 +1,108 @@
+/* ------------------------------------------------------------------ *
+ * Scribal — desktop polish layer
+ *
+ * The app styles everything with inline styles, so this file deliberately
+ * uses properties that are NOT set inline (filter, inset box-shadow,
+ * animation) — that way these rules layer on top of the inline styles
+ * without ever needing !important or per-element edits.
+ *
+ *  - Hover/active feedback on every button, app-wide, theme-aware via the
+ *    --hb (hover brightness) variable set on the theme wrapper.
+ *  - A consistent keyboard focus ring.
+ *  - Reusable entrance animations applied through a className on overlays.
+ * ------------------------------------------------------------------ */
+
+/* Smooth, shared transition for anything interactive. */
+button,
+[role="button"],
+a,
+select {
+  transition: filter 0.14s ease, box-shadow 0.18s ease,
+    background-color 0.2s ease, border-color 0.2s ease, transform 0.08s ease;
+}
+
+/* Hover only on real pointers, so touch devices don't get stuck states. */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover,
+  [role="button"]:hover {
+    filter: brightness(var(--hb, 0.96));
+    /* A neutral tint that darkens light surfaces and lifts dark ones, so
+       even transparent "ghost" buttons get a visible hover. Buttons that
+       set their own box-shadow inline keep it (inline wins) and just take
+       the brightness shift — which is the graceful behavior we want. */
+    box-shadow: inset 0 0 0 999px rgba(127, 127, 127, 0.07);
+  }
+  a:not(:disabled):hover,
+  select:hover {
+    filter: brightness(var(--hb, 0.96));
+  }
+}
+
+/* A small press affordance. */
+button:not(:disabled):active,
+[role="button"]:active {
+  transform: translateY(0.5px);
+}
+
+/* One consistent focus ring for keyboard users (never on mouse click). */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+/* ----- Entrance animations (added via className on overlays) ----- */
+@keyframes scribalPop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes scribalFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scribalRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Dropdowns: drop down from their trigger. */
+.scribal-pop {
+  animation: scribalPop 0.16s ease-out;
+  transform-origin: top;
+}
+/* Backdrops: gently fade the dimmer in. */
+.scribal-fade {
+  animation: scribalFade 0.16s ease-out;
+}
+/* Centered dialogs + toasts: rise and settle. */
+.scribal-rise {
+  animation: scribalRise 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scribal-pop,
+  .scribal-fade,
+  .scribal-rise {
+    animation: none;
+  }
+}
