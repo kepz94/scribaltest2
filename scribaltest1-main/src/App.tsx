@@ -11,8 +11,9 @@ import Vault from "./components/Vault";
 import PrintView from "./components/PrintView";
 import MapPrint from "./components/MapPrint";
 import ShareVerses from "./components/ShareVerses";
-import SearchStudiesList from "./components/SearchStudiesList";
+import StudiesList, { StudyRow } from "./components/StudiesList";
 import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
+import { useStudies, Study } from "./hooks/useStudies";
 import Walkthrough from "./components/Walkthrough";
 import CompileWalkthrough from "./components/CompileWalkthrough";
 import SearchWalkthrough from "./components/SearchWalkthrough";
@@ -269,6 +270,21 @@ vols.forEach((v, vi) =>
   )
 );
 
+// Chapter scope ("Genesis 1") -> its location, so a recorded study can reopen
+// the right chapter tab(s) even when they aren't currently open.
+const chapterLoc = new Map<
+  string,
+  { volume: number; book: number; chapter: number }
+>();
+vols.forEach((v, vi) =>
+  v.books.forEach((b, bi) =>
+    b.chapters.forEach((c, ci) => {
+      const ref = c.verses[0]?.reference;
+      if (ref) chapterLoc.set(scopeOfRef(ref), { volume: vi, book: bi, chapter: ci });
+    })
+  )
+);
+
 // The per-chapter label scope for a tab, e.g. "Genesis 1". Unique per chapter.
 const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
   scopeOfRef(
@@ -355,6 +371,11 @@ export default function App() {
     addStudy,
     deleteStudy,
   } = useSearchStudies();
+  const {
+    studies: recordedStudies,
+    recordStudy,
+    deleteStudy: deleteRecordedStudy,
+  } = useStudies();
 
   // Restore a manual backup file into localStorage. (Drive sync uses the shared
   // pushToDrive / pullIfNewer paths directly.) Implementation lives in ./sync.
@@ -1147,8 +1168,34 @@ export default function App() {
     return units;
   };
 
-  const runCompile = (tabIds: string[]) => {
-    setCompileSelection(tabIds.length ? tabIds : tabs.map((t) => t.id));
+  const runCompile = (tabIds: string[], skipRecord?: boolean) => {
+    const ids = tabIds.length ? tabIds : tabs.map((t) => t.id);
+    setCompileSelection(ids);
+    // Compile is the save — record this chapter or linked group as a study so
+    // it shows in the Studies hub (mirrors the mobile flow). Reopening an
+    // existing study from the hub passes skipRecord so its date doesn't churn.
+    const unitTabs = skipRecord ? [] : tabs.filter((t) => ids.includes(t.id));
+    if (unitTabs.length) {
+      const gid = chapterGroups[chapterScopeOf(unitTabs[0])];
+      if (
+        gid &&
+        unitTabs.every((t) => chapterGroups[chapterScopeOf(t)] === gid)
+      ) {
+        recordStudy(
+          "linked",
+          unitTabs[0].bookId,
+          gid,
+          unitTabs.map((t) => tabLabel(t)).join("  +  ")
+        );
+      } else if (unitTabs.length === 1) {
+        recordStudy(
+          "chapter",
+          unitTabs[0].bookId,
+          chapterScopeOf(unitTabs[0]),
+          tabLabel(unitTabs[0])
+        );
+      }
+    }
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -1320,6 +1367,49 @@ export default function App() {
     setShowSaveDialog(false);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 2200);
+  };
+
+  // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
+  // book and compile them fresh (live, from current marks).
+  const openRecordedStudy = (s: Study) => {
+    setStudiesOpen(false);
+    const scopes =
+      s.type === "linked"
+        ? Object.keys(chapterGroups).filter(
+            (c) => chapterGroups[c] === s.scopeRef
+          )
+        : [s.scopeRef];
+    const locs = scopes
+      .map((sc) => chapterLoc.get(sc))
+      .filter(Boolean) as {
+      volume: number;
+      book: number;
+      chapter: number;
+    }[];
+    if (!locs.length) return;
+    if (s.bookId !== activeBookId) setActiveBook(s.bookId);
+    const tabIds: string[] = [];
+    setTabs((prev) => {
+      let next = prev;
+      locs.forEach((loc) => {
+        const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
+        tabIds.push(id);
+        if (!next.some((t) => t.id === id))
+          next = [
+            ...next,
+            {
+              id,
+              volume: loc.volume,
+              book: loc.book,
+              chapter: loc.chapter,
+              bookId: s.bookId,
+            },
+          ];
+      });
+      return next;
+    });
+    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    runCompile(tabIds, true);
   };
 
   // ---- keyword (search) studies ----
@@ -2170,14 +2260,122 @@ export default function App() {
         </div>
       )}
 
-      {studiesOpen && (
-        <SearchStudiesList
-          studies={searchStudies}
-          onOpen={openStudyTab}
-          onDelete={removeStudy}
-          onClose={() => setStudiesOpen(false)}
-        />
-      )}
+      {studiesOpen &&
+        (() => {
+          const bookMarksOf = (bid: string) =>
+            allMarks.filter((m) => m.bookId === bid);
+          const bookLabel = (bid: string) =>
+            bid === "master"
+              ? ""
+              : books.find((b) => b.id === bid)?.name || "Session";
+          const fmtDate = (ms: number) =>
+            new Date(ms).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
+          // Distinct theme colors used, read from the study's OWN book so names
+          // are right even when a different book is active.
+          const themesFor = (
+            bid: string,
+            repScope: string,
+            refOk: (ref: string) => boolean
+          ) => {
+            const bk = getBook(bid);
+            const scoped = bk.scopedLabels[resolveScope(repScope)];
+            const nameFor = (c: MarkColor) =>
+              scoped && c in scoped
+                ? (scoped[c] || "").trim()
+                : (bk.colorLabels[c] || "").trim();
+            const cols: number[] = [];
+            allMarks.forEach((m) => {
+              if (
+                m.bookId === bid &&
+                refOk(m.reference) &&
+                cols.indexOf(m.color) < 0
+              )
+                cols.push(m.color);
+            });
+            return cols
+              .sort((a, b) => a - b)
+              .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
+          };
+          const markWord = (n: number) => (n === 1 ? " mark" : " marks");
+          const withBook = (bl: string) => (bl ? " · " + bl : "");
+          const rows: StudyRow[] = [];
+
+          recordedStudies
+            .filter((s) => s.type === "chapter")
+            .forEach((s) => {
+              const refOk = (ref: string) => scopeOfRef(ref) === s.scopeRef;
+              const n = bookMarksOf(s.bookId).filter((m) =>
+                refOk(m.reference)
+              ).length;
+              rows.push({
+                id: s.id,
+                kind: "chapter",
+                name: s.name,
+                meta:
+                  n +
+                  markWord(n) +
+                  withBook(bookLabel(s.bookId)) +
+                  " · " +
+                  fmtDate(s.compiledAt),
+                themes: themesFor(s.bookId, s.scopeRef, refOk),
+                onOpen: () => openRecordedStudy(s),
+                onDelete: () => deleteRecordedStudy(s.id),
+              });
+            });
+
+          recordedStudies
+            .filter((s) => s.type === "linked")
+            .forEach((s) => {
+              const chs = Object.keys(chapterGroups).filter(
+                (c) => chapterGroups[c] === s.scopeRef
+              );
+              const refOk = (ref: string) => chs.includes(scopeOfRef(ref));
+              const n = bookMarksOf(s.bookId).filter((m) =>
+                refOk(m.reference)
+              ).length;
+              rows.push({
+                id: s.id,
+                kind: "linked",
+                name: s.name,
+                meta:
+                  n +
+                  markWord(n) +
+                  withBook(bookLabel(s.bookId)) +
+                  " · " +
+                  fmtDate(s.compiledAt),
+                themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
+                onOpen: () => openRecordedStudy(s),
+                onDelete: () => deleteRecordedStudy(s.id),
+              });
+            });
+
+          searchStudies.forEach((ss) => {
+            const refSet = new Set(ss.refs);
+            const refOk = (ref: string) => refSet.has(ref);
+            rows.push({
+              id: ss.id,
+              kind: "keyword",
+              name: ss.name,
+              meta:
+                ss.refs.length +
+                " verses" +
+                withBook(bookLabel(ss.bookId)) +
+                " · " +
+                fmtDate(ss.createdAt),
+              themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
+              onOpen: () => openStudyTab(ss),
+              onDelete: () => removeStudy(ss.id),
+            });
+          });
+
+          return (
+            <StudiesList rows={rows} onClose={() => setStudiesOpen(false)} />
+          );
+        })()}
 
       {studyDraftRefs && (
         <div
@@ -2788,7 +2986,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setStudiesOpen(true)}
-              title="Your keyword studies"
+              title="Every study you've done"
               style={pillStyle}
             >
               <span style={{ fontSize: "13px" }}>📑</span>
