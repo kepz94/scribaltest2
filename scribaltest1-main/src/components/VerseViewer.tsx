@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import { Mark, MarkStyle, MarkColor, Tool, COLORS, COLOR_MAP } from "../types";
@@ -228,17 +228,12 @@ export default function VerseViewer(props: VerseViewerProps) {
   const [flashRef, setFlashRef] = useState<string | null>(null);
 
   const [dragging, setDragging] = useState(false);
-  const [dockHint, setDockHint] = useState<"left" | "right" | "top" | null>(
-    null
-  );
   const dragOffset = useRef({ x: 0, y: 0 });
   const toolbarRef = useRef<HTMLDivElement | null>(null);
-  // After a drop flips orientation, the toolbar's measured size changes; this
-  // records which edge to re-pin flush against once the new size is laid out.
-  const rePin = useRef<"left" | "right" | "top" | null>(null);
 
-  const TB_GAP = 12; // gap from the viewport edge when docked
-  const TOP_DOCK_Y = 110; // y when docked along the top
+  // The toolbar stays exactly where you drop it (no edge-snapping), so it can
+  // sit right next to the text. These clamps only keep it fully on-screen.
+  const TB_GAP = 12; // min gap from the viewport edge
   const clampX = (x: number, w: number) =>
     Math.max(TB_GAP, Math.min(x, window.innerWidth - w - TB_GAP));
   const clampY = (y: number, h: number) =>
@@ -322,45 +317,14 @@ export default function VerseViewer(props: VerseViewerProps) {
       const el = toolbarRef.current;
       const w = el ? el.offsetWidth : 56;
       const h = el ? el.offsetHeight : 56;
-      const x = clampX(e.clientX - dragOffset.current.x, w);
-      const y = clampY(e.clientY - dragOffset.current.y, h);
-      setPos({ x, y });
-      // Show which edge it will dock to on release.
-      const dLeft = x;
-      const dRight = window.innerWidth - (x + w);
-      const dTop = y - 56;
-      const nearest = Math.min(dLeft, dRight, dTop);
-      setDockHint(nearest === dTop ? "top" : dLeft <= dRight ? "left" : "right");
-    };
-    const onUp = () => {
-      setDragging(false);
-      setDockHint(null);
-      const el = toolbarRef.current;
-      const w = el ? el.offsetWidth : 56;
-      const h = el ? el.offsetHeight : 56;
-      setPos((p) => {
-        const dLeft = p.x;
-        const dRight = window.innerWidth - (p.x + w);
-        const dTop = p.y - 56;
-        const nearest = Math.min(dLeft, dRight, dTop);
-        if (nearest === dTop) {
-          rePin.current = "top";
-          setOrientation("horizontal");
-          return { x: clampX(p.x, w), y: TOP_DOCK_Y };
-        }
-        if (dLeft <= dRight) {
-          rePin.current = "left";
-          setOrientation("vertical");
-          return { x: TB_GAP, y: clampY(p.y, h) };
-        }
-        rePin.current = "right";
-        setOrientation("vertical");
-        return {
-          x: Math.max(TB_GAP, window.innerWidth - w - TB_GAP),
-          y: clampY(p.y, h),
-        };
+      // Follow the cursor, clamped to the screen. No edge-snapping — it stays
+      // wherever you let go, so you can park it right beside the text.
+      setPos({
+        x: clampX(e.clientX - dragOffset.current.x, w),
+        y: clampY(e.clientY - dragOffset.current.y, h),
       });
     };
+    const onUp = () => setDragging(false);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -368,26 +332,6 @@ export default function VerseViewer(props: VerseViewerProps) {
       window.removeEventListener("mouseup", onUp);
     };
   }, [dragging]);
-
-  // After a dock flips orientation, the measured size is new — re-pin the
-  // toolbar flush against the chosen edge so right-docking stays exact.
-  useLayoutEffect(() => {
-    const side = rePin.current;
-    if (!side) return;
-    rePin.current = null;
-    const el = toolbarRef.current;
-    if (!el) return;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    setPos((p) => {
-      let { x, y } = p;
-      if (side === "left") x = TB_GAP;
-      else if (side === "right")
-        x = Math.max(TB_GAP, window.innerWidth - w - TB_GAP);
-      else if (side === "top") y = TOP_DOCK_Y;
-      return { x: clampX(x, w), y: clampY(y, h) };
-    });
-  }, [orientation]);
 
   // Keep the toolbar on-screen when the window is resized.
   useEffect(() => {
@@ -621,24 +565,6 @@ export default function VerseViewer(props: VerseViewerProps) {
 
   return (
     <div style={{ position: "relative" }}>
-      {showToolbar && dragging && dockHint && (
-        <div
-          style={{
-            position: "fixed",
-            zIndex: 49,
-            pointerEvents: "none",
-            background: "#8b5cf6",
-            opacity: 0.55,
-            boxShadow: "0 0 14px rgba(139,92,246,0.7)",
-            transition: "opacity 0.15s",
-            ...(dockHint === "left"
-              ? { left: 0, top: "54px", bottom: 0, width: "5px" }
-              : dockHint === "right"
-              ? { right: 0, top: "54px", bottom: 0, width: "5px" }
-              : { top: "52px", left: 0, right: 0, height: "5px" }),
-          }}
-        />
-      )}
       {showToolbar && (
       <div
         ref={toolbarRef}
@@ -659,14 +585,12 @@ export default function VerseViewer(props: VerseViewerProps) {
             ? "0 12px 36px rgba(0,0,0,0.28)"
             : "0 6px 22px rgba(0,0,0,0.14)",
           userSelect: "none",
-          transition: dragging
-            ? "none"
-            : "left 0.24s cubic-bezier(0.22,1,0.36,1), top 0.24s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s",
+          transition: "box-shadow 0.15s",
         }}
       >
         <div
           onMouseDown={startDrag}
-          title="Drag to move · drop near any edge to dock"
+          title="Drag to move"
           style={{
             cursor: "grab",
             color: "var(--muted)",
