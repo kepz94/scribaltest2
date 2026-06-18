@@ -1094,10 +1094,13 @@ export default function App() {
     setShowSearch(false);
   };
 
-  const activeChapterRefs = useMemo(
-    () => new Set(getChapter(activeTab).verses.map((v) => v.reference)),
-    [activeTab, getChapter]
-  );
+  const activeChapterRefs = useMemo(() => {
+    if (activeTab.studyId) {
+      const st = searchStudies.find((s) => s.id === activeTab.studyId);
+      return new Set(st ? st.refs : []);
+    }
+    return new Set(getChapter(activeTab).verses.map((v) => v.reference));
+  }, [activeTab, getChapter, searchStudies]);
 
   const groups: { reference: string; color: MarkColor; items: Mark[] }[] = [];
   marks
@@ -1185,7 +1188,9 @@ export default function App() {
   const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
 
   // The label scope for the active chapter (its group's scope if linked).
-  const activeScope = resolveScope(chapterScopeOf(activeTab));
+  const activeScope = activeTab.studyId
+    ? "searchstudy:" + activeTab.studyId
+    : resolveScope(chapterScopeOf(activeTab));
   const activeScopedLabels = scopedLabels[activeScope] || {};
 
   // Scope for whatever is being compiled (the prompt guarantees one unit:
@@ -3636,13 +3641,17 @@ export default function App() {
                     onClick={() => {
                       if (
                         window.confirm(
-                          "Clear ALL marks on this chapter? This removes every highlight, underline, and other mark here regardless of color or style. You can undo it."
+                          `Clear ALL marks on ${
+                            activeTab.studyId ? "this study" : "this chapter"
+                          }? This removes every highlight, underline, and other mark here regardless of color or style. You can undo it.`
                         )
                       ) {
                         clearMarks(Array.from(activeChapterRefs));
                       }
                     }}
-                    title="Remove every mark on this chapter (undoable)"
+                    title={`Remove every mark on ${
+                      activeTab.studyId ? "this study" : "this chapter"
+                    } (undoable)`}
                     style={{
                       fontSize: "11px",
                       color: "var(--muted)",
@@ -3669,7 +3678,9 @@ export default function App() {
 
               {groups.length === 0 && (
                 <p style={{ color: "var(--muted)", fontSize: "13px" }}>
-                  No marks on this chapter yet.
+                  {activeTab.studyId
+                    ? "No marks on this study yet."
+                    : "No marks on this chapter yet."}
                 </p>
               )}
 
