@@ -40,6 +40,101 @@ export const CORE_KEYS = [
   "scribal_compile_view",
 ];
 
+// Merge a remote chapter-link map into the local one by UNION (connected
+// components): two chapters belong to the same group if they're linked together
+// on EITHER device. Each resulting group reuses the lexicographically smallest
+// group id present among its members in either map, so the id is stable and
+// computed identically on both devices — they converge on the same grouping
+// instead of disagreeing (the old additive "local wins" merge couldn't reconcile
+// a regrouping and left the two devices split).
+//
+// Input/return shape is the same Record<scope, groupId> the app keeps in state,
+// so callers just do setChapterGroups((prev) => mergeLinkGroups(prev, raw)).
+// Returns `prev` unchanged when nothing differs, to stay idempotent (no sync
+// ping-pong). Note: this is purely additive about *links* — an unlink made on
+// one device isn't propagated by it (a stale membership on the other device
+// re-forms the link); unlink-sync would need per-scope tombstones.
+export function mergeLinkGroups(
+  prev: Record<string, string>,
+  remoteRaw: string | null | undefined
+): Record<string, string> {
+  let remote: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(remoteRaw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      remote = parsed as Record<string, string>;
+  } catch {
+    return prev;
+  }
+
+  // --- union-find over every scope seen in either map ---
+  const parent: Record<string, string> = {};
+  const find = (x: string): string => {
+    let r = x;
+    while (parent[r] !== undefined && parent[r] !== r) r = parent[r];
+    while (parent[x] !== undefined && parent[x] !== r) {
+      const nxt = parent[x];
+      parent[x] = r;
+      x = nxt;
+    }
+    return r;
+  };
+  const union = (a: string, b: string) => {
+    if (parent[a] === undefined) parent[a] = a;
+    if (parent[b] === undefined) parent[b] = b;
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return;
+    if (ra < rb) parent[rb] = ra;
+    else parent[ra] = rb;
+  };
+  // Connect all scopes that share a group id within a single map.
+  const linkByGid = (map: Record<string, string>) => {
+    const byGid: Record<string, string[]> = {};
+    Object.keys(map).forEach((s) => {
+      const g = map[s];
+      if (typeof g !== "string" || !g) return;
+      (byGid[g] = byGid[g] || []).push(s);
+    });
+    Object.keys(byGid).forEach((g) => {
+      const members = byGid[g];
+      for (let i = 1; i < members.length; i++) union(members[0], members[i]);
+    });
+  };
+  linkByGid(prev);
+  linkByGid(remote);
+
+  // --- gather components, then pick each one's stable id ---
+  const components: Record<string, string[]> = {};
+  Object.keys(parent).forEach((s) => {
+    const r = find(s);
+    (components[r] = components[r] || []).push(s);
+  });
+
+  const next: Record<string, string> = {};
+  Object.keys(components).forEach((root) => {
+    const members = components[root];
+    if (members.length < 2) return; // a lone chapter isn't a group
+    const gids: string[] = [];
+    members.forEach((s) => {
+      if (prev[s]) gids.push(prev[s]);
+      if (remote[s]) gids.push(remote[s]);
+    });
+    gids.sort();
+    const gid = gids[0]; // smallest existing id — identical on both devices
+    members.forEach((s) => {
+      next[s] = gid;
+    });
+  });
+
+  // Idempotency: if the result matches what we already have, keep the old object.
+  const pk = Object.keys(prev);
+  const nk = Object.keys(next);
+  if (pk.length === nk.length && pk.every((k) => prev[k] === next[k]))
+    return prev;
+  return next;
+}
+
 export type PushResult = "pushed" | "adopted" | "blocked" | "fail";
 
 // Functions the calling shell supplies from its useMarks / useVault hooks.
