@@ -1,4 +1,4 @@
-import { useState, useRef, CSSProperties } from "react";
+import { useState, useRef, useLayoutEffect, CSSProperties } from "react";
 import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
@@ -96,13 +96,20 @@ export default function MobileCompile({
     else if (y < lastY.current - 6) setHeadHidden(false);
     lastY.current = y;
   };
-  const collapse = (hidden: boolean, max: number): CSSProperties => ({
-    maxHeight: hidden ? 0 : max,
-    opacity: hidden ? 0 : 1,
-    overflow: "hidden",
-    transition: "max-height 0.3s ease, opacity 0.2s ease",
-    flexShrink: 0,
-  });
+  // Measure the chrome (header + toggles) so the scroll area can pad its top by
+  // exactly that much. The chrome is an absolute overlay that slides up/down —
+  // so the scroll area never resizes mid-scroll (which is what was stuttering).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerH, setHeaderH] = useState(0);
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const measure = () => setHeaderH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Which theme cards are expanded in the share picker (collapsed by default,
   // so themes are the headline and verses are a tap away).
   const [pickOpen, setPickOpen] = useState<string[]>([]);
@@ -410,17 +417,25 @@ export default function MobileCompile({
         animation: "mob-fadein 0.2s ease",
       }}
     >
-      {/* permanent notch strip — content never hides under the status bar */}
+      {/* chrome (header + toggles) — an absolute overlay that slides up while
+          reading down and back on scroll-up, like the reading screen. Because
+          it's an overlay, the scroll area never resizes, so scrolling is smooth. */}
       <div
+        ref={headerRef}
         style={{
-          height: "env(safe-area-inset-top)",
-          flexShrink: 0,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 5,
           backgroundColor: C.bg,
+          transform: headHidden ? "translateY(-100%)" : "translateY(0)",
+          transition: "transform 0.3s ease",
+          willChange: "transform",
         }}
-      />
-
-      {/* header (collapses on scroll-down) */}
-      <div style={collapse(headHidden, 500)}>
+      >
+        {/* notch strip — content never hides under the status bar */}
+        <div style={{ height: "env(safe-area-inset-top)", backgroundColor: C.bg }} />
       <div
         style={{
           display: "flex",
@@ -521,17 +536,8 @@ export default function MobileCompile({
           </div>
         )}
       </div>
-      </div>
-
-      {liveMarks.length === 0 ? (
-        <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
-          No marks in this book yet. Arm a pen and tap a word to begin — your
-          themes will gather here.
-        </div>
-      ) : (
-        <>
-          {/* view + sort toggles (collapse with the header) */}
-          <div style={collapse(headHidden, 200)}>
+      {/* view + sort toggles — part of the chrome, so they slide away too */}
+      {liveMarks.length !== 0 && (
           <div
             style={{
               padding: "12px 16px 4px",
@@ -565,19 +571,32 @@ export default function MobileCompile({
               {seg(sortMode === "points", "By points", () => setSortMode("points"))}
             </div>
           </div>
-          </div>
+      )}
+      </div>
 
-          {/* categories */}
-          <div
-            onScroll={(e) => onScroll((e.target as HTMLDivElement).scrollTop)}
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              overscrollBehavior: "contain",
-              padding: "10px 16px calc(40px + env(safe-area-inset-bottom))",
-            }}
-          >
+      {/* verses — fill the whole screen; top-padded to clear the chrome so
+          nothing reflows when the chrome slides away */}
+      <div
+        onScroll={(e) => onScroll((e.target as HTMLDivElement).scrollTop)}
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+          paddingTop: headerH + 10,
+          paddingLeft: 16,
+          paddingRight: 16,
+          paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
+        }}
+      >
+        {liveMarks.length === 0 && (
+          <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
+            No marks in this book yet. Arm a pen and tap a word to begin — your
+            themes will gather here.
+          </div>
+        )}
             {groups.map((g) => {
               const c = g.color;
               const list = g.marks;
@@ -1239,9 +1258,7 @@ export default function MobileCompile({
                 </div>
               );
             })}
-          </div>
-        </>
-      )}
+      </div>
       {compPreview && (
         <SharePreview
           C={C}
