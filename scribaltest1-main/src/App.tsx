@@ -317,6 +317,88 @@ const VIEW_NAMES: Record<string, string> = {
 type CompileView = "cornell" | "outline" | "charting" | "map";
 type Mode = "read" | "compile" | "vault";
 
+// Mobile-style line icons. Stroke is "currentColor" so the parent sets the
+// color (we wrap these in a purple span in the header).
+const ICON_ACCENT = "#8b5cf6";
+const IconSearch = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.35-4.35" />
+  </svg>
+);
+const IconStudies = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 3 3 8l9 5 9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </svg>
+);
+const IconDrop = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 3s6 6.4 6 10a6 6 0 0 1-12 0c0-3.6 6-10 6-10z" />
+  </svg>
+);
+const IconUndo = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 7 4 12l5 5" />
+    <path d="M4 12h11a4 4 0 0 1 0 8h-2" />
+  </svg>
+);
+const IconRedo = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="m15 7 5 5-5 5" />
+    <path d="M20 12H9a4 4 0 0 0 0 8h2" />
+  </svg>
+);
+// A purple wrapper so the line icons match the mobile home page's accent.
+const purpleIcon = (node: React.ReactNode) => (
+  <span style={{ color: ICON_ACCENT, display: "inline-flex" }}>{node}</span>
+);
+
 interface PrintData {
   view: CompileView;
   title: string;
@@ -3342,18 +3424,18 @@ export default function App() {
             minWidth: 0,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
             <div
               style={{
                 width: "34px",
                 height: "34px",
                 borderRadius: "10px",
-                backgroundColor: "var(--text)",
-                color: "var(--bg)",
+                backgroundColor: ICON_ACCENT,
+                color: "#fff",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "17px",
+                fontSize: "18px",
                 flexShrink: 0,
               }}
             >
@@ -3362,9 +3444,10 @@ export default function App() {
             <h2
               style={{
                 margin: 0,
-                fontSize: "22px",
-                letterSpacing: "3px",
-                fontWeight: 600,
+                fontFamily: '"Times New Roman", Times, serif',
+                fontSize: "23px",
+                letterSpacing: "0.13em",
+                fontWeight: 700,
               }}
             >
               SCRIBAL
@@ -3655,7 +3738,7 @@ export default function App() {
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
             >
-              <span style={{ fontSize: "14px" }}>⌕</span>
+              {purpleIcon(<IconSearch size={17} />)}
               Search
             </button>
             <button
@@ -3663,7 +3746,7 @@ export default function App() {
               title="Every study you've done"
               style={pillStyle}
             >
-              <span style={{ fontSize: "13px" }}>📑</span>
+              {purpleIcon(<IconStudies size={17} />)}
               Studies
               {searchStudies.length > 0 && (
                 <span
@@ -3728,8 +3811,6 @@ export default function App() {
                 </span>
               );
             })()}
-            {roundUtil("↶", undo, "Undo (Ctrl/Cmd+Z)", !canUndo)}
-            {roundUtil("↷", redo, "Redo (Ctrl/Cmd+Shift+Z)", !canRedo)}
             <div style={{ position: "relative" }}>
               <button
                 onClick={() => setBackupOpen((o) => !o)}
@@ -4039,7 +4120,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <div style={{ position: "relative" }}>
               {roundUtil(
-                "Aa",
+                <span style={{ color: ICON_ACCENT, fontWeight: 700 }}>Aa</span>,
                 () => setReadingOpen((o) => !o),
                 "Reading — text size, spacing, tone"
               )}
@@ -4251,7 +4332,7 @@ export default function App() {
             </div>
             <div style={{ position: "relative" }}>
               {roundUtil(
-                "🎨",
+                purpleIcon(<IconDrop size={18} />),
                 () => setColorOpen((o) => !o),
                 "Marks — color intensity / saturation"
               )}
@@ -4380,6 +4461,19 @@ export default function App() {
                 </>
               )}
             </div>
+            {roundUtil(
+              purpleIcon(<IconUndo size={17} />),
+              undo,
+              "Undo (Ctrl/Cmd+Z)",
+              !canUndo
+            )}
+            {roundUtil(
+              purpleIcon(<IconRedo size={17} />),
+              redo,
+              "Redo (Ctrl/Cmd+Shift+Z)",
+              !canRedo
+            )}
+            {vDivider}
             {mode === "read" &&
               actionButton(sidebarOpen ? "Hide marks" : "Show marks", () =>
                 setSidebarOpen(!sidebarOpen)
