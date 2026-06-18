@@ -22,6 +22,7 @@ interface SearchPanelProps {
   onJump: (reference: string) => void;
   onJumpToMark: (bookId: string, reference: string) => void;
   onOpenNewTab: (reference: string) => void;
+  onLinkStudy?: (refs: string[]) => void;
   onClose: () => void;
 }
 
@@ -61,6 +62,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onJump,
     onJumpToMark,
     onOpenNewTab,
+    onLinkStudy,
     onClose,
   } = props;
 
@@ -71,6 +73,7 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [wholeWord, setWholeWord] = useState(false);
   const [markColor, setMarkColor] = useState<MarkColor | 0>(0);
   const [showLegend, setShowLegend] = useState(false);
+  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set());
   const [committed, setCommitted] = useState<{
     q: string;
     mode: Mode;
@@ -148,7 +151,7 @@ export default function SearchPanel(props: SearchPanelProps) {
       };
 
     const lower = q.toLowerCase();
-    const terms = (committed.mode === "phrase" ? [lower] : lower.split(/\s+/))
+    const terms = (lower.includes("&") ? lower.split("&").map((t) => t.trim()) : committed.mode === "phrase" ? [lower] : lower.split(/\s+/))
       .filter(Boolean)
       .filter((t) => t.replace(/\*/g, "").length > 0);
 
@@ -167,7 +170,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
     const termTests = terms.map(buildTermTest);
     const test = (txt: string) =>
-      committed.mode === "any"
+      !lower.includes("&") && committed.mode === "any"
         ? termTests.some((fn) => fn(txt))
         : termTests.every((fn) => fn(txt));
 
@@ -681,6 +684,66 @@ export default function SearchPanel(props: SearchPanelProps) {
                 ))}
               </div>
 
+              {onLinkStudy && selectedRefs.size > 0 && (
+                <div
+                  style={{
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 2,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 18px",
+                    borderTop: "1px solid var(--border)",
+                    background: "var(--panel)",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "12.5px",
+                      color: "var(--text)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {selectedRefs.size} selected
+                  </span>
+                  <div style={{ flex: 1 }} />
+                  <button
+                    onClick={() => setSelectedRefs(new Set())}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={() => {
+                      onLinkStudy(Array.from(selectedRefs));
+                      setSelectedRefs(new Set());
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "999px",
+                      border: "none",
+                      background: "var(--text)",
+                      color: "var(--bg)",
+                      cursor: "pointer",
+                      fontSize: "12.5px",
+                      fontWeight: 700,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Link into a study →
+                  </button>
+                </div>
+              )}
               {shown.map((r, i) => (
                 <div
                   key={r.reference + "|" + i}
@@ -709,6 +772,28 @@ export default function SearchPanel(props: SearchPanelProps) {
                       marginBottom: "3px",
                     }}
                   >
+                    {onLinkStudy && (
+                      <input
+                        type="checkbox"
+                        checked={selectedRefs.has(r.reference)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() =>
+                          setSelectedRefs((prev) => {
+                            const n = new Set(prev);
+                            if (n.has(r.reference)) n.delete(r.reference);
+                            else n.add(r.reference);
+                            return n;
+                          })
+                        }
+                        style={{
+                          width: "15px",
+                          height: "15px",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          accentColor: "var(--text)",
+                        }}
+                      />
+                    )}
                     {r.color && (
                       <span
                         style={{
