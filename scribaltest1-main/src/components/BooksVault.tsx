@@ -48,8 +48,8 @@ export default function BooksVault({
       }}
       style={{
         background: "transparent",
-        border: "1px solid " + (accent ? "var(--pen5)" : "var(--border)"),
-        color: accent ? "var(--pen5)" : "var(--muted)",
+        border: "1px solid " + (accent ? "#8b5cf6" : "var(--border)"),
+        color: accent ? "#8b5cf6" : "var(--muted)",
         borderRadius: "999px",
         padding: "4px 10px",
         fontSize: "11.5px",
@@ -211,8 +211,8 @@ export default function BooksVault({
                           style={{
                             fontSize: "9px",
                             letterSpacing: "1px",
-                            color: "var(--pen5)",
-                            border: "1px solid var(--pen5)",
+                            color: "#8b5cf6",
+                            border: "1px solid #8b5cf6",
                             borderRadius: "999px",
                             padding: "1px 6px",
                           }}
