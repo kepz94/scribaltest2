@@ -560,6 +560,50 @@ export default function MobileApp() {
       JSON.stringify(chapterGroups)
     );
   }, [chapterGroups]);
+  // Per-scope timestamp of the last link/unlink action — carried alongside
+  // chapterGroups so unlinking (not just linking) converges across devices.
+  const [chapterGroupsAt, setChapterGroupsAt] = useState<
+    Record<string, number>
+  >(() => {
+    try {
+      const raw = JSON.parse(
+        localStorage.getItem("scribal_linked_chapters_at") || "{}"
+      );
+      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      "scribal_linked_chapters_at",
+      JSON.stringify(chapterGroupsAt)
+    );
+  }, [chapterGroupsAt]);
+  // Live mirrors so the long-lived sync merge reads CURRENT values, not a stale
+  // mount-time closure.
+  const chapterGroupsRef = useRef(chapterGroups);
+  const chapterGroupsAtRef = useRef(chapterGroupsAt);
+  useEffect(() => {
+    chapterGroupsRef.current = chapterGroups;
+    chapterGroupsAtRef.current = chapterGroupsAt;
+  }, [chapterGroups, chapterGroupsAt]);
+  // Stamp "changed now" for every scope whose membership differs between prev and
+  // next — makes a link OR an unlink propagate.
+  const stampGroupChanges = (
+    prevG: Record<string, string>,
+    nextG: Record<string, string>
+  ) => {
+    const now = Date.now();
+    setChapterGroupsAt((prevAt) => {
+      const nextAt = { ...prevAt };
+      const seen = new Set([...Object.keys(prevG), ...Object.keys(nextG)]);
+      seen.forEach((s) => {
+        if (prevG[s] !== nextG[s]) nextAt[s] = now;
+      });
+      return nextAt;
+    });
+  };
   // Search studies: named, hand-picked verse collections built from search.
   const [searchStudies, setSearchStudies] = useState<SearchStudy[]>(() => {
     try {
@@ -677,13 +721,24 @@ export default function MobileApp() {
           );
         });
     } catch {}
-    // Chapter-link groups: union-merge so a link made on either device survives
-    // and the grouping converges to the same ids on both.
+    // Chapter-link groups + their per-scope timestamps. Converges links AND
+    // unlinks; reads current state via refs so the long-lived merge isn't stale.
     try {
-      setChapterGroups((prev) =>
-        mergeLinkGroups(prev, data["scribal_linked_chapters"])
+      const merged = mergeLinkGroups(
+        chapterGroupsRef.current,
+        chapterGroupsAtRef.current,
+        data["scribal_linked_chapters"],
+        data["scribal_linked_chapters_at"]
       );
+      setChapterGroups(merged.groups);
+      setChapterGroupsAt(merged.at);
     } catch {}
+    // Mark colour intensity — a shared display setting, adopt the incoming value.
+    const ci = data["scribal_color_intensity"];
+    if (ci != null) {
+      const v = parseFloat(ci);
+      if (!Number.isNaN(v)) setColorIntensity((cur) => (cur === v ? cur : v));
+    }
   };
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
@@ -1259,6 +1314,7 @@ export default function MobileApp() {
       next[a] = gid;
       next[b] = gid;
     }
+    stampGroupChanges(chapterGroups, next); // record the link so it syncs
     setChapterGroups(next);
   };
   const unlink = (a: string) => {
@@ -1269,6 +1325,7 @@ export default function MobileApp() {
     Object.keys(next).forEach((s) => {
       if (counts[next[s]] < 2) delete next[s];
     });
+    stampGroupChanges(chapterGroups, next); // record the unlink so it syncs
     setChapterGroups(next);
   };
   const openLinkPrompt = () => {
@@ -1816,11 +1873,27 @@ export default function MobileApp() {
   // surface a sign-in popup, so token refresh is now user-initiated via the
   // reconnect cue. The stored token is used directly while it is still valid.)
 
+  // One list of the local data whose change should trigger a sync push — used by
+  // BOTH the Firebase push (below) and the Drive auto-save, so they can't drift
+  // apart again. Add a new synced field here once and both pick it up.
+  const syncData = [
+    marks,
+    colorLabels,
+    scopedLabels,
+    notes,
+    chapterGroups,
+    chapterGroupsAt,
+    studies,
+    searchStudies,
+    colorIntensity,
+  ];
+
   // Push local changes to Firebase (debounced inside cloudSync; only acts when
   // signed in). This is the live counterpart to the Drive auto-save below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     noteLocalChange();
-  }, [marks, colorLabels, scopedLabels, notes, chapterGroups, studies, searchStudies]);
+  }, syncData);
 
   // Auto-save to Drive on changes, refreshing the token as needed (no popup).
   const autoSaveReady = useRef(false);
@@ -1854,17 +1927,8 @@ export default function MobileApp() {
         .finally(() => setSyncBusy(false));
     }, 1500);
     return () => clearTimeout(t);
-  }, [
-    marks,
-    colorLabels,
-    scopedLabels,
-    notes,
-    chapterGroups,
-    studies,
-    searchStudies,
-    connected,
-    cloudSignedIn,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...syncData, connected, cloudSignedIn]);
 
   // Auto-pull the other device's changes when the app opens or regains focus.
   // Guarded by the saved timestamp so it only pulls when Drive is genuinely
