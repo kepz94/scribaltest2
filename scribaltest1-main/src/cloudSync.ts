@@ -60,6 +60,11 @@ try {
 
 type MergeBooks = (json: string) => void;
 type MergeVault = (json: string | null | undefined) => void;
+// Live-merges the non-book/vault study keys (recorded + keyword studies and the
+// chapter-link groups). Supplied by the shell so a study/link made on one device
+// shows up on the other. Without this, the listener only merged books + vault
+// and studies/links silently never synced for signed-in users.
+type MergeOther = (data: Record<string, string | null>) => void;
 
 export interface CloudState {
   ready: boolean; // auth state has resolved at least once
@@ -91,6 +96,7 @@ let stateCb: ((s: CloudState) => void) | null = null;
 let backupKeys: string[] = CORE_KEYS.slice();
 let mergeBooks: MergeBooks = () => {};
 let mergeVault: MergeVault = () => {};
+let mergeOther: MergeOther = () => {};
 let onApplied: (() => void) | null = null;
 let lastRemoteMarks = -1;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,11 +144,13 @@ export function configureSync(opts: {
   backupKeys: string[];
   mergeRemoteBooks: MergeBooks;
   vaultMergeRemote: MergeVault;
+  mergeRemoteStudies?: MergeOther;
   onApplied?: () => void;
 }) {
   backupKeys = opts.backupKeys.slice();
   mergeBooks = opts.mergeRemoteBooks;
   mergeVault = opts.vaultMergeRemote;
+  mergeOther = opts.mergeRemoteStudies || (() => {});
   onApplied = opts.onApplied || null;
 }
 
@@ -187,7 +195,7 @@ function startListening(uid: string) {
       // Merge the other device's snapshot into live state, and suppress the one
       // local-change push this merge will trigger (otherwise it echoes back).
       suppressEcho = true;
-      applyRemoteLive(payload, mergeBooks, mergeVault);
+      applyRemoteLive(payload, mergeBooks, mergeVault, mergeOther);
       state.lastSync = Date.now();
       emit();
       if (onApplied) onApplied();
