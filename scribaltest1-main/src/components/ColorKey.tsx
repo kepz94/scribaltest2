@@ -113,8 +113,8 @@ export default function ColorKey({
           <button
             onClick={onClose}
             style={{
-              backgroundColor: "var(--text)",
-              color: "var(--bg)",
+              backgroundColor: "#8b5cf6",
+              color: "#fff",
               border: "none",
               borderRadius: "8px",
               padding: "9px 20px",
