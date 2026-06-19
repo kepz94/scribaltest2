@@ -18,6 +18,9 @@ export interface SearchStudy {
   // action (>= updatedAt), so a later edit/rename revives it. Carried in the
   // record so a delete on one device propagates to the other.
   deletedAt?: number;
+  // Optional free-text overview shown atop the study. Used by the ScriptureNotes
+  // importer to carry the report's description (and favorites list) across.
+  note?: string;
 }
 
 // Hidden iff its delete is its newest action.
@@ -47,7 +50,7 @@ export function useSearchStudies() {
   }, [studies]);
 
   const addStudy = useCallback(
-    (name: string, bookId: string, refs: string[]): SearchStudy => {
+    (name: string, bookId: string, refs: string[], note?: string): SearchStudy => {
       const study: SearchStudy = {
         id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         name: name.trim() || "Untitled study",
@@ -55,6 +58,7 @@ export function useSearchStudies() {
         refs,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        ...(note && note.trim() ? { note: note.trim() } : {}),
       };
       setStudies((prev) => [study, ...prev]);
       return study;
@@ -122,7 +126,13 @@ export function useSearchStudies() {
         const contentChanged = rAt > lAt;
         if (contentChanged || deletedAt !== (local.deletedAt || 0)) {
           const merged: SearchStudy = contentChanged
-            ? { ...local, name: r.name, refs: r.refs, updatedAt: rAt }
+            ? {
+                ...local,
+                name: r.name,
+                refs: r.refs,
+                note: r.note ?? local.note,
+                updatedAt: rAt,
+              }
             : { ...local };
           if (deletedAt) merged.deletedAt = deletedAt;
           byId.set(r.id, merged);
