@@ -808,6 +808,7 @@ export interface CovenantCardOpts {
   conditionColor: number;
   promiseColor: number;
   dark: boolean;
+  heading?: string;
 }
 
 interface AppPalette {
@@ -986,7 +987,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   ctx.font = "700 " + labelSize + "px " + SANS;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  drawTrackedLeft(ctx, "COVENANT LEDGER", padX, headerTop + labelSize, 3);
+  drawTrackedLeft(ctx, (o.heading || "COVENANT LEDGER").toUpperCase(), padX, headerTop + labelSize, 3);
   ctx.fillStyle = a.text;
   ctx.font = "500 " + headingSize + "px " + SANS;
   ctx.fillText(heading, padX, headerTop + labelSize + labelGap + headingSize);
