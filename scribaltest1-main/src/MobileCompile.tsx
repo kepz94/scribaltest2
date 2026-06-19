@@ -107,9 +107,12 @@ export default function MobileCompile({
   const verseNoteKey = (ref: string) => "versenote:" + ref;
   const [sortMode, setSortMode] = useState<SortMode>("order");
   const [studyName, setStudyName] = useState(defaultName);
-  const [view, setView] = useState<
-    "focused" | "full" | "distilled" | "covenants"
-  >("focused");
+  const [view, setView] = useState<"focused" | "full">("focused");
+  // The study format. Outline keeps its own Focused/Full + sort sub-options;
+  // Distilled and Covenants are their own formats, each its own view.
+  const [format, setFormat] = useState<"outline" | "distilled" | "covenants">(
+    "outline"
+  );
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
   // Which synthesis / verse-note is in edit mode (textarea open). Otherwise the
@@ -621,16 +624,31 @@ export default function MobileCompile({
                 padding: "4px",
               }}
             >
-              {seg(view === "focused", "Focused", () => setView("focused"))}
-              {seg(view === "full", "Full", () => setView("full"))}
-              {seg(view === "distilled", "Distilled", () =>
-                setView("distilled")
+              {seg(format === "outline", "Outline", () =>
+                setFormat("outline")
               )}
-              {seg(view === "covenants", "Covenants", () =>
-                setView("covenants")
+              {seg(format === "distilled", "Distilled", () =>
+                setFormat("distilled")
+              )}
+              {seg(format === "covenants", "Covenants", () =>
+                setFormat("covenants")
               )}
             </div>
-            {view !== "distilled" && view !== "covenants" && (
+            {format === "outline" && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(view === "focused", "Focused", () => setView("focused"))}
+                {seg(view === "full", "Full verse", () => setView("full"))}
+              </div>
+            )}
+            {format === "outline" && (
               <div
                 style={{
                   display: "flex",
@@ -669,18 +687,15 @@ export default function MobileCompile({
           paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
         }}
       >
-        {view === "distilled" && <Distilled {...sharedViewProps} />}
-        {view === "covenants" && <Covenants {...sharedViewProps} />}
-        {view !== "distilled" &&
-          view !== "covenants" &&
-          liveMarks.length === 0 && (
+        {format === "distilled" && <Distilled {...sharedViewProps} />}
+        {format === "covenants" && <Covenants {...sharedViewProps} />}
+        {format === "outline" && liveMarks.length === 0 && (
           <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
             No marks in this book yet. Arm a pen and tap a word to begin — your
             themes will gather here.
           </div>
         )}
-            {view !== "distilled" &&
-              view !== "covenants" &&
+            {format === "outline" &&
               groups.map((g) => {
               const c = g.color;
               const list = g.marks;
