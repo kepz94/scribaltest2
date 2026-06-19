@@ -785,13 +785,23 @@ export async function shareCanvas(
   }
 }
 
-// ---------- Covenant card (screen-faithful If -> Then ledger, up to 3 pairs) ----------
+// ---------- Covenant card (screen-faithful ledger, per-fragment marks) ----------
+export interface CovenantFrag {
+  text: string;
+  style: string;
+  color: number;
+  gapBefore: boolean;
+}
 export interface CovenantPairData {
   reference: string;
-  ifText: string;
-  ifStyle: string;
-  thenText: string;
-  thenStyle: string;
+  // preferred: the real marked fragments (each keeps its own style/color)
+  ifFrags?: CovenantFrag[];
+  thenFrags?: CovenantFrag[];
+  // legacy fallback: joined text + one representative style
+  ifText?: string;
+  ifStyle?: string;
+  thenText?: string;
+  thenStyle?: string;
 }
 export interface CovenantCardOpts {
   pairs: CovenantPairData[];
@@ -825,16 +835,40 @@ const appDark: AppPalette = {
   border: "#343229",
 };
 
+interface Tok {
+  text: string;
+  style: string;
+  color: number;
+  gap: boolean;
+  frag: number;
+}
+
 export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   const a = o.dark ? appDark : appLight;
+  const dark = o.dark;
   const { canvas, ctx } = newCanvas();
   if (!ctx) return canvas;
 
-  const pairs = o.pairs.slice(0, 3);
-  const condAccent = penHex(o.conditionColor, o.dark);
-  const condHl = hlHex(o.conditionColor, o.dark);
-  const promAccent = penHex(o.promiseColor, o.dark);
-  const promHl = hlHex(o.promiseColor, o.dark);
+  const fallback = (
+    frags: CovenantFrag[] | undefined,
+    text: string | undefined,
+    style: string | undefined,
+    color: number
+  ): CovenantFrag[] => {
+    if (frags && frags.length) return frags;
+    if (text && text.trim())
+      return [{ text: text, style: style || "highlight", color, gapBefore: false }];
+    return [];
+  };
+
+  const pairs = o.pairs.slice(0, 3).map((pr) => ({
+    reference: pr.reference,
+    ifFrags: fallback(pr.ifFrags, pr.ifText, pr.ifStyle, o.conditionColor),
+    thenFrags: fallback(pr.thenFrags, pr.thenText, pr.thenStyle, o.promiseColor),
+  }));
+
+  const condAccent = penHex(o.conditionColor, dark);
+  const promAccent = penHex(o.promiseColor, dark);
 
   const padX = 84;
   const headerTop = 92;
@@ -850,13 +884,12 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   const refSize = 24;
   const refGap = 12;
   const innerPad = 30;
-  const boxVPad = 24;
+  const boxVPad = 26;
   const boxTextW = W - padX * 2 - innerPad * 2;
-  const arrowGap = 44;
-  const pairGap = 40;
-  const lineMul = 1.34;
+  const arrowGap = 46;
+  const pairGap = 42;
+  const lineMul = 1.42;
 
-  // Chapter heading derived from the pair references (e.g., "Ether 12").
   const chapters: string[] = [];
   pairs.forEach((pr) => {
     const idx = pr.reference.lastIndexOf(":");
@@ -865,20 +898,57 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   });
   const heading = chapters.join("  ·  ");
 
-  const styleFont = (style: string, fsize: number) => {
-    const weight = style === "bold" ? "700" : "500";
-    const ital = style === "italic" ? "italic " : "";
+  const tokFont = (t: Tok, fsize: number) => {
+    if (t.gap) return "500 " + fsize + "px " + SERIF;
+    const weight = t.style === "bold" ? "700" : "500";
+    const ital = t.style === "italic" ? "italic " : "";
     return ital + weight + " " + fsize + "px " + SERIF;
+  };
+
+  const buildToks = (frags: CovenantFrag[]): Tok[] => {
+    const toks: Tok[] = [];
+    frags.forEach((f, fi) => {
+      if (f.gapBefore)
+        toks.push({ text: "…", style: "gap", color: 0, gap: true, frag: -1 });
+      f.text
+        .split(/\s+/)
+        .filter(Boolean)
+        .forEach((w) =>
+          toks.push({ text: w, style: f.style, color: f.color, gap: false, frag: fi })
+        );
+    });
+    return toks;
+  };
+
+  const layoutToks = (toks: Tok[], fsize: number): Tok[][] => {
+    ctx.font = "500 " + fsize + "px " + SERIF;
+    const sp = ctx.measureText(" ").width;
+    const lines: Tok[][] = [];
+    let line: Tok[] = [];
+    let lineW = 0;
+    toks.forEach((t) => {
+      ctx.font = tokFont(t, fsize);
+      const w = ctx.measureText(t.text).width;
+      const add = (line.length ? sp : 0) + w;
+      if (line.length && lineW + add > boxTextW) {
+        lines.push(line);
+        line = [t];
+        lineW = w;
+      } else {
+        line.push(t);
+        lineW += add;
+      }
+    });
+    if (line.length) lines.push(line);
+    return lines;
   };
 
   const headerH = labelSize + labelGap + headingSize + headingGap;
 
   const measure = (fsize: number) => {
     const blocks = pairs.map((pr) => {
-      ctx.font = styleFont(pr.ifStyle, fsize);
-      const ifLines = wrap(ctx, pr.ifText, boxTextW);
-      ctx.font = styleFont(pr.thenStyle, fsize);
-      const thenLines = wrap(ctx, pr.thenText, boxTextW);
+      const ifLines = layoutToks(buildToks(pr.ifFrags), fsize);
+      const thenLines = layoutToks(buildToks(pr.thenFrags), fsize);
       const ifBoxH = boxVPad * 2 + ifLines.length * fsize * lineMul;
       const thenBoxH = boxVPad * 2 + thenLines.length * fsize * lineMul;
       const height = refSize + refGap + ifBoxH + arrowGap + thenBoxH;
@@ -907,7 +977,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   );
   canvas.height = cardH;
 
-  // flat background — matches the app, not the parchment cards
+  // flat app background (not the parchment style)
   ctx.fillStyle = a.bg;
   ctx.fillRect(0, 0, W, cardH);
 
@@ -925,13 +995,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   const contentBudget = cardH - contentTop - footerSpace;
   let y = contentTop + Math.max(0, (contentBudget - lay.total) / 2);
 
-  const drawBox = (
-    lines: string[],
-    style: string,
-    accent: string,
-    hl: string,
-    boxH: number
-  ) => {
+  const drawBox = (lines: Tok[][], accent: string, boxH: number) => {
     const boxX = padX;
     const boxW = W - padX * 2;
     const boxTop = y;
@@ -943,27 +1007,46 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     ctx.fill();
     const tx = boxX + innerPad;
     let ty = boxTop + boxVPad;
+    ctx.font = "500 " + size + "px " + SERIF;
+    const sp = ctx.measureText(" ").width;
     lines.forEach((ln) => {
-      ctx.font = styleFont(style, size);
       const lineBase = ty + size;
-      const tw = ctx.measureText(ln).width;
-      if (style === "highlight") {
-        ctx.fillStyle = hl;
-        roundRect(ctx, tx - 6, lineBase - size + size * 0.2, tw + 12, size * 1.1, 6);
-        ctx.fill();
-      }
-      ctx.fillStyle = a.text;
-      ctx.font = styleFont(style, size);
-      ctx.textAlign = "left";
-      ctx.fillText(ln, tx, lineBase);
-      if (style === "underline" || style === "circle") {
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(tx, lineBase + 8);
-        ctx.lineTo(tx + tw, lineBase + 8);
-        ctx.stroke();
-      }
+      let x = tx;
+      ln.forEach((t, i) => {
+        if (i > 0) x += sp;
+        ctx.font = tokFont(t, size);
+        const w = ctx.measureText(t.text).width;
+        const next = ln[i + 1];
+        const contig = !!next && !t.gap && !next.gap && next.frag === t.frag;
+        if (!t.gap && t.style === "highlight") {
+          ctx.fillStyle = hlHex(t.color, dark);
+          const rw = w + (contig ? sp : 0);
+          roundRect(ctx, x - 3, lineBase - size * 0.82, rw + 6, size * 1.04, 5);
+          ctx.fill();
+        }
+        if (t.gap) ctx.fillStyle = a.muted;
+        else if (t.style === "bold" || t.style === "italic")
+          ctx.fillStyle = penHex(t.color, dark);
+        else ctx.fillStyle = a.text;
+        ctx.font = tokFont(t, size);
+        ctx.textAlign = "left";
+        ctx.fillText(t.text, x, lineBase);
+        if (!t.gap && t.style === "underline") {
+          ctx.strokeStyle = penHex(t.color, dark);
+          ctx.lineWidth = 2.5;
+          const uw = w + (contig ? sp : 0);
+          ctx.beginPath();
+          ctx.moveTo(x, lineBase + 6);
+          ctx.lineTo(x + uw, lineBase + 6);
+          ctx.stroke();
+        } else if (!t.gap && t.style === "circle") {
+          ctx.strokeStyle = penHex(t.color, dark);
+          ctx.lineWidth = 2.5;
+          roundRect(ctx, x - 4, lineBase - size * 0.86, w + 8, size * 1.12, size * 0.55);
+          ctx.stroke();
+        }
+        x += w;
+      });
       ty += size * lineMul;
     });
     y = boxTop + boxH;
@@ -977,7 +1060,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     ctx.fillText(b.pr.reference, padX, y + refSize);
     y += refSize + refGap;
 
-    drawBox(b.ifLines, b.pr.ifStyle, condAccent, condHl, b.ifBoxH);
+    drawBox(b.ifLines, condAccent, b.ifBoxH);
 
     const arrowMid = y + arrowGap / 2;
     ctx.fillStyle = a.muted;
@@ -987,11 +1070,10 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     ctx.fillText("\u2193", W / 2, arrowMid + 2);
     y += arrowGap;
 
-    drawBox(b.thenLines, b.pr.thenStyle, promAccent, promHl, b.thenBoxH);
+    drawBox(b.thenLines, promAccent, b.thenBoxH);
     y += pairGap;
   });
 
-  // minimal footer wordmark (not the full brand block)
   ctx.fillStyle = a.muted;
   ctx.font = "600 24px " + SERIF;
   ctx.textAlign = "center";
