@@ -784,3 +784,187 @@ export async function shareCanvas(
     return "failed";
   }
 }
+
+// ---------- Covenant card (up to 3 If -> Then pairs, with marks) ----------
+export interface CovenantPairData {
+  reference: string;
+  ifText: string;
+  ifStyle: string;
+  thenText: string;
+  thenStyle: string;
+}
+export interface CovenantCardOpts {
+  pairs: CovenantPairData[];
+  conditionColor: number;
+  promiseColor: number;
+  dark: boolean;
+}
+
+export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
+  const p = o.dark ? darkCard : lightCard;
+  const { canvas, ctx } = newCanvas();
+  if (!ctx) return canvas;
+
+  const pairs = o.pairs.slice(0, 3);
+  const condAccent = penHex(o.conditionColor, o.dark);
+  const condHl = hlHex(o.conditionColor, o.dark);
+  const promAccent = penHex(o.promiseColor, o.dark);
+  const promHl = hlHex(o.promiseColor, o.dark);
+
+  const padX = 110;
+  const top = 206;
+  const FOOTER_SPACE = 168;
+  const MIN_H = 1080;
+  const MAX_H = 2600;
+
+  const innerPad = 28;
+  const boxTextW = W - padX * 2 - innerPad * 2;
+  const refSize = 24;
+  const refGap = 14;
+  const labelSize = 20;
+  const labelGap = 10;
+  const connGap = 42;
+  const boxVPad = 24;
+  const pairGap = 44;
+  const lineMul = 1.32;
+
+  const styleFont = (style: string, size: number) => {
+    const weight = style === "bold" ? "700" : "500";
+    const ital = style === "italic" ? "italic " : "";
+    return ital + weight + " " + size + "px " + SERIF;
+  };
+
+  const measure = (size: number) => {
+    const blocks = pairs.map((pr) => {
+      ctx.font = styleFont(pr.ifStyle, size);
+      const ifLines = wrap(ctx, pr.ifText, boxTextW);
+      ctx.font = styleFont(pr.thenStyle, size);
+      const thenLines = wrap(ctx, pr.thenText, boxTextW);
+      const ifBoxH = boxVPad * 2 + ifLines.length * size * lineMul;
+      const thenBoxH = boxVPad * 2 + thenLines.length * size * lineMul;
+      const height =
+        refSize +
+        refGap +
+        (labelSize + labelGap) +
+        ifBoxH +
+        connGap +
+        (labelSize + labelGap) +
+        thenBoxH;
+      return { pr, ifLines, thenLines, ifBoxH, thenBoxH, height };
+    });
+    const total =
+      blocks.reduce((s, b) => s + b.height, 0) +
+      Math.max(0, blocks.length - 1) * pairGap;
+    return { blocks, total };
+  };
+
+  let size = pairs.length >= 3 ? 36 : pairs.length === 2 ? 40 : 46;
+  const minSize = 24;
+  const maxContent = MAX_H - top - FOOTER_SPACE;
+  let lay = measure(size);
+  while (size > minSize && lay.total > maxContent) {
+    size -= 2;
+    lay = measure(size);
+  }
+
+  const cardH = Math.round(
+    Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
+  );
+  canvas.height = cardH;
+  paintBackground(ctx, p, cardH);
+  paintMasthead(ctx, p, condAccent);
+
+  ctx.fillStyle = p.muted;
+  ctx.font = "700 22px " + SANS;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  drawTracked(ctx, "COVENANT LEDGER", W / 2, 170, 4);
+
+  const contentBudget = cardH - top - FOOTER_SPACE;
+  let y = top + Math.max(0, (contentBudget - lay.total) / 2);
+
+  const drawBox = (
+    lines: string[],
+    style: string,
+    accent: string,
+    hl: string,
+    boxH: number
+  ) => {
+    const boxX = padX;
+    const boxW = W - padX * 2;
+    const boxTop = y;
+    ctx.fillStyle = p.bg2;
+    roundRect(ctx, boxX, boxTop, boxW, boxH, 14);
+    ctx.fill();
+    ctx.strokeStyle = p.frame;
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, boxX, boxTop, boxW, boxH, 14);
+    ctx.stroke();
+    ctx.fillStyle = accent;
+    roundRect(ctx, boxX, boxTop + 8, 6, boxH - 16, 3);
+    ctx.fill();
+    const tx = boxX + innerPad;
+    let ty = boxTop + boxVPad;
+    lines.forEach((ln) => {
+      ctx.font = styleFont(style, size);
+      const lineBase = ty + size;
+      const tw = ctx.measureText(ln).width;
+      if (style === "highlight") {
+        ctx.fillStyle = hl;
+        roundRect(ctx, tx - 6, lineBase - size + size * 0.2, tw + 12, size * 1.1, 6);
+        ctx.fill();
+      }
+      ctx.fillStyle = p.text;
+      ctx.font = styleFont(style, size);
+      ctx.textAlign = "left";
+      ctx.fillText(ln, tx, lineBase);
+      if (style === "underline" || style === "circle") {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(tx, lineBase + 8);
+        ctx.lineTo(tx + tw, lineBase + 8);
+        ctx.stroke();
+      }
+      ty += size * lineMul;
+    });
+    y = boxTop + boxH;
+  };
+
+  const drawLabel = (txt: string, accent: string) => {
+    ctx.fillStyle = accent;
+    ctx.font = "700 " + labelSize + "px " + SANS;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    drawTrackedLeft(ctx, txt, padX + 2, y + labelSize, 3);
+    y += labelSize + labelGap;
+  };
+
+  lay.blocks.forEach((b) => {
+    ctx.fillStyle = p.muted;
+    ctx.font = "600 " + refSize + "px " + SANS;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(b.pr.reference, padX + 2, y + refSize);
+    y += refSize + refGap;
+
+    drawLabel("IF", condAccent);
+    drawBox(b.ifLines, b.pr.ifStyle, condAccent, condHl, b.ifBoxH);
+
+    const arrowMid = y + connGap / 2;
+    ctx.fillStyle = p.muted;
+    ctx.font = "500 34px " + SANS;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("\u2193", W / 2, arrowMid + 2);
+    y += connGap;
+
+    drawLabel("THEN", promAccent);
+    drawBox(b.thenLines, b.pr.thenStyle, promAccent, promHl, b.thenBoxH);
+
+    y += pairGap;
+  });
+
+  paintBrand(ctx, p, condAccent, cardH);
+  return canvas;
+}
