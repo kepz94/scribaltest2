@@ -1670,6 +1670,12 @@ export default function MobileApp() {
   // Open a recorded study from the Studies screen — jump straight to its
   // compiled notes (the book is positioned underneath for when you close it).
   const openRecordedStudy = (s: Study) => {
+    // Pin the compile to THIS study FIRST. The notes read their scope from
+    // compileRec, so they can never fall back to whatever chapter is open
+    // underneath — even when the study lives in an uploaded book whose chapters
+    // aren't in the standard navigation map (where the jump below is a no-op).
+    setCompileStudy(null);
+    setCompileRec(s);
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
     const chapter =
       s.type === "linked"
@@ -1684,8 +1690,6 @@ export default function MobileApp() {
     jumpToScope(chapter);
     setStudiesOpen(false);
     setHomeOpen(false);
-    setCompileStudy(null);
-    setCompileRec(s);
     setCompileOpen(true);
   };
   const deleteStudy = (id: string) => {
