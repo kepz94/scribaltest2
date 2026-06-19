@@ -123,23 +123,15 @@ export default function VerseViewer(props: VerseViewerProps) {
   const currentChapter = currentBook.chapters[selectedChapter];
   const erasing = selectedTool === "eraser";
 
-  const [showConditionals, setShowConditionals] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("scribal_show_conditionals") === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "scribal_show_conditionals",
-        showConditionals ? "1" : "0"
-      );
-    } catch {
-      // ignore storage failure
-    }
-  }, [showConditionals]);
+  // Per-tab conditional lens — each open chapter / study remembers its own
+  // on/off state, instead of one switch applying to the whole screen.
+  const tabKey = studyRefs
+    ? "study:" + (studyTitle || studyRefs.join(","))
+    : selectedVolume + ":" + selectedBook + ":" + selectedChapter;
+  const [condByTab, setCondByTab] = useState<Record<string, boolean>>({});
+  const showConditionals = !!condByTab[tabKey];
+  const toggleConditionals = () =>
+    setCondByTab((m) => ({ ...m, [tabKey]: !m[tabKey] }));
 
   // Warm reading palette (matches the phone): paper-toned bg + ink text.
   const readBg = warm ? (dark ? "#1a1410" : "#f4ecd6") : "var(--panel)";
@@ -459,48 +451,6 @@ export default function VerseViewer(props: VerseViewerProps) {
     />
   );
 
-  const conditionalToggle = (
-    <button
-      onClick={() => setShowConditionals((v) => !v)}
-      title={
-        showConditionals
-          ? "Hide conditional words"
-          : "Find conditional words (if, when, whoso…) to mark yourself"
-      }
-      style={{
-        width: "40px",
-        height: "40px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: "10px",
-        cursor: "pointer",
-        fontSize: "15px",
-        fontStyle: "italic",
-        fontWeight: 700,
-        fontFamily: '"Times New Roman", Times, serif',
-        position: "relative",
-        border: showConditionals
-          ? "1.5px solid var(--text)"
-          : "1.5px solid transparent",
-        backgroundColor: showConditionals ? "var(--text)" : "transparent",
-        color: showConditionals ? "var(--bg)" : "var(--text)",
-        transition: "all 0.15s",
-        flexShrink: 0,
-      }}
-    >
-      <span
-        style={{
-          borderBottom: "2px dashed currentColor",
-          paddingBottom: "1px",
-          lineHeight: 1,
-        }}
-      >
-        if
-      </span>
-    </button>
-  );
-
   const pillButton = (label: React.ReactNode, onClick: () => void) => (
     <button
       onClick={onClick}
@@ -759,8 +709,6 @@ export default function VerseViewer(props: VerseViewerProps) {
         {divider}
         {toolButton("eraser", "⌫", "e")}
         {divider}
-        {conditionalToggle}
-        {divider}
         <button
           onClick={() => setOrientation(isV ? "horizontal" : "vertical")}
           title="Switch orientation"
@@ -879,6 +827,66 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         </div>
         )}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: "10px",
+          }}
+        >
+          <button
+            onClick={toggleConditionals}
+            title={
+              showConditionals
+                ? "Hide conditional words on this tab"
+                : "Find conditional words on this tab (if, when, whoso…) to mark yourself"
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              padding: "6px 12px",
+              borderRadius: "999px",
+              border:
+                "1px solid " +
+                (showConditionals
+                  ? dark
+                    ? "#a5b4fc"
+                    : "#4f46e5"
+                  : "var(--border)"),
+              backgroundColor: showConditionals
+                ? dark
+                  ? "rgba(165,180,252,0.16)"
+                  : "rgba(79,70,229,0.10)"
+                : "var(--panel)",
+              color: showConditionals
+                ? dark
+                  ? "#a5b4fc"
+                  : "#4f46e5"
+                : "var(--muted)",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              fontFamily: "system-ui, sans-serif",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            <span
+              style={{
+                fontStyle: "italic",
+                fontFamily: '"Times New Roman", Times, serif',
+                fontWeight: 700,
+                borderBottom: "2px dashed currentColor",
+                lineHeight: 1,
+                paddingBottom: "1px",
+              }}
+            >
+              if
+            </span>
+            {showConditionals ? "Conditionals shown" : "Find conditionals"}
+          </button>
+        </div>
 
         {erasing && (
           <p
