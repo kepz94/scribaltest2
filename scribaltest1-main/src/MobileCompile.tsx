@@ -651,7 +651,7 @@ export default function MobileCompile({
               {seg(format === "distilled", "Distilled", () =>
                 setFormat("distilled")
               )}
-              {seg(format === "covenants", "Covenants", () =>
+              {seg(format === "covenants", "Relational", () =>
                 setFormat("covenants")
               )}
             </div>
