@@ -243,41 +243,56 @@ function loadPdfjs(): Promise<any> {
 export async function extractPdfText(file: File): Promise<string> {
   const pdfjsLib = await loadPdfjs();
   const data = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
-  const pageTexts: string[] = [];
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(data) }).promise;
+  const lines: string[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    // Reconstruct visual lines: group text items by y, top-to-bottom; within a
-    // line sort left-to-right. Items are joined with spaces so adjacent runs
-    // never collide (e.g. "Matthew" + "3:11" stays "Matthew 3:11"); the verse
-    // text itself is never stored, so minor spacing is harmless.
-    const rows: { y: number; items: { x: number; s: string }[] }[] = [];
+    let cur = "";
+    let prevEndX: number | null = null;
+    let prevY: number | null = null;
+    const pushLine = () => {
+      const t = cur.replace(/\s+/g, " ").trim();
+      if (t) lines.push(t);
+      cur = "";
+      prevEndX = null;
+    };
     for (const it of content.items as any[]) {
       const s = typeof it.str === "string" ? it.str : "";
-      if (!s.trim() && !it.hasEOL) continue;
       const tr = it.transform || [1, 0, 0, 1, 0, 0];
       const x = tr[4];
-      const y = Math.round(tr[5]);
-      let row = rows.find((r) => Math.abs(r.y - y) <= 2);
-      if (!row) {
-        row = { y, items: [] };
-        rows.push(row);
+      const y = tr[5];
+      const fontH = Math.abs(tr[3]) || Math.abs(tr[0]) || 10;
+      const w = typeof it.width === "number" ? it.width : 0;
+      // New visual line when the baseline shifts vertically.
+      if (prevY !== null && Math.abs(y - prevY) > Math.max(2, fontH * 0.5)) {
+        pushLine();
+        prevY = null;
       }
-      row.items.push({ x, s });
+      if (s) {
+        // Insert a space when there's a real horizontal gap between runs (about
+        // a space wide), so "Matthew" + "3:11" becomes "Matthew 3:11" without
+        // splitting kerned letters inside a word.
+        if (
+          prevEndX !== null &&
+          x - prevEndX > fontH * 0.28 &&
+          !cur.endsWith(" ") &&
+          !s.startsWith(" ")
+        ) {
+          cur += " ";
+        }
+        cur += s;
+        prevEndX = x + w;
+        prevY = y;
+      }
+      if (it.hasEOL) {
+        pushLine();
+        prevY = null;
+      }
     }
-    rows.sort((a, b) => b.y - a.y);
-    const lines = rows.map((r) =>
-      r.items
-        .sort((a, b) => a.x - b.x)
-        .map((i) => i.s)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim()
-    );
-    pageTexts.push(lines.join("\n"));
+    pushLine();
   }
-  return pageTexts.join("\n");
+  return lines.join("\n");
 }
 
 // Convenience: PDF file -> parsed import.
