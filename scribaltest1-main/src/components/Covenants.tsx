@@ -26,6 +26,7 @@ interface CovenantsProps {
   colorLabels: Record<number, string>;
   setColorLabel: (color: MarkColor, label: string) => void;
   onJumpToReference: (reference: string) => void;
+  shareSignal?: number;
 }
 
 const vols = scriptures.volumes;
@@ -84,6 +85,17 @@ export default function Covenants(props: CovenantsProps) {
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // When the share trigger lives in the host header (mobile), it bumps
+  // shareSignal to start the in-ledger pair picker. When absent (desktop),
+  // Covenants renders its own "Share image" button instead.
+  const externalTrigger = props.shareSignal !== undefined;
+  useEffect(() => {
+    if (props.shareSignal && props.shareSignal > 0) {
+      setPicked([]);
+      setPicking(true);
+    }
+  }, [props.shareSignal]);
 
   const tabLabel = (t: Tab) =>
     vols[t.volume].books[t.book].book +
@@ -521,7 +533,7 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {rows.length > 0 && !picking && (
+      {rows.length > 0 && !picking && !externalTrigger && (
         <div
           style={{
             display: "flex",
@@ -541,7 +553,7 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {rows.length > 0 && picking && (
+      {picking && (
         <div style={pickBarStyle}>
           <span
             style={{
