@@ -23,6 +23,19 @@ function tokenize(text: string): Token[] {
   return toks;
 }
 
+// Conditional / covenantal markers, surfaced as a reading lens only (never
+// turned into marks). Longer phrases first so the alternation prefers them.
+function findConditionals(text: string): { start: number; end: number }[] {
+  const re =
+    /\b(inasmuch as|as many as|whosoever|whomsoever|whenever|inasmuch|whoso|except|unless|lest|when|if)\b/gi;
+  const out: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out.push({ start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
 interface MobileVerseProps {
   reference: string;
   verseNumber: number;
@@ -42,6 +55,8 @@ interface MobileVerseProps {
     markedText: string,
     commit: boolean
   ) => void;
+  showConditionals?: boolean;
+  dark?: boolean;
 }
 
 const LONG_PRESS_MS = 380;
@@ -66,9 +81,17 @@ export default function MobileVerse({
   editingActive,
   onEnterEdit,
   onAdjust,
+  showConditionals = false,
+  dark = false,
 }: MobileVerseProps) {
   const toks = tokenize(text);
   const verseMarks = marks.filter((m) => m.reference === reference);
+
+  const condRanges = showConditionals ? findConditionals(text) : [];
+  const condLine = dark ? "#a5b4fc" : "#4f46e5";
+  const condBg = dark ? "rgba(165,180,252,0.16)" : "rgba(79,70,229,0.10)";
+  const isCondTok = (tok: Token) =>
+    condRanges.some((r) => r.start < tok.end && r.end > tok.start);
 
   // pending selection char range while dragging
   const [sel, setSel] = useState<{ s: number; e: number } | null>(null);
@@ -415,6 +438,15 @@ export default function MobileVerse({
   const renderTok = (i: number) => {
     const tok = toks[i];
     const highlight = isSelected(tok) || inEditRange(tok);
+    const cond = showConditionals && isCondTok(tok);
+    const marked = !!coveringMark(tok);
+    const condStyle = cond
+      ? {
+          borderBottom: "2px dashed " + condLine,
+          paddingBottom: "1px",
+          ...(highlight || marked ? {} : { backgroundColor: condBg }),
+        }
+      : {};
     const selStyle = highlight
       ? { backgroundColor: selBg, ...(tok.isWord ? { borderRadius: "2px" } : {}) }
       : {};
@@ -427,6 +459,7 @@ export default function MobileVerse({
             userSelect: "none",
             WebkitUserSelect: "none",
             cursor: "pointer",
+            ...condStyle,
             ...selStyle,
           }}
         >
@@ -435,7 +468,7 @@ export default function MobileVerse({
       );
     }
     return (
-      <span key={i} style={{ userSelect: "none", ...selStyle }}>
+      <span key={i} style={{ userSelect: "none", ...condStyle, ...selStyle }}>
         {tok.text}
       </span>
     );
