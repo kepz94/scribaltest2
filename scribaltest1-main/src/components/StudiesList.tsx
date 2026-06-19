@@ -16,6 +16,7 @@ export type StudyRow = {
 interface Props {
   rows: StudyRow[];
   onClose: () => void;
+  onImport?: () => void;
 }
 
 const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
@@ -24,7 +25,7 @@ const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
   { kind: "keyword", label: "Keyword studies", icon: "📑" },
 ];
 
-export default function StudiesList({ rows, onClose }: Props) {
+export default function StudiesList({ rows, onClose, onImport }: Props) {
   return (
     <div
       className="scribal-fade"
@@ -68,6 +69,24 @@ export default function StudiesList({ rows, onClose }: Props) {
           <div style={{ flex: 1, fontSize: "16px", fontWeight: 700 }}>
             Studies
           </div>
+          {onImport && (
+            <button
+              onClick={onImport}
+              title="Import a note exported from ScriptureNotes"
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border)",
+                color: "var(--text)",
+                borderRadius: "999px",
+                padding: "8px 14px",
+                fontSize: "13px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Import
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{
