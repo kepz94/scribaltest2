@@ -15,6 +15,10 @@ import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
 import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
+import {
+  importScriptureNotesPdf,
+  ParsedImport,
+} from "./scriptureNotesImport";
 import { useStudies, Study } from "./hooks/useStudies";
 import Walkthrough from "./components/Walkthrough";
 import CompileWalkthrough from "./components/CompileWalkthrough";
@@ -753,6 +757,13 @@ export default function App() {
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
   const [studyDraftName, setStudyDraftName] = useState("");
+
+  // ScriptureNotes importer
+  const [snImportOpen, setSnImportOpen] = useState(false);
+  const [snBusy, setSnBusy] = useState(false);
+  const [snErr, setSnErr] = useState("");
+  const [snParsed, setSnParsed] = useState<ParsedImport | null>(null);
+  const [snName, setSnName] = useState("");
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -1707,6 +1718,56 @@ export default function App() {
     if (!refs || !refs.length) return;
     const study = addStudy(studyDraftName, activeBookId, refs);
     setStudyDraftRefs(null);
+    openStudyTab(study);
+  };
+  // ---- ScriptureNotes import: PDF report -> a Search Study ----
+  const openSnImport = () => {
+    setSnParsed(null);
+    setSnErr("");
+    setSnName("");
+    setSnBusy(false);
+    setSnImportOpen(true);
+  };
+  const handleSnFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    setSnErr("");
+    setSnParsed(null);
+    setSnBusy(true);
+    try {
+      const parsed = await importScriptureNotesPdf(file);
+      if (!parsed.verses.length && !parsed.unmatched.length) {
+        setSnErr(
+          "Couldn't find any verses in that file. Make sure it's a report PDF exported from ScriptureNotes."
+        );
+      } else {
+        setSnParsed(parsed);
+        setSnName(parsed.title || "Imported study");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Couldn't read that PDF.";
+      setSnErr(msg);
+    } finally {
+      setSnBusy(false);
+    }
+  };
+  const commitSnImport = () => {
+    if (!snParsed || !snParsed.verses.length) return;
+    const parts: string[] = [];
+    if (snParsed.description) parts.push(snParsed.description);
+    if (snParsed.favorites.length)
+      parts.push("★ Favorites: " + snParsed.favorites.join(", "));
+    const note = parts.join("\n\n");
+    const study = addStudy(
+      snName.trim() || "Imported study",
+      "master",
+      snParsed.verses,
+      note
+    );
+    setSnImportOpen(false);
+    setSnParsed(null);
+    setSnName("");
+    setSnErr("");
+    setStudiesOpen(false);
     openStudyTab(study);
   };
   // Deleting a study also closes any tab that was showing it.
@@ -3412,7 +3473,265 @@ export default function App() {
         <StudiesList
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
+          onImport={openSnImport}
         />
+      )}
+
+      {snImportOpen && (
+        <div
+          className="scribal-fade"
+          onClick={() => setSnImportOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 390,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="scribal-rise"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "460px",
+              maxHeight: "calc(100vh - 80px)",
+              overflowY: "auto",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: "16px",
+              border: "1px solid var(--border)",
+              padding: "20px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div style={{ fontSize: "16px", fontWeight: 700 }}>
+              Import from ScriptureNotes
+            </div>
+            <div
+              style={{
+                fontSize: "12.5px",
+                color: "var(--muted)",
+                marginTop: "3px",
+              }}
+            >
+              Upload a note exported as a PDF report — it becomes a study with all
+              of its verses.
+            </div>
+
+            {!snParsed && (
+              <>
+                <label
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (!snBusy)
+                      handleSnFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+                  }}
+                  style={{
+                    display: "block",
+                    marginTop: "16px",
+                    padding: "26px 16px",
+                    border: "1.5px dashed var(--border)",
+                    borderRadius: "12px",
+                    textAlign: "center",
+                    cursor: snBusy ? "default" : "pointer",
+                    background: "var(--panel)",
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    disabled={snBusy}
+                    onChange={(e) =>
+                      handleSnFile(e.target.files && e.target.files[0])
+                    }
+                    style={{ display: "none" }}
+                  />
+                  <div style={{ fontSize: "14px", fontWeight: 600 }}>
+                    {snBusy ? "Reading your PDF…" : "Choose a PDF"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      marginTop: "4px",
+                    }}
+                  >
+                    {snBusy ? "One moment" : "or drag the file here"}
+                  </div>
+                </label>
+                {snErr && (
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      fontSize: "13px",
+                      lineHeight: 1.45,
+                      color: "#c0392b",
+                    }}
+                  >
+                    {snErr}
+                  </div>
+                )}
+                <div style={{ marginTop: "16px", textAlign: "right" }}>
+                  <button
+                    onClick={() => setSnImportOpen(false)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {snParsed && (
+              <>
+                <div
+                  style={{
+                    marginTop: "16px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                  }}
+                >
+                  Study name
+                </div>
+                <input
+                  value={snName}
+                  onChange={(e) => setSnName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "11px 13px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "15px",
+                    fontFamily: "inherit",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div
+                  style={{
+                    marginTop: "14px",
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {[
+                    `${snParsed.verses.length} verses`,
+                    `${snParsed.favorites.length} favorites`,
+                    `${snParsed.unmatched.length} unmatched`,
+                  ].map((chip) => (
+                    <span
+                      key={chip}
+                      style={{
+                        fontSize: "12.5px",
+                        fontWeight: 600,
+                        padding: "5px 11px",
+                        borderRadius: "999px",
+                        background: "var(--panel)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      {chip}
+                    </span>
+                  ))}
+                </div>
+                {snParsed.description && (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      padding: "12px 14px",
+                      background: "var(--panel)",
+                      borderRadius: "10px",
+                      fontSize: "13px",
+                      lineHeight: 1.5,
+                      maxHeight: "150px",
+                      overflowY: "auto",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {snParsed.description}
+                  </div>
+                )}
+                {snParsed.unmatched.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      fontSize: "12.5px",
+                      color: "var(--muted)",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    Couldn't match{" "}
+                    {snParsed.unmatched.map((u) => u.raw).join(", ")}. These are
+                    skipped — everything else imports.
+                  </div>
+                )}
+                <div style={{ marginTop: "18px", display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => {
+                      setSnParsed(null);
+                      setSnErr("");
+                    }}
+                    style={{
+                      flex: "0 0 auto",
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                      borderRadius: "10px",
+                      padding: "11px 16px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={commitSnImport}
+                    disabled={!snParsed.verses.length}
+                    style={{
+                      flex: 1,
+                      background: snParsed.verses.length
+                        ? "var(--text)"
+                        : "var(--panel)",
+                      color: snParsed.verses.length ? "var(--bg)" : "var(--muted)",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "11px",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor: snParsed.verses.length ? "pointer" : "default",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Import{" "}
+                    {snParsed.verses.length === 1
+                      ? "1 verse"
+                      : snParsed.verses.length + " verses"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {studyDraftRefs && (
@@ -4940,6 +5259,21 @@ export default function App() {
                     height: multi ? "calc(100vh - 150px)" : "auto",
                   }}
                 >
+                  {study && study.note && (
+                    <div
+                      style={{
+                        padding: "12px 16px",
+                        background: "var(--panel)",
+                        borderBottom: "1px solid var(--border)",
+                        fontSize: "13.5px",
+                        lineHeight: 1.55,
+                        color: "var(--text)",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {study.note}
+                    </div>
+                  )}
                   <VerseViewer
                     key={t.id}
                     selectedVolume={t.volume}
