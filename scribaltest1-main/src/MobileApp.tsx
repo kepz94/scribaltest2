@@ -488,6 +488,12 @@ export default function MobileApp() {
   });
   const C = dark ? PALETTE.dark : PALETTE.light;
 
+  // Per-chapter conditional lens (the "if" identifier) for the reading screen —
+  // each chapter remembers its own on/off, not a global switch.
+  const [condByChapter, setCondByChapter] = useState<Record<string, boolean>>(
+    {}
+  );
+
   // Mark color intensity (device-local; shared key with desktop). 1.0 = normal.
   const [colorIntensity, setColorIntensity] = useState<number>(() => {
     const saved = localStorage.getItem("scribal_color_intensity");
@@ -1121,6 +1127,9 @@ export default function MobileApp() {
   const bookName = vols[loc.v].books[loc.b].book;
   const displayTitle = bookName + " " + chapter.chapter;
   const title = chapterScopeKey(vols[loc.v].books[loc.b], chapter);
+  const showConditionals = !!condByChapter[title];
+  const toggleConditionals = () =>
+    setCondByChapter((m) => ({ ...m, [title]: !m[title] }));
 
   // Theme names are per chapter (study scope). Each chapter keeps its own
   // palette, so naming or clearing one chapter never touches another.
@@ -2405,6 +2414,48 @@ export default function MobileApp() {
           )}
           {displayTitle}
         </h2>
+        <button
+          onClick={toggleConditionals}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "7px",
+            padding: "6px 12px",
+            borderRadius: "999px",
+            border:
+              "1px solid " +
+              (showConditionals ? (dark ? "#a5b4fc" : "#4f46e5") : C.border),
+            background: showConditionals
+              ? dark
+                ? "rgba(165,180,252,0.16)"
+                : "rgba(79,70,229,0.10)"
+              : C.panel,
+            color: showConditionals
+              ? dark
+                ? "#a5b4fc"
+                : "#4f46e5"
+              : C.muted,
+            fontSize: "12.5px",
+            fontWeight: 600,
+            fontFamily: "system-ui, sans-serif",
+            cursor: "pointer",
+            marginBottom: "16px",
+          }}
+        >
+          <span
+            style={{
+              fontStyle: "italic",
+              fontFamily: '"Times New Roman", Times, serif',
+              fontWeight: 700,
+              borderBottom: "2px dashed currentColor",
+              lineHeight: 1,
+              paddingBottom: "1px",
+            }}
+          >
+            if
+          </span>
+          {showConditionals ? "Conditionals shown" : "Find conditionals"}
+        </button>
         <div
           style={{
             fontFamily: '"Times New Roman", Times, serif',
@@ -2431,6 +2482,8 @@ export default function MobileApp() {
               editingActive={!!editMark}
               onEnterEdit={onEnterEdit}
               onAdjust={onAdjust}
+              showConditionals={showConditionals}
+              dark={dark}
             />
           ))}
         </div>
