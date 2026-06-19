@@ -1,7 +1,9 @@
 import { useState, useRef, useLayoutEffect, CSSProperties } from "react";
 import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
-import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
+import { Mark, MarkColor, Tab, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
+import Distilled from "./components/Distilled";
+import Covenants from "./components/Covenants";
 import SharePreview from "./SharePreview";
 import type { VersesCardEntry, VersesSynthesis } from "./shareCard";
 
@@ -57,6 +59,25 @@ function verseIndex(): Map<string, { text: string; verse: number }> {
   return m;
 }
 
+// Reference -> volume/book/chapter indices. Lets the shared Distilled /
+// Covenants views (which expect compile tabs) work from mobile's flat marks.
+let _locIndex: Map<string, { v: number; b: number; c: number }> | null = null;
+function locIndex(): Map<string, { v: number; b: number; c: number }> {
+  if (_locIndex) return _locIndex;
+  const m = new Map<string, { v: number; b: number; c: number }>();
+  (scriptures as any).volumes.forEach((vol: any, vi: number) =>
+    vol.books.forEach((bk: any, bi: number) =>
+      bk.chapters.forEach((ch: any, ci: number) =>
+        ch.verses.forEach((v: any) =>
+          m.set(v.reference, { v: vi, b: bi, c: ci })
+        )
+      )
+    )
+  );
+  _locIndex = m;
+  return m;
+}
+
 export default function MobileCompile({
   marks,
   colorLabels,
@@ -86,7 +107,9 @@ export default function MobileCompile({
   const verseNoteKey = (ref: string) => "versenote:" + ref;
   const [sortMode, setSortMode] = useState<SortMode>("order");
   const [studyName, setStudyName] = useState(defaultName);
-  const [view, setView] = useState<"focused" | "full">("focused");
+  const [view, setView] = useState<
+    "focused" | "full" | "distilled" | "covenants"
+  >("focused");
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
   // Which synthesis / verse-note is in edit mode (textarea open). Otherwise the
@@ -144,6 +167,41 @@ export default function MobileCompile({
   // Compile is scoped to one chapter (the marks passed in), so every mark here
   // belongs to this study — show them all, grouped by their theme.
   const liveMarks = marks;
+
+  // For the shared Distilled / Covenants views: the distinct chapters present
+  // in these marks, expressed as compile tabs, plus the prop shape those
+  // components expect (most fields unused on mobile — the tab picker is hidden).
+  const sharedCompileTabs: Tab[] = (() => {
+    const loc = locIndex();
+    const seen = new Set<string>();
+    const out: Tab[] = [];
+    liveMarks.forEach((m) => {
+      const l = loc.get(m.reference);
+      if (!l) return;
+      const key = l.v + ":" + l.b + ":" + l.c;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        id: "mob_" + key,
+        volume: l.v,
+        book: l.b,
+        chapter: l.c,
+        bookId: "mobile",
+      });
+    });
+    return out;
+  })();
+  const sharedViewProps = {
+    tabs: [] as Tab[],
+    compileTabs: sharedCompileTabs,
+    compileSelection: [] as string[],
+    onToggleCompileTab: () => {},
+    hideTabPicker: true,
+    marks: liveMarks,
+    colorLabels,
+    setColorLabel: () => {},
+    onJumpToReference: onJump,
+  };
   const [expanded, setExpanded] = useState<string[]>(() => {
     // Linked studies span several chapters and many verses — open them
     // collapsed so the themes are the headline; verses are a tap away.
@@ -564,20 +622,32 @@ export default function MobileCompile({
               }}
             >
               {seg(view === "focused", "Focused", () => setView("focused"))}
-              {seg(view === "full", "Full verse", () => setView("full"))}
+              {seg(view === "full", "Full", () => setView("full"))}
+              {seg(view === "distilled", "Distilled", () =>
+                setView("distilled")
+              )}
+              {seg(view === "covenants", "Covenants", () =>
+                setView("covenants")
+              )}
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "4px",
-                backgroundColor: C.soft,
-                borderRadius: "10px",
-                padding: "4px",
-              }}
-            >
-              {seg(sortMode === "order", "In order", () => setSortMode("order"))}
-              {seg(sortMode === "points", "By points", () => setSortMode("points"))}
-            </div>
+            {view !== "distilled" && view !== "covenants" && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(sortMode === "order", "In order", () =>
+                  setSortMode("order")
+                )}
+                {seg(sortMode === "points", "By points", () =>
+                  setSortMode("points")
+                )}
+              </div>
+            )}
           </div>
       )}
       </div>
@@ -599,13 +669,19 @@ export default function MobileCompile({
           paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
         }}
       >
-        {liveMarks.length === 0 && (
+        {view === "distilled" && <Distilled {...sharedViewProps} />}
+        {view === "covenants" && <Covenants {...sharedViewProps} />}
+        {view !== "distilled" &&
+          view !== "covenants" &&
+          liveMarks.length === 0 && (
           <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
             No marks in this book yet. Arm a pen and tap a word to begin — your
             themes will gather here.
           </div>
         )}
-            {groups.map((g) => {
+            {view !== "distilled" &&
+              view !== "covenants" &&
+              groups.map((g) => {
               const c = g.color;
               const list = g.marks;
               const name = g.name;
