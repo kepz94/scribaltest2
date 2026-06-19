@@ -320,7 +320,7 @@ const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
   charting: "Charting",
   distilled: "Distilled",
-  covenants: "Covenants",
+  covenants: "Relational",
 };
 
 type CompileView = "outline" | "charting" | "distilled" | "covenants";
@@ -6024,7 +6024,7 @@ export default function App() {
                 {viewTabButton(compileView === "distilled", "Distilled", () =>
                   setCompileView("distilled")
                 )}
-                {viewTabButton(compileView === "covenants", "Covenants", () =>
+                {viewTabButton(compileView === "covenants", "Relational", () =>
                   setCompileView("covenants")
                 )}
               </div>
