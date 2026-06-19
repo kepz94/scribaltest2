@@ -767,6 +767,26 @@ export default function App() {
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
+  // Reusable confirmation dialog for destructive actions.
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+  const askConfirm = (opts: {
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }) =>
+    setConfirmAction({
+      title: opts.title,
+      body: opts.body,
+      confirmLabel: opts.confirmLabel || "Delete",
+      onConfirm: opts.onConfirm,
+    });
+
   const closeTutorial = () => {
     localStorage.setItem("scribal_tutorial_seen", "1");
     setShowTutorial(false);
@@ -2079,15 +2099,12 @@ export default function App() {
     }
   };
   const handleDeleteBook = (b: { id: string; name: string }) => {
-    if (
-      window.confirm(
-        'Delete "' +
-          b.name +
-          "\" and all of its markings? This can't be undone."
-      )
-    ) {
-      deleteBook(b.id);
-    }
+    askConfirm({
+      title: "Delete this session?",
+      body:
+        'Delete "' + b.name + "\" and all of its markings? This can't be undone.",
+      onConfirm: () => deleteBook(b.id),
+    });
   };
 
   // ---- header control helpers ----
@@ -2374,7 +2391,15 @@ export default function App() {
             fmtDate(s.compiledAt),
           themes: themesFor(s.bookId, s.scopeRef, refOk),
           onOpen: () => openRecordedStudy(s),
-          onDelete: () => deleteRecordedStudy(s.id),
+          onDelete: () =>
+            askConfirm({
+              title: "Delete this study?",
+              body:
+                'Delete "' +
+                s.name +
+                "\" from your studies? This can't be undone.",
+              onConfirm: () => deleteRecordedStudy(s.id),
+            }),
         });
       });
 
@@ -2401,7 +2426,15 @@ export default function App() {
             fmtDate(s.compiledAt),
           themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
           onOpen: () => openRecordedStudy(s),
-          onDelete: () => deleteRecordedStudy(s.id),
+          onDelete: () =>
+            askConfirm({
+              title: "Delete this study?",
+              body:
+                'Delete "' +
+                s.name +
+                "\" from your studies? This can't be undone.",
+              onConfirm: () => deleteRecordedStudy(s.id),
+            }),
         });
       });
 
@@ -2421,7 +2454,15 @@ export default function App() {
           fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
         onOpen: () => openStudyTab(ss),
-        onDelete: () => removeStudy(ss.id),
+        onDelete: () =>
+          askConfirm({
+            title: "Delete this study?",
+            body:
+              'Delete "' +
+              ss.name +
+              "\" from your studies? This can't be undone.",
+            onConfirm: () => removeStudy(ss.id),
+          }),
       });
     });
 
@@ -3992,6 +4033,92 @@ export default function App() {
         </div>
       )}
 
+      {confirmAction && (
+        <div
+          onClick={() => setConfirmAction(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 600,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "380px",
+              backgroundColor: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: "16px",
+              padding: "22px 22px 18px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px 0", fontSize: "17px", fontWeight: 600 }}>
+              {confirmAction.title}
+            </h3>
+            <p
+              style={{
+                margin: "0 0 20px 0",
+                fontSize: "14px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              }}
+            >
+              {confirmAction.body}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
+              <button
+                onClick={() => setConfirmAction(null)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  borderRadius: "10px",
+                  padding: "9px 16px",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const fn = confirmAction.onConfirm;
+                  setConfirmAction(null);
+                  fn();
+                }}
+                style={{
+                  background: "#c0392b",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: "10px",
+                  padding: "9px 16px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {confirmAction.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {printData && (
         <PrintView
           view={printData.view}
@@ -5478,17 +5605,18 @@ export default function App() {
                 </h3>
                 {groups.length > 0 && (
                   <button
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Clear ALL marks on ${
-                            activeTab.studyId ? "this study" : "this chapter"
-                          }? This removes every highlight, underline, and other mark here regardless of color or style. You can undo it.`
-                        )
-                      ) {
-                        clearMarks(Array.from(activeChapterRefs));
-                      }
-                    }}
+                    onClick={() =>
+                      askConfirm({
+                        title: activeTab.studyId
+                          ? "Clear all marks on this study?"
+                          : "Clear all marks on this chapter?",
+                        body:
+                          "This removes every highlight, underline, and other mark here, regardless of color or style. You can undo it.",
+                        confirmLabel: "Clear all",
+                        onConfirm: () =>
+                          clearMarks(Array.from(activeChapterRefs)),
+                      })
+                    }
                     title={`Remove every mark on ${
                       activeTab.studyId ? "this study" : "this chapter"
                     } (undoable)`}
@@ -5876,10 +6004,19 @@ export default function App() {
                 setActiveBook(id);
               }}
               onRename={(id, name) => renameBook(id, name)}
-              onDelete={(id) => {
-                if (id === activeBookId) setActiveBook("master");
-                deleteBook(id);
-              }}
+              onDelete={(id) =>
+                askConfirm({
+                  title: "Delete this book?",
+                  body:
+                    'Delete "' +
+                    (getBook(id).name || "this book") +
+                    "\" and all of its markings? This can't be undone.",
+                  onConfirm: () => {
+                    if (id === activeBookId) setActiveBook("master");
+                    deleteBook(id);
+                  },
+                })
+              }
               onClose={() => setMode("read")}
             />
           );
