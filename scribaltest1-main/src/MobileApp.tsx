@@ -89,40 +89,48 @@ function buildBackupString() {
   return syncBuildBackupString(BACKUP_KEYS);
 }
 
-// Live spotlight tour over the real mobile screen (reuses the desktop engine).
+// Live spotlight tour over the real mobile home screen (reuses the desktop
+// engine). It runs on the home screen, so it points at the home tiles.
 const M_TOUR: TourStep[] = [
   {
     title: "Welcome to Scribal",
     body:
-      "Read scripture, mark it with taps and swipes, and gather your marks into notes. Here's a quick tour of your screen.",
+      "Read scripture, mark what stands out, and gather your marks into notes. Here's a quick tour of your home screen.",
   },
   {
-    target: '[data-tour="m-read"]',
-    placement: "auto",
-    title: "Mark as you read",
+    target: '[data-tour="m-continue"]',
+    title: "Pick up where you left off",
     body:
-      "Tap a word to mark it in your current color. Swipe sideways across words to mark a whole phrase. Swipe up or down to scroll — your marks stay put.",
+      "This card always reopens your last chapter — one tap and you're reading.",
   },
   {
-    target: '[data-tour="m-chapter"]',
-    placement: "bottom",
-    title: "Move around",
+    target: '[data-tour="m-browse"]',
+    title: "Browse books",
     body:
-      "Tap the title to jump to any chapter, or use the arrows to step between them.",
+      "Open any book or chapter. Tap a word to mark it, or swipe sideways across words to mark a whole phrase.",
   },
   {
-    target: '[data-tour="m-compile"]',
-    placement: "bottom",
-    title: "Compile your marks",
+    target: '[data-tour="m-studies"]',
+    title: "Your studies",
     body:
-      "When you've marked a chapter, Compile gathers everything into four views — Outline, Charting, Distilled, and Relational.",
+      "Compile your marks into four views — Outline, Charting, Distilled, and Relational — and every study you save lands here.",
   },
   {
-    target: '[data-tour="m-menu"]',
-    placement: "bottom",
-    title: "Everything else",
+    target: '[data-tour="m-search"]',
+    title: "Search",
+    body: "Search all of scripture, or just your own marks.",
+  },
+  {
+    target: '[data-tour="m-gestures"]',
+    title: "Gestures & marking",
     body:
-      "Tap here for search, your color key, marking gestures, signing in to sync across devices, and these guides.",
+      "New to marking? This walks you through every tap and swipe for marking and getting around.",
+  },
+  {
+    target: '[data-tour="m-settings"]',
+    title: "Settings",
+    body:
+      "Sign in to sync across your phone and desktop, and set your theme and reading comfort here.",
   },
   {
     title: "That's the tour",
@@ -845,6 +853,7 @@ export default function MobileApp() {
   // Replay the first-run tour (which then opens the gestures sheet).
   const resetIntro = () => {
     setSettingsOpen(false);
+    setHomeOpen(true);
     setMtourOpen(true);
   };
 
@@ -2069,6 +2078,17 @@ export default function MobileApp() {
     onClick: () => void
   ) => (
     <button
+      data-tour={
+        label === "Browse books"
+          ? "m-browse"
+          : label === "Studies"
+          ? "m-studies"
+          : label === "Search"
+          ? "m-search"
+          : label === "Gestures & marking"
+          ? "m-gestures"
+          : undefined
+      }
       onClick={onClick}
       style={{
         display: "flex",
@@ -3303,6 +3323,7 @@ export default function MobileApp() {
 
           {/* Continue reading — hero */}
           <button
+            data-tour="m-continue"
             onClick={() => setHomeOpen(false)}
             style={{
               display: "block",
@@ -3534,6 +3555,7 @@ export default function MobileApp() {
 
           {/* Settings — slim row */}
           <button
+            data-tour="m-settings"
             onClick={() => {
               setHomeOpen(false);
               setSettingsOpen(true);
@@ -4210,6 +4232,7 @@ export default function MobileApp() {
                 <button
                   onClick={() => {
                     setSettingsOpen(false);
+                    setHomeOpen(true);
                     setMtourOpen(true);
                   }}
                   style={{
