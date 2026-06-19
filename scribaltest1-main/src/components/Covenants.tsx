@@ -74,27 +74,21 @@ export default function Covenants(props: CovenantsProps) {
     }
   }, [conditionColor, promiseColor]);
 
-  // ----- share-card state -----
-  const [picking, setPicking] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
-  const [pendingPairs, setPendingPairs] = useState<CovenantPairData[] | null>(
-    null
-  );
+  // ----- share state: ONE sheet that does pick + preview + share together -----
+  const [shareOpen, setShareOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState("");
   const [cardDark, setCardDark] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const openRef = useRef<() => void>(() => {});
 
-  // When the share trigger lives in the host header (mobile), it bumps
-  // shareSignal to start the in-ledger pair picker. When absent (desktop),
-  // Covenants renders its own "Share image" button instead.
+  // Trigger can live in the host header (mobile) via shareSignal, or be the
+  // in-ledger button below (desktop). Either way it opens the same sheet.
   const externalTrigger = props.shareSignal !== undefined;
   useEffect(() => {
-    if (props.shareSignal && props.shareSignal > 0) {
-      setPicked([]);
-      setPicking(true);
-    }
+    if (props.shareSignal && props.shareSignal > 0) openRef.current();
   }, [props.shareSignal]);
 
   const tabLabel = (t: Tab) =>
@@ -129,8 +123,6 @@ export default function Covenants(props: CovenantsProps) {
     (a, b) => a.v - b.v || a.b - b.b || a.c - b.c || a.verse - b.verse
   );
 
-  // Ordered marked fragments of one role-color within a verse, each keeping the
-  // exact style/color it was marked with so the ledger shows the real marks.
   const fragmentsForRole = (
     reference: string,
     text: string,
@@ -199,7 +191,7 @@ export default function Covenants(props: CovenantsProps) {
       </span>
     ));
 
-  const swatch = (color: MarkColor, selected: boolean, onClick: () => void) => (
+  const swatch = (color: MarkColor, active: boolean, onClick: () => void) => (
     <button
       key={color}
       onClick={onClick}
@@ -209,8 +201,8 @@ export default function Covenants(props: CovenantsProps) {
         height: "26px",
         borderRadius: "7px",
         background: COLOR_MAP[color],
-        border: selected ? "3px solid var(--text)" : "3px solid transparent",
-        boxShadow: selected ? "0 0 0 1px var(--border)" : "none",
+        border: active ? "3px solid var(--text)" : "3px solid transparent",
+        boxShadow: active ? "0 0 0 1px var(--border)" : "none",
         cursor: "pointer",
         padding: 0,
       }}
@@ -252,14 +244,6 @@ export default function Covenants(props: CovenantsProps) {
   // ----- share helpers -----
   const rowKey = (r: Row, i: number) => r.reference + "_" + i;
 
-  const togglePick = (key: string) => {
-    setPicked((cur) => {
-      if (cur.includes(key)) return cur.filter((k) => k !== key);
-      if (cur.length >= 3) return cur;
-      return [...cur, key];
-    });
-  };
-
   const fragsForCard = (frags: Frag[]) =>
     frags.map((f) => ({
       text: f.text,
@@ -268,38 +252,58 @@ export default function Covenants(props: CovenantsProps) {
       gapBefore: f.gapBefore,
     }));
 
-  const buildPreview = (pairs: CovenantPairData[], dark: boolean) => {
+  const chosenFromKeys = (keys: string[]): CovenantPairData[] => {
+    const out: CovenantPairData[] = [];
+    rows.forEach((r, i) => {
+      if (keys.includes(rowKey(r, i)))
+        out.push({
+          reference: r.reference,
+          ifFrags: fragsForCard(r.condition),
+          thenFrags: fragsForCard(r.promise),
+        });
+    });
+    return out;
+  };
+
+  const renderPreview = (keys: string[], dark: boolean) => {
     const canvas = renderCovenantCard({
-      pairs,
+      pairs: chosenFromKeys(keys),
       conditionColor,
       promiseColor,
       dark,
     });
     previewCanvasRef.current = canvas;
     setPreviewUrl(canvasURL(canvas));
-    setCardDark(dark);
   };
 
-  const openPreview = () => {
-    const chosen: CovenantPairData[] = [];
-    rows.forEach((r, i) => {
-      if (picked.includes(rowKey(r, i))) {
-        chosen.push({
-          reference: r.reference,
-          ifFrags: fragsForCard(r.condition),
-          thenFrags: fragsForCard(r.promise),
-        });
-      }
-    });
-    if (chosen.length === 0) return;
-    setPendingPairs(chosen);
+  const openShare = () => {
+    const keys = rows.slice(0, 3).map((r, i) => rowKey(r, i));
+    setSelected(keys);
+    setCardDark(true);
     setShareMsg("");
-    buildPreview(chosen, cardDark);
+    renderPreview(keys, true);
+    setShareOpen(true);
+  };
+  openRef.current = openShare;
+
+  const toggleChip = (key: string) => {
+    let next: string[];
+    if (selected.includes(key)) next = selected.filter((k) => k !== key);
+    else if (selected.length >= 3) return;
+    else next = [...selected, key];
+    setSelected(next);
+    renderPreview(next, cardDark);
+  };
+
+  const toggleDark = () => {
+    const d = !cardDark;
+    setCardDark(d);
+    renderPreview(selected, d);
   };
 
   const doShare = async () => {
     const canvas = previewCanvasRef.current;
-    if (!canvas || sharing) return;
+    if (!canvas || sharing || selected.length === 0) return;
     setSharing(true);
     setShareMsg("Preparing…");
     const res = await shareCanvas(
@@ -319,17 +323,11 @@ export default function Covenants(props: CovenantsProps) {
     );
   };
 
-  const closePreview = () => {
-    setPendingPairs(null);
+  const closeShare = () => {
+    setShareOpen(false);
     setPreviewUrl("");
     previewCanvasRef.current = null;
     setShareMsg("");
-  };
-
-  const exitPicking = () => {
-    setPicking(false);
-    setPicked([]);
-    closePreview();
   };
 
   const shareBtnStyle: CSSProperties = {
@@ -343,46 +341,25 @@ export default function Covenants(props: CovenantsProps) {
     cursor: "pointer",
     fontFamily: "inherit",
   };
-  const pickBarStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px",
-    flexWrap: "wrap",
-    padding: "10px 12px",
-    background: "var(--soft)",
-    borderRadius: "10px",
-    marginBottom: "12px",
-  };
-  const pickGhostBtn: CSSProperties = {
-    border: "1px solid var(--border)",
-    background: "transparent",
-    color: "var(--muted)",
-    fontSize: "12.5px",
-    fontWeight: 600,
-    padding: "8px 14px",
-    borderRadius: "9px",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  };
-  const overlaySolidBtn: CSSProperties = {
+  const solidBtn: CSSProperties = {
+    flex: 1,
     border: "none",
     background: "#ffffff",
     color: "#111111",
     fontSize: "13px",
     fontWeight: 700,
-    padding: "11px 18px",
+    padding: "12px 18px",
     borderRadius: "10px",
     cursor: "pointer",
     fontFamily: "inherit",
   };
-  const overlayGhostBtn: CSSProperties = {
+  const ghostBtn: CSSProperties = {
     border: "1px solid rgba(255,255,255,0.5)",
     background: "transparent",
     color: "#ffffff",
     fontSize: "13px",
     fontWeight: 600,
-    padding: "11px 18px",
+    padding: "12px 14px",
     borderRadius: "10px",
     cursor: "pointer",
     fontFamily: "inherit",
@@ -533,7 +510,7 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {rows.length > 0 && !picking && !externalTrigger && (
+      {rows.length > 0 && !externalTrigger && (
         <div
           style={{
             display: "flex",
@@ -541,44 +518,9 @@ export default function Covenants(props: CovenantsProps) {
             marginBottom: "10px",
           }}
         >
-          <button
-            onClick={() => {
-              setPicking(true);
-              setPicked([]);
-            }}
-            style={shareBtnStyle}
-          >
+          <button onClick={openShare} style={shareBtnStyle}>
             Share image
           </button>
-        </div>
-      )}
-
-      {picking && (
-        <div style={pickBarStyle}>
-          <span
-            style={{
-              fontSize: "12.5px",
-              color: "var(--text)",
-              fontWeight: 600,
-            }}
-          >
-            Tap up to 3 pairs to share · {picked.length}/3
-          </span>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={exitPicking} style={pickGhostBtn}>
-              Cancel
-            </button>
-            <button
-              onClick={openPreview}
-              disabled={picked.length === 0}
-              style={{
-                ...shareBtnStyle,
-                opacity: picked.length === 0 ? 0.5 : 1,
-              }}
-            >
-              Preview ({picked.length})
-            </button>
-          </div>
         </div>
       )}
 
@@ -602,94 +544,52 @@ export default function Covenants(props: CovenantsProps) {
             <div style={{ flex: 1 }}>Then</div>
             <div style={{ width: "64px" }} />
           </div>
-          {rows.map((r, i) => {
-            const key = rowKey(r, i);
-            const sel = picked.includes(key);
-            const idx = picked.indexOf(key);
-            return (
+          {rows.map((r, i) => (
+            <div
+              key={rowKey(r, i)}
+              style={{
+                display: "flex",
+                gap: "12px",
+                alignItems: "stretch",
+                marginBottom: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              {card(r.condition, conditionColor)}
               <div
-                key={key}
-                onClick={picking ? () => togglePick(key) : undefined}
                 style={{
                   display: "flex",
-                  gap: "12px",
-                  alignItems: "stretch",
-                  marginBottom: "10px",
-                  flexWrap: "wrap",
-                  cursor: picking ? "pointer" : "default",
-                  borderRadius: "10px",
-                  padding: picking ? "6px" : "0",
-                  boxShadow: sel ? "0 0 0 2px var(--text)" : "none",
-                  background: sel ? "var(--soft)" : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "22px",
+                  color: "var(--muted)",
+                  fontSize: "18px",
                 }}
               >
-                {card(r.condition, conditionColor)}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "22px",
-                    color: "var(--muted)",
-                    fontSize: "18px",
-                  }}
-                >
-                  →
-                </div>
-                {card(r.promise, promiseColor)}
-                {picking ? (
-                  <div
-                    style={{
-                      width: "64px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: "26px",
-                        height: "26px",
-                        borderRadius: "50%",
-                        border:
-                          "2px solid " +
-                          (sel ? "var(--text)" : "var(--border)"),
-                        background: sel ? "var(--text)" : "transparent",
-                        color: sel ? "var(--panel)" : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "13px",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {sel ? idx + 1 : ""}
-                    </span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => onJumpToReference(r.reference)}
-                    title="Open in reading view"
-                    style={{
-                      width: "64px",
-                      border: "none",
-                      background: "transparent",
-                      color: "var(--muted)",
-                      fontSize: "11px",
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                      textDecorationStyle: "dotted",
-                      padding: 0,
-                      alignSelf: "center",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    {r.reference}
-                  </button>
-                )}
+                →
               </div>
-            );
-          })}
+              {card(r.promise, promiseColor)}
+              <button
+                onClick={() => onJumpToReference(r.reference)}
+                title="Open in reading view"
+                style={{
+                  width: "64px",
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--muted)",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textDecorationStyle: "dotted",
+                  padding: 0,
+                  alignSelf: "center",
+                  fontFamily: "inherit",
+                }}
+              >
+                {r.reference}
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -759,77 +659,162 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {pendingPairs && (
+      {shareOpen && (
         <div
-          onClick={closePreview}
+          onClick={closeShare}
           style={{
             position: "fixed",
             inset: 0,
             zIndex: 99999,
-            background: "rgba(0,0,0,0.78)",
+            background: "rgba(0,0,0,0.82)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: "20px",
+            padding: "16px",
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              maxWidth: "min(94vw, 470px)",
               width: "100%",
+              maxWidth: "460px",
+              maxHeight: "92vh",
               display: "flex",
               flexDirection: "column",
-              gap: "12px",
-              alignItems: "center",
+              background: "#1d1c19",
+              borderRadius: "16px",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                maxHeight: "70vh",
-                overflow: "auto",
-                borderRadius: "14px",
-                width: "100%",
+                flexShrink: 0,
+                padding: "14px 16px 10px",
+                color: "#e7e2d6",
+                fontSize: "13px",
+                fontWeight: 700,
+                textAlign: "center",
+              }}
+            >
+              Share covenant{" "}
+              <span style={{ color: "#8d8a82", fontWeight: 500 }}>
+                · pick up to 3 pairs
+              </span>
+            </div>
+
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 16px",
+                overflow: "hidden",
+                background: "#121110",
               }}
             >
               {previewUrl ? (
                 <img
                   src={previewUrl}
                   alt="Covenant share card"
-                  style={{ width: "100%", display: "block", borderRadius: "14px" }}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                    borderRadius: "10px",
+                  }}
                 />
-              ) : null}
+              ) : (
+                <div style={{ color: "#8d8a82", fontSize: "13px", padding: "40px" }}>
+                  Pick a pair below to build the card.
+                </div>
+              )}
             </div>
+
             <div
               style={{
+                flexShrink: 0,
+                padding: "12px 14px calc(12px + env(safe-area-inset-bottom))",
+                borderTop: "1px solid #343229",
                 display: "flex",
-                gap: "10px",
-                flexWrap: "wrap",
-                justifyContent: "center",
+                flexDirection: "column",
+                gap: "12px",
               }}
             >
-              <button
-                onClick={() => buildPreview(pendingPairs, !cardDark)}
-                style={overlayGhostBtn}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  overflowX: "auto",
+                  paddingBottom: "2px",
+                }}
               >
-                {cardDark ? "Light card" : "Dark card"}
-              </button>
-              <button
-                onClick={doShare}
-                disabled={sharing}
-                style={{ ...overlaySolidBtn, opacity: sharing ? 0.6 : 1 }}
-              >
-                {sharing ? "Preparing…" : "Share / Save"}
-              </button>
-              <button onClick={closePreview} style={overlayGhostBtn}>
-                Close
-              </button>
-            </div>
-            {shareMsg ? (
-              <div style={{ color: "#ffffff", fontSize: "12.5px", opacity: 0.9 }}>
-                {shareMsg}
+                {rows.map((r, i) => {
+                  const key = rowKey(r, i);
+                  const sel = selected.includes(key);
+                  const idx = selected.indexOf(key);
+                  const full = !sel && selected.length >= 3;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleChip(key)}
+                      style={{
+                        flexShrink: 0,
+                        whiteSpace: "nowrap",
+                        padding: "7px 12px",
+                        borderRadius: "999px",
+                        fontSize: "12.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        border: sel
+                          ? "1px solid #ffffff"
+                          : "1px solid rgba(255,255,255,0.28)",
+                        background: sel ? "#ffffff" : "transparent",
+                        color: sel ? "#111111" : "#e7e2d6",
+                        opacity: full ? 0.4 : 1,
+                      }}
+                    >
+                      {sel ? idx + 1 + ". " : ""}
+                      {r.reference}
+                    </button>
+                  );
+                })}
               </div>
-            ) : null}
+
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <button onClick={toggleDark} style={ghostBtn}>
+                  {cardDark ? "Light" : "Dark"}
+                </button>
+                <button
+                  onClick={doShare}
+                  disabled={sharing || selected.length === 0}
+                  style={{
+                    ...solidBtn,
+                    opacity: sharing || selected.length === 0 ? 0.55 : 1,
+                  }}
+                >
+                  {sharing ? "Preparing…" : "Share / Save"}
+                </button>
+                <button onClick={closeShare} style={ghostBtn}>
+                  Close
+                </button>
+              </div>
+
+              {shareMsg ? (
+                <div
+                  style={{
+                    color: "#ffffff",
+                    fontSize: "12.5px",
+                    opacity: 0.9,
+                    textAlign: "center",
+                  }}
+                >
+                  {shareMsg}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       )}
