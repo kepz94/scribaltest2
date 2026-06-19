@@ -1803,11 +1803,16 @@ export default function App() {
           color: MarkColor;
         } => m != null
       );
+    // Give the import its OWN book so its highlights never bleed into master
+    // or into other studies that happen to share verses. createSession makes the
+    // new book active, so the marks, theme label, and synthesis written below
+    // all land in it; opening the study tab (further down) keeps it active.
+    const importBookId = createSession(snName.trim() || "Imported study");
     if (markItems.length) addMarks(markItems);
 
     const study = addStudy(
       snName.trim() || "Imported study",
-      activeBookId,
+      importBookId,
       snParsed.verses,
       note
     );
@@ -1835,6 +1840,7 @@ export default function App() {
       setNote(synthKey, note);
     }
 
+    openStudyTab(study);
     setSnImportOpen(false);
     setSnParsed(null);
     setSnName("");
