@@ -785,7 +785,7 @@ export async function shareCanvas(
   }
 }
 
-// ---------- Covenant card (up to 3 If -> Then pairs, with marks) ----------
+// ---------- Covenant card (screen-faithful If -> Then ledger, up to 3 pairs) ----------
 export interface CovenantPairData {
   reference: string;
   ifText: string;
@@ -800,8 +800,33 @@ export interface CovenantCardOpts {
   dark: boolean;
 }
 
+interface AppPalette {
+  bg: string;
+  panel: string;
+  soft: string;
+  text: string;
+  muted: string;
+  border: string;
+}
+const appLight: AppPalette = {
+  bg: "#f6f4ee",
+  panel: "#ffffff",
+  soft: "#efece4",
+  text: "#1d1c18",
+  muted: "#8d8a80",
+  border: "#e2dfd6",
+};
+const appDark: AppPalette = {
+  bg: "#131210",
+  panel: "#1d1c19",
+  soft: "#232220",
+  text: "#eae7de",
+  muted: "#8d8a82",
+  border: "#343229",
+};
+
 export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
-  const p = o.dark ? darkCard : lightCard;
+  const a = o.dark ? appDark : appLight;
   const { canvas, ctx } = newCanvas();
   if (!ctx) return canvas;
 
@@ -811,45 +836,52 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   const promAccent = penHex(o.promiseColor, o.dark);
   const promHl = hlHex(o.promiseColor, o.dark);
 
-  const padX = 110;
-  const top = 206;
-  const FOOTER_SPACE = 168;
+  const padX = 84;
+  const headerTop = 92;
+  const footerSpace = 150;
   const MIN_H = 1080;
   const MAX_H = 2600;
 
-  const innerPad = 28;
-  const boxTextW = W - padX * 2 - innerPad * 2;
-  const refSize = 24;
-  const refGap = 14;
-  const labelSize = 20;
-  const labelGap = 10;
-  const connGap = 42;
-  const boxVPad = 24;
-  const pairGap = 44;
-  const lineMul = 1.32;
+  const labelSize = 22;
+  const labelGap = 12;
+  const headingSize = 40;
+  const headingGap = 34;
 
-  const styleFont = (style: string, size: number) => {
+  const refSize = 24;
+  const refGap = 12;
+  const innerPad = 30;
+  const boxVPad = 24;
+  const boxTextW = W - padX * 2 - innerPad * 2;
+  const arrowGap = 44;
+  const pairGap = 40;
+  const lineMul = 1.34;
+
+  // Chapter heading derived from the pair references (e.g., "Ether 12").
+  const chapters: string[] = [];
+  pairs.forEach((pr) => {
+    const idx = pr.reference.lastIndexOf(":");
+    const ch = idx > 0 ? pr.reference.slice(0, idx) : pr.reference;
+    if (chapters.indexOf(ch) < 0) chapters.push(ch);
+  });
+  const heading = chapters.join("  ·  ");
+
+  const styleFont = (style: string, fsize: number) => {
     const weight = style === "bold" ? "700" : "500";
     const ital = style === "italic" ? "italic " : "";
-    return ital + weight + " " + size + "px " + SERIF;
+    return ital + weight + " " + fsize + "px " + SERIF;
   };
 
-  const measure = (size: number) => {
+  const headerH = labelSize + labelGap + headingSize + headingGap;
+
+  const measure = (fsize: number) => {
     const blocks = pairs.map((pr) => {
-      ctx.font = styleFont(pr.ifStyle, size);
+      ctx.font = styleFont(pr.ifStyle, fsize);
       const ifLines = wrap(ctx, pr.ifText, boxTextW);
-      ctx.font = styleFont(pr.thenStyle, size);
+      ctx.font = styleFont(pr.thenStyle, fsize);
       const thenLines = wrap(ctx, pr.thenText, boxTextW);
-      const ifBoxH = boxVPad * 2 + ifLines.length * size * lineMul;
-      const thenBoxH = boxVPad * 2 + thenLines.length * size * lineMul;
-      const height =
-        refSize +
-        refGap +
-        (labelSize + labelGap) +
-        ifBoxH +
-        connGap +
-        (labelSize + labelGap) +
-        thenBoxH;
+      const ifBoxH = boxVPad * 2 + ifLines.length * fsize * lineMul;
+      const thenBoxH = boxVPad * 2 + thenLines.length * fsize * lineMul;
+      const height = refSize + refGap + ifBoxH + arrowGap + thenBoxH;
       return { pr, ifLines, thenLines, ifBoxH, thenBoxH, height };
     });
     const total =
@@ -858,9 +890,9 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     return { blocks, total };
   };
 
-  let size = pairs.length >= 3 ? 36 : pairs.length === 2 ? 40 : 46;
+  let size = pairs.length >= 3 ? 38 : pairs.length === 2 ? 42 : 46;
   const minSize = 24;
-  const maxContent = MAX_H - top - FOOTER_SPACE;
+  const maxContent = MAX_H - headerTop - headerH - footerSpace;
   let lay = measure(size);
   while (size > minSize && lay.total > maxContent) {
     size -= 2;
@@ -868,20 +900,30 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
   }
 
   const cardH = Math.round(
-    Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
+    Math.max(
+      MIN_H,
+      Math.min(MAX_H, headerTop + headerH + lay.total + footerSpace)
+    )
   );
   canvas.height = cardH;
-  paintBackground(ctx, p, cardH);
-  paintMasthead(ctx, p, condAccent);
 
-  ctx.fillStyle = p.muted;
-  ctx.font = "700 22px " + SANS;
-  ctx.textAlign = "center";
+  // flat background — matches the app, not the parchment cards
+  ctx.fillStyle = a.bg;
+  ctx.fillRect(0, 0, W, cardH);
+
+  // header, left-aligned like the on-screen ledger
+  ctx.fillStyle = a.muted;
+  ctx.font = "700 " + labelSize + "px " + SANS;
+  ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  drawTracked(ctx, "COVENANT LEDGER", W / 2, 170, 4);
+  drawTrackedLeft(ctx, "COVENANT LEDGER", padX, headerTop + labelSize, 3);
+  ctx.fillStyle = a.text;
+  ctx.font = "500 " + headingSize + "px " + SANS;
+  ctx.fillText(heading, padX, headerTop + labelSize + labelGap + headingSize);
 
-  const contentBudget = cardH - top - FOOTER_SPACE;
-  let y = top + Math.max(0, (contentBudget - lay.total) / 2);
+  const contentTop = headerTop + headerH;
+  const contentBudget = cardH - contentTop - footerSpace;
+  let y = contentTop + Math.max(0, (contentBudget - lay.total) / 2);
 
   const drawBox = (
     lines: string[],
@@ -893,15 +935,11 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     const boxX = padX;
     const boxW = W - padX * 2;
     const boxTop = y;
-    ctx.fillStyle = p.bg2;
+    ctx.fillStyle = a.soft;
     roundRect(ctx, boxX, boxTop, boxW, boxH, 14);
     ctx.fill();
-    ctx.strokeStyle = p.frame;
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, boxX, boxTop, boxW, boxH, 14);
-    ctx.stroke();
     ctx.fillStyle = accent;
-    roundRect(ctx, boxX, boxTop + 8, 6, boxH - 16, 3);
+    roundRect(ctx, boxX, boxTop, 6, boxH, 3);
     ctx.fill();
     const tx = boxX + innerPad;
     let ty = boxTop + boxVPad;
@@ -914,7 +952,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
         roundRect(ctx, tx - 6, lineBase - size + size * 0.2, tw + 12, size * 1.1, 6);
         ctx.fill();
       }
-      ctx.fillStyle = p.text;
+      ctx.fillStyle = a.text;
       ctx.font = styleFont(style, size);
       ctx.textAlign = "left";
       ctx.fillText(ln, tx, lineBase);
@@ -931,40 +969,34 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     y = boxTop + boxH;
   };
 
-  const drawLabel = (txt: string, accent: string) => {
-    ctx.fillStyle = accent;
-    ctx.font = "700 " + labelSize + "px " + SANS;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    drawTrackedLeft(ctx, txt, padX + 2, y + labelSize, 3);
-    y += labelSize + labelGap;
-  };
-
   lay.blocks.forEach((b) => {
-    ctx.fillStyle = p.muted;
+    ctx.fillStyle = a.muted;
     ctx.font = "600 " + refSize + "px " + SANS;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(b.pr.reference, padX + 2, y + refSize);
+    ctx.fillText(b.pr.reference, padX, y + refSize);
     y += refSize + refGap;
 
-    drawLabel("IF", condAccent);
     drawBox(b.ifLines, b.pr.ifStyle, condAccent, condHl, b.ifBoxH);
 
-    const arrowMid = y + connGap / 2;
-    ctx.fillStyle = p.muted;
+    const arrowMid = y + arrowGap / 2;
+    ctx.fillStyle = a.muted;
     ctx.font = "500 34px " + SANS;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("\u2193", W / 2, arrowMid + 2);
-    y += connGap;
+    y += arrowGap;
 
-    drawLabel("THEN", promAccent);
     drawBox(b.thenLines, b.pr.thenStyle, promAccent, promHl, b.thenBoxH);
-
     y += pairGap;
   });
 
-  paintBrand(ctx, p, condAccent, cardH);
+  // minimal footer wordmark (not the full brand block)
+  ctx.fillStyle = a.muted;
+  ctx.font = "600 24px " + SERIF;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  drawTracked(ctx, "SCRIBAL", W / 2, cardH - 58, 6);
+
   return canvas;
 }
