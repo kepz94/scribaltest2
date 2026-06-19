@@ -21,16 +21,10 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study } from "./hooks/useStudies";
-import Walkthrough from "./components/Walkthrough";
-import CompileWalkthrough from "./components/CompileWalkthrough";
-import SearchWalkthrough from "./components/SearchWalkthrough";
-import TabsWalkthrough from "./components/TabsWalkthrough";
-import BooksWalkthrough from "./components/BooksWalkthrough";
 import HelpMenu, { HelpPick } from "./components/HelpMenu";
 import DesktopFeatureGuide from "./components/DesktopFeatureGuide";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
-type FeatureKey = "compile" | "search" | "vault" | "tabs" | "books";
 import ColorKey from "./components/ColorKey";
 import Shortcuts from "./components/Shortcuts";
 import CompileAnimation from "./components/CompileAnimation";
@@ -325,55 +319,16 @@ const VIEW_NAMES: Record<string, string> = {
 };
 
 type CompileView = "outline" | "charting" | "distilled" | "covenants";
-// Steps for the live spotlight tour (the real screen, not a mockup). Targets
-// are data-tour hooks on the actual header / tab controls.
-const TOUR_STEPS: TourStep[] = [
-  {
-    title: "Welcome to Scribal",
-    body:
-      "Read scripture, mark what stands out with the floating toolbar, and gather your marks into notes. This quick tour points out the main controls — tap Next, or press the arrow keys.",
-  },
-  {
-    target: '[data-tour="tabs"]',
-    placement: "bottom",
-    title: "Your open chapters",
-    body:
-      "Chapters you open show up here as tabs. Switch between them, and link related chapters so they compile together as one study.",
-  },
-  {
-    target: '[data-tour="search"]',
-    placement: "bottom",
-    title: "Search all of scripture",
-    body:
-      "Find any phrase across the standard works, then pull the verses you find into a keyword study you can mark and compile.",
-  },
-  {
-    target: '[data-tour="studies"]',
-    placement: "bottom",
-    title: "Your saved studies",
-    body:
-      "Every study you've saved — chapter, linked, or keyword — lives here. Open one to jump straight to its compiled notes.",
-  },
-  {
-    target: '[data-tour="compile"]',
-    placement: "bottom",
-    title: "Compile your marks",
-    body:
-      "Once you've marked a chapter, Compile gathers everything into four views — Outline, Charting, Distilled, and Relational — so the patterns become visible.",
-  },
-  {
-    target: '[data-tour="more"]',
-    placement: "left",
-    title: "Settings & more",
-    body:
-      "Display options, your color key, study books, keyboard shortcuts, and these walkthroughs all live in this menu.",
-  },
-  {
-    title: "That's the tour",
-    body:
-      "You can reopen this anytime from More → Take the guided tour. Happy studying.",
-  },
-];
+// Each Walkthroughs pick opens the live tour at the step where that topic
+// begins (the tour steps are built in the component, where state setters live).
+const TOUR_START: { [k in HelpPick]: number } = {
+  main: 0,
+  tabs: 2,
+  search: 3,
+  compile: 5,
+  books: 8,
+  vault: 6,
+};
 
 type Mode = "read" | "compile" | "vault";
 
@@ -721,9 +676,9 @@ export default function App() {
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
   const [showSearch, setShowSearch] = useState(false);
-  const [featureWalk, setFeatureWalk] = useState<FeatureKey | null>(null);
   const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [tourStart, setTourStart] = useState(0);
   const [showFeatureList, setShowFeatureList] = useState(false);
   const [showColorKey, setShowColorKey] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -848,30 +803,91 @@ export default function App() {
       onConfirm: opts.onConfirm,
     });
 
-  const closeTutorial = () => {
-    localStorage.setItem("scribal_tutorial_seen", "1");
-    setShowTutorial(false);
-  };
-
-  const maybeGuide = useCallback(
-    (key: FeatureKey) => {
-      if (localStorage.getItem("scribal_guide_" + key)) return;
-      if (gateOpen || showTutorial) return;
-      setFeatureWalk((cur) => cur || key);
+  // The live guided tour over the real screen. Steps may drive app state via
+  // `before` (e.g. open compile) so the highlighted element is actually shown.
+  const tourSteps: TourStep[] = [
+    {
+      before: () => setMode("read"),
+      title: "Welcome to Scribal",
+      body:
+        "Read scripture, mark what stands out, and gather your marks into notes that trace the themes you care about. This quick tour points out the main controls \u2014 tap Next, or use the arrow keys.",
     },
-    [gateOpen, showTutorial]
-  );
-  const closeFeatureWalk = () => {
-    if (featureWalk) {
-      localStorage.setItem("scribal_guide_" + featureWalk, "1");
-    }
-    setFeatureWalk(null);
-  };
+    {
+      target: '[data-tour="toolbar"]',
+      placement: "auto",
+      before: () => setMode("read"),
+      title: "Your marking tools",
+      body:
+        "This floating toolbar is how you mark \u2014 five styles in seven colors, plus an eraser. Drag it anywhere. Read first, then mark what stands out.",
+    },
+    {
+      target: '[data-tour="tabs"]',
+      placement: "bottom",
+      before: () => setMode("read"),
+      title: "Your open chapters",
+      body:
+        "Chapters you open show up here as tabs. Switch between them, and link related chapters so they compile together as one study.",
+    },
+    {
+      target: '[data-tour="search"]',
+      placement: "bottom",
+      before: () => setMode("read"),
+      title: "Search all of scripture",
+      body:
+        "Find any phrase across the standard works, then pull the verses you find into a keyword study you can mark and compile.",
+    },
+    {
+      target: '[data-tour="studies"]',
+      placement: "bottom",
+      before: () => setMode("read"),
+      title: "Your saved studies",
+      body:
+        "Every study you've saved \u2014 chapter, linked, or keyword \u2014 lives here. Open one to jump straight back to its compiled notes.",
+    },
+    {
+      target: '[data-tour="compile"]',
+      placement: "bottom",
+      before: () => setMode("read"),
+      title: "Compile your marks",
+      body:
+        "Once you've marked a chapter, Compile gathers everything into four views. Let's open it and look.",
+    },
+    {
+      target: '[data-tour="compile-views"]',
+      placement: "bottom",
+      before: () => setMode("compile"),
+      title: "Four ways to see your study",
+      body:
+        "Outline ranks verses by how heavily you marked them. Charting maps themes across verses. Distilled reads your marks back as flowing text. Relational pairs them up \u2014 covenants, contrasts, types, and questions.",
+    },
+    {
+      target: '[data-tour="save-study"]',
+      placement: "bottom",
+      before: () => setMode("compile"),
+      title: "Keep it",
+      body:
+        "Name the study and save it \u2014 it'll be waiting in Studies whenever you want to come back to it.",
+    },
+    {
+      target: '[data-tour="more"]',
+      placement: "left",
+      before: () => setMode("read"),
+      title: "Settings & more",
+      body:
+        "Display options, your color key, study books, keyboard shortcuts, and these walkthroughs all live in this menu.",
+    },
+    {
+      before: () => setMode("read"),
+      title: "That's the tour",
+      body:
+        "You can reopen any of this from More \u2192 Take the guided tour, or pick a single feature under Walkthroughs. Happy studying.",
+    },
+  ];
 
   const pickHelp = (key: HelpPick) => {
     setShowHelpMenu(false);
-    if (key === "main") setShowTutorial(true);
-    else setFeatureWalk(key);
+    setTourStart(TOUR_START[key]);
+    setTourOpen(true);
   };
 
   const [dark, setDark] = useState<boolean>(() => {
@@ -1146,23 +1162,16 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
 
-  // First-time feature guides: each fires once when you first reach a feature.
+  // First run: greet new users with the live guided tour, once any opening
+  // gate is out of the way.
   useEffect(() => {
-    if (showSearch) maybeGuide("search");
-  }, [showSearch, maybeGuide]);
-
-  useEffect(() => {
-    if (mode === "compile") maybeGuide("compile");
-    else if (mode === "vault") maybeGuide("vault");
-  }, [mode, maybeGuide]);
-
-  useEffect(() => {
-    if (tabs.length >= 2) maybeGuide("tabs");
-  }, [tabs.length, maybeGuide]);
-
-  useEffect(() => {
-    if (books.length >= 2) maybeGuide("books");
-  }, [books.length, maybeGuide]);
+    if (showTutorial && !gateOpen) {
+      localStorage.setItem("scribal_tutorial_seen", "1");
+      setShowTutorial(false);
+      setTourStart(0);
+      setTourOpen(true);
+    }
+  }, [showTutorial, gateOpen]);
 
   const addNewTab = () => {
     if (tabs.length >= 5) return; // up to 5 panels
@@ -2736,17 +2745,6 @@ export default function App() {
         </div>
       )}
 
-      {!gateOpen && showTutorial && <Walkthrough onClose={closeTutorial} />}
-      {featureWalk === "compile" && (
-        <CompileWalkthrough onClose={closeFeatureWalk} />
-      )}
-      {featureWalk === "search" && (
-        <SearchWalkthrough onClose={closeFeatureWalk} />
-      )}
-      {featureWalk === "tabs" && <TabsWalkthrough onClose={closeFeatureWalk} />}
-      {featureWalk === "books" && (
-        <BooksWalkthrough onClose={closeFeatureWalk} />
-      )}
       {showHelpMenu && (
         <HelpMenu
           onPick={pickHelp}
@@ -2762,9 +2760,14 @@ export default function App() {
       )}
       {tourOpen && (
         <SpotlightTour
-          steps={TOUR_STEPS}
+          key={tourStart}
+          startIndex={tourStart}
+          steps={tourSteps}
           label="Guided tour"
-          onClose={() => setTourOpen(false)}
+          onClose={() => {
+            setTourOpen(false);
+            setMode("read");
+          }}
         />
       )}
       {showColorKey && (
@@ -5962,6 +5965,7 @@ export default function App() {
                 }}
               />
               <button
+                data-tour="save-study"
                 onClick={saveToStudies}
                 style={{
                   display: "inline-flex",
@@ -6096,6 +6100,7 @@ export default function App() {
 
             <div style={{ display: "flex", justifyContent: "center" }}>
               <div
+                data-tour="compile-views"
                 style={{
                   display: "flex",
                   border: "1px solid var(--border)",
