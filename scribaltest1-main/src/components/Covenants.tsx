@@ -29,22 +29,133 @@ interface CovenantsProps {
   shareSignal?: number;
 }
 
-const vols = scriptures.volumes;
-const ROLES_KEY = "scribal_covenant_roles";
+type Lens = "covenant" | "contrast" | "type" | "question";
 
-function readRoles(): { condition: MarkColor; promise: MarkColor } {
+interface LensCfg {
+  id: Lens;
+  chip: string;
+  label: string;
+  intro: string;
+  caveat: string;
+  leftLabel: string;
+  rightLabel: string;
+  leftHeader: string;
+  rightHeader: string;
+  connector: string;
+  cardHeading: string;
+  defA: MarkColor;
+  defB: MarkColor;
+}
+
+const LENSES: LensCfg[] = [
+  {
+    id: "covenant",
+    chip: "Covenant",
+    label: "Covenant Ledger",
+    intro:
+      "This lens tracks the conditional, covenantal relationships in scripture — the If → Then promises. Mark a condition and the promise it unlocks, and the pair appears here.",
+    caveat:
+      "Only passages with covenant language will have anything to pair, so this lens stays empty for the rest.",
+    leftLabel: "Mark conditions",
+    rightLabel: "Mark promises",
+    leftHeader: "If",
+    rightHeader: "Then",
+    connector: "→",
+    cardHeading: "Covenant Ledger",
+    defA: 1,
+    defB: 2,
+  },
+  {
+    id: "contrast",
+    chip: "Contrasts",
+    label: "Contrasts",
+    intro:
+      "This lens sets opposites side by side — pride and humility, light and dark, life and death. Mark the two sides and they pair here.",
+    caveat: "Only passages that hold a clear contrast will have anything to pair.",
+    leftLabel: "Mark one side",
+    rightLabel: "Mark the opposite",
+    leftHeader: "This",
+    rightHeader: "Opposite",
+    connector: "↔",
+    cardHeading: "Contrasts",
+    defA: 1,
+    defB: 5,
+  },
+  {
+    id: "type",
+    chip: "Type",
+    label: "Type → Fulfillment",
+    intro:
+      "This lens links a symbol, or type, to what it points to — the brass serpent to Christ, the Liahona to the word. Mark the type and its fulfillment and they pair here.",
+    caveat:
+      "Only passages where a type and its fulfillment both appear will have anything to pair.",
+    leftLabel: "Mark the type",
+    rightLabel: "Mark the fulfillment",
+    leftHeader: "Type",
+    rightHeader: "Fulfillment",
+    connector: "→",
+    cardHeading: "Type → Fulfillment",
+    defA: 6,
+    defB: 4,
+  },
+  {
+    id: "question",
+    chip: "Q & A",
+    label: "Question → Answer",
+    intro:
+      "This lens pairs a question with the answer the text gives it. Mark both and they line up here.",
+    caveat: "Only passages with a question and its answer will have anything to pair.",
+    leftLabel: "Mark the question",
+    rightLabel: "Mark the answer",
+    leftHeader: "Question",
+    rightHeader: "Answer",
+    connector: "→",
+    cardHeading: "Question → Answer",
+    defA: 3,
+    defB: 5,
+  },
+];
+
+const vols = scriptures.volumes;
+const ROLES_KEY = "scribal_relational_roles";
+const OLD_KEY = "scribal_covenant_roles";
+
+function clampColor(x: unknown, d: MarkColor): MarkColor {
+  return COLORS.indexOf(x as MarkColor) >= 0 ? (x as MarkColor) : d;
+}
+
+type RoleMap = Record<Lens, { a: MarkColor; b: MarkColor }>;
+
+function readRoles(): RoleMap {
+  const out = {} as RoleMap;
+  LENSES.forEach((l) => {
+    out[l.id] = { a: l.defA, b: l.defB };
+  });
   try {
     const raw = localStorage.getItem(ROLES_KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      const c = COLORS.indexOf(p.condition) >= 0 ? (p.condition as MarkColor) : 1;
-      const pr = COLORS.indexOf(p.promise) >= 0 ? (p.promise as MarkColor) : 2;
-      return { condition: c, promise: pr };
+      LENSES.forEach((l) => {
+        if (p && p[l.id])
+          out[l.id] = {
+            a: clampColor(p[l.id].a, l.defA),
+            b: clampColor(p[l.id].b, l.defB),
+          };
+      });
+    } else {
+      const old = localStorage.getItem(OLD_KEY);
+      if (old) {
+        const o = JSON.parse(old);
+        out.covenant = {
+          a: clampColor(o.condition, 1),
+          b: clampColor(o.promise, 2),
+        };
+      }
     }
   } catch {
     // ignore malformed storage
   }
-  return { condition: 1, promise: 2 };
+  return out;
 }
 
 type Frag = {
@@ -57,22 +168,23 @@ type Frag = {
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
 
-  const init = readRoles();
-  const [conditionColor, setConditionColor] = useState<MarkColor>(
-    init.condition
-  );
-  const [promiseColor, setPromiseColor] = useState<MarkColor>(init.promise);
+  const [lens, setLens] = useState<Lens>("covenant");
+  const [roles, setRoles] = useState<RoleMap>(readRoles());
+  const cfg = LENSES.find((l) => l.id === lens) || LENSES[0];
+  const a = roles[lens].a;
+  const b = roles[lens].b;
+  const setA = (c: MarkColor) =>
+    setRoles((r) => ({ ...r, [lens]: { ...r[lens], a: c } }));
+  const setB = (c: MarkColor) =>
+    setRoles((r) => ({ ...r, [lens]: { ...r[lens], b: c } }));
 
   useEffect(() => {
     try {
-      localStorage.setItem(
-        ROLES_KEY,
-        JSON.stringify({ condition: conditionColor, promise: promiseColor })
-      );
+      localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
     } catch {
       // ignore storage failure
     }
-  }, [conditionColor, promiseColor]);
+  }, [roles]);
 
   // ----- share state: ONE sheet that does pick + preview + share together -----
   const [shareOpen, setShareOpen] = useState(false);
@@ -84,8 +196,6 @@ export default function Covenants(props: CovenantsProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const openRef = useRef<() => void>(() => {});
 
-  // Trigger can live in the host header (mobile) via shareSignal, or be the
-  // in-ledger button below (desktop). Either way it opens the same sheet.
   const externalTrigger = props.shareSignal !== undefined;
   useEffect(() => {
     if (props.shareSignal && props.shareSignal > 0) openRef.current();
@@ -120,7 +230,7 @@ export default function Covenants(props: CovenantsProps) {
     });
   });
   entries.sort(
-    (a, b) => a.v - b.v || a.b - b.b || a.c - b.c || a.verse - b.verse
+    (a2, b2) => a2.v - b2.v || a2.b - b2.b || a2.c - b2.c || a2.verse - b2.verse
   );
 
   const fragmentsForRole = (
@@ -131,7 +241,7 @@ export default function Covenants(props: CovenantsProps) {
     const ms = marks
       .filter((m) => m.reference === reference && m.color === color)
       .slice()
-      .sort((a, b) => a.startIndex - b.startIndex || b.endIndex - a.endIndex);
+      .sort((x, y) => x.startIndex - y.startIndex || y.endIndex - x.endIndex);
     const frags: Frag[] = [];
     let covered = 0;
     ms.forEach((m) => {
@@ -148,26 +258,26 @@ export default function Covenants(props: CovenantsProps) {
     return frags;
   };
 
-  const sameColor = conditionColor === promiseColor;
+  const sameColor = a === b;
 
-  type Row = { reference: string; condition: Frag[]; promise: Frag[] };
+  type Row = { reference: string; left: Frag[]; right: Frag[] };
   type Half = {
     reference: string;
-    role: "condition" | "promise";
+    side: "left" | "right";
     frags: Frag[];
   };
   const rows: Row[] = [];
   const half: Half[] = [];
   if (!sameColor) {
     entries.forEach((e) => {
-      const cond = fragmentsForRole(e.reference, e.text, conditionColor);
-      const prom = fragmentsForRole(e.reference, e.text, promiseColor);
-      if (cond.length && prom.length)
-        rows.push({ reference: e.reference, condition: cond, promise: prom });
-      else if (cond.length)
-        half.push({ reference: e.reference, role: "condition", frags: cond });
-      else if (prom.length)
-        half.push({ reference: e.reference, role: "promise", frags: prom });
+      const lf = fragmentsForRole(e.reference, e.text, a);
+      const rf = fragmentsForRole(e.reference, e.text, b);
+      if (lf.length && rf.length)
+        rows.push({ reference: e.reference, left: lf, right: rf });
+      else if (lf.length)
+        half.push({ reference: e.reference, side: "left", frags: lf });
+      else if (rf.length)
+        half.push({ reference: e.reference, side: "right", frags: rf });
     });
   }
 
@@ -191,7 +301,7 @@ export default function Covenants(props: CovenantsProps) {
       </span>
     ));
 
-  const swatch = (color: MarkColor, active: boolean, onClick: () => void) => (
+  const swatch = (color: MarkColor, on: boolean, onClick: () => void) => (
     <button
       key={color}
       onClick={onClick}
@@ -201,8 +311,8 @@ export default function Covenants(props: CovenantsProps) {
         height: "26px",
         borderRadius: "7px",
         background: COLOR_MAP[color],
-        border: active ? "3px solid var(--text)" : "3px solid transparent",
-        boxShadow: active ? "0 0 0 1px var(--border)" : "none",
+        border: on ? "3px solid var(--text)" : "3px solid transparent",
+        boxShadow: on ? "0 0 0 1px var(--border)" : "none",
         cursor: "pointer",
         padding: 0,
       }}
@@ -258,8 +368,8 @@ export default function Covenants(props: CovenantsProps) {
       if (keys.includes(rowKey(r, i)))
         out.push({
           reference: r.reference,
-          ifFrags: fragsForCard(r.condition),
-          thenFrags: fragsForCard(r.promise),
+          ifFrags: fragsForCard(r.left),
+          thenFrags: fragsForCard(r.right),
         });
     });
     return out;
@@ -268,9 +378,10 @@ export default function Covenants(props: CovenantsProps) {
   const renderPreview = (keys: string[], dark: boolean) => {
     const canvas = renderCovenantCard({
       pairs: chosenFromKeys(keys),
-      conditionColor,
-      promiseColor,
+      conditionColor: a,
+      promiseColor: b,
       dark,
+      heading: cfg.cardHeading,
     });
     previewCanvasRef.current = canvas;
     setPreviewUrl(canvasURL(canvas));
@@ -308,8 +419,8 @@ export default function Covenants(props: CovenantsProps) {
     setShareMsg("Preparing…");
     const res = await shareCanvas(
       canvas,
-      "scribal-covenant.png",
-      "Covenant ledger · Scribal"
+      "scribal-" + lens + ".png",
+      cfg.label + " · Scribal"
     );
     setSharing(false);
     setShareMsg(
@@ -365,6 +476,31 @@ export default function Covenants(props: CovenantsProps) {
     fontFamily: "inherit",
   };
 
+  const roleRow = (labelText: string, color: MarkColor, set: (c: MarkColor) => void) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        style={{
+          fontSize: "12.5px",
+          fontWeight: 600,
+          width: "132px",
+          color: "var(--text)",
+        }}
+      >
+        {labelText}
+      </span>
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+        {COLORS.map((c) => swatch(c, c === color, () => set(c)))}
+      </div>
+    </div>
+  );
+
   return (
     <div
       style={{ padding: "20px 20px 90px", maxWidth: "820px", margin: "0 auto" }}
@@ -379,13 +515,44 @@ export default function Covenants(props: CovenantsProps) {
           marginBottom: "6px",
         }}
       >
-        Covenant Ledger
+        {cfg.label}
       </div>
-      <h2 style={{ margin: "0 0 6px 0", fontWeight: 500 }}>
+      <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
         {compileTabs.length === 0
           ? "Nothing selected"
           : compileTabs.map(tabLabel).join("  ·  ")}
       </h2>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "6px",
+          marginBottom: "16px",
+        }}
+      >
+        {LENSES.map((l) => (
+          <button
+            key={l.id}
+            onClick={() => setLens(l.id)}
+            style={{
+              border:
+                "1px solid " + (l.id === lens ? "var(--text)" : "var(--border)"),
+              background: l.id === lens ? "var(--text)" : "transparent",
+              color: l.id === lens ? "var(--panel)" : "var(--muted)",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              padding: "7px 13px",
+              borderRadius: "999px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {l.chip}
+          </button>
+        ))}
+      </div>
+
       <p
         style={{
           fontSize: "12.5px",
@@ -394,9 +561,7 @@ export default function Covenants(props: CovenantsProps) {
           lineHeight: 1.55,
         }}
       >
-        This format tracks the conditional, covenantal relationships in
-        scripture — the <em>If → Then</em> promises. Mark a condition and the
-        promise it unlocks, and the pair appears here.
+        {cfg.intro}
       </p>
       <p
         style={{
@@ -408,8 +573,7 @@ export default function Covenants(props: CovenantsProps) {
           opacity: 0.85,
         }}
       >
-        It isn't meant for every study — only passages with covenant language
-        will have anything to pair, so this view stays empty for the rest.
+        {cfg.caveat}
       </p>
 
       <div
@@ -423,54 +587,8 @@ export default function Covenants(props: CovenantsProps) {
           marginBottom: "24px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flexWrap: "wrap",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "12.5px",
-              fontWeight: 600,
-              width: "112px",
-              color: "var(--text)",
-            }}
-          >
-            Mark conditions
-          </span>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {COLORS.map((c) =>
-              swatch(c, c === conditionColor, () => setConditionColor(c))
-            )}
-          </div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flexWrap: "wrap",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "12.5px",
-              fontWeight: 600,
-              width: "112px",
-              color: "var(--text)",
-            }}
-          >
-            Mark promises
-          </span>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {COLORS.map((c) =>
-              swatch(c, c === promiseColor, () => setPromiseColor(c))
-            )}
-          </div>
-        </div>
+        {roleRow(cfg.leftLabel, a, setA)}
+        {roleRow(cfg.rightLabel, b, setB)}
       </div>
 
       {compileTabs.length === 0 && (
@@ -487,7 +605,7 @@ export default function Covenants(props: CovenantsProps) {
             padding: "30px 20px",
           }}
         >
-          Choose two <em>different</em> colors for conditions and promises.
+          Choose two <em>different</em> colors for the two sides.
         </p>
       )}
 
@@ -500,12 +618,10 @@ export default function Covenants(props: CovenantsProps) {
             lineHeight: 1.8,
           }}
         >
-          <div style={{ marginBottom: "8px" }}>No covenants here yet.</div>
+          <div style={{ marginBottom: "8px" }}>Nothing paired yet.</div>
           <div style={{ fontSize: "13.5px" }}>
-            This format only surfaces conditional, covenantal passages. If this
-            study has them, mark a condition {dot(conditionColor)} and its
-            promise {dot(promiseColor)} in the same verse and the pair appears
-            here — otherwise there may simply be none to track.
+            Mark one side {dot(a)} and the other {dot(b)} in the same verse, and
+            the pair appears here. {cfg.caveat}
           </div>
         </div>
       )}
@@ -539,9 +655,9 @@ export default function Covenants(props: CovenantsProps) {
               fontWeight: 700,
             }}
           >
-            <div style={{ flex: 1 }}>If</div>
+            <div style={{ flex: 1 }}>{cfg.leftHeader}</div>
             <div style={{ width: "22px" }} />
-            <div style={{ flex: 1 }}>Then</div>
+            <div style={{ flex: 1 }}>{cfg.rightHeader}</div>
             <div style={{ width: "64px" }} />
           </div>
           {rows.map((r, i) => (
@@ -555,7 +671,7 @@ export default function Covenants(props: CovenantsProps) {
                 flexWrap: "wrap",
               }}
             >
-              {card(r.condition, conditionColor)}
+              {card(r.left, a)}
               <div
                 style={{
                   display: "flex",
@@ -566,9 +682,9 @@ export default function Covenants(props: CovenantsProps) {
                   fontSize: "18px",
                 }}
               >
-                →
+                {cfg.connector}
               </div>
-              {card(r.promise, promiseColor)}
+              {card(r.right, b)}
               <button
                 onClick={() => onJumpToReference(r.reference)}
                 title="Open in reading view"
@@ -650,8 +766,7 @@ export default function Covenants(props: CovenantsProps) {
                     fontSize: "12px",
                   }}
                 >
-                  — needs the{" "}
-                  {h.role === "condition" ? "promise" : "condition"}
+                  — needs the {h.side === "left" ? cfg.rightHeader : cfg.leftHeader}
                 </span>
               </span>
             </div>
@@ -696,7 +811,7 @@ export default function Covenants(props: CovenantsProps) {
                 textAlign: "center",
               }}
             >
-              Share covenant{" "}
+              Share{" "}
               <span style={{ color: "#8d8a82", fontWeight: 500 }}>
                 · pick up to 3 pairs
               </span>
@@ -717,7 +832,7 @@ export default function Covenants(props: CovenantsProps) {
               {previewUrl ? (
                 <img
                   src={previewUrl}
-                  alt="Covenant share card"
+                  alt="Share card"
                   style={{
                     maxWidth: "100%",
                     maxHeight: "100%",
