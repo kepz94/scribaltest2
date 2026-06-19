@@ -28,6 +28,7 @@ import TabsWalkthrough from "./components/TabsWalkthrough";
 import BooksWalkthrough from "./components/BooksWalkthrough";
 import HelpMenu, { HelpPick } from "./components/HelpMenu";
 import DesktopFeatureGuide from "./components/DesktopFeatureGuide";
+import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 type FeatureKey = "compile" | "search" | "vault" | "tabs" | "books";
 import ColorKey from "./components/ColorKey";
@@ -324,6 +325,56 @@ const VIEW_NAMES: Record<string, string> = {
 };
 
 type CompileView = "outline" | "charting" | "distilled" | "covenants";
+// Steps for the live spotlight tour (the real screen, not a mockup). Targets
+// are data-tour hooks on the actual header / tab controls.
+const TOUR_STEPS: TourStep[] = [
+  {
+    title: "Welcome to Scribal",
+    body:
+      "Read scripture, mark what stands out with the floating toolbar, and gather your marks into notes. This quick tour points out the main controls — tap Next, or press the arrow keys.",
+  },
+  {
+    target: '[data-tour="tabs"]',
+    placement: "bottom",
+    title: "Your open chapters",
+    body:
+      "Chapters you open show up here as tabs. Switch between them, and link related chapters so they compile together as one study.",
+  },
+  {
+    target: '[data-tour="search"]',
+    placement: "bottom",
+    title: "Search all of scripture",
+    body:
+      "Find any phrase across the standard works, then pull the verses you find into a keyword study you can mark and compile.",
+  },
+  {
+    target: '[data-tour="studies"]',
+    placement: "bottom",
+    title: "Your saved studies",
+    body:
+      "Every study you've saved — chapter, linked, or keyword — lives here. Open one to jump straight to its compiled notes.",
+  },
+  {
+    target: '[data-tour="compile"]',
+    placement: "bottom",
+    title: "Compile your marks",
+    body:
+      "Once you've marked a chapter, Compile gathers everything into four views — Outline, Charting, Distilled, and Relational — so the patterns become visible.",
+  },
+  {
+    target: '[data-tour="more"]',
+    placement: "left",
+    title: "Settings & more",
+    body:
+      "Display options, your color key, study books, keyboard shortcuts, and these walkthroughs all live in this menu.",
+  },
+  {
+    title: "That's the tour",
+    body:
+      "You can reopen this anytime from More → Take the guided tour. Happy studying.",
+  },
+];
+
 type Mode = "read" | "compile" | "vault";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
@@ -672,6 +723,7 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [featureWalk, setFeatureWalk] = useState<FeatureKey | null>(null);
   const [showHelpMenu, setShowHelpMenu] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [showFeatureList, setShowFeatureList] = useState(false);
   const [showColorKey, setShowColorKey] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -2708,6 +2760,13 @@ export default function App() {
       {showFeatureList && (
         <DesktopFeatureGuide onClose={() => setShowFeatureList(false)} />
       )}
+      {tourOpen && (
+        <SpotlightTour
+          steps={TOUR_STEPS}
+          label="Guided tour"
+          onClose={() => setTourOpen(false)}
+        />
+      )}
       {showColorKey && (
         <ColorKey
           colorLabels={activeScopedLabels}
@@ -4528,6 +4587,7 @@ export default function App() {
           {/* Find group */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
+              data-tour="search"
               onClick={() => setShowSearch(true)}
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
@@ -4536,6 +4596,7 @@ export default function App() {
               Search
             </button>
             <button
+              data-tour="studies"
               onClick={() => setStudiesOpen(true)}
               title="Every study you've done"
               style={pillStyle}
@@ -4613,6 +4674,7 @@ export default function App() {
             })()}
             <div style={{ position: "relative" }}>
               <button
+                data-tour="more"
                 onClick={() => setBackupOpen((o) => !o)}
                 title="More — display, study books, color key, shortcuts, walkthroughs, back up"
                 style={{
@@ -4688,6 +4750,21 @@ export default function App() {
                         margin: "6px 4px",
                       }}
                     />
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setTourOpen(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      ▶ Take the guided tour
+                    </div>
                     <div
                       onClick={() => {
                         setBackupOpen(false);
@@ -5281,19 +5358,22 @@ export default function App() {
               actionButton(sidebarOpen ? "Hide marks" : "Show marks", () =>
                 setSidebarOpen(!sidebarOpen)
               )}
-            {mode === "read" &&
-              actionButton(
-                "Compile →",
-                activeTab.studyId
-                  ? () => {
-                      const st = searchStudies.find(
-                        (s) => s.id === activeTab.studyId
-                      );
-                      if (st) startStudyCompile(st);
-                    }
-                  : startCompile,
-                true
-              )}
+            {mode === "read" && (
+              <span data-tour="compile" style={{ display: "inline-flex" }}>
+                {actionButton(
+                  "Compile →",
+                  activeTab.studyId
+                    ? () => {
+                        const st = searchStudies.find(
+                          (s) => s.id === activeTab.studyId
+                        );
+                        if (st) startStudyCompile(st);
+                      }
+                    : startCompile,
+                  true
+                )}
+              </span>
+            )}
             {mode === "compile" &&
               actionButton(
                 "← Back to Reading",
@@ -5323,6 +5403,7 @@ export default function App() {
             top: "62px",
             zIndex: 25,
           }}
+          data-tour="tabs"
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
