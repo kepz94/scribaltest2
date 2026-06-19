@@ -565,26 +565,28 @@ export default function MobileCompile({
         {/* Row 2 — actions (Save is the primary, Share is secondary) */}
         {liveMarks.length > 0 && (
           <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={() => {
-                setPicked([]);
-                setPicking(true);
-              }}
-              style={{
-                flexShrink: 0,
-                background: "transparent",
-                color: C.text,
-                border: "1px solid " + C.border,
-                borderRadius: "999px",
-                padding: "10px 18px",
-                fontSize: "13.5px",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Share
-            </button>
+            {format !== "covenants" && (
+              <button
+                onClick={() => {
+                  setPicked([]);
+                  setPicking(true);
+                }}
+                style={{
+                  flexShrink: 0,
+                  background: "transparent",
+                  color: C.text,
+                  border: "1px solid " + C.border,
+                  borderRadius: "999px",
+                  padding: "10px 18px",
+                  fontSize: "13.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Share
+              </button>
+            )}
             <button
               onClick={() => onSave(studyName.trim() || defaultName)}
               style={{
