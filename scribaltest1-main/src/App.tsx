@@ -7,6 +7,7 @@ import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
+import Distilled from "./components/Distilled";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -317,9 +318,10 @@ const LINK_COLORS = [
 const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
   charting: "Charting",
+  distilled: "Distilled",
 };
 
-type CompileView = "outline" | "charting";
+type CompileView = "outline" | "charting" | "distilled";
 type Mode = "read" | "compile" | "vault";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
@@ -4168,7 +4170,7 @@ export default function App() {
 
       {printData && (
         <PrintView
-          view={printData.view}
+          view={printData.view as "outline" | "charting"}
           title={printData.title}
           compileTabs={printData.compileTabs}
           marks={printData.marks}
@@ -5944,27 +5946,29 @@ export default function App() {
                         width: "190px",
                       }}
                     >
-                      <button
-                        onClick={() => {
-                          setCompileSettingsOpen(false);
-                          handlePrintLive();
-                        }}
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "9px 11px",
-                          borderRadius: "8px",
-                          border: "none",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "13.5px",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        ⎙ Print / PDF
-                      </button>
+                      {compileView !== "distilled" && (
+                        <button
+                          onClick={() => {
+                            setCompileSettingsOpen(false);
+                            handlePrintLive();
+                          }}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "9px 11px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontSize: "13.5px",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          ⎙ Print / PDF
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setCompileSettingsOpen(false);
@@ -6009,6 +6013,9 @@ export default function App() {
                 {viewTabButton(compileView === "charting", "Charting", () =>
                   setCompileView("charting")
                 )}
+                {viewTabButton(compileView === "distilled", "Distilled", () =>
+                  setCompileView("distilled")
+                )}
               </div>
             </div>
           </div>
@@ -6018,6 +6025,9 @@ export default function App() {
               <Outline {...sharedCompileProps} notes={notes} setNote={setNote} />
             )}
             {compileView === "charting" && <Charting {...sharedCompileProps} />}
+            {compileView === "distilled" && (
+              <Distilled {...sharedCompileProps} />
+            )}
           </div>
         </div>
       )}
