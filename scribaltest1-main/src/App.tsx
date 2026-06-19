@@ -8,6 +8,7 @@ import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
+import Covenants from "./components/Covenants";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -319,9 +320,10 @@ const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
   charting: "Charting",
   distilled: "Distilled",
+  covenants: "Covenants",
 };
 
-type CompileView = "outline" | "charting" | "distilled";
+type CompileView = "outline" | "charting" | "distilled" | "covenants";
 type Mode = "read" | "compile" | "vault";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
@@ -515,7 +517,12 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("read");
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
-    return saved === "outline" || saved === "charting" ? saved : "outline";
+    return saved === "outline" ||
+      saved === "charting" ||
+      saved === "distilled" ||
+      saved === "covenants"
+      ? saved
+      : "outline";
   });
 
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -5946,7 +5953,8 @@ export default function App() {
                         width: "190px",
                       }}
                     >
-                      {compileView !== "distilled" && (
+                      {(compileView === "outline" ||
+                        compileView === "charting") && (
                         <button
                           onClick={() => {
                             setCompileSettingsOpen(false);
@@ -6016,6 +6024,9 @@ export default function App() {
                 {viewTabButton(compileView === "distilled", "Distilled", () =>
                   setCompileView("distilled")
                 )}
+                {viewTabButton(compileView === "covenants", "Covenants", () =>
+                  setCompileView("covenants")
+                )}
               </div>
             </div>
           </div>
@@ -6027,6 +6038,9 @@ export default function App() {
             {compileView === "charting" && <Charting {...sharedCompileProps} />}
             {compileView === "distilled" && (
               <Distilled {...sharedCompileProps} />
+            )}
+            {compileView === "covenants" && (
+              <Covenants {...sharedCompileProps} />
             )}
           </div>
         </div>
