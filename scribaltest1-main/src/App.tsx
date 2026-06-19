@@ -18,6 +18,7 @@ import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
 import {
   extractPdfText,
   parseScriptureNotes,
+  verseTextOf,
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study } from "./hooks/useStudies";
@@ -38,6 +39,7 @@ import scriptures from "./data/scriptures.json";
 import {
   Mark,
   MarkColor,
+  MarkStyle,
   Tool,
   Tab,
   COLOR_MAP,
@@ -1776,12 +1778,68 @@ export default function App() {
     if (snParsed.favorites.length)
       parts.push("★ Favorites: " + snParsed.favorites.join(", "));
     const note = parts.join("\n\n");
+
+    // Highlight every imported verse so the collection actually populates the
+    // compile/Outline (which groups marked verses into themes by color).
+    const markItems = snParsed.verses
+      .map((ref) => {
+        const text = verseTextOf(ref);
+        if (!text) return null;
+        return {
+          reference: ref,
+          verseText: text,
+          markedText: text,
+          startIndex: 0,
+          endIndex: text.length,
+          style: "highlight" as MarkStyle,
+          color: 1 as MarkColor,
+        };
+      })
+      .filter(
+        (
+          m
+        ): m is {
+          reference: string;
+          verseText: string;
+          markedText: string;
+          startIndex: number;
+          endIndex: number;
+          style: MarkStyle;
+          color: MarkColor;
+        } => m != null
+      );
+    if (markItems.length) addMarks(markItems);
+
     const study = addStudy(
       snName.trim() || "Imported study",
-      "master",
+      activeBookId,
       snParsed.verses,
       note
     );
+
+    // Name the single theme and seed the synthesis (shown at the top of the
+    // Outline) with the report's note, keyed exactly as the compile views key it.
+    const scope = "searchstudy:" + study.id;
+    setScopedLabel(scope, 1, "Verses");
+    if (note.trim()) {
+      const seen = new Set<string>();
+      const labels: string[] = [];
+      snParsed.verses.forEach((r) => {
+        const loc = refLoc.get(r);
+        if (!loc) return;
+        const key = loc.volume + ":" + loc.book + ":" + loc.chapter;
+        if (seen.has(key)) return;
+        seen.add(key);
+        labels.push(
+          vols[loc.volume].books[loc.book].book +
+            " " +
+            vols[loc.volume].books[loc.book].chapters[loc.chapter].chapter
+        );
+      });
+      const synthKey = "synthesis|" + labels.join("+");
+      setNote(synthKey, note);
+    }
+
     setSnImportOpen(false);
     setSnParsed(null);
     setSnName("");
@@ -1789,7 +1847,8 @@ export default function App() {
     setSnPaste(false);
     setSnErr("");
     setStudiesOpen(false);
-    openStudyTab(study);
+    setCompileView("outline");
+    startStudyCompile(study);
   };
   // Deleting a study also closes any tab that was showing it.
   const removeStudy = (id: string) => {
