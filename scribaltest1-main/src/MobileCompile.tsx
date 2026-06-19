@@ -120,6 +120,7 @@ export default function MobileCompile({
   const [editSynth, setEditSynth] = useState<string | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [covShareSignal, setCovShareSignal] = useState(0);
   const [picked, setPicked] = useState<string[]>([]);
   // Hide the header + toggles while reading down through verses (and bring
   // them back when scrolling up), so a long study isn't half-covered by chrome.
@@ -565,7 +566,25 @@ export default function MobileCompile({
         {/* Row 2 — actions (Save is the primary, Share is secondary) */}
         {liveMarks.length > 0 && (
           <div style={{ display: "flex", gap: "8px" }}>
-            {format !== "covenants" && (
+            {format === "covenants" ? (
+              <button
+                onClick={() => setCovShareSignal((n) => n + 1)}
+                style={{
+                  flexShrink: 0,
+                  background: "transparent",
+                  color: C.text,
+                  border: "1px solid " + C.border,
+                  borderRadius: "999px",
+                  padding: "10px 18px",
+                  fontSize: "13.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Share image
+              </button>
+            ) : (
               <button
                 onClick={() => {
                   setPicked([]);
@@ -690,7 +709,9 @@ export default function MobileCompile({
         }}
       >
         {format === "distilled" && <Distilled {...sharedViewProps} />}
-        {format === "covenants" && <Covenants {...sharedViewProps} />}
+        {format === "covenants" && (
+          <Covenants {...sharedViewProps} shareSignal={covShareSignal} />
+        )}
         {format === "outline" && liveMarks.length === 0 && (
           <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
             No marks in this book yet. Arm a pen and tap a word to begin — your
