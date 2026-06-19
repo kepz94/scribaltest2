@@ -188,12 +188,26 @@ export default function Covenants(props: CovenantsProps) {
         style={{
           fontSize: "12.5px",
           color: "var(--muted)",
-          marginBottom: "20px",
-          lineHeight: 1.5,
+          marginBottom: "12px",
+          lineHeight: 1.55,
         }}
       >
-        Mark each condition and the promise it unlocks — they pair here as If →
-        Then.
+        This format tracks the conditional, covenantal relationships in
+        scripture — the <em>If → Then</em> promises. Mark a condition and the
+        promise it unlocks, and the pair appears here.
+      </p>
+      <p
+        style={{
+          fontSize: "11.5px",
+          fontStyle: "italic",
+          color: "var(--muted)",
+          marginBottom: "20px",
+          lineHeight: 1.5,
+          opacity: 0.85,
+        }}
+      >
+        It isn't meant for every study — only passages with covenant language
+        will have anything to pair, so this view stays empty for the rest.
       </p>
 
       <div
@@ -284,11 +298,12 @@ export default function Covenants(props: CovenantsProps) {
             lineHeight: 1.8,
           }}
         >
-          <div style={{ marginBottom: "8px" }}>No covenants yet.</div>
+          <div style={{ marginBottom: "8px" }}>No covenants here yet.</div>
           <div style={{ fontSize: "13.5px" }}>
-            In the reading view, mark a condition {dot(conditionColor)} and its
-            promise {dot(promiseColor)} within the same verse — the pair appears
-            here.
+            This format only surfaces conditional, covenantal passages. If this
+            study has them, mark a condition {dot(conditionColor)} and its
+            promise {dot(promiseColor)} in the same verse and the pair appears
+            here — otherwise there may simply be none to track.
           </div>
         </div>
       )}
