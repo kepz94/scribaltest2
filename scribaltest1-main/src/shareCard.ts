@@ -1007,6 +1007,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     ctx.fill();
     const tx = boxX + innerPad;
     let ty = boxTop + boxVPad;
+    ctx.textBaseline = "alphabetic";
     ctx.font = "500 " + size + "px " + SERIF;
     const sp = ctx.measureText(" ").width;
     lines.forEach((ln) => {
@@ -1035,9 +1036,10 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
           ctx.strokeStyle = penHex(t.color, dark);
           ctx.lineWidth = 2.5;
           const uw = w + (contig ? sp : 0);
+          const uy = lineBase + Math.round(size * 0.2);
           ctx.beginPath();
-          ctx.moveTo(x, lineBase + 6);
-          ctx.lineTo(x + uw, lineBase + 6);
+          ctx.moveTo(x, uy);
+          ctx.lineTo(x + uw, uy);
           ctx.stroke();
         } else if (!t.gap && t.style === "circle") {
           ctx.strokeStyle = penHex(t.color, dark);
