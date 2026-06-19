@@ -1314,6 +1314,21 @@ export default function App() {
     setChapterGroups(next);
   };
 
+  // One-click unlink: drop this chapter from its group, dissolving any group
+  // left with a single chapter. Mirrors the mobile Unlink action.
+  const unlinkScope = (cs: string) => {
+    const prev = chapterGroups;
+    const next = { ...prev };
+    delete next[cs];
+    const counts: Record<string, number> = {};
+    Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    Object.keys(next).forEach((s) => {
+      if (counts[next[s]] < 2) delete next[s];
+    });
+    stampGroupChanges(prev, next); // record the unlink so it syncs
+    setChapterGroups(next);
+  };
+
   const locateReference = (reference: string) => {
     for (let v = 0; v < vols.length; v++) {
       for (let b = 0; b < vols[v].books.length; b++) {
@@ -3134,6 +3149,26 @@ export default function App() {
               >
                 Done
               </button>
+              {members.length > 0 && (
+                <button
+                  onClick={() => {
+                    unlinkScope(cs);
+                    setLinkPromptTabId(null);
+                  }}
+                  style={{
+                    padding: "11px 16px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Unlink
+                </button>
+              )}
               <button
                 onClick={() => setLinkPromptTabId(null)}
                 style={{
