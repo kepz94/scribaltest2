@@ -20,6 +20,7 @@ interface SpotlightTourProps {
   label?: string;
   accent?: string;
   startIndex?: number;
+  colors?: { panel?: string; text?: string; border?: string; muted?: string };
   onClose: () => void;
   onDone?: () => void;
 }
@@ -36,9 +37,16 @@ export default function SpotlightTour({
   label = "Walkthrough",
   accent = "#8b5cf6",
   startIndex = 0,
+  colors,
   onClose,
   onDone,
 }: SpotlightTourProps) {
+  // Theme colors: default to the global CSS vars (desktop); mobile passes its
+  // palette object so the tooltip matches there too.
+  const cPanel = colors && colors.panel ? colors.panel : "var(--panel)";
+  const cText = colors && colors.text ? colors.text : "var(--text)";
+  const cBorder = colors && colors.border ? colors.border : "var(--border)";
+  const cMuted = colors && colors.muted ? colors.muted : "var(--muted)";
   const [i, setI] = useState(startIndex);
   const [box, setBox] = useState<Box | null>(null);
 
@@ -250,9 +258,9 @@ export default function SpotlightTour({
         style={{
           position: "absolute",
           width: TT_W,
-          backgroundColor: "var(--panel)",
-          color: "var(--text)",
-          border: "1px solid var(--border)",
+          backgroundColor: cPanel,
+          color: cText,
+          border: "1px solid " + cBorder,
           borderRadius: "14px",
           boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
           padding: "16px 18px 14px",
@@ -271,7 +279,7 @@ export default function SpotlightTour({
               fontSize: "10.5px",
               letterSpacing: "1.5px",
               textTransform: "uppercase",
-              color: "var(--muted)",
+              color: cMuted,
               fontWeight: 700,
             }}
           >
@@ -281,7 +289,7 @@ export default function SpotlightTour({
             style={{
               marginLeft: "auto",
               fontSize: "11px",
-              color: "var(--muted)",
+              color: cMuted,
             }}
           >
             {i + 1} / {total}
@@ -301,7 +309,7 @@ export default function SpotlightTour({
           style={{
             fontSize: "13.5px",
             lineHeight: 1.55,
-            color: "var(--muted)",
+            color: cMuted,
             margin: "0 0 14px 0",
           }}
         >
@@ -319,7 +327,7 @@ export default function SpotlightTour({
             style={{
               background: "transparent",
               border: "none",
-              color: "var(--muted)",
+              color: cMuted,
               cursor: "pointer",
               fontSize: "13px",
               padding: "6px 4px",
@@ -334,8 +342,8 @@ export default function SpotlightTour({
                 onClick={() => backRef.current()}
                 style={{
                   background: "transparent",
-                  border: "1px solid var(--border)",
-                  color: "var(--text)",
+                  border: "1px solid " + cBorder,
+                  color: cText,
                   cursor: "pointer",
                   fontSize: "13px",
                   fontWeight: 600,
