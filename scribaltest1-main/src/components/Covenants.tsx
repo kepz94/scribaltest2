@@ -1,7 +1,20 @@
-import { useEffect, useState } from "react";
+import { CSSProperties, useEffect, useRef, useState } from "react";
 import scriptures from "../data/scriptures.json";
-import { Mark, MarkColor, COLORS, COLOR_MAP, HIGHLIGHT_MAP } from "../types";
+import {
+  Mark,
+  MarkColor,
+  MarkStyle,
+  COLORS,
+  COLOR_MAP,
+  markStyleCSS,
+} from "../types";
 import { Tab } from "../types";
+import {
+  renderCovenantCard,
+  canvasURL,
+  shareCanvas,
+  CovenantPairData,
+} from "../shareCard";
 
 interface CovenantsProps {
   tabs: Tab[];
@@ -33,6 +46,13 @@ function readRoles(): { condition: MarkColor; promise: MarkColor } {
   return { condition: 1, promise: 2 };
 }
 
+type Frag = {
+  text: string;
+  style: MarkStyle;
+  color: MarkColor;
+  gapBefore: boolean;
+};
+
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
 
@@ -52,6 +72,18 @@ export default function Covenants(props: CovenantsProps) {
       // ignore storage failure
     }
   }, [conditionColor, promiseColor]);
+
+  // ----- share-card state -----
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pendingPairs, setPendingPairs] = useState<CovenantPairData[] | null>(
+    null
+  );
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [cardDark, setCardDark] = useState(true);
+  const [sharing, setSharing] = useState(false);
+  const [shareMsg, setShareMsg] = useState("");
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const tabLabel = (t: Tab) =>
     vols[t.volume].books[t.book].book +
@@ -85,17 +117,18 @@ export default function Covenants(props: CovenantsProps) {
     (a, b) => a.v - b.v || a.b - b.b || a.c - b.c || a.verse - b.verse
   );
 
-  // Joined marked text for one role-color within a verse (gaps shown as "…").
-  const textForRole = (
+  // Ordered marked fragments of one role-color within a verse, each keeping the
+  // exact style/color it was marked with so the ledger shows the real marks.
+  const fragmentsForRole = (
     reference: string,
     text: string,
     color: MarkColor
-  ): string => {
+  ): Frag[] => {
     const ms = marks
       .filter((m) => m.reference === reference && m.color === color)
       .slice()
       .sort((a, b) => a.startIndex - b.startIndex || b.endIndex - a.endIndex);
-    const parts: string[] = [];
+    const frags: Frag[] = [];
     let covered = 0;
     ms.forEach((m) => {
       const start = Math.max(0, Math.min(m.startIndex, text.length));
@@ -103,33 +136,56 @@ export default function Covenants(props: CovenantsProps) {
       const from = Math.max(start, covered);
       if (end <= from) return;
       const piece = text.slice(from, end).replace(/\s+/g, " ").trim();
-      const gap = parts.length > 0 && start > covered;
+      const gapBefore = frags.length > 0 && start > covered;
       covered = end;
       if (!piece) return;
-      if (gap) parts.push("…");
-      parts.push(piece);
+      frags.push({ text: piece, style: m.style, color: m.color, gapBefore });
     });
-    return parts.join(" ");
+    return frags;
   };
 
   const sameColor = conditionColor === promiseColor;
 
-  type Row = { reference: string; condition: string; promise: string };
-  type Half = { reference: string; role: "condition" | "promise"; text: string };
+  type Row = { reference: string; condition: Frag[]; promise: Frag[] };
+  type Half = {
+    reference: string;
+    role: "condition" | "promise";
+    frags: Frag[];
+  };
   const rows: Row[] = [];
   const half: Half[] = [];
   if (!sameColor) {
     entries.forEach((e) => {
-      const cond = textForRole(e.reference, e.text, conditionColor);
-      const prom = textForRole(e.reference, e.text, promiseColor);
-      if (cond && prom)
+      const cond = fragmentsForRole(e.reference, e.text, conditionColor);
+      const prom = fragmentsForRole(e.reference, e.text, promiseColor);
+      if (cond.length && prom.length)
         rows.push({ reference: e.reference, condition: cond, promise: prom });
-      else if (cond)
-        half.push({ reference: e.reference, role: "condition", text: cond });
-      else if (prom)
-        half.push({ reference: e.reference, role: "promise", text: prom });
+      else if (cond.length)
+        half.push({ reference: e.reference, role: "condition", frags: cond });
+      else if (prom.length)
+        half.push({ reference: e.reference, role: "promise", frags: prom });
     });
   }
+
+  const renderFrags = (frags: Frag[]) =>
+    frags.map((f, i) => (
+      <span key={i}>
+        {f.gapBefore && (
+          <span
+            style={{
+              color: "var(--muted)",
+              margin: "0 5px",
+              fontFamily: "system-ui, sans-serif",
+              fontSize: "0.8em",
+            }}
+          >
+            …
+          </span>
+        )}
+        {i > 0 && !f.gapBefore && " "}
+        <span style={markStyleCSS(f.style, f.color)}>{f.text}</span>
+      </span>
+    ));
 
   const swatch = (color: MarkColor, selected: boolean, onClick: () => void) => (
     <button
@@ -162,6 +218,166 @@ export default function Covenants(props: CovenantsProps) {
       }}
     />
   );
+
+  const card = (frags: Frag[], color: MarkColor) => (
+    <div
+      style={{
+        flex: "1 1 240px",
+        background: "var(--soft)",
+        borderLeft: "3px solid " + COLOR_MAP[color],
+        borderRadius: "8px",
+        padding: "12px 14px",
+        fontFamily: '"Times New Roman", Times, serif',
+        fontSize: "16px",
+        lineHeight: 1.7,
+        color: "var(--text)",
+      }}
+    >
+      {renderFrags(frags)}
+    </div>
+  );
+
+  // ----- share helpers -----
+  const rowKey = (r: Row, i: number) => r.reference + "_" + i;
+
+  const togglePick = (key: string) => {
+    setPicked((cur) => {
+      if (cur.includes(key)) return cur.filter((k) => k !== key);
+      if (cur.length >= 3) return cur;
+      return [...cur, key];
+    });
+  };
+
+  const joinFrags = (frags: Frag[]) => {
+    let s = "";
+    frags.forEach((f, i) => {
+      if (i > 0) s += f.gapBefore ? " … " : " ";
+      s += f.text;
+    });
+    return s.replace(/\s+/g, " ").trim();
+  };
+
+  const buildPreview = (pairs: CovenantPairData[], dark: boolean) => {
+    const canvas = renderCovenantCard({
+      pairs,
+      conditionColor,
+      promiseColor,
+      dark,
+    });
+    previewCanvasRef.current = canvas;
+    setPreviewUrl(canvasURL(canvas));
+    setCardDark(dark);
+  };
+
+  const openPreview = () => {
+    const chosen: CovenantPairData[] = [];
+    rows.forEach((r, i) => {
+      if (picked.includes(rowKey(r, i))) {
+        chosen.push({
+          reference: r.reference,
+          ifText: joinFrags(r.condition),
+          ifStyle: r.condition[0] ? r.condition[0].style : "highlight",
+          thenText: joinFrags(r.promise),
+          thenStyle: r.promise[0] ? r.promise[0].style : "highlight",
+        });
+      }
+    });
+    if (chosen.length === 0) return;
+    setPendingPairs(chosen);
+    setShareMsg("");
+    buildPreview(chosen, cardDark);
+  };
+
+  const doShare = async () => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || sharing) return;
+    setSharing(true);
+    setShareMsg("Preparing…");
+    const res = await shareCanvas(
+      canvas,
+      "scribal-covenant.png",
+      "Covenant ledger · Scribal"
+    );
+    setSharing(false);
+    setShareMsg(
+      res === "shared"
+        ? "Shared."
+        : res === "downloaded"
+        ? "Saved to your device."
+        : res === "cancelled"
+        ? ""
+        : "Couldn't share — try again."
+    );
+  };
+
+  const closePreview = () => {
+    setPendingPairs(null);
+    setPreviewUrl("");
+    previewCanvasRef.current = null;
+    setShareMsg("");
+  };
+
+  const exitPicking = () => {
+    setPicking(false);
+    setPicked([]);
+    closePreview();
+  };
+
+  const shareBtnStyle: CSSProperties = {
+    border: "1px solid var(--border)",
+    background: "var(--soft)",
+    color: "var(--text)",
+    fontSize: "12.5px",
+    fontWeight: 600,
+    padding: "8px 14px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+  const pickBarStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+    flexWrap: "wrap",
+    padding: "10px 12px",
+    background: "var(--soft)",
+    borderRadius: "10px",
+    marginBottom: "12px",
+  };
+  const pickGhostBtn: CSSProperties = {
+    border: "1px solid var(--border)",
+    background: "transparent",
+    color: "var(--muted)",
+    fontSize: "12.5px",
+    fontWeight: 600,
+    padding: "8px 14px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+  const overlaySolidBtn: CSSProperties = {
+    border: "none",
+    background: "#ffffff",
+    color: "#111111",
+    fontSize: "13px",
+    fontWeight: 700,
+    padding: "11px 18px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+  const overlayGhostBtn: CSSProperties = {
+    border: "1px solid rgba(255,255,255,0.5)",
+    background: "transparent",
+    color: "#ffffff",
+    fontSize: "13px",
+    fontWeight: 600,
+    padding: "11px 18px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
 
   return (
     <div
@@ -308,6 +524,55 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
+      {rows.length > 0 && !picking && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: "10px",
+          }}
+        >
+          <button
+            onClick={() => {
+              setPicking(true);
+              setPicked([]);
+            }}
+            style={shareBtnStyle}
+          >
+            Share image
+          </button>
+        </div>
+      )}
+
+      {rows.length > 0 && picking && (
+        <div style={pickBarStyle}>
+          <span
+            style={{
+              fontSize: "12.5px",
+              color: "var(--text)",
+              fontWeight: 600,
+            }}
+          >
+            Tap up to 3 pairs to share · {picked.length}/3
+          </span>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button onClick={exitPicking} style={pickGhostBtn}>
+              Cancel
+            </button>
+            <button
+              onClick={openPreview}
+              disabled={picked.length === 0}
+              style={{
+                ...shareBtnStyle,
+                opacity: picked.length === 0 ? 0.5 : 1,
+              }}
+            >
+              Preview ({picked.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {rows.length > 0 && (
         <div>
           <div
@@ -328,78 +593,94 @@ export default function Covenants(props: CovenantsProps) {
             <div style={{ flex: 1 }}>Then</div>
             <div style={{ width: "64px" }} />
           </div>
-          {rows.map((r, i) => (
-            <div
-              key={r.reference + "_" + i}
-              style={{
-                display: "flex",
-                gap: "12px",
-                alignItems: "stretch",
-                marginBottom: "10px",
-                flexWrap: "wrap",
-              }}
-            >
+          {rows.map((r, i) => {
+            const key = rowKey(r, i);
+            const sel = picked.includes(key);
+            const idx = picked.indexOf(key);
+            return (
               <div
-                style={{
-                  flex: "1 1 240px",
-                  background: HIGHLIGHT_MAP[conditionColor],
-                  borderLeft: "3px solid " + COLOR_MAP[conditionColor],
-                  borderRadius: "8px",
-                  padding: "12px 14px",
-                  fontFamily: '"Times New Roman", Times, serif',
-                  fontSize: "16px",
-                  lineHeight: 1.55,
-                }}
-              >
-                {r.condition}
-              </div>
-              <div
+                key={key}
+                onClick={picking ? () => togglePick(key) : undefined}
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "22px",
-                  color: "var(--muted)",
-                  fontSize: "18px",
+                  gap: "12px",
+                  alignItems: "stretch",
+                  marginBottom: "10px",
+                  flexWrap: "wrap",
+                  cursor: picking ? "pointer" : "default",
+                  borderRadius: "10px",
+                  padding: picking ? "6px" : "0",
+                  boxShadow: sel ? "0 0 0 2px var(--text)" : "none",
+                  background: sel ? "var(--soft)" : "transparent",
                 }}
               >
-                →
+                {card(r.condition, conditionColor)}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "22px",
+                    color: "var(--muted)",
+                    fontSize: "18px",
+                  }}
+                >
+                  →
+                </div>
+                {card(r.promise, promiseColor)}
+                {picking ? (
+                  <div
+                    style={{
+                      width: "64px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "50%",
+                        border:
+                          "2px solid " +
+                          (sel ? "var(--text)" : "var(--border)"),
+                        background: sel ? "var(--text)" : "transparent",
+                        color: sel ? "var(--panel)" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {sel ? idx + 1 : ""}
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => onJumpToReference(r.reference)}
+                    title="Open in reading view"
+                    style={{
+                      width: "64px",
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--muted)",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      textDecorationStyle: "dotted",
+                      padding: 0,
+                      alignSelf: "center",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {r.reference}
+                  </button>
+                )}
               </div>
-              <div
-                style={{
-                  flex: "1 1 240px",
-                  background: HIGHLIGHT_MAP[promiseColor],
-                  borderLeft: "3px solid " + COLOR_MAP[promiseColor],
-                  borderRadius: "8px",
-                  padding: "12px 14px",
-                  fontFamily: '"Times New Roman", Times, serif',
-                  fontSize: "16px",
-                  lineHeight: 1.55,
-                }}
-              >
-                {r.promise}
-              </div>
-              <button
-                onClick={() => onJumpToReference(r.reference)}
-                title="Open in reading view"
-                style={{
-                  width: "64px",
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  padding: 0,
-                  alignSelf: "center",
-                  fontFamily: "inherit",
-                }}
-              >
-                {r.reference}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -452,7 +733,7 @@ export default function Covenants(props: CovenantsProps) {
                   color: "var(--text)",
                 }}
               >
-                {"“" + h.text + "”"}{" "}
+                {renderFrags(h.frags)}{" "}
                 <span
                   style={{
                     fontFamily: "system-ui, sans-serif",
@@ -466,6 +747,81 @@ export default function Covenants(props: CovenantsProps) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {pendingPairs && (
+        <div
+          onClick={closePreview}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            background: "rgba(0,0,0,0.78)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "min(94vw, 470px)",
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                maxHeight: "70vh",
+                overflow: "auto",
+                borderRadius: "14px",
+                width: "100%",
+              }}
+            >
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Covenant share card"
+                  style={{ width: "100%", display: "block", borderRadius: "14px" }}
+                />
+              ) : null}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                onClick={() => buildPreview(pendingPairs, !cardDark)}
+                style={overlayGhostBtn}
+              >
+                {cardDark ? "Light card" : "Dark card"}
+              </button>
+              <button
+                onClick={doShare}
+                disabled={sharing}
+                style={{ ...overlaySolidBtn, opacity: sharing ? 0.6 : 1 }}
+              >
+                {sharing ? "Preparing…" : "Share / Save"}
+              </button>
+              <button onClick={closePreview} style={overlayGhostBtn}>
+                Close
+              </button>
+            </div>
+            {shareMsg ? (
+              <div style={{ color: "#ffffff", fontSize: "12.5px", opacity: 0.9 }}>
+                {shareMsg}
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
     </div>
