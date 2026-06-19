@@ -16,7 +16,8 @@ import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
 import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
 import {
-  importScriptureNotesPdf,
+  extractPdfText,
+  parseScriptureNotes,
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study } from "./hooks/useStudies";
@@ -764,6 +765,8 @@ export default function App() {
   const [snErr, setSnErr] = useState("");
   const [snParsed, setSnParsed] = useState<ParsedImport | null>(null);
   const [snName, setSnName] = useState("");
+  const [snPaste, setSnPaste] = useState(false);
+  const [snText, setSnText] = useState("");
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -1720,13 +1723,32 @@ export default function App() {
     setStudyDraftRefs(null);
     openStudyTab(study);
   };
-  // ---- ScriptureNotes import: PDF report -> a Search Study ----
+  // ---- ScriptureNotes import: PDF report (or pasted text) -> a Search Study ----
   const openSnImport = () => {
     setSnParsed(null);
     setSnErr("");
     setSnName("");
+    setSnText("");
+    setSnPaste(false);
     setSnBusy(false);
     setSnImportOpen(true);
+  };
+  const applyParsed = (parsed: ParsedImport, rawForDiag?: string) => {
+    if (!parsed.verses.length && !parsed.unmatched.length) {
+      const preview = (rawForDiag || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      setSnErr(
+        rawForDiag
+          ? "Couldn't find verses in that PDF. You can paste the report text instead — use “Paste text” below." +
+              (preview
+                ? "\n\nWhat the PDF reader saw: " + preview + "…"
+                : "\n\nThe PDF reader couldn't read any text from it.")
+          : "Couldn't find any verses in that text. Paste the whole report, including the verse lines."
+      );
+      return;
+    }
+    setSnParsed(parsed);
+    setSnName(parsed.title || "Imported study");
+    setSnErr("");
   };
   const handleSnFile = async (file: File | null | undefined) => {
     if (!file) return;
@@ -1734,21 +1756,18 @@ export default function App() {
     setSnParsed(null);
     setSnBusy(true);
     try {
-      const parsed = await importScriptureNotesPdf(file);
-      if (!parsed.verses.length && !parsed.unmatched.length) {
-        setSnErr(
-          "Couldn't find any verses in that file. Make sure it's a report PDF exported from ScriptureNotes."
-        );
-      } else {
-        setSnParsed(parsed);
-        setSnName(parsed.title || "Imported study");
-      }
+      const text = await extractPdfText(file);
+      applyParsed(parseScriptureNotes(text), text);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Couldn't read that PDF.";
       setSnErr(msg);
     } finally {
       setSnBusy(false);
     }
+  };
+  const handleSnPaste = () => {
+    setSnErr("");
+    applyParsed(parseScriptureNotes(snText));
   };
   const commitSnImport = () => {
     if (!snParsed || !snParsed.verses.length) return;
@@ -1766,6 +1785,8 @@ export default function App() {
     setSnImportOpen(false);
     setSnParsed(null);
     setSnName("");
+    setSnText("");
+    setSnPaste(false);
     setSnErr("");
     setStudiesOpen(false);
     openStudyTab(study);
@@ -3524,46 +3545,92 @@ export default function App() {
 
             {!snParsed && (
               <>
-                <label
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (!snBusy)
-                      handleSnFile(e.dataTransfer.files && e.dataTransfer.files[0]);
-                  }}
-                  style={{
-                    display: "block",
-                    marginTop: "16px",
-                    padding: "26px 16px",
-                    border: "1.5px dashed var(--border)",
-                    borderRadius: "12px",
-                    textAlign: "center",
-                    cursor: snBusy ? "default" : "pointer",
-                    background: "var(--panel)",
-                  }}
-                >
-                  <input
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    disabled={snBusy}
-                    onChange={(e) =>
-                      handleSnFile(e.target.files && e.target.files[0])
-                    }
-                    style={{ display: "none" }}
-                  />
-                  <div style={{ fontSize: "14px", fontWeight: 600 }}>
-                    {snBusy ? "Reading your PDF…" : "Choose a PDF"}
-                  </div>
-                  <div
+                {!snPaste ? (
+                  <label
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (!snBusy)
+                        handleSnFile(
+                          e.dataTransfer.files && e.dataTransfer.files[0]
+                        );
+                    }}
                     style={{
-                      fontSize: "12px",
-                      color: "var(--muted)",
-                      marginTop: "4px",
+                      display: "block",
+                      marginTop: "16px",
+                      padding: "26px 16px",
+                      border: "1.5px dashed var(--border)",
+                      borderRadius: "12px",
+                      textAlign: "center",
+                      cursor: snBusy ? "default" : "pointer",
+                      background: "var(--panel)",
                     }}
                   >
-                    {snBusy ? "One moment" : "or drag the file here"}
-                  </div>
-                </label>
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      disabled={snBusy}
+                      onChange={(e) =>
+                        handleSnFile(e.target.files && e.target.files[0])
+                      }
+                      style={{ display: "none" }}
+                    />
+                    <div style={{ fontSize: "14px", fontWeight: 600 }}>
+                      {snBusy ? "Reading your PDF…" : "Choose a PDF"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {snBusy ? "One moment" : "or drag the file here"}
+                    </div>
+                  </label>
+                ) : (
+                  <>
+                    <textarea
+                      value={snText}
+                      onChange={(e) => setSnText(e.target.value)}
+                      placeholder="Open your ScriptureNotes report, select all the text, copy it, and paste it here."
+                      style={{
+                        width: "100%",
+                        marginTop: "16px",
+                        minHeight: "150px",
+                        resize: "vertical",
+                        padding: "12px 13px",
+                        borderRadius: "12px",
+                        border: "1px solid var(--border)",
+                        background: "var(--panel)",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                        lineHeight: 1.5,
+                        fontFamily: "inherit",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                    <button
+                      onClick={handleSnPaste}
+                      disabled={!snText.trim()}
+                      style={{
+                        width: "100%",
+                        marginTop: "10px",
+                        background: snText.trim() ? "var(--text)" : "var(--panel)",
+                        color: snText.trim() ? "var(--bg)" : "var(--muted)",
+                        border: "none",
+                        borderRadius: "10px",
+                        padding: "11px",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        cursor: snText.trim() ? "pointer" : "default",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Read text
+                    </button>
+                  </>
+                )}
                 {snErr && (
                   <div
                     style={{
@@ -3571,12 +3638,38 @@ export default function App() {
                       fontSize: "13px",
                       lineHeight: 1.45,
                       color: "#c0392b",
+                      whiteSpace: "pre-wrap",
                     }}
                   >
                     {snErr}
                   </div>
                 )}
-                <div style={{ marginTop: "16px", textAlign: "right" }}>
+                <div
+                  style={{
+                    marginTop: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setSnPaste((v) => !v);
+                      setSnErr("");
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: ICON_ACCENT,
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      padding: 0,
+                    }}
+                  >
+                    {snPaste ? "Upload a PDF instead" : "Paste text instead"}
+                  </button>
                   <button
                     onClick={() => setSnImportOpen(false)}
                     style={{
