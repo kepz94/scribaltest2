@@ -2138,6 +2138,20 @@ export default function MobileApp() {
         } as React.CSSProperties),
       }}
     >
+      {/* Keep the iOS status-bar strip dark (and its white text readable) in
+          both themes, now that the app draws under the translucent status bar. */}
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "env(safe-area-inset-top)",
+          backgroundColor: "#131210",
+          zIndex: 99999,
+          pointerEvents: "none",
+        }}
+      />
       <style>{`
         @keyframes mob-fadein { from { opacity: 0; } to { opacity: 1; } }
         @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
