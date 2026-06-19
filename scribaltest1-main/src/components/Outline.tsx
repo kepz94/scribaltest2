@@ -315,6 +315,33 @@ export default function Outline(props: OutlineProps) {
         </p>
       )}
 
+      {compileTabs.length > 0 && !noMarks && (
+        <div
+          style={{
+            marginBottom: "24px",
+            backgroundColor: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: "14px",
+            padding: "20px 22px",
+          }}
+        >
+          <h3 style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Synthesis</h3>
+          {(() => {
+            const synthKey =
+              "synthesis|" + compileTabs.map(tabLabel).join("+");
+            return (
+              <NoteField
+                value={(notes && notes[synthKey]) || ""}
+                onChange={(t) => setNote(synthKey, t)}
+                accent="var(--text)"
+                placeholder="State the main idea these verses support…"
+                addLabel="Add your synthesis"
+              />
+            );
+          })()}
+        </div>
+      )}
+
       {compileTabs.length > 0 &&
         !noMarks &&
         (() => {
