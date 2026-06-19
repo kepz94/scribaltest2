@@ -4,13 +4,10 @@ import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import VerseViewer from "./components/VerseViewer";
 import * as drive from "./googleDrive";
-import CornellNotes from "./components/CornellNotes";
 import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
-import ConceptMap from "./components/ConceptMap";
 import PrintView from "./components/PrintView";
-import MapPrint from "./components/MapPrint";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
@@ -318,13 +315,11 @@ const LINK_COLORS = [
 ];
 
 const VIEW_NAMES: Record<string, string> = {
-  cornell: "Cornell Notes",
   outline: "Outline",
   charting: "Charting",
-  map: "Concept Map",
 };
 
-type CompileView = "cornell" | "outline" | "charting" | "map";
+type CompileView = "outline" | "charting";
 type Mode = "read" | "compile" | "vault";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
@@ -516,10 +511,10 @@ export default function App() {
     );
 
   const [mode, setMode] = useState<Mode>("read");
-  const [compileView, setCompileView] = useState<CompileView>(
-    () =>
-      (localStorage.getItem("scribal_compile_view") as CompileView) || "cornell"
-  );
+  const [compileView, setCompileView] = useState<CompileView>(() => {
+    const saved = localStorage.getItem("scribal_compile_view");
+    return saved === "outline" || saved === "charting" ? saved : "outline";
+  });
 
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const saved = localStorage.getItem("scribal_tabs_v2");
@@ -3991,26 +3986,17 @@ export default function App() {
         </div>
       )}
 
-      {printData &&
-        (printData.view === "map" ? (
-          <MapPrint
-            title={printData.title}
-            compileTabs={printData.compileTabs}
-            marks={printData.marks}
-            colorLabels={printData.colorLabels}
-            onClose={() => setPrintData(null)}
-          />
-        ) : (
-          <PrintView
-            view={printData.view as "cornell" | "outline" | "charting"}
-            title={printData.title}
-            compileTabs={printData.compileTabs}
-            marks={printData.marks}
-            colorLabels={printData.colorLabels}
-            notes={printData.notes}
-            onClose={() => setPrintData(null)}
-          />
-        ))}
+      {printData && (
+        <PrintView
+          view={printData.view}
+          title={printData.title}
+          compileTabs={printData.compileTabs}
+          marks={printData.marks}
+          colorLabels={printData.colorLabels}
+          notes={printData.notes}
+          onClose={() => setPrintData(null)}
+        />
+      )}
 
       <input
         ref={fileInputRef}
@@ -5836,35 +5822,21 @@ export default function App() {
                   flexWrap: "wrap",
                 }}
               >
-                {viewTabButton(compileView === "cornell", "Cornell Notes", () =>
-                  setCompileView("cornell")
-                )}
                 {viewTabButton(compileView === "outline", "Outline", () =>
                   setCompileView("outline")
                 )}
                 {viewTabButton(compileView === "charting", "Charting", () =>
                   setCompileView("charting")
                 )}
-                {viewTabButton(compileView === "map", "Concept Map", () =>
-                  setCompileView("map")
-                )}
               </div>
             </div>
           </div>
 
           <div className="scribal-swap" key={compileView}>
-            {compileView === "cornell" && (
-              <CornellNotes
-                {...sharedCompileProps}
-                notes={notes}
-                setNote={setNote}
-              />
-            )}
             {compileView === "outline" && (
               <Outline {...sharedCompileProps} notes={notes} setNote={setNote} />
             )}
             {compileView === "charting" && <Charting {...sharedCompileProps} />}
-            {compileView === "map" && <ConceptMap {...sharedCompileProps} />}
           </div>
         </div>
       )}
