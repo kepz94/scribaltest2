@@ -248,14 +248,13 @@ export default function Covenants(props: CovenantsProps) {
     });
   };
 
-  const joinFrags = (frags: Frag[]) => {
-    let s = "";
-    frags.forEach((f, i) => {
-      if (i > 0) s += f.gapBefore ? " … " : " ";
-      s += f.text;
-    });
-    return s.replace(/\s+/g, " ").trim();
-  };
+  const fragsForCard = (frags: Frag[]) =>
+    frags.map((f) => ({
+      text: f.text,
+      style: f.style,
+      color: f.color,
+      gapBefore: f.gapBefore,
+    }));
 
   const buildPreview = (pairs: CovenantPairData[], dark: boolean) => {
     const canvas = renderCovenantCard({
@@ -275,10 +274,8 @@ export default function Covenants(props: CovenantsProps) {
       if (picked.includes(rowKey(r, i))) {
         chosen.push({
           reference: r.reference,
-          ifText: joinFrags(r.condition),
-          ifStyle: r.condition[0] ? r.condition[0].style : "highlight",
-          thenText: joinFrags(r.promise),
-          thenStyle: r.promise[0] ? r.promise[0].style : "highlight",
+          ifFrags: fragsForCard(r.condition),
+          thenFrags: fragsForCard(r.promise),
         });
       }
     });
