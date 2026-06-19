@@ -50,6 +50,7 @@ export interface ParsedImport {
 const refSet = new Set<string>();
 const orderOf = new Map<string, number>();
 const prefixByBook = new Map<string, string>();
+const vtextByRef = new Map<string, string>();
 
 const norm = (s: string): string =>
   s.replace(/[—–]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
@@ -73,6 +74,7 @@ const norm = (s: string): string =>
           if (!refSet.has(r)) {
             refSet.add(r);
             orderOf.set(r, n++);
+            vtextByRef.set(r, typeof ver.text === "string" ? ver.text : "");
           }
         }
       }
@@ -94,6 +96,11 @@ function resolveRef(
 
 const byScriptureOrder = (a: string, b: string): number =>
   (orderOf.get(a) ?? 1e12) - (orderOf.get(b) ?? 1e12);
+
+// Full text of a canonical verse reference (empty string if unknown).
+export function verseTextOf(ref: string): string {
+  return vtextByRef.get(ref) || "";
+}
 
 // ---------------------------------------------------------------------------
 // Parsing
