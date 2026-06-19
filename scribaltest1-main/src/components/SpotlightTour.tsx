@@ -19,6 +19,7 @@ interface SpotlightTourProps {
   steps: TourStep[];
   label?: string;
   accent?: string;
+  startIndex?: number;
   onClose: () => void;
   onDone?: () => void;
 }
@@ -34,10 +35,11 @@ export default function SpotlightTour({
   steps,
   label = "Walkthrough",
   accent = "#8b5cf6",
+  startIndex = 0,
   onClose,
   onDone,
 }: SpotlightTourProps) {
-  const [i, setI] = useState(0);
+  const [i, setI] = useState(startIndex);
   const [box, setBox] = useState<Box | null>(null);
 
   // Latest values held in refs so the effects below can stay dependency-free
