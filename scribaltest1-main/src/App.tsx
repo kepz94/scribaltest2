@@ -1552,12 +1552,15 @@ export default function App() {
       chapter: number;
     }[];
     if (!locs.length) return;
-    const tabIds: string[] = [];
+    // Same fix as openRecordedStudy: compute the tab ids synchronously so
+    // runCompile scopes to this group, not to whatever tabs are already open.
+    const tabIds = locs.map((loc) =>
+      makeTabId(activeBookId, loc.volume, loc.book, loc.chapter)
+    );
     setTabs((prev) => {
       let next = prev;
       locs.forEach((loc) => {
         const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
-        tabIds.push(id);
         if (!next.some((t) => t.id === id))
           next = [
             ...next,
@@ -1703,12 +1706,18 @@ export default function App() {
     }[];
     if (!locs.length) return;
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
-    const tabIds: string[] = [];
+    // Compute the tab ids synchronously, up front — these drive the compile
+    // selection below. Collecting them INSIDE the setTabs updater (which React
+    // runs later, during render) left runCompile receiving an empty array, so
+    // it fell back to "all open tabs" and the notes showed whatever was already
+    // on screen instead of this study.
+    const tabIds = locs.map((loc) =>
+      makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
+    );
     setTabs((prev) => {
       let next = prev;
       locs.forEach((loc) => {
         const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
-        tabIds.push(id);
         if (!next.some((t) => t.id === id))
           next = [
             ...next,
