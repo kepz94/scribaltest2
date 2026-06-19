@@ -3149,26 +3149,38 @@ export default function App() {
               >
                 Done
               </button>
-              {members.length > 0 && (
-                <button
-                  onClick={() => {
-                    unlinkScope(cs);
-                    setLinkPromptTabId(null);
-                  }}
-                  style={{
-                    padding: "11px 16px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "transparent",
-                    color: "var(--text)",
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Unlink
-                </button>
-              )}
+              {(() => {
+                const lt = tabs.find((x) => x.id === linkPromptTabId);
+                if (!lt) return null;
+                const lcs = chapterScopeOf(lt);
+                const lgid = chapterGroups[lcs];
+                const linkedCount = lgid
+                  ? Object.keys(chapterGroups).filter(
+                      (s) => chapterGroups[s] === lgid
+                    ).length
+                  : 0;
+                if (linkedCount < 2) return null;
+                return (
+                  <button
+                    onClick={() => {
+                      unlinkScope(lcs);
+                      setLinkPromptTabId(null);
+                    }}
+                    style={{
+                      padding: "11px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Unlink
+                  </button>
+                );
+              })()}
               <button
                 onClick={() => setLinkPromptTabId(null)}
                 style={{
