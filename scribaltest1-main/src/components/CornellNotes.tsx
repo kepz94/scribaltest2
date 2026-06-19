@@ -295,6 +295,45 @@ export default function CornellNotes(props: CornellNotesProps) {
         </p>
       )}
 
+      {compileTabs.length > 0 && !noMarks && (
+        <div
+          style={{
+            display: "flex",
+            gap: 0,
+            marginBottom: "8px",
+            padding: "0 4px",
+          }}
+        >
+          <div
+            style={{
+              width: "30%",
+              minWidth: "150px",
+              maxWidth: "250px",
+              fontSize: "10px",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontWeight: 700,
+            }}
+          >
+            Cues
+          </div>
+          <div
+            style={{
+              flex: 1,
+              paddingLeft: "18px",
+              fontSize: "10px",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontWeight: 700,
+            }}
+          >
+            Notes
+          </div>
+        </div>
+      )}
+
       {compileTabs.length > 0 &&
         !noMarks &&
         COLORS.map((color) => {
@@ -330,37 +369,75 @@ export default function CornellNotes(props: CornellNotesProps) {
           );
 
           return (
-            <section key={color} style={{ marginBottom: "32px" }}>
+            <div
+              key={color}
+              style={{
+                display: "flex",
+                gap: 0,
+                border: "1px solid var(--border)",
+                borderRadius: "14px",
+                overflow: "hidden",
+                marginBottom: "18px",
+                backgroundColor: "var(--panel)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              }}
+            >
+              {/* Cue column */}
               <div
                 style={{
+                  width: "30%",
+                  minWidth: "150px",
+                  maxWidth: "250px",
+                  flexShrink: 0,
+                  borderRight: "1px solid var(--border)",
+                  borderLeft: "4px solid " + COLOR_MAP[color],
+                  backgroundColor: "var(--soft)",
+                  padding: "16px 16px",
                   display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  marginBottom: "14px",
+                  flexDirection: "column",
+                  gap: "10px",
                 }}
               >
                 <div
                   style={{
-                    width: "14px",
-                    height: "14px",
-                    borderRadius: "50%",
-                    backgroundColor: COLOR_MAP[color],
-                    flexShrink: 0,
-                    boxShadow: "0 0 0 4px var(--soft)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
                   }}
-                />
+                >
+                  <div
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      borderRadius: "50%",
+                      backgroundColor: COLOR_MAP[color],
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      letterSpacing: "1.5px",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Cue
+                  </span>
+                </div>
                 <input
                   value={(colorLabels && colorLabels[color]) || ""}
                   onChange={(e) => setColorLabel(color, e.target.value)}
-                  placeholder="Name this theme…"
+                  placeholder="Key idea or question…"
                   style={{
                     border: "none",
                     outline: "none",
-                    fontSize: "18px",
+                    fontSize: "17px",
                     fontWeight: 600,
                     backgroundColor: "transparent",
-                    flex: 1,
                     color: "var(--text)",
+                    width: "100%",
                   }}
                 />
                 <span
@@ -368,6 +445,7 @@ export default function CornellNotes(props: CornellNotesProps) {
                     color: "var(--muted)",
                     fontSize: "12px",
                     fontFamily: "system-ui, sans-serif",
+                    marginTop: "auto",
                   }}
                 >
                   {entries.length} verse{entries.length === 1 ? "" : "s"} ·{" "}
@@ -375,157 +453,178 @@ export default function CornellNotes(props: CornellNotesProps) {
                 </span>
               </div>
 
-              {entries.map((entry) => {
-                const noteKey =
-                  "note|" +
-                  entry.chapterRef +
-                  "|c" +
-                  color +
-                  "|" +
-                  entry.reference;
-                const pts = pointsFor(entry.reference, colorMarks);
-                return (
-                  <div
-                    key={entry.tabId + "|" + entry.reference}
-                    style={{
-                      backgroundColor: "var(--panel)",
-                      border: "1px solid var(--border)",
-                      borderLeft: "3px solid " + COLOR_MAP[color],
-                      borderRadius: "12px",
-                      padding: "16px 18px",
-                      marginBottom: "12px",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                    }}
-                  >
+              {/* Notes column */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "16px 18px",
+                }}
+              >
+                {entries.map((entry, j) => {
+                  const noteKey =
+                    "note|" +
+                    entry.chapterRef +
+                    "|c" +
+                    color +
+                    "|" +
+                    entry.reference;
+                  const pts = pointsFor(entry.reference, colorMarks);
+                  const last = j === entries.length - 1;
+                  return (
                     <div
+                      key={entry.tabId + "|" + entry.reference}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        marginBottom: "10px",
+                        borderBottom: last ? "none" : "1px solid var(--border)",
+                        paddingBottom: last ? 0 : "14px",
+                        marginBottom: last ? 0 : "14px",
                       }}
                     >
-                      <span
-                        onClick={() => onJumpToReference(entry.reference)}
-                        title="Open in reading view"
+                      <div
                         style={{
-                          fontFamily: "system-ui, sans-serif",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: "var(--muted)",
-                          letterSpacing: "0.5px",
-                          cursor: "pointer",
-                          textDecoration: "underline",
-                          textDecorationStyle: "dotted",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          marginBottom: "8px",
                         }}
                       >
-                        {entry.reference} ↗
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <span
-                        style={{
-                          fontFamily: "system-ui, sans-serif",
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          color: COLOR_MAP[color],
-                          backgroundColor: "var(--soft)",
-                          borderRadius: "999px",
-                          padding: "2px 10px",
-                        }}
-                      >
-                        +{pts}
-                      </span>
+                        <span
+                          onClick={() => onJumpToReference(entry.reference)}
+                          title="Open in reading view"
+                          style={{
+                            fontFamily: "system-ui, sans-serif",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--muted)",
+                            letterSpacing: "0.5px",
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            textDecorationStyle: "dotted",
+                          }}
+                        >
+                          {entry.reference} ↗
+                        </span>
+                        <div style={{ flex: 1 }} />
+                        <span
+                          style={{
+                            fontFamily: "system-ui, sans-serif",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            color: COLOR_MAP[color],
+                            backgroundColor: "var(--soft)",
+                            borderRadius: "999px",
+                            padding: "2px 10px",
+                          }}
+                        >
+                          +{pts}
+                        </span>
+                      </div>
+
+                      {recall !== "hideVerses" && (
+                        <div
+                          style={{
+                            fontFamily: '"Times New Roman", Times, serif',
+                            fontSize: "17px",
+                            lineHeight: "1.95",
+                            marginBottom: "12px",
+                          }}
+                        >
+                          {view === "full" ? (
+                            <MarkedVerse
+                              reference={entry.reference}
+                              verseNumber={entry.verse}
+                              text={entry.text}
+                              marks={colorMarks}
+                            />
+                          ) : (
+                            renderFocused(entry, colorMarks)
+                          )}
+                        </div>
+                      )}
+
+                      {recall === "hideVerses" && (
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                            fontStyle: "italic",
+                            marginBottom: "12px",
+                            fontFamily: "system-ui, sans-serif",
+                          }}
+                        >
+                          Verse hidden — recall it from the cue.
+                        </div>
+                      )}
+
+                      {recall !== "hideNotes" && (
+                        <NoteField
+                          value={(notes && notes[noteKey]) || ""}
+                          onChange={(t) => setNote(noteKey, t)}
+                          accent={COLOR_MAP[color]}
+                          placeholder="Write a note…"
+                          addLabel="Add a note about this verse"
+                        />
+                      )}
+
+                      {recall === "hideNotes" && (
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "var(--muted)",
+                            fontStyle: "italic",
+                            fontFamily: "system-ui, sans-serif",
+                          }}
+                        >
+                          Note hidden — recall what you wrote.
+                        </div>
+                      )}
                     </div>
-
-                    {recall !== "hideVerses" && (
-                      <div
-                        style={{
-                          fontFamily: '"Times New Roman", Times, serif',
-                          fontSize: "17px",
-                          lineHeight: "1.95",
-                          marginBottom: "14px",
-                        }}
-                      >
-                        {view === "full" ? (
-                          <MarkedVerse
-                            reference={entry.reference}
-                            verseNumber={entry.verse}
-                            text={entry.text}
-                            marks={colorMarks}
-                          />
-                        ) : (
-                          renderFocused(entry, colorMarks)
-                        )}
-                      </div>
-                    )}
-
-                    {recall === "hideVerses" && (
-                      <div
-                        style={{
-                          fontSize: "13px",
-                          color: "var(--muted)",
-                          fontStyle: "italic",
-                          marginBottom: "14px",
-                          fontFamily: "system-ui, sans-serif",
-                        }}
-                      >
-                        Verse hidden — recall it from your note.
-                      </div>
-                    )}
-
-                    {recall !== "hideNotes" && (
-                      <NoteField
-                        value={(notes && notes[noteKey]) || ""}
-                        onChange={(t) => setNote(noteKey, t)}
-                        accent={COLOR_MAP[color]}
-                        placeholder="Write a note…"
-                        addLabel="Add a note about this verse"
-                      />
-                    )}
-
-                    {recall === "hideNotes" && (
-                      <div
-                        style={{
-                          fontSize: "13px",
-                          color: "var(--muted)",
-                          fontStyle: "italic",
-                          fontFamily: "system-ui, sans-serif",
-                        }}
-                      >
-                        Note hidden — recall what you wrote.
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
 
       {compileTabs.length > 0 && !noMarks && (
         <div
           style={{
-            marginTop: "32px",
-            backgroundColor: "var(--panel)",
+            marginTop: "8px",
             border: "1px solid var(--border)",
             borderRadius: "14px",
-            padding: "20px 22px",
+            overflow: "hidden",
+            backgroundColor: "var(--panel)",
           }}
         >
-          <h3 style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Synthesis</h3>
-          {(() => {
-            const synthKey =
-              "synthesis|" + compileTabs.map(tabLabel).join("+");
-            return (
-              <NoteField
-                value={(notes && notes[synthKey]) || ""}
-                onChange={(t) => setNote(synthKey, t)}
-                accent="var(--text)"
-                placeholder="Write your conclusion…"
-                addLabel="Add your synthesis"
-              />
-            );
-          })()}
+          <div
+            style={{
+              padding: "10px 18px",
+              borderBottom: "1px solid var(--border)",
+              backgroundColor: "var(--soft)",
+              fontSize: "10px",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontWeight: 700,
+            }}
+          >
+            Summary
+          </div>
+          <div style={{ padding: "16px 18px" }}>
+            {(() => {
+              const synthKey =
+                "synthesis|" + compileTabs.map(tabLabel).join("+");
+              return (
+                <NoteField
+                  value={(notes && notes[synthKey]) || ""}
+                  onChange={(t) => setNote(synthKey, t)}
+                  accent="var(--text)"
+                  placeholder="Summarize the main idea across these verses…"
+                  addLabel="Write your summary"
+                />
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>
