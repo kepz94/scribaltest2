@@ -82,6 +82,14 @@ export default function SpotlightTour({
       setBox(null);
       return;
     }
+    // If the target is basically the whole screen, a spotlight is meaningless
+    // and would strand the tooltip off-screen — fall back to a centered card.
+    const vwM = window.innerWidth;
+    const vhM = window.innerHeight;
+    if (r.width >= vwM * 0.92 && r.height >= vhM * 0.6) {
+      setBox(null);
+      return;
+    }
     const pad = s.padding == null ? 8 : s.padding;
     setBox({
       top: r.top - pad,
@@ -167,6 +175,7 @@ export default function SpotlightTour({
   const TT_W = Math.min(340, vw - 32);
 
   // Tooltip placement relative to the spotlight box (or centered if none).
+  // Default: centered (always fully on-screen). Used when there's no target.
   let ttStyle: React.CSSProperties = {
     top: Math.round(vh / 2),
     left: Math.round(vw / 2),
@@ -176,43 +185,51 @@ export default function SpotlightTour({
     const gap = 14;
     const cx = box.left + box.width / 2;
     const cy = box.top + box.height / 2;
-    const spaceBelow = vh - (box.top + box.height);
-    const spaceAbove = box.top;
-    const spaceRight = vw - (box.left + box.width);
-    const spaceLeft = box.left;
-    const place =
-      step.placement && step.placement !== "auto"
-        ? step.placement
-        : spaceBelow > 200
-        ? "bottom"
-        : spaceAbove > 200
-        ? "top"
-        : spaceRight > TT_W + 40
-        ? "right"
-        : spaceLeft > TT_W + 40
-        ? "left"
-        : "bottom";
+    const EST = 220; // rough card height, only used to decide if there's room
+    const roomBelow = vh - (box.top + box.height) >= EST;
+    const roomAbove = box.top >= EST;
+    const roomRight = vw - (box.left + box.width) >= TT_W + 24;
+    const roomLeft = box.left >= TT_W + 24;
+    // Honor an explicit placement only if it actually fits; otherwise auto-pick
+    // a side with room, and fall back to a centered card if nothing fits.
+    const want =
+      step.placement && step.placement !== "auto" ? step.placement : null;
+    let place: "top" | "bottom" | "left" | "right" | "center";
+    if (want === "bottom" && roomBelow) place = "bottom";
+    else if (want === "top" && roomAbove) place = "top";
+    else if (want === "right" && roomRight) place = "right";
+    else if (want === "left" && roomLeft) place = "left";
+    else if (roomBelow) place = "bottom";
+    else if (roomAbove) place = "top";
+    else if (roomRight) place = "right";
+    else if (roomLeft) place = "left";
+    else place = "center";
     const clampL = (l: number) => Math.max(16, Math.min(l, vw - TT_W - 16));
+    const clampT = (t: number) => Math.max(16, Math.min(t, vh - 16));
     if (place === "bottom")
-      ttStyle = { top: box.top + box.height + gap, left: clampL(cx - TT_W / 2) };
+      ttStyle = {
+        top: clampT(box.top + box.height + gap),
+        left: clampL(cx - TT_W / 2),
+      };
     else if (place === "top")
       ttStyle = {
-        top: box.top - gap,
+        top: clampT(box.top - gap),
         left: clampL(cx - TT_W / 2),
         transform: "translateY(-100%)",
       };
     else if (place === "right")
       ttStyle = {
-        top: cy,
+        top: clampT(cy),
         left: box.left + box.width + gap,
         transform: "translateY(-50%)",
       };
-    else
+    else if (place === "left")
       ttStyle = {
-        top: cy,
+        top: clampT(cy),
         left: box.left - gap,
         transform: "translate(-100%, -50%)",
       };
+    // place === "center" keeps the default centered ttStyle
   }
 
   const last = i >= total - 1;
@@ -258,6 +275,9 @@ export default function SpotlightTour({
         style={{
           position: "absolute",
           width: TT_W,
+          maxHeight: vh - 32,
+          overflowY: "auto",
+          boxSizing: "border-box",
           backgroundColor: cPanel,
           color: cText,
           border: "1px solid " + cBorder,
