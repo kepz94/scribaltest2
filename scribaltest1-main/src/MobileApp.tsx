@@ -15,8 +15,8 @@ import ScribalMark from "./components/ScribalMark";
 import CompileAnimation from "./components/CompileAnimation";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
-import MobileTour from "./MobileTour";
 import MobileFeatureGuide from "./MobileFeatureGuide";
+import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import * as drive from "./googleDrive";
@@ -88,6 +88,48 @@ const chapterWord = (bookName: string) =>
 function buildBackupString() {
   return syncBuildBackupString(BACKUP_KEYS);
 }
+
+// Live spotlight tour over the real mobile screen (reuses the desktop engine).
+const M_TOUR: TourStep[] = [
+  {
+    title: "Welcome to Scribal",
+    body:
+      "Read scripture, mark it with taps and swipes, and gather your marks into notes. Here's a quick tour of your screen.",
+  },
+  {
+    target: '[data-tour="m-read"]',
+    placement: "auto",
+    title: "Mark as you read",
+    body:
+      "Tap a word to mark it in your current color. Swipe sideways across words to mark a whole phrase. Swipe up or down to scroll — your marks stay put.",
+  },
+  {
+    target: '[data-tour="m-chapter"]',
+    placement: "bottom",
+    title: "Move around",
+    body:
+      "Tap the title to jump to any chapter, or use the arrows to step between them.",
+  },
+  {
+    target: '[data-tour="m-compile"]',
+    placement: "bottom",
+    title: "Compile your marks",
+    body:
+      "When you've marked a chapter, Compile gathers everything into four views — Outline, Charting, Distilled, and Relational.",
+  },
+  {
+    target: '[data-tour="m-menu"]',
+    placement: "bottom",
+    title: "Everything else",
+    body:
+      "Tap here for search, your color key, marking gestures, signing in to sync across devices, and these guides.",
+  },
+  {
+    title: "That's the tour",
+    body:
+      "You can reopen this anytime from the menu — Show the tour again. Happy studying.",
+  },
+];
 
 function applyBackupString(text: string) {
   // Mobile historically never threw on a malformed backup — preserve that.
@@ -794,20 +836,16 @@ export default function MobileApp() {
     style: string;
     color: number;
   } | null>(null);
-  const [showTour, setShowTour] = useState(
+  const [signInOpen, setSignInOpen] = useState(
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
+  const [mtourOpen, setMtourOpen] = useState(false);
   const [chooseRef, setChooseRef] = useState<string | null>(null);
 
   // Replay the first-run tour (which then opens the gestures sheet).
   const resetIntro = () => {
-    try {
-      localStorage.removeItem("scribal_mobile_onboarded");
-    } catch {
-      /* ignore */
-    }
     setSettingsOpen(false);
-    setShowTour(true);
+    setMtourOpen(true);
   };
 
   // After the sign-in reload, finish opening the gestures sheet.
@@ -2188,6 +2226,7 @@ export default function MobileApp() {
               ‹
             </button>
             <button
+              data-tour="m-chapter"
               onClick={() => setJumpOpen(true)}
               style={{
                 minWidth: 0,
@@ -2223,6 +2262,7 @@ export default function MobileApp() {
           </div>
 
           <button
+            data-tour="m-compile"
             onClick={compileCurrentStudy}
             style={{
               flexShrink: 0,
@@ -2252,6 +2292,7 @@ export default function MobileApp() {
           }}
         >
           <button
+            data-tour="m-menu"
             onClick={() => setSettingsOpen(true)}
             style={{
               display: "flex",
@@ -2461,6 +2502,7 @@ export default function MobileApp() {
           {showConditionals ? "Conditionals shown" : "Find conditionals"}
         </button>
         <div
+          data-tour="m-read"
           style={{
             fontFamily: '"Times New Roman", Times, serif',
             fontSize: verseSize,
@@ -4168,7 +4210,7 @@ export default function MobileApp() {
                 <button
                   onClick={() => {
                     setSettingsOpen(false);
-                    setShowTour(true);
+                    setMtourOpen(true);
                   }}
                   style={{
                     width: "100%",
@@ -6132,26 +6174,111 @@ export default function MobileApp() {
           );
         })()}
 
-      {/* First-run tour */}
-      {showTour && (
-        <MobileTour
-          C={C}
-          driveConfigured={DRIVE_CONFIGURED}
-          onSync={async () => {
-            localStorage.setItem("scribal_mobile_onboarded", "1");
-            setShowTour(false);
-            try {
-              await cloudSignIn();
-            } catch {
-              /* popup dismissed — fine, they can sign in later from Settings */
-            }
-            setGesturesOpen(true);
+      {/* First-run: sign-in choice, then the live guided tour */}
+      {signInOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 5000,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
           }}
-          onLocal={() => {
-            localStorage.setItem("scribal_mobile_onboarded", "1");
-            setShowTour(false);
-            setGesturesOpen(true);
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "360px",
+              background: C.panel,
+              color: C.text,
+              border: "1px solid " + C.border,
+              borderRadius: "18px",
+              padding: "24px",
+              boxShadow: "0 18px 50px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div
+              style={{ fontSize: "19px", fontWeight: 700, marginBottom: "8px" }}
+            >
+              Welcome to Scribal
+            </div>
+            <div
+              style={{
+                fontSize: "13.5px",
+                color: C.muted,
+                lineHeight: 1.6,
+                marginBottom: "18px",
+              }}
+            >
+              Sign in with Google to keep your study in sync across your phone
+              and desktop, or just use this device for now. You can change this
+              anytime in the menu.
+            </div>
+            <button
+              onClick={async () => {
+                localStorage.setItem("scribal_mobile_onboarded", "1");
+                setSignInOpen(false);
+                try {
+                  await cloudSignIn();
+                } catch {
+                  /* popup dismissed — they can sign in later from the menu */
+                }
+                setMtourOpen(true);
+              }}
+              style={{
+                width: "100%",
+                padding: "13px",
+                borderRadius: "11px",
+                border: "none",
+                background: C.text,
+                color: C.bg,
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                marginBottom: "10px",
+              }}
+            >
+              Sync across my devices
+            </button>
+            <button
+              onClick={() => {
+                localStorage.setItem("scribal_mobile_onboarded", "1");
+                setSignInOpen(false);
+                setMtourOpen(true);
+              }}
+              style={{
+                width: "100%",
+                padding: "13px",
+                borderRadius: "11px",
+                border: "1px solid " + C.border,
+                background: "transparent",
+                color: C.text,
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Just on this device
+            </button>
+          </div>
+        </div>
+      )}
+      {mtourOpen && (
+        <SpotlightTour
+          steps={M_TOUR}
+          label="Guided tour"
+          colors={{
+            panel: C.panel,
+            text: C.text,
+            border: C.border,
+            muted: C.muted,
           }}
+          onClose={() => setMtourOpen(false)}
         />
       )}
 
