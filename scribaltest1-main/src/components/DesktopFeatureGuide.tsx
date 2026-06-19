@@ -453,7 +453,7 @@ export default function DesktopFeatureGuide({ onClose }: Props) {
           illo: compileIllo,
           heading: "Your marks, gathered by theme",
           lines: [
-            "Compile sweeps up everything you've marked and lays it out as cards grouped by color theme — four ways: Cornell Notes, Outline, Charting, or Concept Map.",
+            "Compile sweeps up everything you've marked and lays it out four ways: Outline ranks verses by how heavily you marked them, Charting maps themes across verses in a grid, Distilled reads your marks back as flowing text, and Relational pairs them up — covenants, contrasts, types, and questions.",
             "Compiling a chapter or study saves it to your Studies automatically — there's no separate save step.",
           ],
         },
