@@ -515,7 +515,7 @@ export default function Covenants(props: CovenantsProps) {
           marginBottom: "6px",
         }}
       >
-        {cfg.label}
+        Relational
       </div>
       <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
         {compileTabs.length === 0
