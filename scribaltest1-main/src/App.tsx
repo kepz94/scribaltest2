@@ -4832,17 +4832,17 @@ export default function App() {
                     />
                     {cloudSignedIn ? (
                       <>
-                        <div
-                          style={{
-                            padding: "10px 12px",
-                            fontSize: "13px",
-                            color: "var(--muted)",
-                          }}
-                        >
-                          ● Synced
-                          {cloudEmail ? " · " + cloudEmail : ""}
-                          {cloudSyncing ? " · saving…" : ""}
-                        </div>
+                        {cloudEmail && (
+                          <div
+                            style={{
+                              padding: "10px 12px",
+                              fontSize: "13px",
+                              color: "var(--muted)",
+                            }}
+                          >
+                            {cloudEmail}
+                          </div>
+                        )}
                         <div
                           onClick={() => {
                             signOutCloud().catch(() => {});
