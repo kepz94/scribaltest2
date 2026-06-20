@@ -4,6 +4,8 @@ import { SAMPLE_JOHN1_MARKS } from "../data/sampleStudy";
 import MarkedVerse from "./MarkedVerse";
 import CompileAnimation from "./CompileAnimation";
 import MobileCompile from "../MobileCompile";
+import SpotlightTour from "./SpotlightTour";
+import { EXAMPLE_TOUR } from "../data/exampleTour";
 
 interface Palette {
   bg: string;
@@ -59,6 +61,7 @@ const SAMPLE_VERSES = johnOneVerses();
 
 export default function ExampleStudy({ C, dark, onClose, onTryIt }: Props) {
   const [step, setStep] = useState<"marks" | "animating" | "compile">("marks");
+  const [tourDone, setTourDone] = useState(false);
 
   // Sort marks within the chapter by verse number (e.g. "John 1:5" -> 5).
   const orderOf = (ref: string) => {
@@ -99,6 +102,20 @@ export default function ExampleStudy({ C, dark, onClose, onTryIt }: Props) {
           onTryIt={onTryIt}
           tryItLabel="Mark John 1 yourself →"
         />
+        {!tourDone && (
+          <SpotlightTour
+            steps={EXAMPLE_TOUR}
+            label="How this works"
+            colors={{
+              panel: C.panel,
+              text: C.text,
+              border: C.border,
+              muted: C.muted,
+            }}
+            onClose={() => setTourDone(true)}
+            onDone={() => setTourDone(true)}
+          />
+        )}
       </div>
     );
   }
