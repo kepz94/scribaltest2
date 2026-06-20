@@ -23,6 +23,11 @@ interface SearchPanelProps {
   onJumpToMark: (bookId: string, reference: string) => void;
   onOpenNewTab: (reference: string) => void;
   onLinkStudy?: (refs: string[]) => void;
+  // When set, the panel is adding verses to an existing keyword study: its
+  // verses come pre-selected, and the link bar offers update-vs-new-copy.
+  initialSelected?: string[];
+  addToStudyName?: string;
+  onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
   onClose: () => void;
 }
 
@@ -60,6 +65,8 @@ export default function SearchPanel(props: SearchPanelProps) {
     onJumpToMark,
     onOpenNewTab,
     onLinkStudy,
+    addToStudyName,
+    onAddToStudy,
     onClose,
   } = props;
 
@@ -71,7 +78,9 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [wholeWord, setWholeWord] = useState(false);
   const [markColor, setMarkColor] = useState<MarkColor | 0>(0);
   const [showLegend, setShowLegend] = useState(false);
-  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set());
+  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(
+    () => new Set(props.initialSelected || [])
+  );
   const [committed, setCommitted] = useState<{
     q: string;
     mode: Mode;
@@ -706,7 +715,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                 ))}
               </div>
 
-              {onLinkStudy && selectedRefs.size > 0 && (
+              {(onLinkStudy || onAddToStudy) && selectedRefs.size > 0 && (
                 <div
                   style={{
                     position: "sticky",
@@ -745,41 +754,88 @@ export default function SearchPanel(props: SearchPanelProps) {
                   >
                     Clear
                   </button>
-                  <button
-                    onClick={() => {
-                      onLinkStudy(Array.from(selectedRefs));
-                      setSelectedRefs(new Set());
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      padding: "6px 14px",
-                      borderRadius: "999px",
-                      border: "none",
-                      background: "#0d9488",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: "12.5px",
-                      fontWeight: 700,
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#fff"
-                      strokeWidth={2.4}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                    </svg>
-                    Link verses into a study
-                  </button>
+                  {onAddToStudy && addToStudyName ? (
+                    <>
+                      <button
+                        onClick={() =>
+                          onAddToStudy(Array.from(selectedRefs), "update")
+                        }
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: "999px",
+                          border: "none",
+                          background: "#0d9488",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "12.5px",
+                          fontWeight: 700,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Update “
+                        {addToStudyName.length > 16
+                          ? addToStudyName.slice(0, 15) + "…"
+                          : addToStudyName}
+                        ”
+                      </button>
+                      <button
+                        onClick={() =>
+                          onAddToStudy(Array.from(selectedRefs), "copy")
+                        }
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: "12.5px",
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Save as new study
+                      </button>
+                    </>
+                  ) : (
+                    onLinkStudy && (
+                      <button
+                        onClick={() => {
+                          onLinkStudy(Array.from(selectedRefs));
+                          setSelectedRefs(new Set());
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          padding: "6px 14px",
+                          borderRadius: "999px",
+                          border: "none",
+                          background: "#0d9488",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "12.5px",
+                          fontWeight: 700,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={2.4}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                          <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                        </svg>
+                        Link verses into a study
+                      </button>
+                    )
+                  )}
                 </div>
               )}
               {shown.map((r, i) => (
@@ -810,7 +866,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                       marginBottom: "3px",
                     }}
                   >
-                    {onLinkStudy && (
+                    {(onLinkStudy || onAddToStudy) && (
                       <input
                         type="checkbox"
                         checked={selectedRefs.has(r.reference)}
