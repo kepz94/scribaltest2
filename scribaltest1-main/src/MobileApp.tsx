@@ -595,6 +595,9 @@ export default function MobileApp() {
   const [penOpen, setPenOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  // When set, the "add a chapter to this study" sheet is open for this recorded
+  // (chapter or linked) study — it links the chosen chapter into the study.
+  const [addChapterStudy, setAddChapterStudy] = useState<Study | null>(null);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
   const [pickC, setPickC] = useState(-1);
@@ -1392,26 +1395,30 @@ export default function MobileApp() {
   };
   // Link chapter a (current) with chapter b. Never drops a study's theme names:
   // seeding only fills blanks, so existing names survive a join or a merge.
-  const linkChapters = (a: string, b: string) => {
-    if (a === b) return;
+  const linkChapters = (a: string, b: string): string | null => {
+    if (a === b) return chapterGroups[a] || null;
     const ga = chapterGroups[a];
     const gb = chapterGroups[b];
-    if (ga && gb && ga === gb) return;
+    if (ga && gb && ga === gb) return ga;
     const next = { ...chapterGroups };
+    let gid: string;
     if (ga && gb) {
       // merge b's study into a's
       seedScopeLabels("group:" + ga, scopedLabels["group:" + gb] || {});
       Object.keys(next).forEach((s) => {
         if (next[s] === gb) next[s] = ga;
       });
+      gid = ga;
     } else if (ga && !gb) {
       seedScopeLabels("group:" + ga, scopedLabels[b] || {});
       next[b] = ga;
+      gid = ga;
     } else if (!ga && gb) {
       seedScopeLabels("group:" + gb, scopedLabels[a] || {});
       next[a] = gb;
+      gid = gb;
     } else {
-      const gid = newGroupId();
+      gid = newGroupId();
       seedScopeLabels("group:" + gid, scopedLabels[a] || {});
       seedScopeLabels("group:" + gid, scopedLabels[b] || {});
       next[a] = gid;
@@ -1419,6 +1426,7 @@ export default function MobileApp() {
     }
     stampGroupChanges(chapterGroups, next); // record the link so it syncs
     setChapterGroups(next);
+    return gid;
   };
   const unlink = (a: string) => {
     const next = { ...chapterGroups };
@@ -1479,6 +1487,40 @@ export default function MobileApp() {
       setLoc({ v: pickV, b: pickB, c: pickC });
     }
     flash("Linked with " + targetScope);
+  };
+
+  // "Add a chapter to this study" (from the Studies hub). A chapter study
+  // anchors on its own chapter; a linked study anchors on any chapter already in
+  // its group. Linking a chapter into a chapter study promotes it to a linked
+  // study — a study can't be a single chapter and also span two.
+  const addChapterAnchor = addChapterStudy
+    ? addChapterStudy.type === "chapter"
+      ? addChapterStudy.scopeRef
+      : Object.keys(chapterGroups).find(
+          (s) => chapterGroups[s] === addChapterStudy.scopeRef
+        ) || null
+    : null;
+  const addChapterInStudy = (scope: string) =>
+    !!addChapterAnchor &&
+    (scope === addChapterAnchor ||
+      (!!chapterGroups[addChapterAnchor] &&
+        chapterGroups[scope] === chapterGroups[addChapterAnchor]));
+  const confirmAddChapter = () => {
+    if (!addChapterStudy || !targetScope || !addChapterAnchor) return;
+    if (addChapterInStudy(targetScope)) return;
+    const gid = linkChapters(addChapterAnchor, targetScope);
+    if (addChapterStudy.type === "chapter" && gid) {
+      const sid = addChapterStudy.id;
+      setStudies((prev) =>
+        prev.map((s) =>
+          s.id === sid
+            ? { ...s, type: "linked", scopeRef: gid, compiledAt: Date.now() }
+            : s
+        )
+      );
+    }
+    flash("Added " + displayOf(targetScope));
+    setAddChapterStudy(null);
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -3249,6 +3291,173 @@ export default function MobileApp() {
               {targetScope && chapterGroups[targetScope]
                 ? "Add " + title + " to this study"
                 : "Link"}
+            </button>
+          </div>
+        )}
+
+      {/* Add a chapter to a recorded (chapter/linked) study, from the Studies hub */}
+      {addChapterStudy &&
+        sheet(
+          () => setAddChapterStudy(null),
+          <div>
+            <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}>
+              Add a chapter
+            </div>
+            <div
+              style={{ fontSize: "12.5px", color: C.muted, marginBottom: "4px" }}
+            >
+              to “{addChapterStudy.name}”
+            </div>
+            <div
+              style={{
+                fontSize: "11.5px",
+                color: C.muted,
+                lineHeight: 1.5,
+                marginBottom: "16px",
+              }}
+            >
+              {addChapterStudy.type === "chapter"
+                ? "Linked chapters share one set of theme names and compile together. Adding a chapter turns this into a linked study."
+                : "Pick another chapter to link in. It shares this study’s theme names and compiles together."}
+            </div>
+
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "8px",
+              }}
+            >
+              Chapter to add
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                marginBottom: "12px",
+              }}
+            >
+              <select
+                value={pickV}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setPickV(v);
+                  const single = v >= 0 && vols[v].books.length === 1;
+                  setPickB(single ? 0 : -1);
+                  setPickC(-1);
+                }}
+                style={{
+                  boxSizing: "border-box",
+                  width: "100%",
+                  padding: "11px 10px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.soft,
+                  color: C.text,
+                  fontSize: "16px",
+                  fontFamily: "inherit",
+                }}
+              >
+                <option value={-1}>Choose a volume…</option>
+                {vols.map((vol, v) => (
+                  <option key={v} value={v}>
+                    {vol.volume}
+                  </option>
+                ))}
+              </select>
+              {pickVol && pickVol.books.length > 1 && (
+                <select
+                  value={pickB}
+                  onChange={(e) => {
+                    setPickB(Number(e.target.value));
+                    setPickC(-1);
+                  }}
+                  style={{
+                    boxSizing: "border-box",
+                    width: "100%",
+                    padding: "11px 10px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    fontSize: "16px",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <option value={-1}>Choose a book…</option>
+                  {pickVol.books.map((bk, b) => (
+                    <option key={b} value={b}>
+                      {bk.book}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                value={pickC}
+                disabled={pickB < 0}
+                onChange={(e) => setPickC(Number(e.target.value))}
+                style={{
+                  boxSizing: "border-box",
+                  width: "100%",
+                  padding: "11px 10px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.soft,
+                  color: C.text,
+                  fontSize: "16px",
+                  fontFamily: "inherit",
+                  opacity: pickB < 0 ? 0.5 : 1,
+                }}
+              >
+                <option value={-1}>
+                  {pickVol && pickVol.books.length === 1
+                    ? "Choose a section…"
+                    : "Choose a chapter…"}
+                </option>
+                {pickChapters.map((ch, c) => (
+                  <option key={c} value={c}>
+                    {ch.chapter}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {targetScope && addChapterInStudy(targetScope) && (
+              <div
+                style={{ fontSize: "13px", color: C.muted, marginBottom: "8px" }}
+              >
+                That chapter is already in this study — pick another.
+              </div>
+            )}
+
+            <button
+              onClick={confirmAddChapter}
+              disabled={!targetScope || addChapterInStudy(targetScope)}
+              style={{
+                width: "100%",
+                background: "#8b5cf6",
+                color: "#fff",
+                border: "none",
+                borderRadius: "10px",
+                padding: "13px",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor:
+                  !targetScope || addChapterInStudy(targetScope)
+                    ? "default"
+                    : "pointer",
+                opacity:
+                  !targetScope || addChapterInStudy(targetScope) ? 0.5 : 1,
+                fontFamily: "inherit",
+              }}
+            >
+              {targetScope && !addChapterInStudy(targetScope)
+                ? "Add " + targetScope
+                : "Add chapter"}
             </button>
           </div>
         )}
@@ -5232,7 +5441,8 @@ export default function MobileApp() {
             icon?: React.ReactNode,
             info?: React.ReactNode,
             expanded?: boolean,
-            onInfo?: () => void
+            onInfo?: () => void,
+            onAdd?: () => void
           ) => (
             <div key={key} style={{ borderTop: "1px solid " + C.border }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -5303,6 +5513,35 @@ export default function MobileApp() {
                     }}
                   >
                     <IconInfo color={expanded ? accent : C.muted} />
+                  </button>
+                )}
+                {onAdd && (
+                  <button
+                    onClick={onAdd}
+                    aria-label="Add a chapter to this study"
+                    title="Add a chapter"
+                    style={{
+                      minWidth: "40px",
+                      height: "40px",
+                      padding: "0 6px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "3px",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      color: accent,
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span style={{ fontSize: "20px", lineHeight: 1, fontWeight: 300 }}>
+                      +
+                    </span>
+                    Ch
                   </button>
                 )}
                 <button
@@ -5472,7 +5711,13 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              )
+                              ),
+                            () => {
+                              setPickV(-1);
+                              setPickB(-1);
+                              setPickC(-1);
+                              setAddChapterStudy(s);
+                            }
                           )
                         )
                       )}
@@ -5523,7 +5768,13 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              )
+                              ),
+                            () => {
+                              setPickV(-1);
+                              setPickB(-1);
+                              setPickC(-1);
+                              setAddChapterStudy(s);
+                            }
                           )
                         )
                       )}
