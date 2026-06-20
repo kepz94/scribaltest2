@@ -1511,13 +1511,14 @@ export default function MobileApp() {
     const gid = linkChapters(addChapterAnchor, targetScope);
     if (addChapterStudy.type === "chapter" && gid) {
       const sid = addChapterStudy.id;
-      setStudies((prev) =>
-        prev.map((s) =>
-          s.id === sid
-            ? { ...s, type: "linked", scopeRef: gid, compiledAt: Date.now() }
-            : s
-        )
-      );
+      const promote = (s: Study): Study =>
+        s.id === sid
+          ? { ...s, type: "linked", scopeRef: gid, compiledAt: Date.now() }
+          : s;
+      setStudies((prev) => prev.map(promote));
+      // Keep the open compile screen pointed at the now-linked study so it
+      // immediately shows the chapter that was just added.
+      setCompileRec((prev) => (prev && prev.id === sid ? promote(prev) : prev));
     }
     flash("Added " + displayOf(targetScope));
     setAddChapterStudy(null);
@@ -3296,9 +3297,35 @@ export default function MobileApp() {
         )}
 
       {/* Add a chapter to a recorded (chapter/linked) study, from the Studies hub */}
-      {addChapterStudy &&
-        sheet(
-          () => setAddChapterStudy(null),
+      {addChapterStudy && (
+        <div
+          onClick={() => setAddChapterStudy(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.4)",
+            zIndex: 500,
+            display: "flex",
+            alignItems: "flex-end",
+            animation: "mob-fadein 0.18s ease",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              backgroundColor: C.panel,
+              color: C.text,
+              borderRadius: "18px 18px 0 0",
+              padding: "18px 18px calc(18px + env(safe-area-inset-bottom))",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
+              WebkitOverflowScrolling: "touch",
+              boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+              animation: "mob-slideup 0.28s cubic-bezier(0.22,1,0.36,1)",
+            }}
+          >
           <div>
             <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}>
               Add a chapter
@@ -3460,7 +3487,9 @@ export default function MobileApp() {
                 : "Add chapter"}
             </button>
           </div>
-        )}
+          </div>
+        </div>
+      )}
 
       {/* Jump panel */}
       {jumpOpen &&
@@ -5441,8 +5470,7 @@ export default function MobileApp() {
             icon?: React.ReactNode,
             info?: React.ReactNode,
             expanded?: boolean,
-            onInfo?: () => void,
-            onAdd?: () => void
+            onInfo?: () => void
           ) => (
             <div key={key} style={{ borderTop: "1px solid " + C.border }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -5513,35 +5541,6 @@ export default function MobileApp() {
                     }}
                   >
                     <IconInfo color={expanded ? accent : C.muted} />
-                  </button>
-                )}
-                {onAdd && (
-                  <button
-                    onClick={onAdd}
-                    aria-label="Add a chapter to this study"
-                    title="Add a chapter"
-                    style={{
-                      minWidth: "40px",
-                      height: "40px",
-                      padding: "0 6px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "3px",
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                      color: accent,
-                      fontFamily: "inherit",
-                      fontSize: "13px",
-                      fontWeight: 700,
-                    }}
-                  >
-                    <span style={{ fontSize: "20px", lineHeight: 1, fontWeight: 300 }}>
-                      +
-                    </span>
-                    Ch
                   </button>
                 )}
                 <button
@@ -5711,13 +5710,7 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              ),
-                            () => {
-                              setPickV(-1);
-                              setPickB(-1);
-                              setPickC(-1);
-                              setAddChapterStudy(s);
-                            }
+                              )
                           )
                         )
                       )}
@@ -5768,13 +5761,7 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              ),
-                            () => {
-                              setPickV(-1);
-                              setPickB(-1);
-                              setPickC(-1);
-                              setAddChapterStudy(s);
-                            }
+                              )
                           )
                         )
                       )}
@@ -6024,6 +6011,16 @@ export default function MobileApp() {
               onFlash={flash}
               onRenameTheme={(color, name) =>
                 setScopedLabel(cScope, color as MarkColor, name)
+              }
+              onAddChapter={
+                cr
+                  ? () => {
+                      setPickV(-1);
+                      setPickB(-1);
+                      setPickC(-1);
+                      setAddChapterStudy(cr);
+                    }
+                  : undefined
               }
             />
           );
