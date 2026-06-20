@@ -255,6 +255,24 @@ function initState(): State {
     });
     order = ["master", ...order.filter((id) => id !== "master")];
     const activeId = books[saved.activeId] ? saved.activeId : "master";
+    // A previous visit may have written an *empty* scribal_books_v1 (the app
+    // saves on every load), which would otherwise skip the new-install seed
+    // below. If the Master has no marks and we have never seeded, drop the
+    // pre-marked John 1 example in once so the sample still appears.
+    if (
+      books.master &&
+      books.master.marks.length === 0 &&
+      !safeGet("scribal_sample_seeded")
+    ) {
+      books.master.marks = SAMPLE_JOHN1_MARKS.map((m) => ({ ...m }));
+      try {
+        localStorage.setItem("scribal_sample_seeded", "1");
+        localStorage.setItem(
+          "scribal_mobile_loc",
+          JSON.stringify({ v: 1, b: 3, c: 0 })
+        );
+      } catch {}
+    }
     return { books, order, activeId, past: [], future: [] };
   }
   const master = migrateMaster();
@@ -266,6 +284,12 @@ function initState(): State {
     master.marks = SAMPLE_JOHN1_MARKS.map((m) => ({ ...m }));
     try {
       localStorage.setItem("scribal_sample_seeded", "1");
+      // Point the mobile reader at John 1 so the seeded sample is on screen,
+      // even if a leftover reading location exists from a prior visit.
+      localStorage.setItem(
+        "scribal_mobile_loc",
+        JSON.stringify({ v: 1, b: 3, c: 0 })
+      );
     } catch {}
   }
   return {
