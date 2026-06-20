@@ -8,6 +8,8 @@ import Outline from "./Outline";
 import Charting from "./Charting";
 import Distilled from "./Distilled";
 import Covenants from "./Covenants";
+import SpotlightTour from "./SpotlightTour";
+import { EXAMPLE_TOUR } from "../data/exampleTour";
 
 const ACCENT = "#8b5cf6";
 
@@ -66,6 +68,7 @@ type CView = "outline" | "charting" | "distilled" | "covenants";
 export default function DesktopExample({ onClose, onTryIt }: Props) {
   const [step, setStep] = useState<"marks" | "animating" | "compile">("marks");
   const [view, setView] = useState<CView>("outline");
+  const [tourDone, setTourDone] = useState(false);
 
   // The same prop shape the real desktop compile views receive — built here from
   // the sample marks. Every setter is inert: nothing is written, nothing syncs.
@@ -202,6 +205,7 @@ export default function DesktopExample({ onClose, onTryIt }: Props) {
           </div>
           <div style={{ display: "flex", justifyContent: "center" }}>
             <div
+              data-tour="ex-formats"
               style={{
                 display: "flex",
                 border: "1px solid var(--border)",
@@ -249,8 +253,19 @@ export default function DesktopExample({ onClose, onTryIt }: Props) {
           }}
         >
           {quietBtn("‹ Back to the marked chapter", () => setStep("marks"))}
-          {primaryBtn("Mark John 1 yourself →", onTryIt)}
+          <span data-tour="ex-tryit">
+            {primaryBtn("Mark John 1 yourself →", onTryIt)}
+          </span>
         </div>
+
+        {!tourDone && (
+          <SpotlightTour
+            steps={EXAMPLE_TOUR}
+            label="How this works"
+            onClose={() => setTourDone(true)}
+            onDone={() => setTourDone(true)}
+          />
+        )}
       </>
     );
   }
