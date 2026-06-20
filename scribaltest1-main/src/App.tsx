@@ -2769,6 +2769,7 @@ export default function App() {
 
       {exampleOpen && (
         <DesktopExample
+          dark={dark}
           onClose={() => setExampleOpen(false)}
           onTryIt={() => {
             setExampleOpen(false);
