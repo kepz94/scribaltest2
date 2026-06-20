@@ -639,6 +639,7 @@ export default function MobileCompile({
         {readOnly && onTryIt && (
           <button
             onClick={onTryIt}
+            data-tour="ex-tryit"
             style={{
               width: "100%",
               background: C.text,
@@ -667,6 +668,7 @@ export default function MobileCompile({
             }}
           >
             <div
+              data-tour="ex-formats"
               style={{
                 display: "flex",
                 gap: "4px",
