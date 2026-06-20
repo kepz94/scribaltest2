@@ -1173,6 +1173,24 @@ export default function MobileApp() {
   const chapter = vols[loc.v].books[loc.b].chapters[loc.c];
   const bookName = vols[loc.v].books[loc.b].book;
   const displayTitle = bookName + " " + chapter.chapter;
+
+  // Gentle progress: a quiet reflection of the study so far — distinct chapters
+  // and books marked, plus total marks across every book. No streaks, no goals.
+  const progress = useMemo(() => {
+    const chapters = new Set<string>();
+    const books = new Set<string>();
+    allMarks.forEach((m) => {
+      const ref = m.reference || "";
+      const ci = ref.indexOf(":");
+      const scope = (ci < 0 ? ref : ref.slice(0, ci)).trim();
+      if (!scope) return;
+      chapters.add(scope);
+      const book = scope.replace(/\s+\d+\s*$/, "").trim();
+      if (book) books.add(book);
+    });
+    return { chapters: chapters.size, books: books.size, total: allMarks.length };
+  }, [allMarks]);
+
   const title = chapterScopeKey(vols[loc.v].books[loc.b], chapter);
   const showConditionals = !!condByChapter[title];
   const toggleConditionals = () =>
@@ -3382,6 +3400,40 @@ export default function MobileApp() {
               </span>
             </div>
           </button>
+
+          {/* Gentle progress — a calm reflection, shown only once there's
+              something to reflect (no empty state for a brand-new study). */}
+          {progress.total > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: "20px",
+                marginBottom: "16px",
+                color: C.muted,
+                fontSize: "12.5px",
+              }}
+            >
+              <span>
+                <strong style={{ color: C.text, fontWeight: 700 }}>
+                  {progress.chapters}
+                </strong>{" "}
+                {progress.chapters === 1 ? "chapter" : "chapters"}
+              </span>
+              <span>
+                <strong style={{ color: C.text, fontWeight: 700 }}>
+                  {progress.books}
+                </strong>{" "}
+                {progress.books === 1 ? "book" : "books"}
+              </span>
+              <span>
+                <strong style={{ color: C.text, fontWeight: 700 }}>
+                  {progress.total}
+                </strong>{" "}
+                {progress.total === 1 ? "mark" : "marks"}
+              </span>
+            </div>
+          )}
 
           {/* Grid: Browse / Compile / Vault / Search */}
           <div
