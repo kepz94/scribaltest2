@@ -36,6 +36,9 @@ interface Props {
   // Rename a theme (color) for this study's scope. Optional so older callers
   // still type-check; when supplied, active theme names become editable inline.
   onRenameTheme?: (color: number, name: string) => void;
+  // Read-only preview (the built-in example study): hides Save/Share and makes
+  // the study name non-editable, so nothing can be written from the demo.
+  readOnly?: boolean;
 }
 
 type SortMode = "order" | "points";
@@ -96,6 +99,7 @@ export default function MobileCompile({
   studyScopes,
   onFlash,
   onRenameTheme,
+  readOnly,
 }: Props) {
   // Inline theme-name editing on the outline. Only one name edits at a time; the
   // draft is committed (saved) on blur so we don't churn the store per keystroke.
@@ -540,6 +544,7 @@ export default function MobileCompile({
               onChange={(e) => setStudyName(e.target.value)}
               placeholder={defaultName}
               aria-label="Study name"
+              readOnly={readOnly}
               style={{
                 width: "100%",
                 boxSizing: "border-box",
@@ -547,7 +552,7 @@ export default function MobileCompile({
                 fontWeight: 700,
                 background: "transparent",
                 border: "none",
-                borderBottom: "1px dashed " + C.border,
+                borderBottom: readOnly ? "none" : "1px dashed " + C.border,
                 color: C.text,
                 fontFamily: "inherit",
                 padding: "1px 0 4px",
@@ -564,7 +569,7 @@ export default function MobileCompile({
           </div>
         </div>
         {/* Row 2 — actions (Save is the primary, Share is secondary) */}
-        {liveMarks.length > 0 && (
+        {!readOnly && liveMarks.length > 0 && (
           <div style={{ display: "flex", gap: "8px" }}>
             {format === "covenants" ? (
               <button
