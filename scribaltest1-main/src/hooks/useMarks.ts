@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useCallback } from "react";
 import { Mark, MarkStyle, MarkColor } from "../types";
+import { SAMPLE_JOHN1_MARKS } from "../data/sampleStudy";
 
 interface StudyBook {
   id: string;
@@ -257,6 +258,16 @@ function initState(): State {
     return { books, order, activeId, past: [], future: [] };
   }
   const master = migrateMaster();
+  // Brand-new install (no saved books and no legacy marks): seed a pre-marked
+  // sample study of John 1 so the app opens onto a finished example instead of
+  // a blank chapter. Guarded by a one-time flag so it never returns after the
+  // reader clears it, and it never touches a real (non-empty) book.
+  if (master.marks.length === 0 && !safeGet("scribal_sample_seeded")) {
+    master.marks = SAMPLE_JOHN1_MARKS.map((m) => ({ ...m }));
+    try {
+      localStorage.setItem("scribal_sample_seeded", "1");
+    } catch {}
+  }
   return {
     books: { master },
     order: ["master"],
