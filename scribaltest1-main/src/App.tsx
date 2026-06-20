@@ -28,6 +28,7 @@ import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 import ColorKey from "./components/ColorKey";
 import Shortcuts from "./components/Shortcuts";
 import CompileAnimation from "./components/CompileAnimation";
+import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
 import scriptures from "./data/scriptures.json";
 import {
@@ -521,6 +522,9 @@ export default function App() {
     );
 
   const [mode, setMode] = useState<Mode>("read");
+  // The built-in, read-only "See how it works" example (marked John 1 + a live
+  // compile using the real desktop views). Opens over everything; writes nothing.
+  const [exampleOpen, setExampleOpen] = useState(false);
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
     return saved === "outline" ||
@@ -2730,6 +2734,24 @@ export default function App() {
               Continue without signing in
             </button>
 
+            <button
+              onClick={() => {
+                setGateOpen(false);
+                setExampleOpen(true);
+              }}
+              style={{
+                marginTop: "16px",
+                background: "transparent",
+                border: "none",
+                color: ICON_ACCENT,
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              See how Scribal works →
+            </button>
+
             {gateMsg && (
               <p
                 style={{
@@ -2743,6 +2765,17 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {exampleOpen && (
+        <DesktopExample
+          onClose={() => setExampleOpen(false)}
+          onTryIt={() => {
+            setExampleOpen(false);
+            updateActiveTab(1, 3, 0);
+            setMode("read");
+          }}
+        />
       )}
 
       {showHelpMenu && (
@@ -4767,6 +4800,21 @@ export default function App() {
                       }}
                     >
                       ▶ Take the guided tour
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
+                        setExampleOpen(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      💡 See how it works
                     </div>
                     <div
                       onClick={() => {
