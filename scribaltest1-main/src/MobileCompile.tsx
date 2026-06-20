@@ -43,6 +43,9 @@ interface Props {
   // replaces the Save/Share row, inviting the reader to start marking for real.
   onTryIt?: () => void;
   tryItLabel?: string;
+  // Add another chapter to this study (recorded chapter/linked studies only).
+  // Opens the chapter picker; the chosen chapter is linked into the study.
+  onAddChapter?: () => void;
 }
 
 type SortMode = "order" | "points";
@@ -106,6 +109,7 @@ export default function MobileCompile({
   readOnly,
   onTryIt,
   tryItLabel,
+  onAddChapter,
 }: Props) {
   // Inline theme-name editing on the outline. Only one name edits at a time; the
   // draft is committed (saved) on blur so we don't churn the store per keystroke.
@@ -577,6 +581,26 @@ export default function MobileCompile({
         {/* Row 2 — actions (Save is the primary, Share is secondary) */}
         {!readOnly && liveMarks.length > 0 && (
           <div style={{ display: "flex", gap: "8px" }}>
+            {onAddChapter && (
+              <button
+                onClick={onAddChapter}
+                title="Add a chapter to this study"
+                style={{
+                  flexShrink: 0,
+                  background: "transparent",
+                  color: C.text,
+                  border: "1px solid " + C.border,
+                  borderRadius: "999px",
+                  padding: "10px 14px",
+                  fontSize: "13.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                + Chapter
+              </button>
+            )}
             {format === "covenants" ? (
               <button
                 onClick={() => setCovShareSignal((n) => n + 1)}
