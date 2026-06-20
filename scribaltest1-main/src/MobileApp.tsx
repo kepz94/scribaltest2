@@ -1312,32 +1312,55 @@ export default function MobileApp() {
   const onLinkConfirm = (refs: string[]) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
-    // Adding to an existing keyword study: merge the selection in (the study's
-    // verses were pre-selected, so `ordered` is the full, updated set), keep the
-    // name + theme colors, then reopen the study.
-    if (addToStudyId) {
-      const id = addToStudyId;
-      setSearchStudies((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, refs: ordered, updatedAt: Date.now() } : s
-        )
-      );
-      const studyScope = "searchstudy:" + id;
-      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
-        seedScopeLabels(studyScope, scopedLabels[ch] || {})
-      );
-      setAddToStudyId(null);
-      setSearchOpen(false);
-      setOpenStudyId(id);
-      flash("Verses updated");
-      return;
-    }
     setLinkDraftRefs(ordered);
     setDraftName("");
     setDraftSource("master");
     setDraftSessionId("");
     setDraftNewName("");
     setSearchOpen(false);
+  };
+
+  // Add verses to an existing keyword/imported study, or fork a new copy with the
+  // additions. The selection IS the full new verse set (the study's verses come
+  // pre-selected). Refs edits + new copies sync across devices via the shared
+  // studies store.
+  const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
+    const id = addToStudyId;
+    setAddToStudyId(null);
+    setSearchOpen(false);
+    if (!refs.length) return;
+    const study = searchStudies.find((s) => s.id === id);
+    if (!study) return;
+    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    if (mode === "copy") {
+      const copy: SearchStudy = {
+        id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        name: study.name + " (copy)",
+        bookId: study.bookId,
+        refs: ordered,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setSearchStudies((prev) => [copy, ...prev]);
+      const scope = "searchstudy:" + copy.id;
+      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+        seedScopeLabels(scope, scopedLabels[ch] || {})
+      );
+      setOpenStudyId(copy.id);
+      flash("Study created");
+    } else {
+      setSearchStudies((prev) =>
+        prev.map((s) =>
+          s.id === id ? { ...s, refs: ordered, updatedAt: Date.now() } : s
+        )
+      );
+      const scope = "searchstudy:" + id;
+      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+        seedScopeLabels(scope, scopedLabels[ch] || {})
+      );
+      setOpenStudyId(id);
+      flash("Verses updated");
+    }
   };
   const cancelDraft = () => setLinkDraftRefs(null);
   const createStudyFromDraft = () => {
@@ -4463,7 +4486,12 @@ export default function MobileApp() {
                   : undefined
               }
               startLinking={!!addToStudyId}
-              confirmLabel={addToStudyId ? "Add to study" : undefined}
+              addToStudyName={
+                addToStudyId
+                  ? searchStudies.find((s) => s.id === addToStudyId)?.name
+                  : undefined
+              }
+              onAddToStudy={handleAddToStudy}
             />
           </div>
         </div>
