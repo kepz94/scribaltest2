@@ -451,6 +451,7 @@ export default function App() {
   const {
     studies: searchStudies,
     addStudy,
+    updateStudy,
     deleteStudy,
     renameStudy,
     setStudies: setSearchStudies,
@@ -667,6 +668,9 @@ export default function App() {
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
   const [showSearch, setShowSearch] = useState(false);
+  // When set, the search panel is in "add verses to this keyword study" mode:
+  // the study's verses are pre-selected and the link bar offers update-vs-copy.
+  const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStart, setTourStart] = useState(0);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -1816,6 +1820,28 @@ export default function App() {
     setStudyDraftRefs(null);
     openStudyTab(study);
   };
+
+  // Add verses to an existing keyword/imported study, or fork a new copy with the
+  // additions. The selection IS the full new verse set (the study's verses are
+  // pre-checked in the panel), so we just write it. Refs edits sync across
+  // devices via updatedAt; a copy syncs as a brand-new study.
+  const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
+    const id = addToStudyId;
+    setAddToStudyId(null);
+    setShowSearch(false);
+    if (!refs.length) return;
+    const study = searchStudies.find((s) => s.id === id);
+    if (!study) return;
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    if (mode === "copy") {
+      const copy = addStudy(study.name + " (copy)", study.bookId, ordered);
+      openStudyTab(copy);
+    } else {
+      updateStudy(study.id, { refs: ordered });
+      openStudyTab(study);
+    }
+  };
+
   // ---- ScriptureNotes import: PDF report (or pasted text) -> a Search Study ----
   const openSnImport = () => {
     setSnParsed(null);
@@ -2530,6 +2556,10 @@ export default function App() {
           fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
         onOpen: () => openStudyTab(ss),
+        onAddVerses: () => {
+          setAddToStudyId(ss.id);
+          setShowSearch(true);
+        },
         onDelete: () =>
           askConfirm({
             title: "Delete this study?",
@@ -2784,11 +2814,25 @@ export default function App() {
           }}
           onJumpToMark={jumpToMark}
           onLinkStudy={onLinkStudy}
+          initialSelected={
+            addToStudyId
+              ? searchStudies.find((s) => s.id === addToStudyId)?.refs
+              : undefined
+          }
+          addToStudyName={
+            addToStudyId
+              ? searchStudies.find((s) => s.id === addToStudyId)?.name
+              : undefined
+          }
+          onAddToStudy={handleAddToStudy}
           onOpenNewTab={(ref) => {
             openInNewTab(ref);
             setShowSearch(false);
           }}
-          onClose={() => setShowSearch(false)}
+          onClose={() => {
+            setShowSearch(false);
+            setAddToStudyId(null);
+          }}
         />
       )}
       {linkPromptTabId && (
