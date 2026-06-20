@@ -31,6 +31,9 @@ interface Props {
   initialPicked?: string[];
   startLinking?: boolean;
   confirmLabel?: string;
+  // When adding to an existing study, the link bar offers update-vs-new-copy.
+  addToStudyName?: string;
+  onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
 }
 
 const SCRIPTURE_CAP = 120;
@@ -126,6 +129,8 @@ export default function MobileSearch({
   initialPicked,
   startLinking,
   confirmLabel,
+  addToStudyName,
+  onAddToStudy,
 }: Props) {
   const [mode, setMode] = useState<"scripture" | "marks">("scripture");
   const [query, setQuery] = useState("");
@@ -485,7 +490,7 @@ export default function MobileSearch({
         </>
       )}
 
-      {linkMode && onLinkConfirm && (
+      {linkMode && (onLinkConfirm || onAddToStudy) && (
         <>
           <div style={{ height: "84px" }} />
           <div
@@ -497,32 +502,86 @@ export default function MobileSearch({
               zIndex: 210,
               display: "flex",
               alignItems: "center",
-              gap: "12px",
+              gap: "8px",
               padding: "12px 16px calc(14px + env(safe-area-inset-bottom))",
               background: C.panel,
               borderTop: "1px solid " + C.border,
             }}
           >
-            <span style={{ flex: 1, fontSize: "13px", color: C.muted }}>
-              {picked.length} verse{picked.length === 1 ? "" : "s"} selected
-            </span>
-            <button
-              onClick={() => picked.length && onLinkConfirm(picked)}
-              disabled={!picked.length}
+            <span
               style={{
-                background: picked.length ? C.text : C.soft,
-                color: picked.length ? C.bg : C.muted,
-                border: "none",
-                borderRadius: "999px",
-                padding: "10px 20px",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: picked.length ? "pointer" : "default",
-                fontFamily: "inherit",
+                flex: 1,
+                minWidth: 0,
+                fontSize: "12.5px",
+                color: C.muted,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
-              {confirmLabel || "Next"}
-            </button>
+              {picked.length} selected
+            </span>
+            {onAddToStudy && addToStudyName ? (
+              <>
+                <button
+                  onClick={() => picked.length && onAddToStudy(picked, "update")}
+                  disabled={!picked.length}
+                  style={{
+                    flexShrink: 0,
+                    background: picked.length ? C.text : C.soft,
+                    color: picked.length ? C.bg : C.muted,
+                    border: "none",
+                    borderRadius: "999px",
+                    padding: "10px 16px",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    cursor: picked.length ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Update study
+                </button>
+                <button
+                  onClick={() => picked.length && onAddToStudy(picked, "copy")}
+                  disabled={!picked.length}
+                  style={{
+                    flexShrink: 0,
+                    background: "transparent",
+                    color: C.text,
+                    border: "1px solid " + C.border,
+                    borderRadius: "999px",
+                    padding: "10px 14px",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    cursor: picked.length ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  New copy
+                </button>
+              </>
+            ) : (
+              onLinkConfirm && (
+                <button
+                  onClick={() => picked.length && onLinkConfirm(picked)}
+                  disabled={!picked.length}
+                  style={{
+                    flexShrink: 0,
+                    background: picked.length ? C.text : C.soft,
+                    color: picked.length ? C.bg : C.muted,
+                    border: "none",
+                    borderRadius: "999px",
+                    padding: "10px 20px",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: picked.length ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {confirmLabel || "Next"}
+                </button>
+              )
+            )}
           </div>
         </>
       )}
