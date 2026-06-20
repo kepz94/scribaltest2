@@ -11,6 +11,19 @@ export function registerServiceWorker(onUpdate?: () => void) {
     navigator.serviceWorker
       .register(swUrl)
       .then((reg) => {
+        // Proactively look for a newer worker: once right after registering,
+        // and again whenever the app returns to the foreground. Without this,
+        // the app would only ever notice an update that happens to arrive
+        // mid-session, so a deployed fix could sit unseen for a long time.
+        const checkForUpdate = () => {
+          reg.update().catch(() => {});
+        };
+        checkForUpdate();
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") checkForUpdate();
+        });
+        window.addEventListener("focus", checkForUpdate);
+
         reg.onupdatefound = () => {
           const installing = reg.installing;
           if (!installing) return;
