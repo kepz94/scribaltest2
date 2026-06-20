@@ -13,6 +13,7 @@ import MobileVerse from "./MobileVerse";
 import MobileCompile from "./MobileCompile";
 import ScribalMark from "./components/ScribalMark";
 import CompileAnimation from "./components/CompileAnimation";
+import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
 import MobileFeatureGuide from "./MobileFeatureGuide";
@@ -463,6 +464,8 @@ const readLoc = (): Loc => {
         return { v: p.v, b: p.b, c: p.c };
     }
   } catch {}
+  // Brand-new installs open on the first chapter; returning readers keep their
+  // saved place.
   return { v: 0, b: 0, c: 0 };
 };
 
@@ -798,6 +801,9 @@ export default function MobileApp() {
   };
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
+  // The built-in, read-only "See how it works" example (marked John 1 + a live
+  // compile). Opens over everything; writes nothing.
+  const [exampleOpen, setExampleOpen] = useState(false);
   // Which study row (if any) is expanded to show its scope + themes peek.
   const [infoStudyId, setInfoStudyId] = useState<string | null>(null);
   // Verses just picked in search, waiting for the source + name step.
@@ -3351,6 +3357,22 @@ export default function MobileApp() {
             >
               A place to study scripture
             </div>
+            <button
+              onClick={() => setExampleOpen(true)}
+              style={{
+                marginTop: "14px",
+                background: "transparent",
+                border: "none",
+                color: "#8b5cf6",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                letterSpacing: "0.02em",
+              }}
+            >
+              See how Scribal works →
+            </button>
           </div>
 
           {/* Continue reading — hero */}
@@ -5350,17 +5372,39 @@ export default function MobileApp() {
                 }}
               >
                 {total === 0 ? (
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      color: C.muted,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    No studies yet. Mark a chapter and tap{" "}
-                    <b style={{ color: C.text }}>Compile</b> to record it here, or
-                    build one from Search.
-                  </div>
+                  <>
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: C.muted,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      No studies yet. Mark a chapter and tap{" "}
+                      <b style={{ color: C.text }}>Compile</b> to record it here,
+                      or build one from Search.
+                    </div>
+                    <button
+                      onClick={() => {
+                        setStudiesOpen(false);
+                        setExampleOpen(true);
+                      }}
+                      style={{
+                        marginTop: "16px",
+                        background: "transparent",
+                        border: "1px solid " + C.border,
+                        borderRadius: "999px",
+                        padding: "10px 18px",
+                        color: C.text,
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      See an example study →
+                    </button>
+                  </>
                 ) : (
                   <>
                     {chapterRecs.length > 0 &&
@@ -5705,6 +5749,11 @@ export default function MobileApp() {
             />
           );
         })()}
+
+      {/* See how it works — read-only example (marked John 1 + live compile) */}
+      {exampleOpen && (
+        <ExampleStudy C={C} dark={dark} onClose={() => setExampleOpen(false)} />
+      )}
 
       {/* Manage a mark (long-press) */}
       {manage &&
