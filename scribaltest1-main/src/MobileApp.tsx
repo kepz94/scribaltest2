@@ -4317,6 +4317,14 @@ export default function MobileApp() {
                 >
                   Show the tour again
                 </button>
+
+                {label("Legal")}
+                {actionBtn("Privacy Policy", () => {
+                  window.open("/privacy.html", "_blank");
+                })}
+                {actionBtn("Terms of Service", () => {
+                  window.open("/terms.html", "_blank");
+                })}
               </div>
             );
           })()
