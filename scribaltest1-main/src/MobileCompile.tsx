@@ -39,6 +39,10 @@ interface Props {
   // Read-only preview (the built-in example study): hides Save/Share and makes
   // the study name non-editable, so nothing can be written from the demo.
   readOnly?: boolean;
+  // Example-only handoff: when provided (with readOnly), a single primary CTA
+  // replaces the Save/Share row, inviting the reader to start marking for real.
+  onTryIt?: () => void;
+  tryItLabel?: string;
 }
 
 type SortMode = "order" | "points";
@@ -100,6 +104,8 @@ export default function MobileCompile({
   onFlash,
   onRenameTheme,
   readOnly,
+  onTryIt,
+  tryItLabel,
 }: Props) {
   // Inline theme-name editing on the outline. Only one name edits at a time; the
   // draft is committed (saved) on blur so we don't churn the store per keystroke.
@@ -629,6 +635,25 @@ export default function MobileCompile({
               Save to Studies
             </button>
           </div>
+        )}
+        {readOnly && onTryIt && (
+          <button
+            onClick={onTryIt}
+            style={{
+              width: "100%",
+              background: C.text,
+              color: C.bg,
+              border: "none",
+              borderRadius: "999px",
+              padding: "11px 18px",
+              fontSize: "13.5px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {tryItLabel || "Start marking"}
+          </button>
         )}
       </div>
       {/* view + sort toggles — part of the chrome, so they slide away too */}
