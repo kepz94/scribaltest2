@@ -2,6 +2,7 @@ import { useState } from "react";
 import scriptures from "../data/scriptures.json";
 import { SAMPLE_JOHN1_MARKS } from "../data/sampleStudy";
 import MarkedVerse from "./MarkedVerse";
+import CompileAnimation from "./CompileAnimation";
 import MobileCompile from "../MobileCompile";
 
 interface Palette {
@@ -17,6 +18,8 @@ interface Props {
   C: Palette;
   dark: boolean;
   onClose: () => void;
+  // Handoff: close the example and drop the reader into John 1 to mark for real.
+  onTryIt: () => void;
 }
 
 interface VRow {
@@ -54,8 +57,8 @@ const EXAMPLE_LABELS: Record<number, string> = {
 
 const SAMPLE_VERSES = johnOneVerses();
 
-export default function ExampleStudy({ C, dark, onClose }: Props) {
-  const [step, setStep] = useState<"marks" | "compile">("marks");
+export default function ExampleStudy({ C, dark, onClose, onTryIt }: Props) {
+  const [step, setStep] = useState<"marks" | "animating" | "compile">("marks");
 
   // Sort marks within the chapter by verse number (e.g. "John 1:5" -> 5).
   const orderOf = (ref: string) => {
@@ -93,12 +96,15 @@ export default function ExampleStudy({ C, dark, onClose }: Props) {
           scope="John 1"
           onFlash={() => {}}
           readOnly
+          onTryIt={onTryIt}
+          tryItLabel="Mark John 1 yourself →"
         />
       </div>
     );
   }
 
-  // The "before" — the marked chapter, so the transformation is visible.
+  // The "before" — the marked chapter, so the transformation is visible. During
+  // "animating" the verses stay mounted so the gather animation blurs over them.
   return (
     <div
       style={{
@@ -206,7 +212,7 @@ export default function ExampleStudy({ C, dark, onClose }: Props) {
         }}
       >
         <button
-          onClick={() => setStep("compile")}
+          onClick={() => setStep("animating")}
           style={{
             width: "100%",
             background: C.text,
@@ -223,6 +229,10 @@ export default function ExampleStudy({ C, dark, onClose }: Props) {
           Compile these marks →
         </button>
       </div>
+
+      {step === "animating" && (
+        <CompileAnimation duration={1400} onDone={() => setStep("compile")} />
+      )}
     </div>
   );
 }
