@@ -28,7 +28,6 @@ interface SearchPanelProps {
 
 type Mode = "all" | "any" | "phrase";
 type Source = "scripture" | "marks" | "themes";
-type Scope = "all" | "volume" | "book";
 
 const vols = scriptures.volumes;
 const MAX_RESULTS = 400;
@@ -53,8 +52,6 @@ const wildcardSource = (term: string) =>
 
 export default function SearchPanel(props: SearchPanelProps) {
   const {
-    currentVolume,
-    currentBook,
     marks,
     colorLabels,
     labelFor,
@@ -69,7 +66,8 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<Mode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
-  const [scope, setScope] = useState<Scope>("all");
+  const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
+  const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
   const [wholeWord, setWholeWord] = useState(false);
   const [markColor, setMarkColor] = useState<MarkColor | 0>(0);
   const [showLegend, setShowLegend] = useState(false);
@@ -78,7 +76,8 @@ export default function SearchPanel(props: SearchPanelProps) {
     q: string;
     mode: Mode;
     source: Source;
-    scope: Scope;
+    volIdx: number;
+    bookIdx: number;
     wholeWord: boolean;
     color: MarkColor | 0;
   } | null>(null);
@@ -126,9 +125,6 @@ export default function SearchPanel(props: SearchPanelProps) {
     return m;
   }, [index]);
 
-  const currentVolName = vols[currentVolume]?.volume || "";
-  const currentBookName = vols[currentVolume]?.books[currentBook]?.book || "";
-
   const results = useMemo(() => {
     if (!committed) return null;
     const q = committed.q.trim();
@@ -175,11 +171,10 @@ export default function SearchPanel(props: SearchPanelProps) {
         : termTests.every((fn) => fn(txt));
 
     const inScope = (e: IndexEntry) =>
-      committed.scope === "all"
+      committed.volIdx < 0
         ? true
-        : committed.scope === "volume"
-        ? e.vol === currentVolume
-        : e.vol === currentVolume && e.book === currentBook;
+        : e.vol === committed.volIdx &&
+          (committed.bookIdx < 0 ? true : e.book === committed.bookIdx);
 
     const items: {
       reference: string;
@@ -246,7 +241,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     }
 
     return { items, total: items.length, byVol, terms };
-  }, [committed, index, refLookup, marks, allMarks, currentVolume, currentBook]);
+  }, [committed, index, refLookup, marks, allMarks]);
 
   const renderHighlighted = (text: string, terms: string[]) => {
     if (!terms.length) return text;
@@ -284,7 +279,8 @@ export default function SearchPanel(props: SearchPanelProps) {
       q: query,
       mode,
       source,
-      scope,
+      volIdx,
+      bookIdx,
       wholeWord,
       color: markColor,
     });
@@ -320,6 +316,18 @@ export default function SearchPanel(props: SearchPanelProps) {
       {children}
     </div>
   );
+
+  const selStyle: React.CSSProperties = {
+    padding: "7px 12px",
+    borderRadius: "999px",
+    border: "1px solid var(--border)",
+    backgroundColor: "transparent",
+    color: "var(--text)",
+    fontSize: "12.5px",
+    fontFamily: "inherit",
+    cursor: "pointer",
+    maxWidth: "190px",
+  };
 
   const legendRow = (head: string, body: string) => (
     <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
@@ -457,24 +465,36 @@ export default function SearchPanel(props: SearchPanelProps) {
               {seg(source === "themes", "Themes", () => setSource("themes"))}
             </>
           )}
-          {segGroup(
-            <>
-              {seg(scope === "all", "All", () => setScope("all"))}
-              {seg(
-                scope === "volume",
-                currentVolName.length > 14
-                  ? currentVolName.slice(0, 13) + "…"
-                  : currentVolName,
-                () => setScope("volume")
-              )}
-              {seg(
-                scope === "book",
-                currentBookName.length > 12
-                  ? currentBookName.slice(0, 11) + "…"
-                  : currentBookName,
-                () => setScope("book")
-              )}
-            </>
+          <select
+            value={volIdx}
+            onChange={(e) => {
+              setVolIdx(Number(e.target.value));
+              setBookIdx(-1);
+            }}
+            style={selStyle}
+            aria-label="Filter by volume"
+          >
+            <option value={-1}>All volumes</option>
+            {vols.map((vol, i) => (
+              <option key={i} value={i}>
+                {vol.volume}
+              </option>
+            ))}
+          </select>
+          {volIdx >= 0 && (
+            <select
+              value={bookIdx}
+              onChange={(e) => setBookIdx(Number(e.target.value))}
+              style={selStyle}
+              aria-label="Filter by book"
+            >
+              <option value={-1}>All books</option>
+              {vols[volIdx].books.map((bk, i) => (
+                <option key={i} value={i}>
+                  {bk.book}
+                </option>
+              ))}
+            </select>
           )}
           <button
             onClick={() => setWholeWord((w) => !w)}
@@ -555,8 +575,8 @@ export default function SearchPanel(props: SearchPanelProps) {
               "Search the full text, or only the passages you’ve marked."
             )}
             {legendRow(
-              "Scope",
-              "Limit to everything, the current volume, or just the current book."
+              "Volume / Book",
+              "Limit results to any volume, or a single book within it."
             )}
             {legendRow(
               "Color",
