@@ -1,46 +1,22 @@
 import { useState } from "react";
-import scriptures from "../data/scriptures.json";
 import { SAMPLE_JOHN1_MARKS } from "../data/sampleStudy";
-import { Tab } from "../types";
-import MarkedVerse from "./MarkedVerse";
+import { Tab, Tool, MarkColor } from "../types";
+import VerseViewer from "./VerseViewer";
 import CompileAnimation from "./CompileAnimation";
 import Outline from "./Outline";
 import Charting from "./Charting";
 import Distilled from "./Distilled";
 import Covenants from "./Covenants";
 import SpotlightTour from "./SpotlightTour";
-import { EXAMPLE_TOUR } from "../data/exampleTour";
+import { EXAMPLE_TOUR, READING_TOUR } from "../data/exampleTour";
 
 const ACCENT = "#8b5cf6";
 
 interface Props {
+  dark: boolean;
   onClose: () => void;
   // Handoff: close the example and open John 1 in the real reader to mark it.
   onTryIt: () => void;
-}
-
-interface VRow {
-  reference: string;
-  verse: number;
-  text: string;
-}
-
-// John 1's verses come from the bundled scripture text — the sample stores only
-// the markings, never the words.
-function johnOneVerses(): VRow[] {
-  const out: VRow[] = [];
-  (scriptures as any).volumes.forEach((vol: any) =>
-    vol.books.forEach((bk: any) => {
-      if (bk.book !== "John") return;
-      bk.chapters.forEach((ch: any) => {
-        if (ch.chapter !== 1) return;
-        ch.verses.forEach((v: any) =>
-          out.push({ reference: v.reference, verse: v.verse, text: v.text })
-        );
-      });
-    })
-  );
-  return out;
 }
 
 // Illustrative theme names a reader might choose for the three colors. In a real
@@ -51,8 +27,6 @@ const EXAMPLE_LABELS: Record<number, string> = {
   2: "Light & Life",
   3: "The Witness",
 };
-
-const SAMPLE_VERSES = johnOneVerses();
 
 // John = New Testament (volume 1), book index 3, chapter index 0.
 const JOHN_TAB: Tab = {
@@ -65,10 +39,24 @@ const JOHN_TAB: Tab = {
 
 type CView = "outline" | "charting" | "distilled" | "covenants";
 
-export default function DesktopExample({ onClose, onTryIt }: Props) {
+export default function DesktopExample({ dark, onClose, onTryIt }: Props) {
   const [step, setStep] = useState<"marks" | "animating" | "compile">("marks");
   const [view, setView] = useState<CView>("outline");
   const [tourDone, setTourDone] = useState(false);
+  const [readTourDone, setReadTourDone] = useState(false);
+  // The toolbar is real (VerseViewer's), but marking is inert in the example —
+  // these just let the tool/color selection and toolbar drag respond locally.
+  const [pen, setPen] = useState<{ tool: Tool; color: MarkColor }>({
+    tool: "highlight",
+    color: 1,
+  });
+  const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number }>({
+    x: 24,
+    y: 160,
+  });
+  const [toolbarOrient, setToolbarOrient] = useState<
+    "vertical" | "horizontal"
+  >("vertical");
 
   // The same prop shape the real desktop compile views receive — built here from
   // the sample marks. Every setter is inert: nothing is written, nothing syncs.
@@ -270,7 +258,8 @@ export default function DesktopExample({ onClose, onTryIt }: Props) {
     );
   }
 
-  // ---- Marked beat (the "before"); verses stay mounted during the animation ----
+  // ---- Marked beat — the real reading surface (VerseViewer: verses + the
+  // floating toolbar), read-only. Stays mounted during the animation. ----
   return overlay(
     <>
       <div
@@ -278,47 +267,44 @@ export default function DesktopExample({ onClose, onTryIt }: Props) {
           flexShrink: 0,
           borderBottom: "1px solid var(--border)",
           padding: "12px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
         }}
       >
-        <div style={{ maxWidth: "760px", margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {closeBtn}
-            <div>
-              <div
-                style={{
-                  fontSize: "11px",
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                }}
-              >
-                Example
-              </div>
-              <div
-                style={{
-                  fontFamily: '"Iowan Old Style", Georgia, serif',
-                  fontSize: "22px",
-                  fontWeight: 700,
-                }}
-              >
-                John 1
-              </div>
-            </div>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {closeBtn}
           <div
             style={{
-              fontSize: "13.5px",
+              fontSize: "11px",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
               color: "var(--muted)",
-              lineHeight: 1.5,
-              marginTop: "8px",
             }}
           >
-            This chapter is already marked. In Scribal you read and mark what
-            stands out, then gather those marks into a study. Look over the
-            marks, then compile them below to see the same marks become an
-            Outline, Charting, Distilled, and Relational study.
+            Example · John 1 · nothing here is saved
           </div>
         </div>
+        <button
+          data-tour="ex-compile"
+          onClick={() => setStep("animating")}
+          aria-label="Compile this study"
+          style={{
+            background: "var(--text)",
+            color: "var(--bg)",
+            border: "none",
+            borderRadius: "999px",
+            padding: "10px 20px",
+            fontSize: "13.5px",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            flexShrink: 0,
+          }}
+        >
+          Compile
+        </button>
       </div>
 
       <div
@@ -326,45 +312,54 @@ export default function DesktopExample({ onClose, onTryIt }: Props) {
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
-          padding: "24px 20px",
+          position: "relative",
         }}
       >
-        <div
-          style={{
-            maxWidth: "760px",
-            margin: "0 auto",
-            fontFamily: '"Iowan Old Style", Georgia, serif',
-            fontSize: "19px",
-            lineHeight: 1.75,
-            color: "var(--text)",
-          }}
-        >
-          {SAMPLE_VERSES.map((v) => (
-            <MarkedVerse
-              key={v.reference}
-              reference={v.reference}
-              verseNumber={v.verse}
-              text={v.text}
-              marks={SAMPLE_JOHN1_MARKS}
-            />
-          ))}
+        <div style={{ maxWidth: "820px", margin: "0 auto", padding: "24px 20px" }}>
+          <VerseViewer
+            selectedVolume={1}
+            selectedBook={3}
+            selectedChapter={0}
+            onChange={() => {}}
+            selectedTool={pen.tool}
+            selectedColor={pen.color}
+            onChangeTool={(t) => setPen((p) => ({ ...p, tool: t }))}
+            onChangeColor={(c) => setPen((p) => ({ ...p, color: c }))}
+            onMark={() => {}}
+            onEraseMark={() => {}}
+            onMarkMany={() => {}}
+            marks={SAMPLE_JOHN1_MARKS}
+            showToolbar
+            toolbarPos={toolbarPos}
+            onToolbarPos={setToolbarPos}
+            toolbarOrient={toolbarOrient}
+            onToolbarOrient={setToolbarOrient}
+            panelMode={false}
+            fontScale={1}
+            lineScale={1.85}
+            warm={false}
+            dark={dark}
+            sidebarOpen={false}
+            jumpTarget={null}
+            onJumpHandled={() => {}}
+          />
         </div>
-      </div>
-
-      <div
-        style={{
-          flexShrink: 0,
-          borderTop: "1px solid var(--border)",
-          padding: "14px 20px",
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
-        {primaryBtn("Compile these marks →", () => setStep("animating"))}
       </div>
 
       {step === "animating" && (
         <CompileAnimation duration={1400} onDone={() => setStep("compile")} />
+      )}
+
+      {!readTourDone && (
+        <SpotlightTour
+          steps={READING_TOUR}
+          label="How this works"
+          onClose={() => setReadTourDone(true)}
+          onDone={() => {
+            setReadTourDone(true);
+            setStep("animating");
+          }}
+        />
       )}
     </>
   );
