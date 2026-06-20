@@ -21,11 +21,8 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study } from "./hooks/useStudies";
-import HelpMenu, { HelpPick } from "./components/HelpMenu";
-import DesktopFeatureGuide from "./components/DesktopFeatureGuide";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
-import ColorKey from "./components/ColorKey";
 import Shortcuts from "./components/Shortcuts";
 import CompileAnimation from "./components/CompileAnimation";
 import DesktopExample from "./components/DesktopExample";
@@ -320,16 +317,6 @@ const VIEW_NAMES: Record<string, string> = {
 };
 
 type CompileView = "outline" | "charting" | "distilled" | "covenants";
-// Each Walkthroughs pick opens the live tour at the step where that topic
-// begins (the tour steps are built in the component, where state setters live).
-const TOUR_START: { [k in HelpPick]: number } = {
-  main: 0,
-  tabs: 2,
-  search: 3,
-  compile: 5,
-  books: 8,
-  vault: 6,
-};
 
 type Mode = "read" | "compile" | "vault";
 
@@ -680,11 +667,8 @@ export default function App() {
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
   const [showSearch, setShowSearch] = useState(false);
-  const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStart, setTourStart] = useState(0);
-  const [showFeatureList, setShowFeatureList] = useState(false);
-  const [showColorKey, setShowColorKey] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [compileAnim, setCompileAnim] = useState<{
@@ -878,21 +862,15 @@ export default function App() {
       before: () => setMode("read"),
       title: "Settings & more",
       body:
-        "Display options, your color key, study books, keyboard shortcuts, and these walkthroughs all live in this menu.",
+        "Display options, study books, keyboard shortcuts, and backups all live in this menu.",
     },
     {
       before: () => setMode("read"),
       title: "That's the tour",
       body:
-        "You can reopen any of this from More \u2192 Take the guided tour, or pick a single feature under Walkthroughs. Happy studying.",
+        "You can reopen the tour any time from More \u2192 Take the guided tour. Happy studying.",
     },
   ];
-
-  const pickHelp = (key: HelpPick) => {
-    setShowHelpMenu(false);
-    setTourStart(TOUR_START[key]);
-    setTourOpen(true);
-  };
 
   const [dark, setDark] = useState<boolean>(() => {
     const saved = localStorage.getItem("scribal_theme");
@@ -2779,19 +2757,6 @@ export default function App() {
         />
       )}
 
-      {showHelpMenu && (
-        <HelpMenu
-          onPick={pickHelp}
-          onFeatureList={() => {
-            setShowHelpMenu(false);
-            setShowFeatureList(true);
-          }}
-          onClose={() => setShowHelpMenu(false)}
-        />
-      )}
-      {showFeatureList && (
-        <DesktopFeatureGuide onClose={() => setShowFeatureList(false)} />
-      )}
       {tourOpen && (
         <SpotlightTour
           key={tourStart}
@@ -2802,14 +2767,6 @@ export default function App() {
             setTourOpen(false);
             setMode("read");
           }}
-        />
-      )}
-      {showColorKey && (
-        <ColorKey
-          colorLabels={activeScopedLabels}
-          marks={marks}
-          bookName={activeBookName}
-          onClose={() => setShowColorKey(false)}
         />
       )}
       {showShortcuts && <Shortcuts onClose={() => setShowShortcuts(false)} />}
@@ -4713,7 +4670,7 @@ export default function App() {
               <button
                 data-tour="more"
                 onClick={() => setBackupOpen((o) => !o)}
-                title="More — display, study books, color key, shortcuts, walkthroughs, back up"
+                title="More — display, study books, shortcuts, back up"
                 style={{
                   width: "40px",
                   height: "40px",
@@ -4816,36 +4773,6 @@ export default function App() {
                       }}
                     >
                       💡 See how it works
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setShowHelpMenu(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      ❔ Walkthroughs & features
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setShowColorKey(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      🎨 Color key
                     </div>
                     <div
                       onClick={() => {
