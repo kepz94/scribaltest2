@@ -306,18 +306,19 @@ export default function VerseViewer(props: VerseViewerProps) {
 
   useEffect(() => {
     if (!jumpTarget) return;
+    const target = jumpTarget;
     const tryScroll = () => {
       const el = document.querySelector(
-        '[data-verse-ref="' + jumpTarget.replace(/"/g, '\\"') + '"]'
+        '[data-verse-ref="' + target.replace(/"/g, '\\"') + '"]'
       );
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
-        setFlashRef(jumpTarget);
+        setFlashRef(target);
         setTimeout(() => setFlashRef(null), 1600);
       }
+      onJumpHandled();
     };
-    const id = setTimeout(tryScroll, 80);
-    onJumpHandled();
+    const id = setTimeout(tryScroll, 120);
     return () => clearTimeout(id);
   }, [jumpTarget, onJumpHandled]);
 
