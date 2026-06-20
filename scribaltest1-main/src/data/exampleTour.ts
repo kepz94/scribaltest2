@@ -1,9 +1,27 @@
 import type { TourStep } from "../components/SpotlightTour";
 
-// The spotlight that runs the first time the example reaches the compiled
-// screen: what just happened, and how to read and navigate the study. The
-// targets ("ex-formats", "ex-tryit") are present in both the mobile
-// (MobileCompile) and desktop (DesktopExample) compiled views.
+// Spotlight that runs on the example's marked reading screen (mobile): what this
+// screen is and how marking leads into compiling. "ex-compile" is the Compile
+// button on the example's reading screen.
+export const READING_TOUR: TourStep[] = [
+  {
+    title: "A marked chapter",
+    body:
+      "This is John 1 with marks already on it. In Scribal you read first, then mark the words that stand out \u2014 the colored text is what a reader marked, in their own colors.",
+  },
+  {
+    target: '[data-tour="ex-compile"]',
+    title: "Then compile",
+    body:
+      "Once a chapter is marked, Compile gathers the marks into a study. Here's what these become.",
+    placement: "top",
+  },
+];
+
+// Spotlight that runs the first time the example reaches the compiled screen:
+// what just happened, and how to read and navigate the study. The targets
+// ("ex-formats", "ex-tryit") exist in both the mobile (MobileCompile) and
+// desktop (DesktopExample) compiled views.
 export const EXAMPLE_TOUR: TourStep[] = [
   {
     title: "Your marks, compiled",
