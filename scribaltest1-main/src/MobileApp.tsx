@@ -5752,7 +5752,16 @@ export default function MobileApp() {
 
       {/* See how it works — read-only example (marked John 1 + live compile) */}
       {exampleOpen && (
-        <ExampleStudy C={C} dark={dark} onClose={() => setExampleOpen(false)} />
+        <ExampleStudy
+          C={C}
+          dark={dark}
+          onClose={() => setExampleOpen(false)}
+          onTryIt={() => {
+            setExampleOpen(false);
+            setLoc({ v: 1, b: 3, c: 0 });
+            setHomeOpen(false);
+          }}
+        />
       )}
 
       {/* Manage a mark (long-press) */}
