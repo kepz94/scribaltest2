@@ -34,6 +34,10 @@ interface Props {
   // When adding to an existing study, the link bar offers update-vs-new-copy.
   addToStudyName?: string;
   onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
+  // Adding loose verses to a recorded chapter/linked study: a single "add"
+  // button — the selection is the full new set (so it adds and removes).
+  addVersesName?: string;
+  onAddVerses?: (refs: string[]) => void;
 }
 
 const SCRIPTURE_CAP = 120;
@@ -131,6 +135,8 @@ export default function MobileSearch({
   confirmLabel,
   addToStudyName,
   onAddToStudy,
+  addVersesName,
+  onAddVerses,
 }: Props) {
   const [mode, setMode] = useState<"scripture" | "marks">("scripture");
   const [query, setQuery] = useState("");
@@ -490,7 +496,7 @@ export default function MobileSearch({
         </>
       )}
 
-      {linkMode && (onLinkConfirm || onAddToStudy) && (
+      {linkMode && (onLinkConfirm || onAddToStudy || onAddVerses) && (
         <>
           <div style={{ height: "84px" }} />
           <div
@@ -560,6 +566,25 @@ export default function MobileSearch({
                   New copy
                 </button>
               </>
+            ) : onAddVerses && addVersesName ? (
+              <button
+                onClick={() => picked.length && onAddVerses(picked)}
+                disabled={!picked.length}
+                style={{
+                  flexShrink: 0,
+                  background: picked.length ? C.text : C.soft,
+                  color: picked.length ? C.bg : C.muted,
+                  border: "none",
+                  borderRadius: "999px",
+                  padding: "10px 20px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: picked.length ? "pointer" : "default",
+                  fontFamily: "inherit",
+                }}
+              >
+                Add to study
+              </button>
             ) : (
               onLinkConfirm && (
                 <button
