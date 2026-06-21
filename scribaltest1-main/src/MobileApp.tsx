@@ -1582,6 +1582,19 @@ export default function MobileApp() {
     : null;
   const linkWithNext = () => {
     if (!nextLoc || !nextTitle) return;
+    // Warn if the next chapter is already part of another link group — linking
+    // here pulls it out of that group.
+    const destGid = chapterGroups[title];
+    const otherGid = chapterGroups[nextTitle];
+    if (otherGid && otherGid !== destGid) {
+      if (
+        !window.confirm(
+          displayOf(nextTitle) +
+            " is already linked to another study. Move it into this one?"
+        )
+      )
+        return;
+    }
     linkChapters(title, nextTitle);
     setLinkOpen(false);
     setLoc(nextLoc);
@@ -1606,6 +1619,19 @@ export default function MobileApp() {
     .filter((t) => t.name && t.name.trim());
   const confirmPick = () => {
     if (!targetScope || targetScope === title) return;
+    // Warn if the picked chapter is already part of another link group —
+    // linking here pulls it out of that group.
+    const destGid = chapterGroups[title];
+    const otherGid = chapterGroups[targetScope];
+    if (otherGid && otherGid !== destGid) {
+      if (
+        !window.confirm(
+          displayOf(targetScope) +
+            " is already linked to another study. Move it into this one?"
+        )
+      )
+        return;
+    }
     linkChapters(title, targetScope);
     setLinkOpen(false);
     // Take the user to the chapter they just picked (they expected to land
@@ -1635,6 +1661,19 @@ export default function MobileApp() {
   const confirmAddChapter = () => {
     if (!addChapterStudy || !targetScope || !addChapterAnchor) return;
     if (addChapterInStudy(targetScope)) return;
+    // Warn if this chapter already belongs to another link group — adding it
+    // here pulls it out of that group.
+    const destGid = chapterGroups[addChapterAnchor];
+    const otherGid = chapterGroups[targetScope];
+    if (otherGid && otherGid !== destGid) {
+      if (
+        !window.confirm(
+          displayOf(targetScope) +
+            " is already linked to another study. Move it into this one?"
+        )
+      )
+        return;
+    }
     const gid = linkChapters(addChapterAnchor, targetScope);
     if (addChapterStudy.type === "chapter" && gid) {
       const sid = addChapterStudy.id;
@@ -1657,18 +1696,13 @@ export default function MobileApp() {
           ? { ...s, deletedAt: now }
           : { ...s, type: "linked", scopeRef: gid, compiledAt: now };
       setStudies((prev) => prev.map(promote));
-      // Keep the open compile screen pointed at the now-linked study so it
-      // immediately shows the chapter that was just added.
-      setCompileRec((prev) =>
-        prev && prev.id === sid
-          ? existingLinked
-            ? existingLinked
-            : { ...prev, type: "linked", scopeRef: gid, compiledAt: now }
-          : prev
-      );
     }
-    flash("Added " + displayOf(targetScope));
+    // Send the user straight to the chapter they just added so they can mark
+    // it (mirrors the reading-view link, which also jumps to the chapter).
+    setCompileRec(null);
     setAddChapterStudy(null);
+    jumpToRef(targetScope);
+    flash("Added " + displayOf(targetScope));
   };
 
   // Add loose verses (from keyword search) to a recorded chapter/linked study.
