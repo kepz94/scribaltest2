@@ -9,6 +9,7 @@ import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
+import { NEUTRAL, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -180,12 +181,12 @@ const applyIntensityToTheme = (
 };
 
 const LIGHT_THEME = {
-  "--bg": "#f6f4ee",
-  "--panel": "#ffffff",
-  "--soft": "#efece4",
-  "--text": "#1d1c18",
-  "--muted": "#8d8a80",
-  "--border": "#e2dfd6",
+  "--bg": NEUTRAL.light.bg,
+  "--panel": NEUTRAL.light.panel,
+  "--soft": NEUTRAL.light.soft,
+  "--text": NEUTRAL.light.text,
+  "--muted": NEUTRAL.light.muted,
+  "--border": NEUTRAL.light.border,
   "--pen1": "#d11a2a",
   "--pen2": "#e07b1a",
   "--pen3": "#c9a200",
@@ -203,12 +204,12 @@ const LIGHT_THEME = {
 };
 
 const DARK_THEME = {
-  "--bg": "#131210",
-  "--panel": "#1d1c19",
-  "--soft": "#232220",
-  "--text": "#eae7de",
-  "--muted": "#8d8a82",
-  "--border": "#343229",
+  "--bg": NEUTRAL.dark.bg,
+  "--panel": NEUTRAL.dark.panel,
+  "--soft": NEUTRAL.dark.soft,
+  "--text": NEUTRAL.dark.text,
+  "--muted": NEUTRAL.dark.muted,
+  "--border": NEUTRAL.dark.border,
   "--pen1": "#ff7b72",
   "--pen2": "#f0a24b",
   "--pen3": "#e3c341",
@@ -322,7 +323,7 @@ type Mode = "read" | "compile" | "vault";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
 // color (we wrap these in a purple span in the header).
-const ICON_ACCENT = "#8b5cf6";
+const ICON_ACCENT = ACCENT;
 const IconSearch = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -3151,7 +3152,7 @@ export default function App() {
               if (!t) return null;
               const cs = chapterScopeOf(t);
               const gid = chapterGroups[cs];
-              const gColor = gid ? groupColor(gid) : "#8b5cf6";
+              const gColor = gid ? groupColor(gid) : ACCENT;
               const members = gid
                 ? Object.keys(chapterGroups)
                     .filter((s) => chapterGroups[s] === gid && s !== cs)
@@ -5885,7 +5886,7 @@ export default function App() {
             const active = t.id === activeTabId;
             const gid = chapterGroups[chapterScopeOf(t)];
             const linked = !t.studyId && !!gid;
-            const linkColor = gid ? groupColor(gid) : "#8b5cf6";
+            const linkColor = gid ? groupColor(gid) : ACCENT;
             return (
               <div
                 key={t.id}
@@ -5930,7 +5931,7 @@ export default function App() {
                       height="15"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke={active ? "#fff" : "#8b5cf6"}
+                      stroke={active ? "#fff" : ACCENT}
                       strokeWidth={2.4}
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -6010,7 +6011,7 @@ export default function App() {
               <span
                 style={{
                   display: "inline-flex",
-                  color: "#8b5cf6",
+                  color: ACCENT,
                   opacity: 0.75,
                 }}
               >
@@ -6054,7 +6055,7 @@ export default function App() {
                       fontSize: "11.5px",
                       padding: "2px 6px",
                       borderRadius: "6px",
-                      border: "1px solid #8b5cf6",
+                      border: "1px solid " + ACCENT,
                       boxShadow: "0 0 0 2px rgba(139,92,246,0.18)",
                       background: "var(--bg)",
                       color: "var(--text)",
