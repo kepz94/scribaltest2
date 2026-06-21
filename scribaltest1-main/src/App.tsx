@@ -1382,6 +1382,7 @@ export default function App() {
       stampGroupChanges(prev, next); // record the unlink so it syncs
       setChapterGroups(next);
       convertDissolvedStudies(survivors);
+      if (mode === "compile") reCompileFromLink(next, csT);
       return;
     }
     const all = [csT, ...members];
@@ -1422,6 +1423,7 @@ export default function App() {
     stampGroupChanges(prev, next); // record the link so it syncs
     setChapterGroups(next);
     convertDissolvedStudies(survivors);
+    if (mode === "compile") reCompileFromLink(next, csT);
   };
 
   // One-click unlink: drop this chapter from its group, dissolving any group
@@ -1616,6 +1618,85 @@ export default function App() {
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
     setCompileAnim({ show: true, duration });
+  };
+
+  // After changing a chapter's links from inside compile mode, reopen the
+  // resulting unit's chapters as tabs and recompile, so the notes reflect the
+  // new link set. `groups` is the just-computed map (state isn't updated yet).
+  const reCompileFromLink = (
+    groups: Record<string, string>,
+    member: string
+  ) => {
+    const gid = groups[member];
+    // Adding a chapter promotes a saved single-chapter study into the linked
+    // group (mirrors mobile's "+ Add chapter"): convert it in place, or retire
+    // it if a linked study for the group already exists — so you don't end up
+    // with a stale single-chapter study beside the new linked one.
+    if (gid) {
+      setRecordedStudies((prevS) => {
+        const linkedExists = prevS.some(
+          (s) =>
+            s.type === "linked" &&
+            s.bookId === activeBookId &&
+            s.scopeRef === gid &&
+            !isStudyDeleted(s)
+        );
+        let changed = false;
+        const out = prevS.map((s) => {
+          if (
+            s.type !== "chapter" ||
+            s.bookId !== activeBookId ||
+            s.scopeRef !== member ||
+            isStudyDeleted(s)
+          )
+            return s;
+          changed = true;
+          const now = Date.now();
+          if (linkedExists) {
+            const t: Study = { ...s, deletedAt: now };
+            return t;
+          }
+          const m: Study = {
+            ...s,
+            type: "linked",
+            scopeRef: gid,
+            compiledAt: now,
+          };
+          return m;
+        });
+        return changed ? out : prevS;
+      });
+    }
+    const scopes = gid
+      ? Object.keys(groups).filter((s) => groups[s] === gid)
+      : [member];
+    const locs = scopes
+      .map((sc) => chapterLoc.get(sc))
+      .filter(Boolean) as { volume: number; book: number; chapter: number }[];
+    if (!locs.length) return;
+    const tabIds = locs.map((loc) =>
+      makeTabId(activeBookId, loc.volume, loc.book, loc.chapter)
+    );
+    setTabs((prev) => {
+      let nx = prev;
+      locs.forEach((loc) => {
+        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+        if (!nx.some((t) => t.id === id))
+          nx = [
+            ...nx,
+            {
+              id,
+              volume: loc.volume,
+              book: loc.book,
+              chapter: loc.chapter,
+              bookId: activeBookId,
+            },
+          ];
+      });
+      return nx;
+    });
+    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    runCompile(tabIds);
   };
 
   const startCompile = () => {
@@ -6087,6 +6168,43 @@ export default function App() {
                 >
                   Saved ✓
                 </span>
+              )}
+              {compileStudyId == null && compileTabs.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (compileTabs[0]) openLinkPrompt(compileTabs[0]);
+                  }}
+                  title="Link another chapter into this study"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "7px",
+                    height: "40px",
+                    padding: "0 16px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Add chapter
+                </button>
               )}
               <div style={{ position: "relative", marginLeft: "auto" }}>
                 <button
