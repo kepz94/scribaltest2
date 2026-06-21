@@ -1852,7 +1852,64 @@ export default function App() {
   const studyRefSet = compileStudy
     ? new Set(compileStudy.refs as string[])
     : null;
-  const effectiveCompileTabs = compileStudy ? studyCompileTabs : compileTabs;
+  // For a recorded chapter/linked study, fold in any loose verses it has added
+  // (extraRefs) so their marks show alongside the chapter's — exactly like
+  // mobile. Find the recorded study matching what's being compiled to read its
+  // extras (the compile itself is driven by tabs, not a Study object).
+  const compiledRec =
+    !compileStudy && compileTabs.length
+      ? (() => {
+          const cs0 = chapterScopeOf(compileTabs[0]);
+          const gid = chapterGroups[cs0];
+          const isLinked =
+            !!gid &&
+            compileTabs.every((t) => chapterGroups[chapterScopeOf(t)] === gid);
+          const type: "chapter" | "linked" = isLinked ? "linked" : "chapter";
+          const scopeRef = isLinked ? gid : cs0;
+          return (
+            recordedStudies.find(
+              (s) =>
+                s.type === type &&
+                s.bookId === activeBookId &&
+                s.scopeRef === scopeRef
+            ) || null
+          );
+        })()
+      : null;
+  const compiledExtras =
+    compiledRec && compiledRec.extraRefs ? compiledRec.extraRefs : [];
+  // A tab for each extra verse's chapter (so the views can render it). The marks
+  // filter below keeps only the extra verses from those chapters, not the whole
+  // chapter — so an added verse from elsewhere doesn't drag its neighbours in.
+  const extraTabs: Tab[] = compiledExtras.length
+    ? (() => {
+        const have = new Set(compileTabs.map((t) => t.id));
+        const seen = new Set<string>();
+        const out: Tab[] = [];
+        compiledExtras.forEach((r) => {
+          const loc = refLoc.get(r);
+          if (!loc) return;
+          const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+          if (have.has(id) || seen.has(id)) return;
+          seen.add(id);
+          out.push({
+            id,
+            volume: loc.volume,
+            book: loc.book,
+            chapter: loc.chapter,
+            bookId: activeBookId,
+          });
+        });
+        return out;
+      })()
+    : [];
+  const studyScopeSet = compiledExtras.length
+    ? new Set(compileTabs.map((t) => chapterScopeOf(t)))
+    : null;
+  const extrasSet = compiledExtras.length ? new Set(compiledExtras) : null;
+  const effectiveCompileTabs = compileStudy
+    ? studyCompileTabs
+    : [...compileTabs, ...extraTabs];
   const effectiveScope = compileStudy
     ? "searchstudy:" + compileStudy.id
     : compileScope;
@@ -1861,6 +1918,12 @@ export default function App() {
     compileStudy && studyRefSet
       ? getBook(compileStudy.bookId).marks.filter((m) =>
           studyRefSet.has(m.reference)
+        )
+      : studyScopeSet && extrasSet
+      ? marks.filter(
+          (m) =>
+            studyScopeSet.has(scopeOfRef(m.reference)) ||
+            extrasSet.has(m.reference)
         )
       : marks;
 
