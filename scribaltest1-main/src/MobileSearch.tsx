@@ -50,8 +50,10 @@ const wordSource = (term: string) =>
 
 // A sequence of words matched as an exact phrase: in order, flexible spacing,
 // with whole-word boundaries at the ends (so "at" won't hit inside "format").
-const phraseSource = (words: string[]) =>
-  "\\b" + words.map(wordSource).join("\\s+") + "\\b";
+const phraseSource = (words: string[], wholeWord: boolean) => {
+  const core = words.map(wordSource).join("\\s+");
+  return wholeWord ? "\\b" + core + "\\b" : core;
+};
 
 // Parse a query into alternatives (OR) of AND-parts (&), where each part is an
 // exact phrase (words in order). "*" is a word-wildcard. Examples:
@@ -60,7 +62,8 @@ const phraseSource = (words: string[]) =>
 //   good works & faith -> the phrase "good works" AND the word "faith"
 //   mercy OR grace     -> either one
 function buildMatcher(
-  query: string
+  query: string,
+  wholeWord: boolean
 ): { test: (t: string) => boolean; terms: string[] } | null {
   const lower = query.trim().toLowerCase();
   if (!lower) return null;
@@ -78,7 +81,7 @@ function buildMatcher(
             .filter((t) => t.replace(/\*/g, "").length > 0)
         )
         .filter((words) => words.length > 0)
-        .map(phraseSource)
+        .map((words) => phraseSource(words, wholeWord))
     )
     .filter((parts) => parts.length > 0);
   if (!groups.length) return null;
@@ -143,6 +146,10 @@ export default function MobileSearch({
   const [debounced, setDebounced] = useState("");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
+  // Mobile search has always matched whole words. This toggle lets you turn
+  // that off to also match inside longer words; default on keeps results.
+  const [wholeWord, setWholeWord] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
   // Link-select: tick scripture results to bundle them into one study.
   const [linkMode, setLinkMode] = useState(!!startLinking);
   const [picked, setPicked] = useState<string[]>(() => initialPicked || []);
@@ -156,7 +163,10 @@ export default function MobileSearch({
     return () => clearTimeout(t);
   }, [query]);
 
-  const matcher = useMemo(() => buildMatcher(debounced), [debounced]);
+  const matcher = useMemo(
+    () => buildMatcher(debounced, wholeWord),
+    [debounced, wholeWord]
+  );
   const terms = matcher ? matcher.terms : [];
 
   const scriptureResults = useMemo(() => {
@@ -216,6 +226,13 @@ export default function MobileSearch({
     >
       {label}
     </button>
+  );
+
+  const legendRow = (label: string, desc: string) => (
+    <div style={{ marginBottom: "8px" }}>
+      <span style={{ fontWeight: 700 }}>{label}</span>
+      <span style={{ color: C.muted }}>{" — " + desc}</span>
+    </div>
   );
 
   const selStyle: React.CSSProperties = {
@@ -393,6 +410,96 @@ export default function MobileSearch({
                 </option>
               ))}
             </select>
+          )}
+        </div>
+      )}
+
+      {/* Whole-word toggle + Legend — the same controls the desktop search has,
+          so this menu is complete everywhere it appears, add-to-study included. */}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+        <button
+          onClick={() => setWholeWord((w) => !w)}
+          style={{
+            flex: 1,
+            padding: "10px",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            backgroundColor: wholeWord ? C.soft : "transparent",
+            color: wholeWord ? C.text : C.muted,
+            fontFamily: "inherit",
+            fontSize: "13px",
+            fontWeight: wholeWord ? 600 : 400,
+            cursor: "pointer",
+          }}
+        >
+          Whole words
+        </button>
+        <button
+          onClick={() => setShowLegend((s) => !s)}
+          style={{
+            flex: 1,
+            padding: "10px",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            backgroundColor: showLegend ? C.soft : "transparent",
+            color: showLegend ? C.text : C.muted,
+            fontFamily: "inherit",
+            fontSize: "13px",
+            fontWeight: showLegend ? 600 : 400,
+            cursor: "pointer",
+          }}
+        >
+          ? Legend
+        </button>
+      </div>
+      {showLegend && (
+        <div
+          style={{
+            padding: "12px 14px",
+            marginBottom: "14px",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            backgroundColor: C.soft,
+            fontSize: "12.5px",
+            color: C.text,
+            lineHeight: 1.5,
+          }}
+        >
+          <div
+            style={{
+              fontSize: "10px",
+              letterSpacing: "1.5px",
+              textTransform: "uppercase",
+              color: C.muted,
+              marginBottom: "8px",
+            }}
+          >
+            Search functions
+          </div>
+          {legendRow(
+            "Phrase",
+            "Plain words match as an exact phrase, in order — “charity never faileth”."
+          )}
+          {legendRow(
+            "faith & hope",
+            "Use & for AND: every part must appear somewhere in the verse."
+          )}
+          {legendRow("mercy OR grace", "Use OR to match either one.")}
+          {legendRow(
+            "merc*",
+            "Put * after a stem to match every word that starts with it → mercy, merciful, mercies."
+          )}
+          {legendRow(
+            "Whole words",
+            "On: match whole words only, so “love” won’t match “glove”. Off: also match inside longer words."
+          )}
+          {legendRow(
+            "Scripture / My marks",
+            "Search the full text, or only the passages you’ve marked."
+          )}
+          {legendRow(
+            "Volume / Book",
+            "Limit results to any volume, or a single book within it."
           )}
         </div>
       )}
