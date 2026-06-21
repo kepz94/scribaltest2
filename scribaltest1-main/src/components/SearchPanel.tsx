@@ -28,6 +28,10 @@ interface SearchPanelProps {
   initialSelected?: string[];
   addToStudyName?: string;
   onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
+  // When set, the panel is adding loose verses to a recorded chapter/linked
+  // study: its current extras come pre-selected, and the bar offers one button.
+  addVersesName?: string;
+  onAddVerses?: (refs: string[]) => void;
   onClose: () => void;
 }
 
@@ -67,6 +71,8 @@ export default function SearchPanel(props: SearchPanelProps) {
     onLinkStudy,
     addToStudyName,
     onAddToStudy,
+    addVersesName,
+    onAddVerses,
     onClose,
   } = props;
 
@@ -715,7 +721,8 @@ export default function SearchPanel(props: SearchPanelProps) {
                 ))}
               </div>
 
-              {(onLinkStudy || onAddToStudy) && selectedRefs.size > 0 && (
+              {(onLinkStudy || onAddToStudy || onAddVerses) &&
+                selectedRefs.size > 0 && (
                 <div
                   style={{
                     position: "sticky",
@@ -754,7 +761,28 @@ export default function SearchPanel(props: SearchPanelProps) {
                   >
                     Clear
                   </button>
-                  {onAddToStudy && addToStudyName ? (
+                  {onAddVerses && addVersesName ? (
+                    <button
+                      onClick={() => onAddVerses(Array.from(selectedRefs))}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: "none",
+                        background: "#0d9488",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Add to “
+                      {addVersesName.length > 16
+                        ? addVersesName.slice(0, 15) + "…"
+                        : addVersesName}
+                      ”
+                    </button>
+                  ) : onAddToStudy && addToStudyName ? (
                     <>
                       <button
                         onClick={() =>
@@ -866,7 +894,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                       marginBottom: "3px",
                     }}
                   >
-                    {(onLinkStudy || onAddToStudy) && (
+                    {(onLinkStudy || onAddToStudy || onAddVerses) && (
                       <input
                         type="checkbox"
                         checked={selectedRefs.has(r.reference)}
