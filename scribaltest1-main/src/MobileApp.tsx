@@ -1459,12 +1459,40 @@ export default function MobileApp() {
     const next = { ...chapterGroups };
     let gid: string;
     if (ga && gb) {
-      // merge b's study into a's
-      seedScopeLabels("group:" + ga, scopedLabels["group:" + gb] || {});
+      // Merge into the SMALLER group id, matching how the cross-device merge
+      // (mergeLinkGroups) reconciles — otherwise a merge done here could keep an
+      // id that sync later drops, orphaning the study.
+      const keep = ga < gb ? ga : gb;
+      const drop = ga < gb ? gb : ga;
+      seedScopeLabels("group:" + keep, scopedLabels["group:" + drop] || {});
       Object.keys(next).forEach((s) => {
-        if (next[s] === gb) next[s] = ga;
+        if (next[s] === drop) next[s] = keep;
       });
-      gid = ga;
+      gid = keep;
+      // The dropped group is gone — re-point its recorded linked study to the
+      // kept group (or retire it if the kept group already has one) so it isn't
+      // left orphaned.
+      const at = Date.now();
+      setStudies((prev) => {
+        let changed = false;
+        const out = prev.map((s) => {
+          if (s.type !== "linked" || s.scopeRef !== drop || isStudyDeleted(s))
+            return s;
+          const keepHas = prev.some(
+            (o) =>
+              o.id !== s.id &&
+              o.type === "linked" &&
+              o.bookId === s.bookId &&
+              o.scopeRef === keep &&
+              !isStudyDeleted(o)
+          );
+          changed = true;
+          return keepHas
+            ? { ...s, deletedAt: at }
+            : { ...s, scopeRef: keep, compiledAt: at };
+        });
+        return changed ? out : prev;
+      });
     } else if (ga && !gb) {
       seedScopeLabels("group:" + ga, scopedLabels[b] || {});
       next[b] = ga;
@@ -1616,14 +1644,34 @@ export default function MobileApp() {
     const gid = linkChapters(addChapterAnchor, targetScope);
     if (addChapterStudy.type === "chapter" && gid) {
       const sid = addChapterStudy.id;
+      const bid = addChapterStudy.bookId;
+      const now = Date.now();
+      // If a linked study for this group already exists, the chapter study is
+      // now redundant — retire it rather than creating a duplicate (matches
+      // desktop's "+ Add chapter").
+      const existingLinked = studies.find(
+        (s) =>
+          s.type === "linked" &&
+          s.bookId === bid &&
+          s.scopeRef === gid &&
+          !isStudyDeleted(s)
+      );
       const promote = (s: Study): Study =>
-        s.id === sid
-          ? { ...s, type: "linked", scopeRef: gid, compiledAt: Date.now() }
-          : s;
+        s.id !== sid
+          ? s
+          : existingLinked
+          ? { ...s, deletedAt: now }
+          : { ...s, type: "linked", scopeRef: gid, compiledAt: now };
       setStudies((prev) => prev.map(promote));
       // Keep the open compile screen pointed at the now-linked study so it
       // immediately shows the chapter that was just added.
-      setCompileRec((prev) => (prev && prev.id === sid ? promote(prev) : prev));
+      setCompileRec((prev) =>
+        prev && prev.id === sid
+          ? existingLinked
+            ? existingLinked
+            : { ...prev, type: "linked", scopeRef: gid, compiledAt: now }
+          : prev
+      );
     }
     flash("Added " + displayOf(targetScope));
     setAddChapterStudy(null);
