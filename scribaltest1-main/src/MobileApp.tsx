@@ -607,6 +607,9 @@ export default function MobileApp() {
   );
   // When set, the search panel is adding loose verses to this recorded study.
   const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
+  // After adding verses to a recorded study, land on a markable reading list of
+  // its verses (the added ones first) so they can be marked, then compiled.
+  const [markRec, setMarkRec] = useState<Study | null>(null);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
   const [pickC, setPickC] = useState(-1);
@@ -1575,14 +1578,18 @@ export default function MobileApp() {
         s.id === rid ? { ...s, extraRefs: ordered, compiledAt: Date.now() } : s
       )
     );
-    // Keep the open compile pointed at the updated study so the added verses
-    // show immediately.
+    // Reflect on the (still-open) compile underneath too, so closing the
+    // reading view shows the new verses.
     setCompileRec((prev) =>
       prev && prev.id === rid
         ? { ...prev, extraRefs: ordered, compiledAt: Date.now() }
         : prev
     );
-    flash("Verses updated");
+    // Land on the markable reading list (added verses first) so they can be
+    // marked, then compiled.
+    const rec = studies.find((s) => s.id === rid);
+    if (rec) setMarkRec({ ...rec, extraRefs: ordered });
+    flash(ordered.length ? "Added — mark, then compile" : "Verses updated");
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -6054,6 +6061,272 @@ export default function MobileApp() {
           }}
         />
       )}
+
+      {/* After adding verses to a chapter/linked study: a markable reading list
+          (the just-added verses first, then the study's chapter verses) with a
+          pen bar, so they can be marked, then compiled. */}
+      {markRec &&
+        (() => {
+          const rec = markRec;
+          const VI = verseByRef();
+          const recScopes = (
+            rec.type === "linked"
+              ? Object.keys(chapterGroups).filter(
+                  (c) => chapterGroups[c] === rec.scopeRef
+                )
+              : [rec.scopeRef]
+          )
+            .slice()
+            .sort(
+              (a, b) =>
+                (chapterLoc.get(a)?.order ?? 0) - (chapterLoc.get(b)?.order ?? 0)
+            );
+          const chapterRefs: string[] = [];
+          recScopes.forEach((scope) => {
+            const cl = chapterLoc.get(scope);
+            if (cl)
+              vols[cl.v].books[cl.b].chapters[cl.c].verses.forEach((v: any) =>
+                chapterRefs.push(v.reference)
+              );
+          });
+          const extras = rec.extraRefs || [];
+          const extraSet = new Set(extras);
+          const readRefs = [
+            ...extras,
+            ...chapterRefs.filter((r) => !extraSet.has(r)),
+          ];
+          const goCompile = () => {
+            setCompileStudy(null);
+            setCompileRec(rec);
+            setCompileOpen(true);
+            setMarkRec(null);
+          };
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 400,
+                backgroundColor: C.bg,
+                color: C.text,
+                display: "flex",
+                flexDirection: "column",
+                animation: "mob-fadein 0.18s ease",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                <button
+                  onClick={() => setMarkRec(null)}
+                  aria-label="Back"
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    background: "transparent",
+                    border: "none",
+                    color: C.text,
+                    fontSize: "22px",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "15px",
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {rec.name}
+                  </div>
+                  <div style={{ fontSize: "11.5px", color: C.muted }}>
+                    Mark your added verses, then compile
+                  </div>
+                </div>
+                <button
+                  onClick={goCompile}
+                  style={{
+                    flexShrink: 0,
+                    background: C.text,
+                    color: C.bg,
+                    border: "none",
+                    borderRadius: "999px",
+                    padding: "9px 16px",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Compile
+                </button>
+              </div>
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  padding: "16px 18px 0",
+                }}
+              >
+                {extras.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      color: "#0d9488",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Just added
+                  </div>
+                )}
+                <div
+                  style={{
+                    fontFamily: '"Times New Roman", Times, serif',
+                    fontSize: verseSize,
+                    lineHeight: reading.lineScale,
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                  }}
+                >
+                  {readRefs.map((ref, i) => {
+                    const vi = VI.get(ref);
+                    if (!vi) return null;
+                    const showStudyHeader =
+                      extras.length > 0 && i === extras.length;
+                    return (
+                      <div key={ref}>
+                        {showStudyHeader && (
+                          <div
+                            style={{
+                              fontFamily:
+                                "system-ui, -apple-system, sans-serif",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.06em",
+                              textTransform: "uppercase",
+                              color: C.muted,
+                              margin: "4px 0 10px",
+                            }}
+                          >
+                            Study verses
+                          </div>
+                        )}
+                        <div style={{ marginBottom: "16px" }}>
+                          <div
+                            style={{
+                              fontFamily:
+                                "system-ui, -apple-system, sans-serif",
+                              fontSize: "11px",
+                              color: C.muted,
+                              marginBottom: "3px",
+                            }}
+                          >
+                            {ref}
+                          </div>
+                          <MobileVerse
+                            reference={ref}
+                            verseNumber={vi.verse}
+                            text={vi.text}
+                            marks={marks}
+                            selBg={selBg}
+                            onTap={onTap}
+                            onRange={onRange}
+                            onManage={onManage}
+                            editMarkId={
+                              editMark && editMark.reference === ref
+                                ? editMark.id
+                                : null
+                            }
+                            editingActive={!!editMark}
+                            onEnterEdit={onEnterEdit}
+                            onAdjust={onAdjust}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ height: "24px" }} />
+              </div>
+              <div
+                style={{
+                  padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
+                  borderTop: "1px solid " + C.border,
+                  background: C.panel,
+                }}
+              >
+                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setPen((p) => ({ ...p, color: c }))}
+                      aria-label={"Color " + c}
+                      style={{
+                        flex: 1,
+                        height: "30px",
+                        borderRadius: "8px",
+                        background:
+                          pen.tool === "highlight"
+                            ? HIGHLIGHT_MAP[c]
+                            : COLOR_MAP[c],
+                        border:
+                          pen.color === c
+                            ? "2px solid " + C.text
+                            : "1px solid " + C.border,
+                        cursor: "pointer",
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {STYLE_LABELS.map((s) => {
+                    const on = pen.tool === s.tool;
+                    return (
+                      <button
+                        key={s.tool}
+                        onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
+                        aria-label={s.label}
+                        title={s.label}
+                        style={{
+                          flex: 1,
+                          height: "30px",
+                          borderRadius: "8px",
+                          border: "1px solid " + (on ? C.text : C.border),
+                          background: on ? C.text : "transparent",
+                          color: on ? C.bg : C.text,
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {s.label.charAt(0)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {compileOpen &&
         (() => {
           const byOrder = (a: string, b: string) =>
