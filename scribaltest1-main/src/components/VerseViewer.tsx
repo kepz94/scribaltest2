@@ -51,6 +51,15 @@ interface VerseViewerProps {
   sidebarOpen?: boolean;
   studyRefs?: string[];
   studyTitle?: string;
+  // Optional two-section split for studyRefs (used by the "mark added verses"
+  // screen): show the first `splitAfter` refs under splitLabels.first and the
+  // rest under splitLabels.second. Omitted by every other caller, which keeps
+  // the plain chapter-grouped rendering.
+  splitAfter?: number;
+  splitLabels?: { first: string; second: string };
+  // When the screen already shows the study's name in its own header (the
+  // "mark added verses" screen), suppress VerseViewer's built-in 📑 caption.
+  hideStudyHeader?: boolean;
   jumpTarget: string | null;
   onJumpHandled: () => void;
 }
@@ -110,6 +119,9 @@ export default function VerseViewer(props: VerseViewerProps) {
     sidebarOpen = false,
     studyRefs,
     studyTitle,
+    splitAfter,
+    splitLabels,
+    hideStudyHeader,
     jumpTarget,
     onJumpHandled,
     toolbarPos: pos,
@@ -522,59 +534,94 @@ export default function VerseViewer(props: VerseViewerProps) {
   );
 
   // Study tabs render their verses with a heading whenever the chapter
-  // changes, so cross-chapter sets stay readable.
-  const studyBody = (studyRefs || [])
-    .filter((r) => verseByRef.has(r))
-    .reduce<{ chapterTitle: string; refs: string[] }[]>((groups, r) => {
-      const ct = verseByRef.get(r)!.chapterTitle;
-      const last = groups[groups.length - 1];
-      if (last && last.chapterTitle === ct) last.refs.push(r);
-      else groups.push({ chapterTitle: ct, refs: [r] });
-      return groups;
-    }, [])
-    .map((g) => (
-      <div key={g.chapterTitle}>
-        <div
-          style={{
-            fontSize: "12px",
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-            color: "var(--muted)",
-            fontFamily: "system-ui, sans-serif",
-            margin: "18px 0 10px",
-          }}
-        >
-          {g.chapterTitle}
+  // changes, so cross-chapter sets stay readable. Factored into a helper so the
+  // "mark added verses" screen can render two labeled sections (added + study).
+  const renderRefGroups = (refs: string[], keyPrefix: string) =>
+    refs
+      .filter((r) => verseByRef.has(r))
+      .reduce<{ chapterTitle: string; refs: string[] }[]>((groups, r) => {
+        const ct = verseByRef.get(r)!.chapterTitle;
+        const last = groups[groups.length - 1];
+        if (last && last.chapterTitle === ct) last.refs.push(r);
+        else groups.push({ chapterTitle: ct, refs: [r] });
+        return groups;
+      }, [])
+      .map((g) => (
+        <div key={keyPrefix + g.chapterTitle}>
+          <div
+            style={{
+              fontSize: "12px",
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontFamily: "system-ui, sans-serif",
+              margin: "18px 0 10px",
+            }}
+          >
+            {g.chapterTitle}
+          </div>
+          {g.refs.map((r) => {
+            const info = verseByRef.get(r)!;
+            return (
+              <div
+                key={r}
+                style={{
+                  borderRadius: "6px",
+                  transition: "background-color 0.6s",
+                  backgroundColor:
+                    flashRef === r ? "var(--soft)" : "transparent",
+                  margin: "0 -8px",
+                  padding: "0 8px",
+                }}
+              >
+                <MarkedVerse
+                  reference={r}
+                  verseNumber={info.verse}
+                  text={info.text}
+                  marks={marks}
+                  onEraseMark={erasing ? onEraseMark : undefined}
+                  showConditionals={showConditionals}
+                  dark={dark}
+                />
+              </div>
+            );
+          })}
         </div>
-        {g.refs.map((r) => {
-          const info = verseByRef.get(r)!;
-          return (
-            <div
-              key={r}
-              style={{
-                borderRadius: "6px",
-                transition: "background-color 0.6s",
-                backgroundColor:
-                  flashRef === r ? "var(--soft)" : "transparent",
-                margin: "0 -8px",
-                padding: "0 8px",
-              }}
-            >
-              <MarkedVerse
-                reference={r}
-                verseNumber={info.verse}
-                text={info.text}
-                marks={marks}
-                onEraseMark={erasing ? onEraseMark : undefined}
-                showConditionals={showConditionals}
-                dark={dark}
-              />
-            </div>
-          );
-        })}
-      </div>
-    ));
+      ));
+
+  const sectionHeader = (text: string, color: string) => (
+    <div
+      style={{
+        fontSize: "12px",
+        fontWeight: 800,
+        letterSpacing: "0.07em",
+        textTransform: "uppercase",
+        color,
+        fontFamily: "system-ui, sans-serif",
+        margin: "10px 0 -6px",
+      }}
+    >
+      {text}
+    </div>
+  );
+
+  const allStudyRefs = (studyRefs || []).filter((r) => verseByRef.has(r));
+  const doSplit =
+    typeof splitAfter === "number" &&
+    splitAfter > 0 &&
+    splitAfter < allStudyRefs.length &&
+    !!splitLabels;
+  const studyBody = doSplit ? (
+    <>
+      {sectionHeader(splitLabels!.first, "#0d9488")}
+      {renderRefGroups(allStudyRefs.slice(0, splitAfter), "added:")}
+      {sectionHeader(splitLabels!.second, "var(--muted)")}
+      {renderRefGroups(allStudyRefs.slice(splitAfter), "study:")}
+    </>
+  ) : (
+    renderRefGroups(studyRefs || [], "")
+  );
 
   return (
     <div style={{ position: "relative" }}>
@@ -739,6 +786,7 @@ export default function VerseViewer(props: VerseViewerProps) {
         }}
       >
         {studyRefs ? (
+          hideStudyHeader ? null : (
           <div style={{ marginBottom: "18px", textAlign: "center" }}>
             <span
               style={{
@@ -751,6 +799,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               📑 {studyTitle || "Study"}
             </span>
           </div>
+          )
         ) : (
         <div
           style={{
