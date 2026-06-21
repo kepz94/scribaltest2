@@ -15,6 +15,15 @@ interface StudyBook {
   scopedLabels?: Record<string, Record<number, string>>;
   // One-time flag: have we seeded scopedLabels from the old book-level palette?
   scopedMigrated?: boolean;
+  // Relational (covenant) condition/promise role colors, per study scope —
+  // e.g. { "Alma 5": { at: 1700000000000, roles: { covenant: { a: 1, b: 2 } } } }.
+  // Kept on the book (not localStorage) so each study's pair syncs across
+  // devices, last-write-wins per scope via `at`. Same per-scope keying as
+  // scopedLabels.
+  scopedRoles?: Record<
+    string,
+    { at: number; roles: Record<string, { a: number; b: number }> }
+  >;
   createdAt: number;
   lastStudiedAt: number;
 }
@@ -75,6 +84,11 @@ type Action =
       type: "seedScopeLabels";
       scope: string;
       labels: Record<number, string>;
+    }
+  | {
+      type: "setScopedRoles";
+      scope: string;
+      roles: Record<string, { a: number; b: number }>;
     }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
@@ -237,6 +251,10 @@ function initState(): State {
         ),
           scopedLabels,
         scopedMigrated: true,
+        scopedRoles:
+          b.scopedRoles && typeof b.scopedRoles === "object"
+            ? b.scopedRoles
+            : {},
         createdAt: typeof b.createdAt === "number" ? b.createdAt : Date.now(),
         lastStudiedAt:
           typeof b.lastStudiedAt === "number"
@@ -668,6 +686,10 @@ function reducer(state: State, action: Action): State {
                 ? rb.scopedLabels
                 : migrateScopedLabels(cleanMarks, rColorLabels, undefined),
             scopedMigrated: true,
+            scopedRoles:
+              rb.scopedRoles && typeof rb.scopedRoles === "object"
+                ? rb.scopedRoles
+                : {},
             createdAt:
               typeof rb.createdAt === "number" ? rb.createdAt : Date.now(),
             lastStudiedAt:
@@ -752,12 +774,33 @@ function reducer(state: State, action: Action): State {
             }
           });
         });
+        // Merge relational roles — newest write per scope wins, so a change on
+        // either device propagates (names use fill-blanks; roles get replaced).
+        let scopedRoles = local.scopedRoles || {};
+        let rolesChanged = false;
+        const rRoles =
+          rb.scopedRoles && typeof rb.scopedRoles === "object"
+            ? rb.scopedRoles
+            : {};
+        Object.keys(rRoles).forEach((s) => {
+          const r = rRoles[s];
+          if (!r || typeof r.at !== "number") return;
+          const cur = scopedRoles[s];
+          if (!cur || r.at > (cur.at || 0)) {
+            if (!rolesChanged) {
+              scopedRoles = { ...scopedRoles };
+              rolesChanged = true;
+            }
+            scopedRoles[s] = r;
+          }
+        });
         if (
           marksChanged ||
           labelsChanged ||
           notesChanged ||
           tombChanged ||
-          scopedChanged
+          scopedChanged ||
+          rolesChanged
         ) {
           books[id] = {
             ...local,
@@ -766,6 +809,7 @@ function reducer(state: State, action: Action): State {
             notes,
             tombstones: mergedTomb,
             scopedLabels: scoped,
+            scopedRoles,
           };
           changed = true;
         }
@@ -842,6 +886,23 @@ function reducer(state: State, action: Action): State {
           [state.activeId]: {
             ...active,
             scopedLabels: { ...cur, [action.scope]: nextScope },
+          },
+        },
+      };
+    }
+
+    case "setScopedRoles": {
+      const cur = active.scopedRoles || {};
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [state.activeId]: {
+            ...active,
+            scopedRoles: {
+              ...cur,
+              [action.scope]: { at: Date.now(), roles: action.roles },
+            },
           },
         },
       };
@@ -962,6 +1023,11 @@ export function useMarks() {
       dispatch({ type: "seedScopeLabels", scope, labels }),
     []
   );
+  const setScopedRoles = useCallback(
+    (scope: string, roles: Record<string, { a: number; b: number }>) =>
+      dispatch({ type: "setScopedRoles", scope, roles }),
+    []
+  );
   const setNote = useCallback(
     (key: string, text: string) => dispatch({ type: "setNote", key, text }),
     []
@@ -1058,7 +1124,16 @@ export function useMarks() {
     setColorLabel,
     setScopedLabel,
     seedScopeLabels,
+    setScopedRoles,
     scopedLabels: active.scopedLabels || {},
+    scopedRoles: (() => {
+      const src = active.scopedRoles || {};
+      const out: Record<string, Record<string, { a: number; b: number }>> = {};
+      Object.keys(src).forEach((k) => {
+        out[k] = src[k].roles;
+      });
+      return out;
+    })(),
     setNote,
     books: state.order.map((id) => ({
       id,
