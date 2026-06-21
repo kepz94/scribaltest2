@@ -2108,7 +2108,6 @@ export default function App() {
     );
     if (ordered.length) {
       if (study.bookId !== activeBookId) setActiveBook(study.bookId);
-      jumpToReference(ordered[0]);
       setMarkVersesStudyId(rid);
     } else {
       setMarkVersesStudyId(null);
@@ -4036,83 +4035,173 @@ export default function App() {
         </div>
       )}
 
-      {mode === "read" &&
-        markVersesStudyId &&
+      {markVersesStudyId &&
         (() => {
           const st = recordedStudies.find((s) => s.id === markVersesStudyId);
           if (!st) return null;
+          // Same chapter ordering as openRecordedStudy, so a linked study reads
+          // in canonical order.
+          const scopeOrder = (s: string) => {
+            const l = chapterLoc.get(s);
+            return l ? l.volume * 1e6 + l.book * 1e3 + l.chapter : 1e12;
+          };
+          const scopes = (
+            st.type === "linked"
+              ? Object.keys(chapterGroups).filter(
+                  (c) => chapterGroups[c] === st.scopeRef
+                )
+              : [st.scopeRef]
+          )
+            .slice()
+            .sort((a, b) => scopeOrder(a) - scopeOrder(b));
+          const chapterRefs: string[] = [];
+          scopes.forEach((scope) => {
+            const cl = chapterLoc.get(scope);
+            if (cl)
+              vols[cl.volume].books[cl.book].chapters[
+                cl.chapter
+              ].verses.forEach((v: { reference: string }) =>
+                chapterRefs.push(v.reference)
+              );
+          });
+          const extras = st.extraRefs || [];
+          const extraSet = new Set(extras);
+          // Added verses first, then the chapter's own verses (deduped), so it's
+          // obvious which ones were just added and still need marking.
+          const readRefs = [
+            ...extras,
+            ...chapterRefs.filter((r) => !extraSet.has(r)),
+          ];
+          if (!readRefs.length) return null;
+          const firstLoc = refLoc.get(readRefs[0]) || {
+            volume: 0,
+            book: 0,
+            chapter: 0,
+          };
+          const goCompile = () => {
+            setMarkVersesStudyId(null);
+            openRecordedStudy(st);
+          };
           return (
             <div
+              className="scribal-fade"
               style={{
                 position: "fixed",
-                top: "16px",
-                left: "50%",
-                transform: "translateX(-50%)",
-                zIndex: 4000,
+                inset: 0,
+                zIndex: 1200,
+                background: "var(--bg)",
+                color: "var(--text)",
                 display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                maxWidth: "92vw",
-                background: "var(--panel)",
-                border: "1px solid var(--border)",
-                borderRadius: "12px",
-                padding: "10px 12px 10px 16px",
-                boxShadow: "0 10px 34px rgba(0,0,0,0.28)",
+                flexDirection: "column",
               }}
             >
-              <span
+              <div
                 style={{
-                  fontSize: "13.5px",
-                  color: "var(--text)",
-                  fontWeight: 600,
-                }}
-              >
-                Mark your added verses, then compile
-              </span>
-              <button
-                onClick={() => {
-                  const study = st;
-                  setMarkVersesStudyId(null);
-                  openRecordedStudy(study);
-                }}
-                style={{
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  gap: "6px",
-                  height: "34px",
-                  padding: "0 14px",
-                  borderRadius: "999px",
-                  border: "none",
-                  background: ICON_ACCENT,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  fontFamily: "inherit",
+                  gap: "12px",
+                  padding: "12px 18px",
+                  borderBottom: "1px solid var(--border)",
                   flexShrink: 0,
                 }}
               >
-                Compile{" "}
-                {st.name.length > 18 ? st.name.slice(0, 17) + "…" : st.name}
-              </button>
-              <button
-                onClick={() => setMarkVersesStudyId(null)}
-                aria-label="Dismiss"
+                <button
+                  onClick={() => setMarkVersesStudyId(null)}
+                  title="Back"
+                  style={{
+                    width: "34px",
+                    height: "34px",
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    borderRadius: "9px",
+                    color: "var(--text)",
+                    fontSize: "18px",
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "15px",
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {st.name}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                    Mark your added verses, then compile
+                  </div>
+                </div>
+                <button
+                  onClick={goCompile}
+                  style={{
+                    flexShrink: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    height: "36px",
+                    padding: "0 18px",
+                    borderRadius: "999px",
+                    border: "none",
+                    background: ICON_ACCENT,
+                    color: "#fff",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Compile
+                </button>
+              </div>
+              <div
                 style={{
-                  width: "30px",
-                  height: "30px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--border)",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  cursor: "pointer",
-                  fontSize: "15px",
-                  lineHeight: 1,
-                  flexShrink: 0,
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  padding: "4px 0 64px",
                 }}
               >
-                ✕
-              </button>
+                <VerseViewer
+                  key={"markverses_" + st.id}
+                  selectedVolume={firstLoc.volume}
+                  selectedBook={firstLoc.book}
+                  selectedChapter={firstLoc.chapter}
+                  onChange={() => {}}
+                  selectedTool={selectedTool}
+                  selectedColor={selectedColor}
+                  onChangeTool={setSelectedTool}
+                  onChangeColor={setSelectedColor}
+                  onMark={addMark}
+                  onEraseMark={deleteMark}
+                  onMarkMany={addMarks}
+                  marks={getBook(st.bookId).marks}
+                  showToolbar={true}
+                  toolbarPos={toolbarPos}
+                  onToolbarPos={setToolbarPos}
+                  toolbarOrient={toolbarOrient}
+                  onToolbarOrient={setToolbarOrient}
+                  panelMode={false}
+                  fontScale={reading.fontScale}
+                  lineScale={reading.lineScale}
+                  warm={reading.warm}
+                  dark={dark}
+                  sidebarOpen={false}
+                  studyRefs={readRefs}
+                  studyTitle={st.name}
+                  splitAfter={extras.length}
+                  splitLabels={{ first: "Just added", second: "Study verses" }}
+                  hideStudyHeader={true}
+                  jumpTarget={null}
+                  onJumpHandled={() => {}}
+                />
+              </div>
             </div>
           );
         })()}
