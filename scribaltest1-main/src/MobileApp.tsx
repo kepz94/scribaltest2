@@ -336,6 +336,10 @@ interface SearchStudy {
   // Delete tombstone — counts as deleted only while newest (>= updatedAt); a
   // later edit revives it. Carried in the record so the delete syncs.
   deletedAt?: number;
+  // Optional free-text overview shown atop the study on desktop (carried in by
+  // the ScriptureNotes importer). Mobile doesn't show or edit it, but stores and
+  // syncs it so it round-trips between devices without being lost or reverted.
+  note?: string;
 }
 
 // A recorded study (chapter or linked). Live: its marks are always the book's
@@ -826,7 +830,13 @@ export default function MobileApp() {
             const contentChanged = rAt > lAt;
             if (contentChanged || deletedAt !== (local.deletedAt || 0)) {
               const merged: SearchStudy = contentChanged
-                ? { ...local, name: rs.name, refs: rs.refs, updatedAt: rAt }
+                ? {
+                    ...local,
+                    name: rs.name,
+                    refs: rs.refs,
+                    note: rs.note ?? local.note,
+                    updatedAt: rAt,
+                  }
                 : { ...local };
               if (deletedAt) merged.deletedAt = deletedAt;
               byId.set(rs.id, merged);
