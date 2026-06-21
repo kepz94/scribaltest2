@@ -11,6 +11,7 @@ import {
 } from "./types";
 import MobileVerse from "./MobileVerse";
 import MobileCompile from "./MobileCompile";
+import { NEUTRAL, ACCENT } from "./theme";
 import ScribalMark from "./components/ScribalMark";
 import CompileAnimation from "./components/CompileAnimation";
 import ExampleStudy from "./components/ExampleStudy";
@@ -114,7 +115,7 @@ const M_TOUR: TourStep[] = [
     target: '[data-tour="m-studies"]',
     title: "Your studies",
     body:
-      "Compile your marks into four views — Outline, Charting, Distilled, and Relational — and every study you save lands here.",
+      "Compile your marks into three views — Outline, Distilled, and Relational — and every study you save lands here.",
   },
   {
     target: '[data-tour="m-search"]',
@@ -149,24 +150,7 @@ function applyBackupString(text: string) {
 
 const vols = scriptures.volumes;
 
-const PALETTE = {
-  light: {
-    bg: "#f6f4ee",
-    panel: "#ffffff",
-    soft: "#efece4",
-    text: "#1d1c18",
-    muted: "#8d8a80",
-    border: "#e2dfd6",
-  },
-  dark: {
-    bg: "#131210",
-    panel: "#1d1c19",
-    soft: "#232220",
-    text: "#eae7de",
-    muted: "#8d8a82",
-    border: "#343229",
-  },
-};
+const PALETTE = NEUTRAL;
 
 // The mark colors live as CSS variables (COLOR_MAP/HIGHLIGHT_MAP resolve to
 // var(--penN)/var(--hlN)). The desktop App sets these on its theme root; the
@@ -2390,7 +2374,7 @@ export default function MobileApp() {
         fontFamily: "inherit",
       }}
     >
-      <span style={{ color: "#8b5cf6", display: "inline-flex" }}>{icon}</span>
+      <span style={{ color: ACCENT, display: "inline-flex" }}>{icon}</span>
       <span style={{ flex: 1 }} />
       <span style={{ fontSize: "15px", fontWeight: 700, marginBottom: "3px" }}>
         {label}
@@ -2470,7 +2454,7 @@ export default function MobileApp() {
           style={{
             height: "100%",
             width: "0%",
-            backgroundColor: "#8b5cf6",
+            backgroundColor: ACCENT,
             transition: "width 0.08s linear",
           }}
         />
@@ -2677,7 +2661,7 @@ export default function MobileApp() {
               height="15"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#8b5cf6"
+              stroke={ACCENT}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -2690,7 +2674,7 @@ export default function MobileApp() {
               style={{
                 fontSize: "12px",
                 fontWeight: 700,
-                color: chapterGroups[title] ? "#8b5cf6" : C.text,
+                color: chapterGroups[title] ? ACCENT : C.text,
               }}
             >
               {chapterGroups[title] ? "Linked" : "Link"}
@@ -3208,7 +3192,7 @@ export default function MobileApp() {
                               setLinkOpen(false);
                             }}
                             style={{
-                              background: "#8b5cf6",
+                              background: ACCENT,
                               color: "#fff",
                               border: "none",
                               borderRadius: "8px",
@@ -3256,7 +3240,7 @@ export default function MobileApp() {
                 onClick={linkWithNext}
                 style={{
                   width: "100%",
-                  background: "#8b5cf6",
+                  background: ACCENT,
                   color: "#fff",
                   border: "none",
                   borderRadius: "10px",
@@ -3471,7 +3455,7 @@ export default function MobileApp() {
               disabled={!targetScope || targetScope === title}
               style={{
                 width: "100%",
-                background: "#8b5cf6",
+                background: ACCENT,
                 color: "#fff",
                 border: "none",
                 borderRadius: "10px",
@@ -3746,7 +3730,7 @@ export default function MobileApp() {
               disabled={!targetScope || addChapterInStudy(targetScope)}
               style={{
                 width: "100%",
-                background: "#8b5cf6",
+                background: ACCENT,
                 color: "#fff",
                 border: "none",
                 borderRadius: "10px",
@@ -3906,7 +3890,7 @@ export default function MobileApp() {
                 marginTop: "14px",
                 background: "transparent",
                 border: "none",
-                color: "#8b5cf6",
+                color: ACCENT,
                 fontSize: "13px",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -3928,7 +3912,7 @@ export default function MobileApp() {
               textAlign: "left",
               background: C.panel,
               border: "1px solid " + C.border,
-              borderLeft: "4px solid #8b5cf6",
+              borderLeft: "4px solid " + ACCENT,
               borderRadius: "16px",
               padding: "18px",
               marginBottom: "14px",
@@ -3959,7 +3943,7 @@ export default function MobileApp() {
                 {displayTitle}
               </span>
               <span
-                style={{ marginLeft: "auto", color: "#8b5cf6", fontSize: "22px" }}
+                style={{ marginLeft: "auto", color: ACCENT, fontSize: "22px" }}
               >
                 →
               </span>
@@ -5968,7 +5952,7 @@ export default function MobileApp() {
                     {chapterRecs.length > 0 &&
                       section(
                         "Chapter studies",
-                        "#8b5cf6",
+                        ACCENT,
                         chapterRecs.map((s) =>
                           row(
                             s.id,
@@ -5979,7 +5963,7 @@ export default function MobileApp() {
                               (bookLabel(s.bookId)
                                 ? " · " + bookLabel(s.bookId)
                                 : ""),
-                            "#8b5cf6",
+                            ACCENT,
                             () => openRecordedStudy(s),
                             () => {
                               if (
@@ -6009,7 +5993,7 @@ export default function MobileApp() {
                     {linkedRecs.length > 0 &&
                       section(
                         "Linked studies",
-                        "#8b5cf6",
+                        ACCENT,
                         linkedRecs.map((s) =>
                           row(
                             s.id,
@@ -6020,7 +6004,7 @@ export default function MobileApp() {
                               (bookLabel(s.bookId)
                                 ? " · " + bookLabel(s.bookId)
                                 : ""),
-                            "#8b5cf6",
+                            ACCENT,
                             () => openRecordedStudy(s),
                             () => {
                               if (
@@ -6030,7 +6014,7 @@ export default function MobileApp() {
                               )
                                 deleteStudy(s.id);
                             },
-                            <IconLink color="#8b5cf6" />,
+                            <IconLink color={ACCENT} />,
                             detail(
                               Object.keys(chapterGroups)
                                 .filter((c) => chapterGroups[c] === s.scopeRef)
@@ -7117,7 +7101,7 @@ export default function MobileApp() {
                                 countChapter(s) +
                                   " mark" +
                                   (countChapter(s) === 1 ? "" : "s"),
-                                "#8b5cf6",
+                                ACCENT,
                                 () =>
                                   openFromVault(() => openRecordedStudy(s))
                               )
@@ -7133,10 +7117,10 @@ export default function MobileApp() {
                                 countLinked(s) +
                                   " mark" +
                                   (countLinked(s) === 1 ? "" : "s"),
-                                "#8b5cf6",
+                                ACCENT,
                                 () =>
                                   openFromVault(() => openRecordedStudy(s)),
-                                <IconLink color="#8b5cf6" />
+                                <IconLink color={ACCENT} />
                               )
                             )
                           )}
@@ -7418,7 +7402,7 @@ function JumpPanel({
   // Drill-down: Standard works -> books -> chapters (sections for D&C) -> jump.
   const [vi, setVi] = useState<number | null>(null);
   const [bi, setBi] = useState<number | null>(null);
-  const accent = "#8b5cf6";
+  const accent = ACCENT;
 
   const rowBtn: React.CSSProperties = {
     display: "flex",
