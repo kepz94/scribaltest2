@@ -187,6 +187,9 @@ export function useStudies() {
             name,
             nameAt,
             compiledAt,
+            // Adopt the view from whichever device saved most recently (matching
+            // type/scope), so a study's tab choice stays in sync too.
+            view: remoteNewer && r.view ? r.view : local.view,
           };
           if (extraRefs && extraRefs.length) merged.extraRefs = extraRefs;
           else delete merged.extraRefs;
