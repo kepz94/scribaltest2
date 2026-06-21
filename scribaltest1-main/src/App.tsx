@@ -671,6 +671,14 @@ export default function App() {
   // When set, the search panel is in "add verses to this keyword study" mode:
   // the study's verses are pre-selected and the link bar offers update-vs-copy.
   const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
+  // When set, the search panel is adding loose verses to this recorded
+  // chapter/linked study (writing its extraRefs).
+  const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
+  // After adding verses to a recorded study, a banner offers to compile it once
+  // the added verses are marked.
+  const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
+    null
+  );
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStart, setTourStart] = useState(0);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -2045,6 +2053,34 @@ export default function App() {
     }
   };
 
+  // Add loose verses to a recorded chapter/linked study (its extraRefs), then
+  // jump to the first added verse in read mode so they can be marked. A banner
+  // (rendered below) offers to compile the study once they're marked.
+  const handleAddVersesToRec = (refs: string[]) => {
+    const rid = addVersesRecId;
+    setAddVersesRecId(null);
+    setShowSearch(false);
+    if (!rid) return;
+    const study = recordedStudies.find((s) => s.id === rid);
+    if (!study) return;
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const at = Date.now();
+    setRecordedStudies((prev) =>
+      prev.map((s) =>
+        s.id === rid
+          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          : s
+      )
+    );
+    if (ordered.length) {
+      if (study.bookId !== activeBookId) setActiveBook(study.bookId);
+      jumpToReference(ordered[0]);
+      setMarkVersesStudyId(rid);
+    } else {
+      setMarkVersesStudyId(null);
+    }
+  };
+
   // ---- ScriptureNotes import: PDF report (or pasted text) -> a Search Study ----
   const openSnImport = () => {
     setSnParsed(null);
@@ -3020,6 +3056,9 @@ export default function App() {
           initialSelected={
             addToStudyId
               ? searchStudies.find((s) => s.id === addToStudyId)?.refs
+              : addVersesRecId
+              ? recordedStudies.find((s) => s.id === addVersesRecId)
+                  ?.extraRefs || []
               : undefined
           }
           addToStudyName={
@@ -3028,6 +3067,12 @@ export default function App() {
               : undefined
           }
           onAddToStudy={handleAddToStudy}
+          addVersesName={
+            addVersesRecId
+              ? recordedStudies.find((s) => s.id === addVersesRecId)?.name
+              : undefined
+          }
+          onAddVerses={handleAddVersesToRec}
           onOpenNewTab={(ref) => {
             openInNewTab(ref);
             setShowSearch(false);
@@ -3035,6 +3080,7 @@ export default function App() {
           onClose={() => {
             setShowSearch(false);
             setAddToStudyId(null);
+            setAddVersesRecId(null);
           }}
         />
       )}
@@ -3955,6 +4001,87 @@ export default function App() {
           {shareMsg}
         </div>
       )}
+
+      {mode === "read" &&
+        markVersesStudyId &&
+        (() => {
+          const st = recordedStudies.find((s) => s.id === markVersesStudyId);
+          if (!st) return null;
+          return (
+            <div
+              style={{
+                position: "fixed",
+                top: "16px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 4000,
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                maxWidth: "92vw",
+                background: "var(--panel)",
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px 10px 16px",
+                boxShadow: "0 10px 34px rgba(0,0,0,0.28)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "13.5px",
+                  color: "var(--text)",
+                  fontWeight: 600,
+                }}
+              >
+                Mark your added verses, then compile
+              </span>
+              <button
+                onClick={() => {
+                  const study = st;
+                  setMarkVersesStudyId(null);
+                  openRecordedStudy(study);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "34px",
+                  padding: "0 14px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background: ICON_ACCENT,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                  flexShrink: 0,
+                }}
+              >
+                Compile{" "}
+                {st.name.length > 18 ? st.name.slice(0, 17) + "…" : st.name}
+              </button>
+              <button
+                onClick={() => setMarkVersesStudyId(null)}
+                aria-label="Dismiss"
+                style={{
+                  width: "30px",
+                  height: "30px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "15px",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })()}
 
       {studiesOpen && (
         <StudiesList
@@ -6267,6 +6394,45 @@ export default function App() {
                     <path d="M12 5v14M5 12h14" />
                   </svg>
                   Add chapter
+                </button>
+              )}
+              {compiledRec && (
+                <button
+                  onClick={() => {
+                    setAddVersesRecId(compiledRec.id);
+                    setShowSearch(true);
+                  }}
+                  title="Search and add loose verses to this study"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "7px",
+                    height: "40px",
+                    padding: "0 16px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.3-4.3" />
+                  </svg>
+                  Add verses
                 </button>
               )}
               <div style={{ position: "relative", marginLeft: "auto" }}>
