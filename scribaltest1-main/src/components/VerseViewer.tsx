@@ -671,23 +671,6 @@ export default function VerseViewer(props: VerseViewerProps) {
           "p"
         )}
         {divider}
-        {toolButton("bold", <b>B</b>, "b")}
-        {toolButton(
-          "circle",
-          <span
-            style={{
-              border: "1.5px solid currentColor",
-              borderRadius: "999px",
-              padding: "0 5px",
-              fontSize: "12px",
-            }}
-          >
-            C
-          </span>,
-          "c"
-        )}
-        {toolButton("underline", <u>U</u>, "u")}
-        {toolButton("italic", <i>I</i>, "i")}
         {toolButton(
           "highlight",
           <span
@@ -701,6 +684,23 @@ export default function VerseViewer(props: VerseViewerProps) {
             H
           </span>,
           "h"
+        )}
+        {toolButton("underline", <u>U</u>, "u")}
+        {toolButton("bold", <b>B</b>, "b")}
+        {toolButton("italic", <i>I</i>, "i")}
+        {toolButton(
+          "circle",
+          <span
+            style={{
+              border: "1.5px solid currentColor",
+              borderRadius: "999px",
+              padding: "0 5px",
+              fontSize: "12px",
+            }}
+          >
+            C
+          </span>,
+          "c"
         )}
         {divider}
         <div
