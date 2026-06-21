@@ -10,6 +10,11 @@ export interface Study {
   bookId: string;
   name: string;
   scopeRef: string; // chapter scope ("Genesis 1") for chapter; link-group id for linked
+  // Loose verses added to this study by keyword search, beyond its chapter(s).
+  // Their marks fold into the compile alongside the chapter's marks. Synced
+  // last-write via extraRefsAt, exactly like a keyword study's refs/updatedAt.
+  extraRefs?: string[];
+  extraRefsAt?: number;
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync: on merge, the name from whichever device edited it most recently wins.
@@ -98,11 +103,14 @@ export function useStudies() {
 
   // Merge a remote studies snapshot (from another device's backup) into ours.
   //  - A study we've never seen (new id) is added.
-  //  - A study we both have: its NAME is taken from whichever device set the name
-  //    most recently (nameAt), and compiledAt advances to the latest of the two.
-  //    Nothing else about a local study is replaced.
-  // This gives true two-way rename sync while making it impossible for a plain
-  // re-compile (which never moves nameAt) to overwrite a rename.
+  //  - A study we both have: NAME from whichever device set it most recently
+  //    (nameAt); compiledAt + deletedAt advance to the latest of the two.
+  //  - Shape changes propagate: adding a chapter promotes a chapter study into a
+  //    linked study (new type + scopeRef, newer compiledAt), so the newer side's
+  //    type + scope are adopted. Loose added verses (extraRefs) sync last-write
+  //    via extraRefsAt, just like a keyword study's refs.
+  // A plain re-compile never moves nameAt/extraRefsAt, so it can't overwrite a
+  // rename or a verse-set edit.
   const mergeRemote = (raw: string | null | undefined) => {
     if (!raw) return;
     let remote: Study[];
@@ -130,13 +138,50 @@ export function useStudies() {
         const nameAt = Math.max(lNameAt, rNameAt);
         const compiledAt = Math.max(local.compiledAt || 0, r.compiledAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
+        // Adopt the remote's type + scope when it re-compiled more recently, so
+        // a chapter→linked promotion on the other device reaches this one.
+        const remoteNewer = (r.compiledAt || 0) > (local.compiledAt || 0);
+        const type = remoteNewer && r.type ? r.type : local.type;
+        const scopeRef =
+          remoteNewer && r.scopeRef ? r.scopeRef : local.scopeRef;
+        // Loose added verses: the most-recently-edited set wins (add AND remove
+        // propagate). Legacy records with no timestamp fall back to a union, so
+        // an older add is never lost until the set is re-edited.
+        const lExtraAt = local.extraRefsAt || 0;
+        const rExtraAt = r.extraRefsAt || 0;
+        const extraRefsAt = Math.max(lExtraAt, rExtraAt);
+        let extraRefs: string[] | undefined = local.extraRefs;
+        if (rExtraAt > lExtraAt) extraRefs = r.extraRefs;
+        else if (lExtraAt > rExtraAt) extraRefs = local.extraRefs;
+        else if (lExtraAt === 0 && rExtraAt === 0) {
+          const u = Array.from(
+            new Set([...(local.extraRefs || []), ...(r.extraRefs || [])])
+          );
+          extraRefs = u.length ? u : undefined;
+        }
+        const extraChanged =
+          (extraRefs || []).join("|") !== (local.extraRefs || []).join("|") ||
+          extraRefsAt !== (local.extraRefsAt || 0);
         if (
           name !== local.name ||
           nameAt !== (local.nameAt || 0) ||
           compiledAt !== (local.compiledAt || 0) ||
-          deletedAt !== (local.deletedAt || 0)
+          deletedAt !== (local.deletedAt || 0) ||
+          type !== local.type ||
+          scopeRef !== local.scopeRef ||
+          extraChanged
         ) {
-          const merged: Study = { ...local, name, nameAt, compiledAt };
+          const merged: Study = {
+            ...local,
+            type,
+            scopeRef,
+            name,
+            nameAt,
+            compiledAt,
+          };
+          if (extraRefs && extraRefs.length) merged.extraRefs = extraRefs;
+          else delete merged.extraRefs;
+          if (extraRefsAt) merged.extraRefsAt = extraRefsAt;
           if (deletedAt) merged.deletedAt = deletedAt;
           byId.set(r.id, merged);
           changed = true;
