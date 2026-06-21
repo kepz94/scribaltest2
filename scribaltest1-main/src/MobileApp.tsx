@@ -783,6 +783,9 @@ export default function MobileApp() {
                 name,
                 nameAt,
                 compiledAt,
+                // Adopt the view from whichever device saved most recently
+                // (matching type/scope), so the tab choice stays in sync too.
+                view: remoteNewer && rs.view ? rs.view : local.view,
               };
               if (extraRefs && extraRefs.length) merged.extraRefs = extraRefs;
               else delete merged.extraRefs;
