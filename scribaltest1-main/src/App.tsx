@@ -1431,6 +1431,40 @@ export default function App() {
     stampGroupChanges(prev, next); // record the link so it syncs
     setChapterGroups(next);
     convertDissolvedStudies(survivors);
+    // Any other existing group whose chapters all merged into `gid` is absorbed;
+    // re-point its recorded linked study to `gid` (or retire it if `gid` already
+    // has one) so it isn't orphaned.
+    const liveGids = new Set(Object.values(next));
+    const absorbed = existingGids.filter(
+      (g) => g !== gid && !liveGids.has(g) && !survivors[g]
+    );
+    if (absorbed.length) {
+      const at = Date.now();
+      setRecordedStudies((prevS) => {
+        let changed = false;
+        const out = prevS.map((s) => {
+          if (
+            s.type !== "linked" ||
+            !absorbed.includes(s.scopeRef) ||
+            isStudyDeleted(s)
+          )
+            return s;
+          const keepHas = prevS.some(
+            (o) =>
+              o.id !== s.id &&
+              o.type === "linked" &&
+              o.bookId === s.bookId &&
+              o.scopeRef === gid &&
+              !isStudyDeleted(o)
+          );
+          changed = true;
+          return keepHas
+            ? { ...s, deletedAt: at }
+            : { ...s, scopeRef: gid, compiledAt: at };
+        });
+        return changed ? out : prevS;
+      });
+    }
     if (mode === "compile") reCompileFromLink(next, csT);
   };
 
