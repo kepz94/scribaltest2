@@ -20,7 +20,7 @@ import {
   verseTextOf,
   ParsedImport,
 } from "./scriptureNotesImport";
-import { useStudies, Study } from "./hooks/useStudies";
+import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 import Shortcuts from "./components/Shortcuts";
@@ -1314,6 +1314,50 @@ export default function App() {
       return Array.from(set);
     });
 
+  // When a link change leaves a group with a single chapter, that group
+  // dissolves and its recorded "linked" study would point at nothing. Convert
+  // that study back to a single-chapter study for the chapter that remains, or
+  // retire it if a chapter study for that chapter already exists. `survivors`
+  // maps each dissolved group id to its lone remaining chapter scope.
+  const convertDissolvedStudies = (survivors: Record<string, string>) => {
+    if (!Object.keys(survivors).length) return;
+    setRecordedStudies((prev) => {
+      let changed = false;
+      const out = prev.map((s) => {
+        if (s.type !== "linked" || !(s.scopeRef in survivors)) return s;
+        const survivor = survivors[s.scopeRef];
+        if (!survivor) return s;
+        const now = Date.now();
+        const dupe = prev.some(
+          (o) =>
+            o.id !== s.id &&
+            o.type === "chapter" &&
+            o.bookId === s.bookId &&
+            o.scopeRef === survivor &&
+            !isStudyDeleted(o)
+        );
+        changed = true;
+        if (dupe) {
+          const t: Study = { ...s, deletedAt: now };
+          return t;
+        }
+        // The auto linked name joins chapters with "  +  "; if the user gave it a
+        // real name (no separator) keep it, otherwise name it for the chapter.
+        const keepName = !!s.name && s.name.indexOf("  +  ") < 0;
+        const m: Study = {
+          ...s,
+          type: "chapter",
+          scopeRef: survivor,
+          name: keepName ? s.name : survivor,
+          nameAt: keepName ? s.nameAt : now,
+          compiledAt: now,
+        };
+        return m;
+      });
+      return changed ? out : prev;
+    });
+  };
+
   // Apply the prompt: the clicked tab is linked with exactly the checked tabs.
   // Checking none unlinks it. Any old groups left with one chapter dissolve.
   const applyLinkPrompt = () => {
@@ -1328,11 +1372,16 @@ export default function App() {
       delete next[csT];
       const counts: Record<string, number> = {};
       Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+      const survivors: Record<string, string> = {};
+      Object.keys(next).forEach((s) => {
+        if (counts[next[s]] < 2) survivors[next[s]] = s;
+      });
       Object.keys(next).forEach((s) => {
         if (counts[next[s]] < 2) delete next[s];
       });
       stampGroupChanges(prev, next); // record the unlink so it syncs
       setChapterGroups(next);
+      convertDissolvedStudies(survivors);
       return;
     }
     const all = [csT, ...members];
@@ -1363,11 +1412,16 @@ export default function App() {
     });
     const counts: Record<string, number> = {};
     Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    const survivors: Record<string, string> = {};
+    Object.keys(next).forEach((s) => {
+      if (next[s] !== gid && counts[next[s]] < 2) survivors[next[s]] = s;
+    });
     Object.keys(next).forEach((s) => {
       if (next[s] !== gid && counts[next[s]] < 2) delete next[s];
     });
     stampGroupChanges(prev, next); // record the link so it syncs
     setChapterGroups(next);
+    convertDissolvedStudies(survivors);
   };
 
   // One-click unlink: drop this chapter from its group, dissolving any group
@@ -1378,11 +1432,16 @@ export default function App() {
     delete next[cs];
     const counts: Record<string, number> = {};
     Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    const survivors: Record<string, string> = {};
+    Object.keys(next).forEach((s) => {
+      if (counts[next[s]] < 2) survivors[next[s]] = s;
+    });
     Object.keys(next).forEach((s) => {
       if (counts[next[s]] < 2) delete next[s];
     });
     stampGroupChanges(prev, next); // record the unlink so it syncs
     setChapterGroups(next);
+    convertDissolvedStudies(survivors);
   };
 
   const locateReference = (reference: string) => {
