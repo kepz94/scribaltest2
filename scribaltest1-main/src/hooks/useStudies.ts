@@ -15,6 +15,10 @@ export interface Study {
   // last-write via extraRefsAt, exactly like a keyword study's refs/updatedAt.
   extraRefs?: string[];
   extraRefsAt?: number;
+  // The compile view this study was last saved in (Outline / Distilled /
+  // Relational / Charting), so reopening it lands on the same tab instead of
+  // resetting to Outline. Optional; studies without it open on Outline.
+  view?: "outline" | "charting" | "distilled" | "covenants";
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync: on merge, the name from whichever device edited it most recently wins.
@@ -58,7 +62,8 @@ export function useStudies() {
     type: "chapter" | "linked",
     bookId: string,
     scopeRef: string,
-    name: string
+    name: string,
+    view?: "outline" | "charting" | "distilled" | "covenants"
   ) => {
     setStudies((prev) => {
       const now = Date.now();
@@ -76,6 +81,9 @@ export function useStudies() {
           // re-compile never makes a stale/default name "win" a rename sync.
           nameAt: nameChanged ? now : cur.nameAt || cur.compiledAt || now,
           compiledAt: now,
+          // Remember the view it was saved in; keep the existing one when the
+          // caller doesn't pass a view (e.g. a background re-compile).
+          view: view !== undefined ? view : cur.view,
         };
         return next;
       }
@@ -88,6 +96,7 @@ export function useStudies() {
           scopeRef,
           compiledAt: now,
           nameAt: now,
+          view,
         },
         ...prev,
       ];
