@@ -428,6 +428,8 @@ export default function App() {
     scopedLabels,
     setScopedLabel,
     seedScopeLabels,
+    scopedRoles,
+    setScopedRoles,
     notes,
     setNote,
     books,
@@ -6750,7 +6752,8 @@ export default function App() {
               <Covenants
                 key={effectiveScope}
                 {...sharedCompileProps}
-                scope={effectiveScope}
+                savedRoles={scopedRoles[effectiveScope]}
+                onRoles={(r) => setScopedRoles(effectiveScope, r)}
               />
             )}
           </div>
