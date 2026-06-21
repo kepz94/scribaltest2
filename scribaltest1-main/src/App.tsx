@@ -1375,6 +1375,7 @@ export default function App() {
     setLinkPromptTabId(null);
     if (!t) return;
     const csT = chapterScopeOf(t);
+    const doApply = () => {
     if (members.length === 0) {
       const prev = chapterGroups;
       const next = { ...prev };
@@ -1466,7 +1467,64 @@ export default function App() {
         return changed ? out : prevS;
       });
     }
-    if (mode === "compile") reCompileFromLink(next, csT);
+    const csTG = chapterGroups[csT];
+    const newlyAdded = members.filter(
+      (m) => !csTG || chapterGroups[m] !== csTG
+    );
+    if (mode === "compile") {
+      if (newlyAdded.length) {
+        // Send the user straight to the chapter they just added so they can
+        // mark it (mirrors mobile's "Add a chapter", which jumps to it).
+        const target = newlyAdded[0];
+        const loc = chapterLoc.get(target);
+        if (loc) {
+          const tid = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+          setTabs((prev) =>
+            prev.some((t2) => t2.id === tid)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    id: tid,
+                    volume: loc.volume,
+                    book: loc.book,
+                    chapter: loc.chapter,
+                    bookId: activeBookId,
+                  },
+                ]
+          );
+          setActiveTabId(tid);
+          setMode("read");
+          setJumpTarget(target + ":1");
+        } else {
+          reCompileFromLink(next, csT);
+        }
+      } else {
+        reCompileFromLink(next, csT);
+      }
+    }
+    };
+    // Warn if any chapter being linked is already in a different group, then
+    // apply once confirmed.
+    const csTG0 = chapterGroups[csT];
+    const conflicting = members.filter(
+      (m) => chapterGroups[m] && chapterGroups[m] !== csTG0
+    );
+    if (conflicting.length) {
+      askConfirm({
+        title: "Already linked elsewhere",
+        body:
+          conflicting.join(", ") +
+          (conflicting.length > 1 ? " are" : " is") +
+          " already linked to another study. Linking here will move " +
+          (conflicting.length > 1 ? "them" : "it") +
+          " into this study.",
+        confirmLabel: "Link anyway",
+        onConfirm: doApply,
+      });
+      return;
+    }
+    doApply();
   };
 
   // One-click unlink: drop this chapter from its group, dissolving any group
