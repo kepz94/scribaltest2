@@ -29,6 +29,10 @@ interface Props {
   // The view to open in — a saved study reopens on the tab it was saved in.
   // Absent → Outline.
   initialFormat?: "outline" | "distilled" | "covenants";
+  // This study's saved relational condition/promise roles (synced) + a setter
+  // to persist changes. Forwarded straight to the Relational (Covenants) view.
+  relSavedRoles?: Record<string, { a: number; b: number }>;
+  onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -102,6 +106,8 @@ export default function MobileCompile({
   setNote,
   onSave,
   initialFormat,
+  relSavedRoles,
+  onRelRoles,
   defaultName,
   onClose,
   dark,
@@ -770,7 +776,13 @@ export default function MobileCompile({
       >
         {format === "distilled" && <Distilled {...sharedViewProps} />}
         {format === "covenants" && (
-          <Covenants {...sharedViewProps} shareSignal={covShareSignal} />
+          <Covenants
+            key={scope}
+            {...sharedViewProps}
+            savedRoles={relSavedRoles}
+            onRoles={onRelRoles}
+            shareSignal={covShareSignal}
+          />
         )}
         {format === "outline" && liveMarks.length === 0 && (
           <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
