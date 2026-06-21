@@ -25,7 +25,10 @@ interface Props {
   onJump: (ref: string) => void;
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
-  onSave: (name: string) => void;
+  onSave: (name: string, view: "outline" | "distilled" | "covenants") => void;
+  // The view to open in — a saved study reopens on the tab it was saved in.
+  // Absent → Outline.
+  initialFormat?: "outline" | "distilled" | "covenants";
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -98,6 +101,7 @@ export default function MobileCompile({
   notes,
   setNote,
   onSave,
+  initialFormat,
   defaultName,
   onClose,
   dark,
@@ -125,7 +129,7 @@ export default function MobileCompile({
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
   // Distilled and Covenants are their own formats, each its own view.
   const [format, setFormat] = useState<"outline" | "distilled" | "covenants">(
-    "outline"
+    initialFormat || "outline"
   );
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
@@ -642,7 +646,7 @@ export default function MobileCompile({
               </button>
             )}
             <button
-              onClick={() => onSave(studyName.trim() || defaultName)}
+              onClick={() => onSave(studyName.trim() || defaultName, format)}
               style={{
                 flex: 1,
                 background: C.text,
