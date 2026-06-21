@@ -6747,7 +6747,11 @@ export default function App() {
               <Distilled {...sharedCompileProps} />
             )}
             {compileView === "covenants" && (
-              <Covenants {...sharedCompileProps} />
+              <Covenants
+                key={effectiveScope}
+                {...sharedCompileProps}
+                scope={effectiveScope}
+              />
             )}
           </div>
         </div>
