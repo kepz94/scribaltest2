@@ -351,6 +351,9 @@ interface Study {
   // Loose verses added to this study by keyword search, beyond its chapter(s).
   // Their marks are folded into the compile alongside the chapter's marks.
   extraRefs?: string[];
+  // When extraRefs was last edited. Drives last-write sync of the added-verse
+  // set (add AND remove), exactly like a keyword study's refs/updatedAt.
+  extraRefsAt?: number;
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
@@ -751,14 +754,26 @@ export default function MobileApp() {
             const type = remoteNewer && rs.type ? rs.type : local.type;
             const scopeRef =
               remoteNewer && rs.scopeRef ? rs.scopeRef : local.scopeRef;
-            // Loose added verses: union them so an add on either device is never
-            // lost. (Opening/compiling a study bumps compiledAt, so it can't be
-            // used as a reliable last-write signal for these.)
-            const extraUnion = Array.from(
-              new Set([...(local.extraRefs || []), ...(rs.extraRefs || [])])
-            );
+            // Loose added verses now sync like keyword refs: the side that
+            // edited its set most recently wins (so add AND remove both
+            // propagate). Legacy records without a timestamp fall back to a
+            // union, so an older add is never lost until the set is re-edited.
+            const lExtraAt = local.extraRefsAt || 0;
+            const rExtraAt = rs.extraRefsAt || 0;
+            const extraRefsAt = Math.max(lExtraAt, rExtraAt);
+            let extraRefs: string[] | undefined = local.extraRefs;
+            if (rExtraAt > lExtraAt) extraRefs = rs.extraRefs;
+            else if (lExtraAt > rExtraAt) extraRefs = local.extraRefs;
+            else if (lExtraAt === 0 && rExtraAt === 0) {
+              const u = Array.from(
+                new Set([...(local.extraRefs || []), ...(rs.extraRefs || [])])
+              );
+              extraRefs = u.length ? u : undefined;
+            }
             const extraChanged =
-              extraUnion.length !== (local.extraRefs || []).length;
+              (extraRefs || []).join("|") !==
+                (local.extraRefs || []).join("|") ||
+              extraRefsAt !== (local.extraRefsAt || 0);
             if (
               name !== local.name ||
               nameAt !== (local.nameAt || 0) ||
@@ -776,7 +791,9 @@ export default function MobileApp() {
                 nameAt,
                 compiledAt,
               };
-              if (extraUnion.length) merged.extraRefs = extraUnion;
+              if (extraRefs && extraRefs.length) merged.extraRefs = extraRefs;
+              else delete merged.extraRefs;
+              if (extraRefsAt) merged.extraRefsAt = extraRefsAt;
               if (deletedAt) merged.deletedAt = deletedAt;
               byId.set(rs.id, merged);
               changed = true;
@@ -1472,11 +1489,60 @@ export default function MobileApp() {
     delete next[a];
     const counts: Record<string, number> = {};
     Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    const dissolved = new Set<string>(); // group ids that just dropped below 2
     Object.keys(next).forEach((s) => {
-      if (counts[next[s]] < 2) delete next[s];
+      if (counts[next[s]] < 2) {
+        dissolved.add(next[s]);
+        delete next[s];
+      }
     });
     stampGroupChanges(chapterGroups, next); // record the unlink so it syncs
     setChapterGroups(next);
+    // A dissolved 2-chapter group leaves its recorded "linked" study pointing at
+    // a group that no longer exists. Convert it back to a single-chapter study
+    // for the chapter that remains (the group's other member). If a chapter
+    // study for that chapter already exists, the link's study is redundant, so
+    // retire it instead of duplicating.
+    if (dissolved.size) {
+      setStudies((prev) => {
+        let changed = false;
+        const out = prev.map((s) => {
+          if (s.type !== "linked" || !dissolved.has(s.scopeRef)) return s;
+          const members = Object.keys(chapterGroups).filter(
+            (c) => chapterGroups[c] === s.scopeRef
+          );
+          const survivor = members.find((c) => c !== a) || members[0];
+          if (!survivor) return s;
+          const now = Date.now();
+          const dupe = prev.some(
+            (o) =>
+              o.id !== s.id &&
+              o.type === "chapter" &&
+              o.bookId === s.bookId &&
+              o.scopeRef === survivor &&
+              !isStudyDeleted(o)
+          );
+          changed = true;
+          if (dupe) {
+            const t: Study = { ...s, deletedAt: now };
+            return t;
+          }
+          const auto = members.map(displayOf).join("  +  ");
+          const keepName =
+            !!s.name && s.name !== auto && s.name.indexOf("  +  ") < 0;
+          const m: Study = {
+            ...s,
+            type: "chapter",
+            scopeRef: survivor,
+            name: keepName ? s.name : displayOf(survivor),
+            nameAt: keepName ? s.nameAt : now,
+            compiledAt: now,
+          };
+          return m;
+        });
+        return changed ? out : prev;
+      });
+    }
   };
   const openLinkPrompt = () => {
     setPickV(-1);
@@ -1573,22 +1639,25 @@ export default function MobileApp() {
     setSearchOpen(false);
     if (!rid) return;
     const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const at = Date.now();
     setStudies((prev) =>
       prev.map((s) =>
-        s.id === rid ? { ...s, extraRefs: ordered, compiledAt: Date.now() } : s
+        s.id === rid
+          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          : s
       )
     );
     // Reflect on the (still-open) compile underneath too, so closing the
     // reading view shows the new verses.
     setCompileRec((prev) =>
       prev && prev.id === rid
-        ? { ...prev, extraRefs: ordered, compiledAt: Date.now() }
+        ? { ...prev, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
         : prev
     );
     // Land on the markable reading list (added verses first) so they can be
     // marked, then compiled.
     const rec = studies.find((s) => s.id === rid);
-    if (rec) setMarkRec({ ...rec, extraRefs: ordered });
+    if (rec) setMarkRec({ ...rec, extraRefs: ordered, extraRefsAt: at });
     flash(ordered.length ? "Added — mark, then compile" : "Verses updated");
   };
 
