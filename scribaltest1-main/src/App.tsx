@@ -2084,6 +2084,9 @@ export default function App() {
       return next;
     });
     if (tabIds[0]) setActiveTabId(tabIds[0]);
+    // Reopen on the view this study was saved in (Relational, Distilled, …)
+    // instead of whatever view happened to be on screen.
+    setCompileView(s.view ?? "outline");
     runCompile(tabIds);
   };
 
@@ -2716,7 +2719,7 @@ export default function App() {
     if (existing) {
       setSaveStudyPrompt({ info, existing });
     } else {
-      recordStudy(info.type, info.bookId, info.scopeRef, nm);
+      recordStudy(info.type, info.bookId, info.scopeRef, nm, compileView);
       flashSaved();
     }
   };
@@ -2731,7 +2734,8 @@ export default function App() {
       info.scopeRef,
       // Keep the name it already has unless the user typed a new one — never
       // silently reset a named study back to the default.
-      compileName.trim() || existing.name
+      compileName.trim() || existing.name,
+      compileView
     );
     setSaveStudyPrompt(null);
     flashSaved();
@@ -2744,7 +2748,7 @@ export default function App() {
     const id = createSession(nm);
     absorb(id, info.bookId, info.refs); // copy the current marks into the new book
     setActiveBook(id);
-    recordStudy(info.type, id, info.scopeRef, nm);
+    recordStudy(info.type, id, info.scopeRef, nm, compileView);
     setSaveStudyPrompt(null);
     flashSaved();
   };
@@ -2755,7 +2759,7 @@ export default function App() {
     const nm = compileName.trim() || info.defaultName;
     const id = createSession(nm);
     setActiveBook(id);
-    recordStudy(info.type, id, info.scopeRef, nm);
+    recordStudy(info.type, id, info.scopeRef, nm, compileView);
     setSaveStudyPrompt(null);
     setMode("read");
     setCompileStudyId(null);
