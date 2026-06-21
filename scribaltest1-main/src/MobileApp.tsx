@@ -348,6 +348,9 @@ interface Study {
   bookId: string;
   name: string;
   scopeRef: string; // chapter title (chapter) or link-group id (linked)
+  // Loose verses added to this study by keyword search, beyond its chapter(s).
+  // Their marks are folded into the compile alongside the chapter's marks.
+  extraRefs?: string[];
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
@@ -598,6 +601,12 @@ export default function MobileApp() {
   // When set, the "add a chapter to this study" sheet is open for this recorded
   // (chapter or linked) study — it links the chosen chapter into the study.
   const [addChapterStudy, setAddChapterStudy] = useState<Study | null>(null);
+  // The add sheet opens on a choice (add a chapter vs search & add verses).
+  const [addSheetMode, setAddSheetMode] = useState<"choice" | "chapter">(
+    "choice"
+  );
+  // When set, the search panel is adding loose verses to this recorded study.
+  const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
   const [pickC, setPickC] = useState(-1);
@@ -731,13 +740,40 @@ export default function MobileApp() {
               rs.compiledAt || 0
             );
             const deletedAt = Math.max(local.deletedAt || 0, rs.deletedAt || 0);
+            // A study's shape can change: adding a chapter promotes a chapter
+            // study into a linked study (new type + scopeRef), stamped with a
+            // newer compiledAt. Adopt the remote's type + scope when it's newer,
+            // otherwise that promotion would silently never reach this device.
+            const remoteNewer = (rs.compiledAt || 0) > (local.compiledAt || 0);
+            const type = remoteNewer && rs.type ? rs.type : local.type;
+            const scopeRef =
+              remoteNewer && rs.scopeRef ? rs.scopeRef : local.scopeRef;
+            // Loose added verses: union them so an add on either device is never
+            // lost. (Opening/compiling a study bumps compiledAt, so it can't be
+            // used as a reliable last-write signal for these.)
+            const extraUnion = Array.from(
+              new Set([...(local.extraRefs || []), ...(rs.extraRefs || [])])
+            );
+            const extraChanged =
+              extraUnion.length !== (local.extraRefs || []).length;
             if (
               name !== local.name ||
               nameAt !== (local.nameAt || 0) ||
               compiledAt !== (local.compiledAt || 0) ||
-              deletedAt !== (local.deletedAt || 0)
+              deletedAt !== (local.deletedAt || 0) ||
+              type !== local.type ||
+              scopeRef !== local.scopeRef ||
+              extraChanged
             ) {
-              const merged: Study = { ...local, name, nameAt, compiledAt };
+              const merged: Study = {
+                ...local,
+                type,
+                scopeRef,
+                name,
+                nameAt,
+                compiledAt,
+              };
+              if (extraUnion.length) merged.extraRefs = extraUnion;
               if (deletedAt) merged.deletedAt = deletedAt;
               byId.set(rs.id, merged);
               changed = true;
@@ -1522,6 +1558,31 @@ export default function MobileApp() {
     }
     flash("Added " + displayOf(targetScope));
     setAddChapterStudy(null);
+  };
+
+  // Add loose verses (from keyword search) to a recorded chapter/linked study.
+  // The picker pre-loads the study's current extras, so the selection IS the
+  // full new set (supports adding and removing). Their marks then show in the
+  // study's compile alongside the chapter's own marks.
+  const handleAddVersesToRec = (refs: string[]) => {
+    const rid = addVersesRecId;
+    setAddVersesRecId(null);
+    setSearchOpen(false);
+    if (!rid) return;
+    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    setStudies((prev) =>
+      prev.map((s) =>
+        s.id === rid ? { ...s, extraRefs: ordered, compiledAt: Date.now() } : s
+      )
+    );
+    // Keep the open compile pointed at the updated study so the added verses
+    // show immediately.
+    setCompileRec((prev) =>
+      prev && prev.id === rid
+        ? { ...prev, extraRefs: ordered, compiledAt: Date.now() }
+        : prev
+    );
+    flash("Verses updated");
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -3327,6 +3388,91 @@ export default function MobileApp() {
             }}
           >
           <div>
+            {addSheetMode === "choice" ? (
+              <>
+                <div
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    marginBottom: "2px",
+                  }}
+                >
+                  Add to this study
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: C.muted,
+                    marginBottom: "16px",
+                  }}
+                >
+                  “{addChapterStudy.name}”
+                </div>
+                <button
+                  onClick={() => setAddSheetMode("chapter")}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "14px",
+                    borderRadius: "12px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <div style={{ fontSize: "15px", fontWeight: 700 }}>
+                    Add a specific chapter
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: C.muted,
+                      marginTop: "2px",
+                    }}
+                  >
+                    Link a whole chapter into this study
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    const rec = addChapterStudy;
+                    setAddChapterStudy(null);
+                    if (rec) {
+                      setAddVersesRecId(rec.id);
+                      setSearchOpen(true);
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "14px",
+                    borderRadius: "12px",
+                    border: "1px solid " + C.border,
+                    background: C.soft,
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div style={{ fontSize: "15px", fontWeight: 700 }}>
+                    Search &amp; add verses
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: C.muted,
+                      marginTop: "2px",
+                    }}
+                  >
+                    Find verses by keyword and add just those
+                  </div>
+                </button>
+              </>
+            ) : (
+              <>
             <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}>
               Add a chapter
             </div>
@@ -3486,6 +3632,8 @@ export default function MobileApp() {
                 ? "Add " + targetScope
                 : "Add chapter"}
             </button>
+              </>
+            )}
           </div>
           </div>
         </div>
@@ -4619,7 +4767,7 @@ export default function MobileApp() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 200,
+            zIndex: addVersesRecId ? 500 : 200,
             backgroundColor: C.bg,
             color: C.text,
             display: "flex",
@@ -4684,6 +4832,7 @@ export default function MobileApp() {
                   setAddToStudyId(null);
                   setOpenStudyId(id);
                 }
+                setAddVersesRecId(null);
               }}
               aria-label="Close search"
               style={{
@@ -4721,15 +4870,24 @@ export default function MobileApp() {
               initialPicked={
                 addToStudyId
                   ? searchStudies.find((s) => s.id === addToStudyId)?.refs || []
+                  : addVersesRecId
+                  ? studies.find((s) => s.id === addVersesRecId)?.extraRefs ||
+                    []
                   : undefined
               }
-              startLinking={!!addToStudyId}
+              startLinking={!!addToStudyId || !!addVersesRecId}
               addToStudyName={
                 addToStudyId
                   ? searchStudies.find((s) => s.id === addToStudyId)?.name
                   : undefined
               }
               onAddToStudy={handleAddToStudy}
+              addVersesName={
+                addVersesRecId
+                  ? studies.find((s) => s.id === addVersesRecId)?.name
+                  : undefined
+              }
+              onAddVerses={handleAddVersesToRec}
             />
           </div>
         </div>
@@ -5930,7 +6088,12 @@ export default function MobileApp() {
             )
               .slice()
               .sort(byOrder);
-            cMarks = marks.filter((m) => cScopes.includes(scopeOf(m.reference)));
+            const crExtra = cr.extraRefs || [];
+            cMarks = marks.filter(
+              (m) =>
+                cScopes.includes(scopeOf(m.reference)) ||
+                crExtra.includes(m.reference)
+            );
             cScope =
               cr.type === "linked"
                 ? "group:" + cr.scopeRef
@@ -6018,6 +6181,7 @@ export default function MobileApp() {
                       setPickV(-1);
                       setPickB(-1);
                       setPickC(-1);
+                      setAddSheetMode("choice");
                       setAddChapterStudy(cr);
                     }
                   : undefined
