@@ -27,10 +27,12 @@ interface CovenantsProps {
   setColorLabel: (color: MarkColor, label: string) => void;
   onJumpToReference: (reference: string) => void;
   shareSignal?: number;
-  // The study's resolved scope (chapter title, or "group:<id>" for a linked
-  // study). Condition/promise role choices are saved per scope, so each study
-  // keeps its own pair instead of sharing one universal set.
-  scope?: string;
+  // This study's saved condition/promise roles (by lens), from the synced data
+  // layer — so each study keeps its own pair and it travels across devices.
+  savedRoles?: Record<string, { a: number; b: number }>;
+  // Persist a role change for this study (the parent writes it to the synced
+  // per-scope store).
+  onRoles?: (roles: Record<string, { a: number; b: number }>) => void;
 }
 
 type Lens = "covenant" | "contrast" | "type" | "question";
@@ -121,13 +123,10 @@ const LENSES: LensCfg[] = [
 ];
 
 const vols = scriptures.volumes;
-// Legacy flat map = one global condition/promise pair shared by everything.
-// Still READ as the starting default for a study that has no roles of its own
-// yet (so existing users keep a sensible pair); never written to anymore.
+// Legacy flat map = one global condition/promise pair. Read ONLY as the
+// starting default for a study that has no roles of its own yet; the real
+// per-study roles now live in the synced data layer (passed in via props).
 const ROLES_KEY = "scribal_relational_roles";
-// Per-scope roles: { "Alma 5": RoleMap, "group:g1": RoleMap, ... }. This is
-// what makes condition/promise study-to-study instead of universal.
-const SCOPED_ROLES_KEY = "scribal_relational_roles_by_scope";
 const OLD_KEY = "scribal_covenant_roles";
 
 function clampColor(x: unknown, d: MarkColor): MarkColor {
@@ -175,45 +174,19 @@ function readGlobalDefault(): RoleMap {
   return out;
 }
 
-function readScopedRoles(): Record<string, RoleMap> {
-  try {
-    const raw = localStorage.getItem(SCOPED_ROLES_KEY);
-    if (raw) {
-      const p = JSON.parse(raw);
-      if (p && typeof p === "object") return p as Record<string, RoleMap>;
-    }
-  } catch {
-    // ignore malformed storage
-  }
-  return {};
-}
-
-// This study's saved roles (by scope), falling back to the default pair.
-function readRoles(scope: string): RoleMap {
+// Starting roles for this study: its saved roles (synced) over the default.
+function rolesFromSaved(
+  saved?: Record<string, { a: number; b: number }>
+): RoleMap {
   const out = readGlobalDefault();
-  const saved = scope ? readScopedRoles()[scope] : undefined;
   if (saved) {
     LENSES.forEach((l) => {
-      if (saved[l.id])
-        out[l.id] = {
-          a: clampColor(saved[l.id].a, l.defA),
-          b: clampColor(saved[l.id].b, l.defB),
-        };
+      const r = saved[l.id];
+      if (r)
+        out[l.id] = { a: clampColor(r.a, l.defA), b: clampColor(r.b, l.defB) };
     });
   }
   return out;
-}
-
-// Save roles under THIS study's scope only — never touches other studies.
-function writeRoles(scope: string, roles: RoleMap) {
-  if (!scope) return;
-  try {
-    const all = readScopedRoles();
-    all[scope] = roles;
-    localStorage.setItem(SCOPED_ROLES_KEY, JSON.stringify(all));
-  } catch {
-    // ignore storage failure
-  }
 }
 
 type Frag = {
@@ -225,27 +198,29 @@ type Frag = {
 
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
-  const scope = props.scope || "";
+  const onRoles = props.onRoles;
 
   const [lens, setLens] = useState<Lens>("covenant");
-  // Seeded from THIS study's saved roles (keyed by scope); falls back to the
+  // Seeded from THIS study's saved roles (synced data layer); falls back to the
   // default pair for a study that hasn't set its own. The parent remounts this
-  // component per scope, so opening another study re-seeds from its roles.
-  const [roles, setRoles] = useState<RoleMap>(() => readRoles(scope));
+  // per study, so opening another study re-seeds from its roles.
+  const [roles, setRoles] = useState<RoleMap>(() =>
+    rolesFromSaved(props.savedRoles)
+  );
   const cfg = LENSES.find((l) => l.id === lens) || LENSES[0];
   const a = roles[lens].a;
   const b = roles[lens].b;
-  // Saving on change, scoped to this study, is what keeps each study's
-  // condition/promise pair its own.
+  // Saving on change goes to the synced, per-study store via onRoles — so each
+  // study keeps its own pair and it travels across devices.
   const setA = (c: MarkColor) => {
     const next: RoleMap = { ...roles, [lens]: { ...roles[lens], a: c } };
     setRoles(next);
-    writeRoles(scope, next);
+    onRoles?.(next);
   };
   const setB = (c: MarkColor) => {
     const next: RoleMap = { ...roles, [lens]: { ...roles[lens], b: c } };
     setRoles(next);
-    writeRoles(scope, next);
+    onRoles?.(next);
   };
 
   // ----- share state: ONE sheet that does pick + preview + share together -----
