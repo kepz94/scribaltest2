@@ -342,6 +342,9 @@ interface Study {
   // When extraRefs was last edited. Drives last-write sync of the added-verse
   // set (add AND remove), exactly like a keyword study's refs/updatedAt.
   extraRefsAt?: number;
+  // The compile view this study was last saved in (Outline / Distilled /
+  // Relational), so reopening lands on the same tab. Absent → Outline.
+  view?: "outline" | "charting" | "distilled" | "covenants";
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
@@ -1964,7 +1967,8 @@ export default function MobileApp() {
     type: "chapter" | "linked",
     scopeRef: string,
     name: string,
-    rename: boolean = true
+    rename: boolean = true,
+    view?: "outline" | "charting" | "distilled" | "covenants"
   ) => {
     const bookId = activeBookId;
     setStudies((prev) => {
@@ -1983,6 +1987,9 @@ export default function MobileApp() {
           // stale name win a rename sync from another device.
           nameAt: nameChanged ? now : cur.nameAt || cur.compiledAt || now,
           compiledAt: now,
+          // Remember the view it was saved in; keep the existing one when the
+          // caller doesn't pass a view (e.g. a background re-compile).
+          view: view !== undefined ? view : cur.view,
         };
         return next;
       }
@@ -1995,6 +2002,7 @@ export default function MobileApp() {
           scopeRef,
           compiledAt: now,
           nameAt: now,
+          view,
         },
         ...prev,
       ];
@@ -6545,6 +6553,14 @@ export default function MobileApp() {
           }
           return (
             <MobileCompile
+              key={cr ? "rec:" + cr.id : cs ? "ss:" + cs.id : "ch:" + title}
+              initialFormat={
+                cr?.view === "distilled"
+                  ? "distilled"
+                  : cr?.view === "covenants"
+                  ? "covenants"
+                  : "outline"
+              }
               marks={cMarks}
               studyScopes={cScopes}
               colorLabels={cLabels}
@@ -6555,7 +6571,7 @@ export default function MobileApp() {
               notes={notes}
               setNote={setNote}
               defaultName={cTitle}
-              onSave={(nm) => {
+              onSave={(nm, view) => {
                 const name = nm.trim();
                 if (cs) {
                   setSearchStudies((prev) =>
@@ -6566,15 +6582,23 @@ export default function MobileApp() {
                     )
                   );
                 } else if (cr) {
-                  recordStudy(cr.type, cr.scopeRef, name || cr.name);
+                  recordStudy(cr.type, cr.scopeRef, name || cr.name, true, view);
                 } else if (chapterGroups[title]) {
                   recordStudy(
                     "linked",
                     chapterGroups[title],
-                    name || groupMembers(title).map(displayOf).join("  +  ")
+                    name || groupMembers(title).map(displayOf).join("  +  "),
+                    true,
+                    view
                   );
                 } else {
-                  recordStudy("chapter", title, name || displayTitle);
+                  recordStudy(
+                    "chapter",
+                    title,
+                    name || displayTitle,
+                    true,
+                    view
+                  );
                 }
                 flash("Saved to Studies", "success");
                 setCompileOpen(false);
