@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import scriptures from "../data/scriptures.json";
 import { Mark, MarkColor, COLORS, COLOR_MAP } from "../types";
+import { buildSearchMatcher } from "../searchMatch";
 
 export interface ThemeMark {
   bookId: string;
@@ -52,13 +53,6 @@ interface IndexEntry {
   bookName: string;
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-// Turn a search term into a regex source, honoring the * wildcard.
-// "merc*" -> "\bmerc\w*" ; plain words are escaped literally.
-const wildcardSource = (term: string) =>
-  "\\b" + escapeRe(term).replace(/\\\*/g, "\\w*");
-
 export default function SearchPanel(props: SearchPanelProps) {
   const {
     marks,
@@ -81,7 +75,7 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [source, setSource] = useState<Source>("scripture");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
-  const [wholeWord, setWholeWord] = useState(false);
+  const [wholeWord, setWholeWord] = useState(true);
   const [markColor, setMarkColor] = useState<MarkColor | 0>(0);
   const [showLegend, setShowLegend] = useState(false);
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(
@@ -161,29 +155,11 @@ export default function SearchPanel(props: SearchPanelProps) {
         terms: [] as string[],
       };
 
-    const lower = q.toLowerCase();
-    const terms = (lower.includes("&") ? lower.split("&").map((t) => t.trim()) : committed.mode === "phrase" ? [lower] : lower.split(/\s+/))
-      .filter(Boolean)
-      .filter((t) => t.replace(/\*/g, "").length > 0);
-
-    // Build one tester per term, honoring * wildcards and whole-word mode
-    const buildTermTest = (term: string): ((txt: string) => boolean) => {
-      if (term.includes("*")) {
-        const re = new RegExp(wildcardSource(term), "i");
-        return (txt) => re.test(txt);
-      }
-      if (committed.wholeWord) {
-        const re = new RegExp("\\b" + escapeRe(term) + "\\b");
-        return (txt) => re.test(txt);
-      }
-      return (txt) => txt.includes(term);
-    };
-
-    const termTests = terms.map(buildTermTest);
-    const test = (txt: string) =>
-      !lower.includes("&") && committed.mode === "any"
-        ? termTests.some((fn) => fn(txt))
-        : termTests.every((fn) => fn(txt));
+    // Unified matcher: shared with the mobile search (src/searchMatch.ts) so the
+    // phone and the computer interpret a query exactly the same way.
+    const matcher = buildSearchMatcher(q, committed.mode, committed.wholeWord);
+    const test = matcher ? matcher.test : () => false;
+    const terms = matcher ? matcher.terms : [];
 
     const inScope = (e: IndexEntry) =>
       committed.volIdx < 0
@@ -260,9 +236,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
   const renderHighlighted = (text: string, terms: string[]) => {
     if (!terms.length) return text;
-    const src = terms
-      .map((t) => (t.includes("*") ? wildcardSource(t) : escapeRe(t)))
-      .join("|");
+    const src = terms.join("|");
     let re: RegExp;
     try {
       re = new RegExp("(" + src + ")", "gi");
