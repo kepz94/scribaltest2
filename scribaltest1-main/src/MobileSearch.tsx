@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import scriptures from "./data/scriptures.json";
 import { Mark, COLOR_MAP } from "./types";
+import { buildSearchMatcher, SearchMode } from "./searchMatch";
 
 const vols = scriptures.volumes;
 
@@ -42,70 +43,10 @@ interface Props {
 
 const SCRIPTURE_CAP = 120;
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// Expand one word into a regex source. "*" becomes a word-wildcard
-// (bapti* -> baptism / baptize); a plain word is matched as written.
-const wordSource = (term: string) =>
-  term.includes("*") ? escapeRe(term).replace(/\\\*/g, "\\w*") : escapeRe(term);
-
-// A sequence of words matched as an exact phrase: in order, flexible spacing,
-// with whole-word boundaries at the ends (so "at" won't hit inside "format").
-const phraseSource = (words: string[], wholeWord: boolean) => {
-  const core = words.map(wordSource).join("\\s+");
-  return wholeWord ? "\\b" + core + "\\b" : core;
-};
-
-// Parse a query into alternatives (OR) of AND-parts (&), where each part is an
-// exact phrase (words in order). "*" is a word-wildcard. Examples:
-//   at that day        -> the exact phrase
-//   faith & hope       -> both words, anywhere, in any order
-//   good works & faith -> the phrase "good works" AND the word "faith"
-//   mercy OR grace     -> either one
-function buildMatcher(
-  query: string,
-  wholeWord: boolean
-): { test: (t: string) => boolean; terms: string[] } | null {
-  const lower = query.trim().toLowerCase();
-  if (!lower) return null;
-  const allSources: string[] = [];
-  const groups = lower
-    .split(/\s+or\s+/i) // OR -> alternative groups
-    .map((g) =>
-      g
-        .split("&") // & -> AND parts within a group
-        .map((part) =>
-          part
-            .trim()
-            .split(/\s+/) // spaces -> words of an exact phrase
-            .map((t) => t.trim())
-            .filter((t) => t.replace(/\*/g, "").length > 0)
-        )
-        .filter((words) => words.length > 0)
-        .map((words) => phraseSource(words, wholeWord))
-    )
-    .filter((parts) => parts.length > 0);
-  if (!groups.length) return null;
-  const compiled = groups.map((parts) =>
-    parts.map((src) => {
-      allSources.push(src);
-      try {
-        return new RegExp(src, "i");
-      } catch {
-        return null;
-      }
-    })
-  );
-  return {
-    test: (txt) =>
-      compiled.some((parts) => parts.every((re) => (re ? re.test(txt) : false))),
-    terms: allSources,
-  };
-}
-
 function highlight(text: string, terms: string[], hlColor: string) {
   if (!terms.length) return text;
   // Highlight the matched phrase(s). The strings passed in are already regex
-  // sources from buildMatcher (whole-word phrase patterns), so use them directly.
+  // sources from buildSearchMatcher, so use them directly.
   const src = terms.join("|");
   let re: RegExp;
   try {
@@ -146,8 +87,10 @@ export default function MobileSearch({
   const [debounced, setDebounced] = useState("");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
-  // Mobile search has always matched whole words. This toggle lets you turn
-  // that off to also match inside longer words; default on keeps results.
+  // Search-match controls, shared with the desktop search via one engine.
+  // matchMode = how plain words combine; wholeWord defaults ON, which is
+  // exactly how mobile search has always behaved.
+  const [matchMode, setMatchMode] = useState<SearchMode>("phrase");
   const [wholeWord, setWholeWord] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   // Link-select: tick scripture results to bundle them into one study.
@@ -164,8 +107,8 @@ export default function MobileSearch({
   }, [query]);
 
   const matcher = useMemo(
-    () => buildMatcher(debounced, wholeWord),
-    [debounced, wholeWord]
+    () => buildSearchMatcher(debounced, matchMode, wholeWord),
+    [debounced, matchMode, wholeWord]
   );
   const terms = matcher ? matcher.terms : [];
 
@@ -380,6 +323,22 @@ export default function MobileSearch({
         {seg(mode === "marks", "My marks", () => setMode("marks"))}
       </div>
 
+      {/* Match mode — shared with desktop: how the plain words combine */}
+      <div
+        style={{
+          display: "flex",
+          gap: "4px",
+          backgroundColor: C.soft,
+          borderRadius: "10px",
+          padding: "4px",
+          marginBottom: "12px",
+        }}
+      >
+        {seg(matchMode === "all", "All words", () => setMatchMode("all"))}
+        {seg(matchMode === "any", "Any word", () => setMatchMode("any"))}
+        {seg(matchMode === "phrase", "Phrase", () => setMatchMode("phrase"))}
+      </div>
+
       {mode === "scripture" && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           <select
@@ -414,14 +373,13 @@ export default function MobileSearch({
         </div>
       )}
 
-      {/* Whole-word toggle + Legend — the same controls the desktop search has,
-          so this menu is complete everywhere it appears, add-to-study included. */}
+      {/* Whole-word + Legend — shared controls with the desktop search */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
         <button
           onClick={() => setWholeWord((w) => !w)}
           style={{
             flex: 1,
-            padding: "10px",
+            padding: "9px",
             borderRadius: "10px",
             border: "1px solid " + C.border,
             backgroundColor: wholeWord ? C.soft : "transparent",
@@ -435,10 +393,10 @@ export default function MobileSearch({
           Whole words
         </button>
         <button
-          onClick={() => setShowLegend((s) => !s)}
+          onClick={() => setShowLegend((v) => !v)}
           style={{
             flex: 1,
-            padding: "10px",
+            padding: "9px",
             borderRadius: "10px",
             border: "1px solid " + C.border,
             backgroundColor: showLegend ? C.soft : "transparent",
@@ -474,24 +432,21 @@ export default function MobileSearch({
               marginBottom: "8px",
             }}
           >
-            Search functions
+            How search works
           </div>
           {legendRow(
-            "Phrase",
-            "Plain words match as an exact phrase, in order — “charity never faileth”."
+            "All / Any / Phrase",
+            "Choose how plain words combine — every word, any word, or the exact phrase in order."
           )}
-          {legendRow(
-            "faith & hope",
-            "Use & for AND: every part must appear somewhere in the verse."
-          )}
-          {legendRow("mercy OR grace", "Use OR to match either one.")}
+          {legendRow("faith & hope", "Use & to require all parts.")}
+          {legendRow("mercy OR grace", "Use OR to match either side.")}
           {legendRow(
             "merc*",
             "Put * after a stem to match every word that starts with it → mercy, merciful, mercies."
           )}
           {legendRow(
             "Whole words",
-            "On: match whole words only, so “love” won’t match “glove”. Off: also match inside longer words."
+            "On: whole words only, so “love” won’t match “beloved”. Off: also match inside longer words."
           )}
           {legendRow(
             "Scripture / My marks",
