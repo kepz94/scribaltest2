@@ -21,6 +21,9 @@ export interface SearchStudy {
   // Optional free-text overview shown atop the study. Used by the ScriptureNotes
   // importer to carry the report's description (and favorites list) across.
   note?: string;
+  // The compile view this study was saved in. A relational study reopens on
+  // (and is locked to) the Relational view; carried so it survives sync.
+  view?: "outline" | "distilled" | "covenants";
 }
 
 // Hidden iff its delete is its newest action.
@@ -131,6 +134,7 @@ export function useSearchStudies() {
                 name: r.name,
                 refs: r.refs,
                 note: r.note ?? local.note,
+                view: r.view ?? local.view,
                 updatedAt: rAt,
               }
             : { ...local };
