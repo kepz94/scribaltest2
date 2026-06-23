@@ -94,6 +94,13 @@ type Action =
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
   | {
+      type: "moveStudyMarks";
+      sourceId: string;
+      targetId: string;
+      refs: string[];
+      scope: string;
+    }
+  | {
       type: "importStudy";
       marks: Mark[];
       colorLabels: Record<number, string>;
@@ -577,6 +584,98 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "moveStudyMarks": {
+      const source = state.books[action.sourceId];
+      const target = state.books[action.targetId];
+      if (!source || !target || action.sourceId === action.targetId)
+        return state;
+      const refSet = new Set(action.refs);
+
+      // Marks on the study's verses, lifted out of the source book.
+      const moving = source.marks.filter((m) => refSet.has(m.reference));
+      const newSourceMarks = source.marks.filter(
+        (m) => !refSet.has(m.reference)
+      );
+      const haveIds = new Set(target.marks.map((m) => m.id));
+      const newTargetMarks = [
+        ...target.marks,
+        ...moving.filter((m) => !haveIds.has(m.id)),
+      ];
+
+      // Notes for those verses move too: target gains them (without clobbering
+      // any it already has), source loses them.
+      const sourceNotes: Record<string, string> = {};
+      const targetNotes: Record<string, string> = { ...target.notes };
+      Object.keys(source.notes).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (ref && refSet.has(ref)) {
+          if (!(k in targetNotes)) targetNotes[k] = source.notes[k];
+        } else {
+          sourceNotes[k] = source.notes[k];
+        }
+      });
+
+      // Color meanings: keep the target's named labels, fill its blanks from the
+      // source so the moved marks still read correctly.
+      const mergedLabels: Record<number, string> = { ...source.colorLabels };
+      Object.keys(target.colorLabels).forEach((k) => {
+        const kn = Number(k);
+        if ((target.colorLabels[kn] || "").trim() !== "")
+          mergedLabels[kn] = target.colorLabels[kn];
+      });
+
+      // The study's per-scope theme names and relational pair travel with it.
+      const srcSL = { ...(source.scopedLabels || {}) };
+      const tgtSL = { ...(target.scopedLabels || {}) };
+      if (action.scope in srcSL) {
+        tgtSL[action.scope] = srcSL[action.scope];
+        delete srcSL[action.scope];
+      }
+      const srcSR = { ...(source.scopedRoles || {}) };
+      const tgtSR = { ...(target.scopedRoles || {}) };
+      if (action.scope in srcSR) {
+        tgtSR[action.scope] = srcSR[action.scope];
+        delete srcSR[action.scope];
+      }
+
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.sourceId]: {
+            ...source,
+            marks: newSourceMarks,
+            // Tombstone the lifted marks so the removal syncs instead of an old
+            // copy resurrecting them on the next pull.
+            tombstones: diffTombstones(
+              source.marks,
+              newSourceMarks,
+              source.tombstones
+            ),
+            notes: sourceNotes,
+            scopedLabels: srcSL,
+            scopedRoles: srcSR,
+          },
+          [action.targetId]: {
+            ...target,
+            marks: newTargetMarks,
+            tombstones: diffTombstones(
+              target.marks,
+              newTargetMarks,
+              target.tombstones
+            ),
+            colorLabels: mergedLabels,
+            notes: targetNotes,
+            scopedLabels: tgtSL,
+            scopedRoles: tgtSR,
+          },
+        },
+        // Undo history is per active book; a cross-book move invalidates it.
+        past: [],
+        future: [],
+      };
+    }
+
     case "rename": {
       if (!state.books[action.id]) return state;
       return {
@@ -1052,6 +1151,11 @@ export function useMarks() {
       dispatch({ type: "absorb", targetId, sourceId, refs }),
     []
   );
+  const moveStudyMarks = useCallback(
+    (sourceId: string, targetId: string, refs: string[], scope: string) =>
+      dispatch({ type: "moveStudyMarks", sourceId, targetId, refs, scope }),
+    []
+  );
 
   const importStudy = useCallback(
     (
@@ -1179,6 +1283,7 @@ export function useMarks() {
     getBook,
     ensureBook,
     absorb,
+    moveStudyMarks,
     importStudy,
     freezeChapter,
     mergeRemoteBooks,
