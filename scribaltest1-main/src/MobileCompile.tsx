@@ -208,7 +208,12 @@ export default function MobileCompile({
     totalMarks: number;
     passages: number;
     themes: { name: string; color: number; synthesis: string; count: number }[];
-    candidates: { text: string; reference: string }[];
+    candidates: {
+      text: string;
+      reference: string;
+      style: string;
+      color: number;
+    }[];
     defaultFeatured: number;
   } | null>(null);
   // Collapsed by default — but themes you just added open automatically.
@@ -363,7 +368,12 @@ export default function MobileCompile({
       .filter((m) => m.markedText.trim())
       .slice()
       .sort((a, b) => orderOf(a.reference) - orderOf(b.reference))
-      .map((m) => ({ text: m.markedText, reference: m.reference }));
+      .map((m) => ({
+        text: m.markedText,
+        reference: m.reference,
+        style: m.style,
+        color: m.color,
+      }));
 
     // Default featured = the most-emphasized mark.
     let defaultFeatured = 0;
