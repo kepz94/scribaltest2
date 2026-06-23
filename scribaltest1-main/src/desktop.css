@@ -229,3 +229,19 @@ textarea:focus-visible {
     color: var(--text) !important;
   }
 }
+
+/* Word-study footnote marker. The dagger is CSS-generated content so it never
+   becomes part of the selectable verse text (which would shift mark/Define
+   offsets). Color is inherited from the element's inline style. */
+.wordtag-marker {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wordtag-marker::after {
+  content: "\2020";
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: super;
+  padding: 0 2px;
+}
