@@ -22,7 +22,11 @@ interface StudyBook {
   // scopedLabels.
   scopedRoles?: Record<
     string,
-    { at: number; roles: Record<string, { a: number; b: number }> }
+    {
+      at: number;
+      roles: Record<string, { a: number; b: number }>;
+      lens?: string;
+    }
   >;
   createdAt: number;
   lastStudiedAt: number;
@@ -90,6 +94,7 @@ type Action =
       scope: string;
       roles: Record<string, { a: number; b: number }>;
     }
+  | { type: "setScopedLens"; scope: string; lens: string }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
@@ -1000,7 +1005,31 @@ function reducer(state: State, action: Action): State {
             ...active,
             scopedRoles: {
               ...cur,
-              [action.scope]: { at: Date.now(), roles: action.roles },
+              [action.scope]: {
+                at: Date.now(),
+                roles: action.roles,
+                lens: cur[action.scope]?.lens,
+              },
+            },
+          },
+        },
+      };
+    }
+    case "setScopedLens": {
+      const cur = active.scopedRoles || {};
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [state.activeId]: {
+            ...active,
+            scopedRoles: {
+              ...cur,
+              [action.scope]: {
+                at: Date.now(),
+                roles: cur[action.scope]?.roles || {},
+                lens: action.lens,
+              },
             },
           },
         },
@@ -1127,6 +1156,11 @@ export function useMarks() {
       dispatch({ type: "setScopedRoles", scope, roles }),
     []
   );
+  const setScopedLens = useCallback(
+    (scope: string, lens: string) =>
+      dispatch({ type: "setScopedLens", scope, lens }),
+    []
+  );
   const setNote = useCallback(
     (key: string, text: string) => dispatch({ type: "setNote", key, text }),
     []
@@ -1229,12 +1263,21 @@ export function useMarks() {
     setScopedLabel,
     seedScopeLabels,
     setScopedRoles,
+    setScopedLens,
     scopedLabels: active.scopedLabels || {},
     scopedRoles: (() => {
       const src = active.scopedRoles || {};
       const out: Record<string, Record<string, { a: number; b: number }>> = {};
       Object.keys(src).forEach((k) => {
         out[k] = src[k].roles;
+      });
+      return out;
+    })(),
+    scopedLens: (() => {
+      const src = active.scopedRoles || {};
+      const out: Record<string, string> = {};
+      Object.keys(src).forEach((k) => {
+        if (src[k].lens) out[k] = src[k].lens as string;
       });
       return out;
     })(),
