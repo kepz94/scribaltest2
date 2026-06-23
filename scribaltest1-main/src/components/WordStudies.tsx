@@ -47,7 +47,7 @@ export default function WordStudies({
   // several verses. The headword shown is the form the reader first tagged.
   const byKey = new Map<string, Entry>();
   tags.forEach((t) => {
-    const def = ready ? definitionForKey(t.dictKey) : "";
+    const def = ready ? definitionForKey(t.dictKey) || "" : "";
     if (ready && !def) return; // no entry — nothing to study
     const existing = byKey.get(t.dictKey);
     if (existing) {
