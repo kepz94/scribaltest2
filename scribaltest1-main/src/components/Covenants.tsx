@@ -34,6 +34,10 @@ interface CovenantsProps {
   // Persist a role change for this study (the parent writes it to the synced
   // per-scope store).
   onRoles?: (roles: Record<string, { a: number; b: number }>) => void;
+  // This study's saved relational lens (covenant/contrast/type/question), and a
+  // setter to persist a change — so the lens you chose is what you reopen to.
+  savedLens?: string;
+  onLens?: (lens: string) => void;
 }
 
 type Lens = "covenant" | "contrast" | "type" | "question";
@@ -200,8 +204,15 @@ type Frag = {
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
   const onRoles = props.onRoles;
+  // The chapter list is collapsed by default for multi-chapter studies so it
+  // doesn't swallow the screen; tap to reveal.
+  const [showChapters, setShowChapters] = useState(false);
 
-  const [lens, setLens] = useState<Lens>("covenant");
+  const [lens, setLens] = useState<Lens>(() =>
+    props.savedLens && LENSES.some((l) => l.id === props.savedLens)
+      ? (props.savedLens as Lens)
+      : "covenant"
+  );
   // Seeded from THIS study's saved roles (synced data layer); falls back to the
   // default pair for a study that hasn't set its own. The parent remounts this
   // per study, so opening another study re-seeds from its roles.
@@ -568,11 +579,51 @@ export default function Covenants(props: CovenantsProps) {
       >
         Relational
       </div>
-      <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
-        {compileTabs.length === 0
-          ? "Nothing selected"
-          : compileTabs.map(tabLabel).join("  ·  ")}
-      </h2>
+      {compileTabs.length === 0 ? (
+        <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
+          Nothing selected
+        </h2>
+      ) : compileTabs.length <= 1 ? (
+        <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
+          {compileTabs.map(tabLabel).join("  ·  ")}
+        </h2>
+      ) : (
+        <div style={{ margin: "0 0 12px 0" }}>
+          <button
+            onClick={() => setShowChapters((s) => !s)}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              color: "inherit",
+              fontSize: "18px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            {compileTabs.length + " chapters"}
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+              {showChapters ? "▲" : "▾"}
+            </span>
+          </button>
+          {showChapters && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              }}
+            >
+              {compileTabs.map(tabLabel).join("  ·  ")}
+            </div>
+          )}
+        </div>
+      )}
 
       <div
         style={{
@@ -585,7 +636,10 @@ export default function Covenants(props: CovenantsProps) {
         {LENSES.map((l) => (
           <button
             key={l.id}
-            onClick={() => setLens(l.id)}
+            onClick={() => {
+              setLens(l.id);
+              props.onLens?.(l.id);
+            }}
             style={{
               border:
                 "1px solid " + (l.id === lens ? "var(--text)" : "var(--border)"),
