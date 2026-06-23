@@ -2417,7 +2417,7 @@ export default function MobileApp() {
   const sheet = (
     onClose: () => void,
     children: React.ReactNode,
-    z: number = 200
+    z: number = 450
   ) => (
     <div
       onClick={onClose}
@@ -6753,8 +6753,7 @@ export default function MobileApp() {
                   }
                 : undefined
             }
-          />,
-          1000
+          />
         )}
 
       {manage &&
