@@ -90,6 +90,7 @@ export default function Outline(props: OutlineProps) {
 
   const [sortMode, setSortMode] = useState<SortMode>("points");
   const [view, setView] = useState<"full" | "focused">("focused");
+  const [showChapters, setShowChapters] = useState(false);
   const [collapsedInternal, setCollapsedInternal] = useState<number[]>([]);
   const collapsed = props.collapsed ?? collapsedInternal;
   const setCollapsed = props.onCollapsedChange ?? setCollapsedInternal;
@@ -251,11 +252,51 @@ export default function Outline(props: OutlineProps) {
           >
             Outline
           </div>
-          <h2 style={{ margin: "2px 0 0 0", fontWeight: 500 }}>
-            {compileTabs.length === 0
-              ? "Nothing selected"
-              : compileTabs.map(tabLabel).join("  ·  ")}
-          </h2>
+          {compileTabs.length === 0 ? (
+            <h2 style={{ margin: "2px 0 0 0", fontWeight: 500 }}>
+              Nothing selected
+            </h2>
+          ) : compileTabs.length <= 1 ? (
+            <h2 style={{ margin: "2px 0 0 0", fontWeight: 500 }}>
+              {compileTabs.map(tabLabel).join("  ·  ")}
+            </h2>
+          ) : (
+            <div style={{ margin: "2px 0 0 0" }}>
+              <button
+                onClick={() => setShowChapters((s) => !s)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  color: "inherit",
+                  fontSize: "18px",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                {compileTabs.length + " chapters"}
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  {showChapters ? "▲" : "▾"}
+                </span>
+              </button>
+              {showChapters && (
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    color: "var(--muted)",
+                  }}
+                >
+                  {compileTabs.map(tabLabel).join("  ·  ")}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div
