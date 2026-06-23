@@ -6932,6 +6932,7 @@ export default function MobileApp() {
                   ? "covenants"
                   : "outline"
               }
+              savedStudy={!!(cr || cs)}
               relSavedRoles={scopedRoles[cScope]}
               onRelRoles={(r) => setScopedRoles(cScope, r)}
               marks={cMarks}
