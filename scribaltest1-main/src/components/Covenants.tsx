@@ -1,4 +1,5 @@
 import { CSSProperties, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import scriptures from "../data/scriptures.json";
 import {
   Mark,
@@ -222,6 +223,19 @@ export default function Covenants(props: CovenantsProps) {
     setRoles(next);
     onRoles?.(next);
   };
+
+  // The parent remounts this per study (key={scope}), so the useState above
+  // normally seeds the right pair. But if this study's saved roles aren't ready
+  // at that first mount — the synced data layer resolves a beat later, the active
+  // book settles, or a remote device's pair arrives via sync — re-seed from them
+  // so the relational lens fills in without the user re-picking. Guarded by a ref
+  // and a truthiness check so a transient empty value never wipes a live pair.
+  const savedSeedRef = useRef(props.savedRoles);
+  useEffect(() => {
+    if (props.savedRoles === savedSeedRef.current) return;
+    savedSeedRef.current = props.savedRoles;
+    if (props.savedRoles) setRoles(rolesFromSaved(props.savedRoles));
+  }, [props.savedRoles]);
 
   // ----- share state: ONE sheet that does pick + preview + share together -----
   const [shareOpen, setShareOpen] = useState(false);
@@ -811,26 +825,28 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {shareOpen && (
-        <div
-          onClick={closeShare}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 99999,
-            background: "rgba(0,0,0,0.82)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-          }}
-        >
+      {shareOpen &&
+        createPortal(
+          <div
+            onClick={closeShare}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 2000000000,
+              background: "rgba(0,0,0,0.92)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding:
+                "calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 12px)",
+            }}
+          >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
-              maxWidth: "460px",
-              maxHeight: "92vh",
+              maxWidth: "600px",
+              height: "100%",
               display: "flex",
               flexDirection: "column",
               background: "#1d1c19",
@@ -850,7 +866,7 @@ export default function Covenants(props: CovenantsProps) {
             >
               Share{" "}
               <span style={{ color: "#8d8a82", fontWeight: 500 }}>
-                · pick up to 3 pairs
+                · {selected.length}/3 pairs selected
               </span>
             </div>
 
@@ -897,8 +913,11 @@ export default function Covenants(props: CovenantsProps) {
               <div
                 style={{
                   display: "flex",
+                  flexWrap: "wrap",
                   gap: "8px",
-                  overflowX: "auto",
+                  justifyContent: "center",
+                  maxHeight: "26vh",
+                  overflowY: "auto",
                   paddingBottom: "2px",
                 }}
               >
@@ -914,15 +933,15 @@ export default function Covenants(props: CovenantsProps) {
                       style={{
                         flexShrink: 0,
                         whiteSpace: "nowrap",
-                        padding: "7px 12px",
+                        padding: "10px 16px",
                         borderRadius: "999px",
-                        fontSize: "12.5px",
+                        fontSize: "14px",
                         fontWeight: 600,
-                        cursor: "pointer",
+                        cursor: full ? "default" : "pointer",
                         fontFamily: "inherit",
                         border: sel
                           ? "1px solid #ffffff"
-                          : "1px solid rgba(255,255,255,0.28)",
+                          : "1px solid rgba(255,255,255,0.32)",
                         background: sel ? "#ffffff" : "transparent",
                         color: sel ? "#111111" : "#e7e2d6",
                         opacity: full ? 0.4 : 1,
@@ -968,7 +987,8 @@ export default function Covenants(props: CovenantsProps) {
               ) : null}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
