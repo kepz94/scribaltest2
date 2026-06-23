@@ -2076,8 +2076,11 @@ export default function MobileApp() {
     });
   };
   const compileCurrentStudy = () => {
-    if (studyMarks.length === 0) {
-      flash("Mark something first, then compile");
+    const studyTags = wordTags.filter((t) =>
+      studyScopes.includes(scopeOf(t.reference))
+    );
+    if (studyMarks.length === 0 && studyTags.length === 0) {
+      flash("Mark or tag something first, then compile");
       return;
     }
     const gid = chapterGroups[title];
