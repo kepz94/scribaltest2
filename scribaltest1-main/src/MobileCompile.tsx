@@ -1,9 +1,10 @@
 import { useState, useRef, useLayoutEffect, CSSProperties } from "react";
 import scriptures from "./data/scriptures.json";
 import MarkedVerse from "./components/MarkedVerse";
-import { Mark, MarkColor, Tab, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
+import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
+import WordStudies from "./components/WordStudies";
 import SharePreview from "./SharePreview";
 import type { VersesCardEntry, VersesSynthesis } from "./shareCard";
 
@@ -39,6 +40,9 @@ interface Props {
   title: string;
   scope: string;
   studyScopes?: string[];
+  // Word-study tags already scoped to this study; rendered as a glossary at the
+  // bottom of every compiled view.
+  tags?: WordTag[];
   onFlash: (msg: string) => void;
   // Rename a theme (color) for this study's scope. Optional so older callers
   // still type-check; when supplied, active theme names become editable inline.
@@ -114,6 +118,7 @@ export default function MobileCompile({
   title,
   scope,
   studyScopes,
+  tags,
   onFlash,
   onRenameTheme,
   readOnly,
@@ -1503,6 +1508,19 @@ export default function MobileCompile({
                 </div>
               );
             })}
+            {tags && tags.length > 0 && (
+              <div style={{ marginTop: "18px" }}>
+                <WordStudies
+                  tags={tags}
+                  colors={{
+                    text: C.text,
+                    muted: C.muted,
+                    border: C.border,
+                    soft: C.soft,
+                  }}
+                />
+              </div>
+            )}
       </div>
       {compPreview && (
         <SharePreview
