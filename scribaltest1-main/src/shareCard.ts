@@ -612,7 +612,12 @@ export interface CompCardOpts {
   dateStr: string;
   totalMarks: number;
   passages: number;
-  hero: { text: string; reference: string } | null;
+  hero: {
+    text: string;
+    reference: string;
+    style: string;
+    color: number;
+  } | null;
   themes: CompTheme[];
   dark: boolean;
 }
@@ -684,12 +689,21 @@ export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
   divider();
 
   if (o.hero && o.hero.text.trim()) {
+    const hStyle = o.hero.style;
+    const hBold = hStyle === "bold";
+    const hItalic = hStyle === "italic";
+    const hPen = penHex(o.hero.color, o.dark);
+    const hHl = hlHex(o.hero.color, o.dark);
+    // The featured verse renders with its actual mark style, exactly as it
+    // appears in the reading view — not forced into a generic italic quote.
+    const hFont = (sz: number) =>
+      (hItalic ? "italic " : "") + (hBold ? "700" : "500") + " " + sz + "px " + SERIF;
     const qSizes = [42, 38, 34, 30, 27];
     let qSize = qSizes[0];
     let qLines: string[] = [];
     const quoteW = maxW - 34;
     for (const sz of qSizes) {
-      ctx.font = "italic 500 " + sz + "px " + SERIF;
+      ctx.font = hFont(sz);
       qLines = wrap(ctx, o.hero.text.trim(), quoteW);
       qSize = sz;
       if (qLines.length <= 3) break;
@@ -698,25 +712,54 @@ export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
       qLines = qLines.slice(0, 3);
       qLines[2] = qLines[2].replace(/\s+\S*$/, "") + "…";
     }
-    ctx.font = "italic 500 " + qSize + "px " + SERIF;
+    ctx.font = hFont(qSize);
     const qLineH = qSize * 1.34;
     const barTop = y - qSize + 8;
     const barH = qLines.length * qLineH;
-    ctx.fillStyle = accent;
+    // accent bar in the featured mark's own color
+    ctx.fillStyle = hPen;
     roundRect(ctx, padX, barTop, 5, barH, 2.5);
     ctx.fill();
-    ctx.fillStyle = p.text;
+    const qx = padX + 34;
     ctx.textAlign = "left";
     qLines.forEach((ln) => {
       y += qSize;
-      ctx.fillText(ln, padX + 34, y);
+      ctx.font = hFont(qSize);
+      const tw = ctx.measureText(ln).width;
+      if (hStyle === "highlight") {
+        ctx.fillStyle = hHl;
+        roundRect(ctx, qx - 6, y - qSize + qSize * 0.18, tw + 12, qSize * 1.12, 6);
+        ctx.fill();
+      }
+      ctx.fillStyle = hBold || hItalic ? hPen : p.text;
+      ctx.fillText(ln, qx, y);
+      if (hStyle === "underline") {
+        ctx.strokeStyle = hPen;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(qx, y + qSize * 0.2);
+        ctx.lineTo(qx + tw, y + qSize * 0.2);
+        ctx.stroke();
+      } else if (hStyle === "circle") {
+        ctx.strokeStyle = hPen;
+        ctx.lineWidth = 2.5;
+        roundRect(
+          ctx,
+          qx - 6,
+          y - qSize * 0.86,
+          tw + 12,
+          qSize * 1.12,
+          qSize * 0.55
+        );
+        ctx.stroke();
+      }
       y += qLineH - qSize;
     });
     y += 12;
     ctx.fillStyle = p.muted;
     ctx.font = "italic 26px " + SERIF;
     y += 26;
-    ctx.fillText("— " + o.hero.reference, padX + 34, y);
+    ctx.fillText("— " + o.hero.reference, qx, y);
     y += 44;
     divider();
   }
