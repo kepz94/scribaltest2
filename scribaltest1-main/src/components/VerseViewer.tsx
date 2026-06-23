@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
-import { Mark, MarkStyle, MarkColor, Tool, COLORS, COLOR_MAP } from "../types";
+import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 
 interface VerseViewerProps {
   selectedVolume: number;
@@ -31,6 +31,8 @@ interface VerseViewerProps {
     end: number,
     word: string
   ) => void;
+  tags?: WordTag[];
+  onTagTap?: (tag: WordTag) => void;
   onMarkMany: (
     items: {
       reference: string;
@@ -118,6 +120,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     onChangeColor,
     onEraseMark,
     onDefine,
+    tags,
+    onTagTap,
     onMarkMany,
     marks,
     showToolbar = true,
@@ -611,6 +615,8 @@ export default function VerseViewer(props: VerseViewerProps) {
                   onEraseMark={erasing ? onEraseMark : undefined}
                   showConditionals={showConditionals}
                   dark={dark}
+                  tags={tags}
+                  onTagTap={onTagTap}
                 />
               </div>
             );
@@ -1036,6 +1042,8 @@ export default function VerseViewer(props: VerseViewerProps) {
                 onEraseMark={erasing ? onEraseMark : undefined}
                 showConditionals={showConditionals}
                 dark={dark}
+                tags={tags}
+                onTagTap={onTagTap}
               />
             </div>
           ))}
