@@ -714,6 +714,7 @@ export default function Covenants(props: CovenantsProps) {
           {rows.map((r, i) => (
             <div
               key={rowKey(r, i)}
+              data-vref={r.reference}
               style={{
                 display: "flex",
                 gap: "12px",
@@ -777,6 +778,7 @@ export default function Covenants(props: CovenantsProps) {
           {half.map((h, i) => (
             <div
               key={h.reference + "_" + i}
+              data-vref={h.reference}
               style={{
                 display: "flex",
                 gap: "10px",
