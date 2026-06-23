@@ -789,12 +789,14 @@ export default function MobileCompile({
             shareSignal={covShareSignal}
           />
         )}
-        {format === "outline" && liveMarks.length === 0 && (
-          <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
-            No marks in this book yet. Arm a pen and tap a word to begin — your
-            themes will gather here.
-          </div>
-        )}
+        {format === "outline" &&
+          liveMarks.length === 0 &&
+          (!tags || tags.length === 0) && (
+            <div style={{ padding: "30px 24px", fontSize: "14px", color: C.muted, lineHeight: 1.6 }}>
+              No marks in this book yet. Arm a pen and tap a word to begin — your
+              themes will gather here.
+            </div>
+          )}
             {format === "outline" &&
               groups.map((g) => {
               const c = g.color;
