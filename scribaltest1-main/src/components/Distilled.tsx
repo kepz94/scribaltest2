@@ -1,3 +1,4 @@
+import { useState } from "react";
 import scriptures from "../data/scriptures.json";
 import { Mark, MarkColor, MarkStyle, markStyleCSS } from "../types";
 import { Tab } from "../types";
@@ -18,6 +19,8 @@ const vols = scriptures.volumes;
 
 export default function Distilled(props: DistilledProps) {
   const { compileTabs, marks, onJumpToReference } = props;
+  // Collapse the chapter list by default for multi-chapter studies.
+  const [showChapters, setShowChapters] = useState(false);
 
   const tabLabel = (t: Tab) =>
     vols[t.volume].books[t.book].book +
@@ -107,11 +110,49 @@ export default function Distilled(props: DistilledProps) {
       >
         Distilled
       </div>
-      <h2 style={{ margin: "0 0 6px 0", fontWeight: 500 }}>
-        {compileTabs.length === 0
-          ? "Nothing selected"
-          : compileTabs.map(tabLabel).join("  ·  ")}
-      </h2>
+      {compileTabs.length === 0 ? (
+        <h2 style={{ margin: "0 0 6px 0", fontWeight: 500 }}>Nothing selected</h2>
+      ) : compileTabs.length <= 1 ? (
+        <h2 style={{ margin: "0 0 6px 0", fontWeight: 500 }}>
+          {compileTabs.map(tabLabel).join("  ·  ")}
+        </h2>
+      ) : (
+        <div style={{ margin: "0 0 6px 0" }}>
+          <button
+            onClick={() => setShowChapters((s) => !s)}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              color: "inherit",
+              fontSize: "18px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            {compileTabs.length + " chapters"}
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+              {showChapters ? "▲" : "▾"}
+            </span>
+          </button>
+          {showChapters && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              }}
+            >
+              {compileTabs.map(tabLabel).join("  ·  ")}
+            </div>
+          )}
+        </div>
+      )}
       <p
         style={{
           fontSize: "12.5px",
