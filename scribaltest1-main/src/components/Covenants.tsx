@@ -204,6 +204,9 @@ type Frag = {
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
   const onRoles = props.onRoles;
+  // Only the colors actually used in this study's compiled marks — so the role
+  // pickers offer the themes that exist here, not all seven.
+  const usedColors = COLORS.filter((c) => marks.some((m) => m.color === c));
   // The chapter list is collapsed by default for multi-chapter studies so it
   // doesn't swallow the screen; tap to reveal.
   const [showChapters, setShowChapters] = useState(false);
@@ -558,7 +561,9 @@ export default function Covenants(props: CovenantsProps) {
         {labelText}
       </span>
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {COLORS.map((c) => swatch(c, c === color, () => set(c)))}
+        {COLORS.filter((c) => usedColors.includes(c) || c === color).map((c) =>
+          swatch(c, c === color, () => set(c))
+        )}
       </div>
     </div>
   );
@@ -628,7 +633,6 @@ export default function Covenants(props: CovenantsProps) {
       <div
         style={{
           display: "flex",
-          flexWrap: "wrap",
           gap: "6px",
           marginBottom: "16px",
         }}
@@ -641,13 +645,17 @@ export default function Covenants(props: CovenantsProps) {
               props.onLens?.(l.id);
             }}
             style={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "center",
+              whiteSpace: "nowrap",
               border:
                 "1px solid " + (l.id === lens ? "var(--text)" : "var(--border)"),
               background: l.id === lens ? "var(--text)" : "transparent",
               color: l.id === lens ? "var(--panel)" : "var(--muted)",
-              fontSize: "12.5px",
+              fontSize: "12px",
               fontWeight: 600,
-              padding: "7px 13px",
+              padding: "7px 4px",
               borderRadius: "999px",
               cursor: "pointer",
               fontFamily: "inherit",
@@ -657,29 +665,6 @@ export default function Covenants(props: CovenantsProps) {
           </button>
         ))}
       </div>
-
-      <p
-        style={{
-          fontSize: "12.5px",
-          color: "var(--muted)",
-          marginBottom: "12px",
-          lineHeight: 1.55,
-        }}
-      >
-        {cfg.intro}
-      </p>
-      <p
-        style={{
-          fontSize: "11.5px",
-          fontStyle: "italic",
-          color: "var(--muted)",
-          marginBottom: "20px",
-          lineHeight: 1.5,
-          opacity: 0.85,
-        }}
-      >
-        {cfg.caveat}
-      </p>
 
       <div
         style={{
@@ -880,6 +865,30 @@ export default function Covenants(props: CovenantsProps) {
           ))}
         </div>
       )}
+
+      <p
+        style={{
+          fontSize: "12.5px",
+          color: "var(--muted)",
+          marginTop: "28px",
+          marginBottom: "12px",
+          lineHeight: 1.55,
+        }}
+      >
+        {cfg.intro}
+      </p>
+      <p
+        style={{
+          fontSize: "11.5px",
+          fontStyle: "italic",
+          color: "var(--muted)",
+          marginBottom: "8px",
+          lineHeight: 1.5,
+          opacity: 0.85,
+        }}
+      >
+        {cfg.caveat}
+      </p>
 
       {shareOpen &&
         createPortal(
