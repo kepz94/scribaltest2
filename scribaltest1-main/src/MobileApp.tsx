@@ -5,13 +5,14 @@ import {
   MarkColor,
   MarkStyle,
   Tool,
+  WordTag,
   COLORS,
   COLOR_MAP,
   HIGHLIGHT_MAP,
 } from "./types";
 import MobileVerse from "./MobileVerse";
 import DefinitionView from "./components/DefinitionView";
-import { lookup as websterLookup, loadWebster, WebsterResult } from "./webster";
+import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
 import { NEUTRAL, ACCENT } from "./theme";
 import ScribalMark from "./components/ScribalMark";
@@ -23,6 +24,7 @@ import MobileFeatureGuide from "./MobileFeatureGuide";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
+import { useWordTags } from "./hooks/useWordTags";
 import * as drive from "./googleDrive";
 import {
   CORE_KEYS,
@@ -532,6 +534,8 @@ export default function MobileApp() {
     entries: vaultEntries,
     mergeRemote: vaultMergeRemote,
   } = useVault();
+
+  const { wordTags, hasTag, addTag, removeTag } = useWordTags();
 
   const [dark, setDark] = useState<boolean>(() => {
     const saved = localStorage.getItem("scribal_theme");
@@ -1895,20 +1899,44 @@ export default function MobileApp() {
   };
 
   const [defn, setDefn] = useState<{
+    ref: string;
     word: string;
+    start: number;
+    end: number;
     result: WebsterResult | null;
   } | null>(null);
-  // In Define mode a tap looks the word up instead of marking. We take the
-  // first whole word of the selection so a stray range still resolves cleanly.
-  const openDefine = (text: string, s: number, e: number) => {
-    const w = text.slice(s, e).trim().split(/\s+/)[0] || "";
-    if (!w) return;
-    websterLookup(w).then((result) => setDefn({ word: w, result }));
+  // In Define mode a tap looks the word up instead of marking. We resolve the
+  // first whole word of the selection and remember its exact character range so
+  // a tag can anchor to that one occurrence.
+  const openDefine = (ref: string, text: string, s: number, e: number) => {
+    const slice = text.slice(s, e);
+    const m = slice.match(/[A-Za-z][A-Za-z'-]*/);
+    if (!m) return;
+    const start = s + (m.index || 0);
+    const end = start + m[0].length;
+    const word = m[0];
+    websterLookup(word).then((result) =>
+      setDefn({ ref, word, start, end, result })
+    );
+  };
+  // Tapping a word's footnote marker reopens the same sheet as a quick
+  // reference, with the definition pulled fresh from the dictionary by its key.
+  const openTagRef = (tag: WordTag) => {
+    loadWebster().then(() => {
+      const def = definitionForKey(tag.dictKey);
+      setDefn({
+        ref: tag.reference,
+        word: tag.word,
+        start: tag.start,
+        end: tag.end,
+        result: def ? { key: tag.dictKey, definition: def } : null,
+      });
+    });
   };
 
   const onTap = (ref: string, text: string, s: number, e: number) => {
     if (isDefine) {
-      openDefine(text, s, e);
+      openDefine(ref, text, s, e);
       return;
     }
     if (isEraser) {
@@ -1933,7 +1961,7 @@ export default function MobileApp() {
 
   const onRange = (ref: string, text: string, s: number, e: number) => {
     if (isDefine) {
-      openDefine(text, s, e);
+      openDefine(ref, text, s, e);
       return;
     }
     if (isEraser) eraseRange(ref, s, e);
@@ -1941,11 +1969,16 @@ export default function MobileApp() {
   };
 
   const onManage = (ref: string, text: string, s: number, e: number) => {
+    if (isDefine) {
+      openDefine(ref, text, s, e);
+      return;
+    }
     setManage({ ref, text, s, e });
   };
 
   // ---- Refine a mark's edges (double-tap to enter, tap words to adjust) ----
   const onEnterEdit = (id: string, ref: string) => {
+    if (isDefine) return;
     setManage(null);
     setEditMark({ id, reference: ref });
     flash("Tap words to set the edges · tap Done to finish");
@@ -2909,6 +2942,8 @@ export default function MobileApp() {
               onAdjust={onAdjust}
               showConditionals={showConditionals}
               dark={dark}
+              tags={wordTags}
+              onTagTap={openTagRef}
             />
           ))}
         </div>
@@ -5543,6 +5578,8 @@ export default function MobileApp() {
                           editingActive={!!editMark}
                           onEnterEdit={onEnterEdit}
                           onAdjust={onAdjust}
+                          tags={wordTags}
+                          onTagTap={openTagRef}
                         />
                       </div>
                     );
@@ -6446,6 +6483,8 @@ export default function MobileApp() {
                             editingActive={!!editMark}
                             onEnterEdit={onEnterEdit}
                             onAdjust={onAdjust}
+                            tags={wordTags}
+                            onTagTap={openTagRef}
                           />
                         </div>
                       </div>
@@ -6688,7 +6727,29 @@ export default function MobileApp() {
       {defn &&
         sheet(
           () => setDefn(null),
-          <DefinitionView word={defn.word} result={defn.result} colors={C} />
+          <DefinitionView
+            word={defn.word}
+            result={defn.result}
+            colors={C}
+            tagged={hasTag(defn.ref, defn.start, defn.end)}
+            onToggleTag={
+              defn.result
+                ? () => {
+                    if (hasTag(defn.ref, defn.start, defn.end)) {
+                      removeTag(defn.ref, defn.start, defn.end);
+                    } else if (defn.result) {
+                      addTag({
+                        reference: defn.ref,
+                        start: defn.start,
+                        end: defn.end,
+                        word: defn.word,
+                        dictKey: defn.result.key,
+                      });
+                    }
+                  }
+                : undefined
+            }
+          />
         )}
 
       {manage &&
