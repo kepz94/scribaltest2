@@ -6922,6 +6922,7 @@ export default function MobileApp() {
                   ? "covenants"
                   : "outline"
               }
+              viewLocked={(cr?.view ?? cs?.view) === "covenants"}
               relSavedRoles={scopedRoles[cScope]}
               onRelRoles={(r) => setScopedRoles(cScope, r)}
               marks={cMarks}
