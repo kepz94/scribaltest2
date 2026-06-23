@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./desktop.css";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
+import { useWordTags } from "./hooks/useWordTags";
 import VerseViewer from "./components/VerseViewer";
 import DefinitionView from "./components/DefinitionView";
-import { lookup as websterLookup, loadWebster, WebsterResult } from "./webster";
+import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
@@ -37,6 +38,7 @@ import {
   MarkStyle,
   Tool,
   Tab,
+  WordTag,
   COLOR_MAP,
   COLORS,
   STYLE_LABELS,
@@ -674,6 +676,7 @@ export default function App() {
     end: number;
     result: WebsterResult | null;
   } | null>(null);
+  const { wordTags, hasTag, addTag, removeTag } = useWordTags();
   const handleDefine = (
     reference: string,
     _verseText: string,
@@ -684,6 +687,20 @@ export default function App() {
     websterLookup(word).then((result) =>
       setDefn({ ref: reference, word, start, end, result })
     );
+  };
+  // Clicking a word's footnote marker reopens the same modal as a quick
+  // reference, the definition pulled fresh from the dictionary by its key.
+  const openTagRef = (tag: WordTag) => {
+    loadWebster().then(() => {
+      const def = definitionForKey(tag.dictKey);
+      setDefn({
+        ref: tag.reference,
+        word: tag.word,
+        start: tag.start,
+        end: tag.end,
+        result: def ? { key: tag.dictKey, definition: def } : null,
+      });
+    });
   };
   // Warm the dictionary when Define mode is armed so the first lookup is instant.
   useEffect(() => {
@@ -4014,6 +4031,24 @@ export default function App() {
                 border: "var(--border)",
                 soft: "var(--soft)",
               }}
+              tagged={hasTag(defn.ref, defn.start, defn.end)}
+              onToggleTag={
+                defn.result
+                  ? () => {
+                      if (hasTag(defn.ref, defn.start, defn.end)) {
+                        removeTag(defn.ref, defn.start, defn.end);
+                      } else if (defn.result) {
+                        addTag({
+                          reference: defn.ref,
+                          start: defn.start,
+                          end: defn.end,
+                          word: defn.word,
+                          dictKey: defn.result.key,
+                        });
+                      }
+                    }
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -4314,6 +4349,8 @@ export default function App() {
                   onEraseMark={deleteMark}
                   onMarkMany={addMarks}
                   onDefine={handleDefine}
+                  tags={wordTags}
+                  onTagTap={openTagRef}
                   marks={getBook(st.bookId).marks}
                   showToolbar={true}
                   toolbarPos={toolbarPos}
@@ -6314,6 +6351,8 @@ export default function App() {
                     onEraseMark={deleteMark}
                     onMarkMany={addMarks}
                     onDefine={handleDefine}
+                    tags={wordTags}
+                    onTagTap={openTagRef}
                     marks={getBook(t.bookId).marks}
                     showToolbar={isActive}
                     toolbarPos={toolbarPos}
