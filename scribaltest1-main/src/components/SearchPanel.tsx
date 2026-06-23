@@ -75,7 +75,6 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [source, setSource] = useState<Source>("scripture");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
-  const [wholeWord, setWholeWord] = useState(true);
   const [markColor, setMarkColor] = useState<MarkColor | 0>(0);
   const [showLegend, setShowLegend] = useState(false);
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(
@@ -87,7 +86,6 @@ export default function SearchPanel(props: SearchPanelProps) {
     source: Source;
     volIdx: number;
     bookIdx: number;
-    wholeWord: boolean;
     color: MarkColor | 0;
   } | null>(null);
 
@@ -157,7 +155,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
     // Unified matcher: shared with the mobile search (src/searchMatch.ts) so the
     // phone and the computer interpret a query exactly the same way.
-    const matcher = buildSearchMatcher(q, committed.mode, committed.wholeWord);
+    const matcher = buildSearchMatcher(q, committed.mode, true);
     const test = matcher ? matcher.test : () => false;
     const terms = matcher ? matcher.terms : [];
 
@@ -270,7 +268,6 @@ export default function SearchPanel(props: SearchPanelProps) {
       source,
       volIdx,
       bookIdx,
-      wholeWord,
       color: markColor,
     });
 
@@ -510,21 +507,6 @@ export default function SearchPanel(props: SearchPanelProps) {
             </select>
           )}
           <button
-            onClick={() => setWholeWord((w) => !w)}
-            style={{
-              padding: "6px 13px",
-              borderRadius: "999px",
-              border: "1px solid var(--border)",
-              cursor: "pointer",
-              fontSize: "12.5px",
-              backgroundColor: wholeWord ? "var(--soft)" : "transparent",
-              color: wholeWord ? "var(--text)" : "var(--muted)",
-              fontWeight: wholeWord ? 600 : 400,
-            }}
-          >
-            Whole words
-          </button>
-          <button
             onClick={() => setShowLegend((s) => !s)}
             title="What can I search?"
             style={{
@@ -578,10 +560,6 @@ export default function SearchPanel(props: SearchPanelProps) {
             {legendRow(
               "✲  Wildcard",
               "Put * after a stem to match every word that starts with it. “merc*” → mercy, merciful, mercies. Works on any word, in any mode."
-            )}
-            {legendRow(
-              "Whole words",
-              "Match whole words only, so “love” won’t match “glove”. (Wildcards set their own boundaries.)"
             )}
             {legendRow(
               "Scripture / My marks",
