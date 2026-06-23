@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export type MarkStyle = "bold" | "circle" | "underline" | "italic" | "highlight";
 export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-export type Tool = MarkStyle | "eraser" | "pointer";
+export type Tool = MarkStyle | "eraser" | "pointer" | "define";
 
 export interface Mark {
   id: string;
