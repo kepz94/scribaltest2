@@ -200,9 +200,6 @@ type Frag = {
 export default function Covenants(props: CovenantsProps) {
   const { compileTabs, marks, colorLabels, onJumpToReference } = props;
   const onRoles = props.onRoles;
-  // Only the colors actually used in this study's compiled marks — so the role
-  // pickers offer the themes that exist here, not all seven.
-  const usedColors = COLORS.filter((c) => marks.some((m) => m.color === c));
 
   const [lens, setLens] = useState<Lens>("covenant");
   // Seeded from THIS study's saved roles (synced data layer); falls back to the
@@ -550,9 +547,7 @@ export default function Covenants(props: CovenantsProps) {
         {labelText}
       </span>
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {COLORS.filter((c) => usedColors.includes(c) || c === color).map((c) =>
-          swatch(c, c === color, () => set(c))
-        )}
+        {COLORS.map((c) => swatch(c, c === color, () => set(c)))}
       </div>
     </div>
   );
