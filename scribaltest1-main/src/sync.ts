@@ -34,6 +34,8 @@ export const CORE_KEYS = [
   "scribal_marks",
   "scribal_labels",
   "scribal_notes",
+  "scribal_wordtags",
+  "scribal_wordtags_tomb",
   "scribal_tabs_v2",
   "scribal_active_tab_v2",
   "scribal_theme",
