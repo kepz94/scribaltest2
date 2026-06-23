@@ -449,6 +449,7 @@ export default function App() {
     deleteBook,
     getBook,
     absorb,
+    moveStudyMarks,
     mergeRemoteBooks,
   } = useMarks();
 
@@ -827,6 +828,9 @@ export default function App() {
   const [studyDraftName, setStudyDraftName] = useState("");
   const [studyDraftBook, setStudyDraftBook] = useState<string>("master");
   const [studyDraftNewName, setStudyDraftNewName] = useState("");
+  const [moveStudyId, setMoveStudyId] = useState<string | null>(null);
+  const [moveStudyBook, setMoveStudyBook] = useState<string>("master");
+  const [moveStudyNewName, setMoveStudyNewName] = useState("");
 
   // ScriptureNotes importer
   const [snImportOpen, setSnImportOpen] = useState(false);
@@ -2209,6 +2213,99 @@ export default function App() {
     openStudyTab(study);
   };
 
+  // Reassign a keyword study to a different session book, taking its marks (and
+  // notes, theme names, relational pair) with it and clearing them from the old
+  // book. Lets you carve a completed study into its own dedicated book. If the
+  // destination already has marks, confirm first and name what's there.
+  const confirmMoveStudy = () => {
+    if (!moveStudyId) return;
+    const study = searchStudies.find((s) => s.id === moveStudyId);
+    if (!study) {
+      setMoveStudyId(null);
+      return;
+    }
+    const runMove = (bookId: string) => {
+      if (bookId !== study.bookId) {
+        moveStudyMarks(
+          study.bookId,
+          bookId,
+          study.refs,
+          "searchstudy:" + study.id
+        );
+        updateStudy(study.id, { bookId });
+      }
+      setMoveStudyId(null);
+      setMoveStudyBook("master");
+      setMoveStudyNewName("");
+    };
+
+    // A brand-new session is empty, so nothing can collide — move straight in.
+    if (moveStudyBook === "__new__") {
+      runMove(
+        createSession(
+          moveStudyNewName.trim() || "Session · " + fmtShortDate(Date.now())
+        )
+      );
+      return;
+    }
+
+    const target = moveStudyBook;
+    if (target === study.bookId) {
+      setMoveStudyId(null);
+      return;
+    }
+
+    // What's already marked in the destination, and which studies those marks
+    // belong to, so moving into an in-use book is a deliberate choice.
+    const tMarks = allMarks.filter((m) => m.bookId === target);
+    const markedRefs = new Set(tMarks.map((m) => m.reference));
+    if (markedRefs.size === 0) {
+      runMove(target);
+      return;
+    }
+    const owners: string[] = [];
+    searchStudies.forEach((s) => {
+      if (s.id === study.id || s.bookId !== target) return;
+      if (s.refs.some((r) => markedRefs.has(r))) owners.push(s.name);
+    });
+    recordedStudies.forEach((s) => {
+      if (s.bookId !== target) return;
+      const chs =
+        s.type === "linked"
+          ? Object.keys(chapterGroups).filter(
+              (c) => chapterGroups[c] === s.scopeRef
+            )
+          : [s.scopeRef];
+      if (tMarks.some((m) => chs.includes(scopeOfRef(m.reference))))
+        owners.push(s.name);
+    });
+
+    const targetName =
+      target === "master"
+        ? "Master Book"
+        : books.find((b) => b.id === target)?.name || "this session";
+    const belongs = owners.length
+      ? " Those marks belong to: " + owners.join(", ") + "."
+      : "";
+    setMoveStudyId(null);
+    askConfirm({
+      title: targetName + " already has marks",
+      body:
+        targetName +
+        " already has " +
+        markedRefs.size +
+        " marked verse" +
+        (markedRefs.size === 1 ? "" : "s") +
+        "." +
+        belongs +
+        ' Moving "' +
+        study.name +
+        '" here keeps both sets of marks together. Continue?',
+      confirmLabel: "Move here",
+      onConfirm: () => runMove(target),
+    });
+  };
+
   // Add verses to an existing keyword/imported study, or fork a new copy with the
   // additions. The selection IS the full new verse set (the study's verses are
   // pre-checked in the panel), so we just write it. Refs edits sync across
@@ -2977,6 +3074,11 @@ export default function App() {
         onAddVerses: () => {
           setAddToStudyId(ss.id);
           setShowSearch(true);
+        },
+        onMove: () => {
+          setMoveStudyId(ss.id);
+          setMoveStudyBook(ss.bookId);
+          setMoveStudyNewName("");
         },
         onDelete: () =>
           askConfirm({
@@ -4909,6 +5011,152 @@ export default function App() {
                 }}
               >
                 Create study
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveStudyId && (
+        <div
+          className="scribal-fade"
+          onClick={() => setMoveStudyId(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 380,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="scribal-rise"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: "16px",
+              border: "1px solid var(--border)",
+              padding: "20px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div style={{ fontSize: "16px", fontWeight: 700 }}>
+              Move to a session
+            </div>
+            <div
+              style={{
+                fontSize: "12.5px",
+                color: "var(--muted)",
+                marginTop: "3px",
+              }}
+            >
+              Moves the study and its marks into the chosen book and clears them
+              from the old one.
+            </div>
+            <div style={{ marginTop: "14px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "var(--muted)",
+                  marginBottom: "6px",
+                }}
+              >
+                Marks save to
+              </div>
+              <select
+                value={moveStudyBook}
+                onChange={(e) => setMoveStudyBook(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "11px 13px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  fontSize: "14px",
+                  fontFamily: "inherit",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              >
+                <option value="master">Master Book</option>
+                {books
+                  .filter((b) => !b.isMaster)
+                  .map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                <option value="__new__">+ New session…</option>
+              </select>
+              {moveStudyBook === "__new__" && (
+                <input
+                  value={moveStudyNewName}
+                  onChange={(e) => setMoveStudyNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") confirmMoveStudy();
+                  }}
+                  placeholder="New session name (optional)"
+                  style={{
+                    width: "100%",
+                    marginTop: "8px",
+                    padding: "11px 13px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontFamily: "inherit",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "16px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => setMoveStudyId(null)}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: "13.5px",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmMoveStudy}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: ICON_ACCENT,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "13.5px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                }}
+              >
+                Move study
               </button>
             </div>
           </div>
