@@ -329,6 +329,9 @@ interface SearchStudy {
   // the ScriptureNotes importer). Mobile doesn't show or edit it, but stores and
   // syncs it so it round-trips between devices without being lost or reverted.
   note?: string;
+  // The compile view this keyword study was last saved in (Outline / Distilled /
+  // Relational), so reopening lands on the same tab. Absent → Outline.
+  view?: "outline" | "distilled" | "covenants";
 }
 
 // A recorded study (chapter or linked). Live: its marks are always the book's
@@ -839,6 +842,7 @@ export default function MobileApp() {
                     name: rs.name,
                     refs: rs.refs,
                     note: rs.note ?? local.note,
+                    view: rs.view ?? local.view,
                     updatedAt: rAt,
                   }
                 : { ...local };
@@ -6652,9 +6656,9 @@ export default function MobileApp() {
             <MobileCompile
               key={cr ? "rec:" + cr.id : cs ? "ss:" + cs.id : "ch:" + title}
               initialFormat={
-                cr?.view === "distilled"
+                (cr?.view ?? cs?.view) === "distilled"
                   ? "distilled"
-                  : cr?.view === "covenants"
+                  : (cr?.view ?? cs?.view) === "covenants"
                   ? "covenants"
                   : "outline"
               }
@@ -6677,7 +6681,12 @@ export default function MobileApp() {
                   setSearchStudies((prev) =>
                     prev.map((s) =>
                       s.id === cs.id
-                        ? { ...s, name: name || s.name, updatedAt: Date.now() }
+                        ? {
+                            ...s,
+                            name: name || s.name,
+                            view,
+                            updatedAt: Date.now(),
+                          }
                         : s
                     )
                   );
