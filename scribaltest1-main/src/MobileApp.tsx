@@ -2236,6 +2236,16 @@ export default function MobileApp() {
     setHomeOpen(false);
     setCompileOpen(true);
   };
+  // Open a keyword study straight to its compiled notes (in its saved view),
+  // with the study's verse list positioned underneath for when the notes are
+  // closed — so it lands on the synthesis, not the verse list, matching how
+  // recorded studies open from the Studies screen.
+  const openKeywordCompile = (ss: SearchStudy) => {
+    openStudy(ss);
+    setCompileRec(null);
+    setCompileStudy(ss);
+    setCompileOpen(true);
+  };
   const deleteStudy = (id: string) => {
     setStudies((prev) =>
       prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
@@ -6356,7 +6366,7 @@ export default function MobileApp() {
                                 ? " · " + bookLabel(ss.bookId)
                                 : ""),
                             "#0d9488",
-                            () => openStudy(ss),
+                            () => openKeywordCompile(ss),
                             () => {
                               if (
                                 window.confirm(
