@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect } from "react";
-import { Mark, markStyleCSS } from "./types";
+import { useRef, useState, useEffect, Fragment } from "react";
+import { Mark, WordTag, markStyleCSS } from "./types";
 
 interface Token {
   text: string;
@@ -57,6 +57,8 @@ interface MobileVerseProps {
   ) => void;
   showConditionals?: boolean;
   dark?: boolean;
+  tags?: WordTag[];
+  onTagTap?: (tag: WordTag) => void;
 }
 
 const LONG_PRESS_MS = 380;
@@ -83,13 +85,17 @@ export default function MobileVerse({
   onAdjust,
   showConditionals = false,
   dark = false,
+  tags,
+  onTagTap,
 }: MobileVerseProps) {
   const toks = tokenize(text);
   const verseMarks = marks.filter((m) => m.reference === reference);
+  const verseTags = (tags || []).filter((t) => t.reference === reference);
 
   const condRanges = showConditionals ? findConditionals(text) : [];
   const condLine = dark ? "#a5b4fc" : "#4f46e5";
   const condBg = dark ? "rgba(165,180,252,0.16)" : "rgba(79,70,229,0.10)";
+  const tagMark = dark ? "#cbb892" : "#9a7b4f";
   const isCondTok = (tok: Token) =>
     condRanges.some((r) => r.start < tok.end && r.end > tok.start);
 
@@ -450,10 +456,14 @@ export default function MobileVerse({
     const selStyle = highlight
       ? { backgroundColor: selBg, ...(tok.isWord ? { borderRadius: "2px" } : {}) }
       : {};
+    // A footnote marker rides after the word it tags. It has no data-wi, so the
+    // selection engine ignores taps on it; its own onClick opens the reference.
+    const tag = tok.isWord
+      ? verseTags.find((t) => t.start >= tok.start && t.start < tok.end)
+      : undefined;
     if (tok.isWord) {
-      return (
+      const word = (
         <span
-          key={i}
           data-wi={i}
           style={{
             userSelect: "none",
@@ -465,6 +475,29 @@ export default function MobileVerse({
         >
           {tok.text}
         </span>
+      );
+      if (!tag) return <Fragment key={i}>{word}</Fragment>;
+      return (
+        <Fragment key={i}>
+          {word}
+          <sup
+            onClick={(ev) => {
+              ev.stopPropagation();
+              if (onTagTap) onTagTap(tag);
+            }}
+            style={{
+              cursor: "pointer",
+              color: tagMark,
+              fontWeight: 700,
+              fontSize: "0.72em",
+              padding: "0 2px",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+            }}
+          >
+            {"\u2020"}
+          </sup>
+        </Fragment>
       );
     }
     return (
