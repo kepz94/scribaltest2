@@ -6566,6 +6566,7 @@ export default function MobileApp() {
           const cs = compileStudy;
           const cr = compileRec;
           let cMarks: Mark[];
+          let cTags: WordTag[];
           let cScopes: string[];
           let cScope: string;
           let cTitle: string;
@@ -6575,6 +6576,7 @@ export default function MobileApp() {
               byOrder
             );
             cMarks = marks.filter((m) => cs.refs.includes(m.reference));
+            cTags = wordTags.filter((t) => cs.refs.includes(t.reference));
             cScope = "searchstudy:" + cs.id;
             cTitle = cs.name;
             const o: Record<number, string> = {};
@@ -6599,6 +6601,11 @@ export default function MobileApp() {
                 cScopes.includes(scopeOf(m.reference)) ||
                 crExtra.includes(m.reference)
             );
+            cTags = wordTags.filter(
+              (t) =>
+                cScopes.includes(scopeOf(t.reference)) ||
+                crExtra.includes(t.reference)
+            );
             cScope =
               cr.type === "linked"
                 ? "group:" + cr.scopeRef
@@ -6612,6 +6619,9 @@ export default function MobileApp() {
             cLabels = o;
           } else {
             cMarks = studyMarks;
+            cTags = wordTags.filter((t) =>
+              studyScopes.includes(scopeOf(t.reference))
+            );
             cScopes = studyScopes;
             cScope = resolveScope(title);
             // If a study for this chapter (or its linked group) was already
@@ -6643,6 +6653,7 @@ export default function MobileApp() {
               relSavedRoles={scopedRoles[cScope]}
               onRelRoles={(r) => setScopedRoles(cScope, r)}
               marks={cMarks}
+              tags={cTags}
               studyScopes={cScopes}
               colorLabels={cLabels}
               C={C}
