@@ -299,6 +299,25 @@ const chapterScopeOf = (t: { volume: number; book: number; chapter: number }) =>
       ""
   );
 
+// The scope label of the chapter that follows this one across the whole canon:
+// the next chapter in the same book, else the first chapter of the next book,
+// else the first chapter of the next volume. Null at the very end.
+const nextChapterScopeOf = (t: {
+  volume: number;
+  book: number;
+  chapter: number;
+}): string | null => {
+  const vol = vols[t.volume];
+  const bk = vol?.books[t.book];
+  if (!bk) return null;
+  const ref =
+    bk.chapters[t.chapter + 1]?.verses[0]?.reference ||
+    vol.books[t.book + 1]?.chapters[0]?.verses[0]?.reference ||
+    vols[t.volume + 1]?.books[0]?.chapters[0]?.verses[0]?.reference ||
+    "";
+  return ref ? scopeOfRef(ref) : null;
+};
+
 // A fresh id for a new link group.
 const newGroupId = () =>
   "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -1998,6 +2017,32 @@ export default function App() {
     : resolveScope(chapterScopeOf(activeTab));
   const activeScopedLabels = scopedLabels[activeScope] || {};
 
+  // For a linked chapter, the themes the study has already established (named in
+  // the group, or used by a mark anywhere in the group). A blank linked chapter
+  // shows these so its shared palette is visible to continue with.
+  const activeChapterScope = activeTab.studyId
+    ? ""
+    : chapterScopeOf(activeTab);
+  const isLinkedChapter =
+    !!activeChapterScope && !!chapterGroups[activeChapterScope];
+  const establishedThemes = useMemo<{ color: MarkColor; name: string }[]>(() => {
+    if (!isLinkedChapter) return [];
+    const gid = chapterGroups[activeChapterScope];
+    const gScopes = new Set(
+      Object.keys(chapterGroups).filter((k) => chapterGroups[k] === gid)
+    );
+    const used = new Set<MarkColor>();
+    allMarks.forEach((m) => {
+      if (gScopes.has(scopeOfRef(m.reference))) used.add(m.color);
+    });
+    const out: { color: MarkColor; name: string }[] = [];
+    COLORS.forEach((c) => {
+      const nm = (activeScopedLabels[c] || "").trim();
+      if (nm || used.has(c)) out.push({ color: c, name: nm || "Color " + c });
+    });
+    return out;
+  }, [isLinkedChapter, activeChapterScope, chapterGroups, allMarks, activeScopedLabels]);
+
   // Scope for whatever is being compiled (the prompt guarantees one unit:
   // a single chapter, or one link group — both resolve to a single scope).
   const compileScope = compileTabs[0]
@@ -3566,14 +3611,36 @@ export default function App() {
                   scope: chapterScopeOf(x),
                   label: tabLabel(x),
                   open: true,
+                  next: false,
                 }));
               const openSet = new Set(openRows.map((o) => o.scope));
-              const linkRows = [
+              const baseRows = [
                 ...openRows,
                 ...linkSelected
                   .filter((s) => !openSet.has(s) && s !== cs)
-                  .map((s) => ({ scope: s, label: s, open: false })),
+                  .map((s) => ({
+                    scope: s,
+                    label: s,
+                    open: false,
+                    next: false,
+                  })),
               ];
+              // Offer the very next chapter as a one-tap link even when it isn't
+              // open in a tab — the most common way a study grows.
+              const nextScope = nextChapterScopeOf(t);
+              const hasRow = new Set(baseRows.map((r) => r.scope));
+              const linkRows =
+                nextScope && nextScope !== cs && !hasRow.has(nextScope)
+                  ? [
+                      {
+                        scope: nextScope,
+                        label: nextScope,
+                        open: false,
+                        next: true,
+                      },
+                      ...baseRows,
+                    ]
+                  : baseRows;
               const eyebrow: React.CSSProperties = {
                 fontSize: "11px",
                 fontWeight: 700,
@@ -3766,7 +3833,7 @@ export default function App() {
                             </span>
                             <span style={{ flex: 1 }}>
                               {r.label}
-                              {!r.open && (
+                              {(r.next || !r.open) && (
                                 <span
                                   style={{
                                     fontSize: "11px",
@@ -3774,7 +3841,7 @@ export default function App() {
                                   }}
                                 >
                                   {" "}
-                                  · not open
+                                  · {r.next ? "next chapter" : "not open"}
                                 </span>
                               )}
                             </span>
@@ -6917,7 +6984,79 @@ export default function App() {
                 {activeBookName} · {tabLabel(activeTab)}
               </p>
 
-              {groups.length === 0 && (
+              {isLinkedChapter && establishedThemes.length > 0 && (
+                <div style={{ marginBottom: "14px" }}>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Themes in this study
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    {establishedThemes.map((th) => (
+                      <button
+                        key={th.color}
+                        onClick={() => setSelectedColor(th.color)}
+                        title={"Mark with " + th.name}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "9px",
+                          textAlign: "left",
+                          padding: "7px 9px",
+                          borderRadius: "8px",
+                          border:
+                            selectedColor === th.color
+                              ? "2px solid var(--text)"
+                              : "1px solid var(--border)",
+                          background: "var(--soft)",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                          fontWeight: selectedColor === th.color ? 600 : 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: "13px",
+                            height: "13px",
+                            borderRadius: "50%",
+                            backgroundColor: COLOR_MAP[th.color],
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={{ flex: 1 }}>{th.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      lineHeight: 1.5,
+                      marginTop: "8px",
+                    }}
+                  >
+                    Shared across all linked chapters. Tap one to mark with its
+                    color.
+                  </div>
+                </div>
+              )}
+
+              {groups.length === 0 &&
+                !(isLinkedChapter && establishedThemes.length > 0) && (
                 <div
                   style={{
                     display: "flex",
