@@ -337,6 +337,30 @@ export default function SearchPanel(props: SearchPanelProps) {
 
   const shown = results ? results.items.slice(0, MAX_RESULTS) : [];
 
+  // When the panel is pulling verses into a study, the rows are a multi-select
+  // list: clicking a row toggles its checkbox rather than jumping away (a stray
+  // tap used to open the verse and close the search, losing the whole selection).
+  // Jumping moves to a dedicated button on the far side of the row.
+  const selectMode = !!(onLinkStudy || onAddToStudy || onAddVerses);
+  const shownRefs = shown.map((r) => r.reference);
+  const allShownSelected =
+    shownRefs.length > 0 && shownRefs.every((ref) => selectedRefs.has(ref));
+  const toggleRef = (ref: string) =>
+    setSelectedRefs((prev) => {
+      const n = new Set(prev);
+      if (n.has(ref)) n.delete(ref);
+      else n.add(ref);
+      return n;
+    });
+  const toggleSelectAllShown = () =>
+    setSelectedRefs((prev) => {
+      const n = new Set(prev);
+      if (shownRefs.every((ref) => n.has(ref)))
+        shownRefs.forEach((ref) => n.delete(ref));
+      else shownRefs.forEach((ref) => n.add(ref));
+      return n;
+    });
+
   return (
     <div
       className="scribal-fade"
@@ -693,6 +717,30 @@ export default function SearchPanel(props: SearchPanelProps) {
                     {vn} {results.byVol[vn]}
                   </span>
                 ))}
+                {selectMode && shownRefs.length > 0 && (
+                  <>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      onClick={toggleSelectAllShown}
+                      style={{
+                        padding: "5px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border)",
+                        background: allShownSelected
+                          ? "var(--soft)"
+                          : "transparent",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        fontFamily: "inherit",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {allShownSelected ? "Select none" : "Select all"}
+                    </button>
+                  </>
+                )}
               </div>
 
               {(onLinkStudy || onAddToStudy || onAddVerses) &&
@@ -843,11 +891,11 @@ export default function SearchPanel(props: SearchPanelProps) {
               {shown.map((r, i) => (
                 <div
                   key={r.reference + "|" + i}
-                  onClick={() =>
-                    r.bookId
-                      ? onJumpToMark(r.bookId, r.reference)
-                      : onJump(r.reference)
-                  }
+                  onClick={() => {
+                    if (selectMode) toggleRef(r.reference);
+                    else if (r.bookId) onJumpToMark(r.bookId, r.reference);
+                    else onJump(r.reference);
+                  }}
                   style={{
                     padding: "11px 18px",
                     cursor: "pointer",
@@ -873,14 +921,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                         type="checkbox"
                         checked={selectedRefs.has(r.reference)}
                         onClick={(e) => e.stopPropagation()}
-                        onChange={() =>
-                          setSelectedRefs((prev) => {
-                            const n = new Set(prev);
-                            if (n.has(r.reference)) n.delete(r.reference);
-                            else n.add(r.reference);
-                            return n;
-                          })
-                        }
+                        onChange={() => toggleRef(r.reference)}
                         style={{
                           width: "15px",
                           height: "15px",
@@ -910,13 +951,30 @@ export default function SearchPanel(props: SearchPanelProps) {
                     >
                       {r.reference}
                     </span>
-                    <span
-                      title="Open here (current tab)"
-                      style={{ fontSize: "11px", color: "var(--muted)" }}
-                    >
-                      ↗
-                    </span>
                     <div style={{ flex: 1 }} />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (r.bookId) onJumpToMark(r.bookId, r.reference);
+                        else onJump(r.reference);
+                      }}
+                      title="Open here (current tab)"
+                      style={{
+                        padding: "3px 10px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border)",
+                        background: "transparent",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                        fontSize: "11px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Open ↗
+                    </button>
                     {!r.bookId && (
                       <button
                         onClick={(e) => {
