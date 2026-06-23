@@ -535,7 +535,8 @@ export default function MobileApp() {
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
-  const { wordTags, hasTag, addTag, removeTag } = useWordTags();
+  const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
+    useWordTags();
 
   const [dark, setDark] = useState<boolean>(() => {
     const saved = localStorage.getItem("scribal_theme");
@@ -722,6 +723,10 @@ export default function MobileApp() {
   //    A plain re-compile never moves nameAt, so it can't overwrite a rename.
   //  - Keyword studies: additive (add unseen ones only).
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
+    wordTagsMergeRemote(
+      data["scribal_wordtags"],
+      data["scribal_wordtags_tomb"]
+    );
     try {
       const r = JSON.parse(data["scribal_studies_v1"] || "[]");
       const remote: Study[] = Array.isArray(r) ? r : [];
