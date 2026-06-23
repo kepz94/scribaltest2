@@ -543,23 +543,17 @@ export default function SearchPanel(props: SearchPanelProps) {
                 marginBottom: "10px",
               }}
             >
-              Search functions
+              How search works
             </div>
             {legendRow(
-              "All words",
-              "Every word must appear in the verse (AND). “faith hope” → verses containing both."
+              "All / Any / Phrase",
+              "Choose how plain words combine — every word, any word, or the exact phrase in order."
             )}
+            {legendRow("faith & hope", "Use & to require all parts.")}
+            {legendRow("mercy OR grace", "Use OR to match either side.")}
             {legendRow(
-              "Any word",
-              "At least one word appears (OR). “faith hope” → verses with either."
-            )}
-            {legendRow(
-              "Phrase",
-              "The exact phrase, words in order. “charity never faileth”."
-            )}
-            {legendRow(
-              "✲  Wildcard",
-              "Put * after a stem to match every word that starts with it. “merc*” → mercy, merciful, mercies. Works on any word, in any mode."
+              "merc*",
+              "Put * after a stem to match every word that starts with it → mercy, merciful, mercies."
             )}
             {legendRow(
               "Scripture / My marks",
