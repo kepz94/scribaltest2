@@ -684,13 +684,6 @@ export default function MobileCompile({
                 outline: "none",
               }}
             />
-            {title && (
-              <div style={{ fontSize: "12px", color: C.muted, marginTop: "4px" }}>
-                {studyScopes && studyScopes.length > 1
-                  ? studyScopes.length + " chapters · " + studyScopes.join(", ")
-                  : title + " · this chapter"}
-              </div>
-            )}
           </div>
         </div>
         {/* Row 2 — actions (Save is the primary, Share is secondary) */}
