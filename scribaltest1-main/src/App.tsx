@@ -825,6 +825,8 @@ export default function App() {
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
   const [studyDraftName, setStudyDraftName] = useState("");
+  const [studyDraftBook, setStudyDraftBook] = useState<string>("master");
+  const [studyDraftNewName, setStudyDraftNewName] = useState("");
 
   // ScriptureNotes importer
   const [snImportOpen, setSnImportOpen] = useState(false);
@@ -2185,13 +2187,25 @@ export default function App() {
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
     setStudyDraftRefs(ordered);
     setStudyDraftName("");
+    setStudyDraftBook(activeBookId);
+    setStudyDraftNewName("");
     setShowSearch(false);
   };
   const createStudyFromDraft = () => {
     const refs = studyDraftRefs;
     if (!refs || !refs.length) return;
-    const study = addStudy(studyDraftName, activeBookId, refs);
+    let bookId = studyDraftBook;
+    if (bookId === "__new__") {
+      bookId = createSession(
+        studyDraftNewName.trim() ||
+          studyDraftName.trim() ||
+          "Session · " + fmtShortDate(Date.now())
+      );
+    }
+    const study = addStudy(studyDraftName, bookId, refs);
     setStudyDraftRefs(null);
+    setStudyDraftBook("master");
+    setStudyDraftNewName("");
     openStudyTab(study);
   };
 
@@ -4773,8 +4787,7 @@ export default function App() {
               style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: "3px" }}
             >
               {studyDraftRefs.length}{" "}
-              {studyDraftRefs.length === 1 ? "verse" : "verses"} · marks save to{" "}
-              {activeBookName}
+              {studyDraftRefs.length === 1 ? "verse" : "verses"}
             </div>
             <input
               autoFocus
@@ -4798,6 +4811,66 @@ export default function App() {
                 boxSizing: "border-box",
               }}
             />
+            <div style={{ marginTop: "14px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "var(--muted)",
+                  marginBottom: "6px",
+                }}
+              >
+                Marks save to
+              </div>
+              <select
+                value={studyDraftBook}
+                onChange={(e) => setStudyDraftBook(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "11px 13px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  fontSize: "14px",
+                  fontFamily: "inherit",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              >
+                <option value="master">Master Book</option>
+                {books
+                  .filter((b) => !b.isMaster)
+                  .map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                <option value="__new__">+ New session…</option>
+              </select>
+              {studyDraftBook === "__new__" && (
+                <input
+                  value={studyDraftNewName}
+                  onChange={(e) => setStudyDraftNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") createStudyFromDraft();
+                  }}
+                  placeholder="New session name (optional)"
+                  style={{
+                    width: "100%",
+                    marginTop: "8px",
+                    padding: "11px 13px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontFamily: "inherit",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              )}
+            </div>
             <div
               style={{
                 display: "flex",
