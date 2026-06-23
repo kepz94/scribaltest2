@@ -529,6 +529,7 @@ export default function MobileApp() {
     scopedRoles,
     setScopedRoles,
     getBook,
+    moveStudyMarks,
     notes,
     setNote,
   } = useMarks();
@@ -1384,6 +1385,81 @@ export default function MobileApp() {
       prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
     );
     if (openStudyId === id) closeStudy();
+  };
+
+  // Move a completed keyword study (with its marks, notes, theme names and
+  // relational pair) into a different book, clearing them from the old one — for
+  // giving certain studies their own dedicated book.
+  const [moveStudy, setMoveStudy] = useState<SearchStudy | null>(null);
+  const performMove = (study: SearchStudy, targetBookId: string) => {
+    if (targetBookId !== study.bookId) {
+      moveStudyMarks(
+        study.bookId,
+        targetBookId,
+        study.refs,
+        "searchstudy:" + study.id
+      );
+      setSearchStudies((prev) =>
+        prev.map((s) =>
+          s.id === study.id
+            ? { ...s, bookId: targetBookId, updatedAt: Date.now() }
+            : s
+        )
+      );
+    }
+    setMoveStudy(null);
+  };
+  const tryMove = (
+    study: SearchStudy,
+    targetBookId: string,
+    targetName: string
+  ) => {
+    if (targetBookId === study.bookId) {
+      setMoveStudy(null);
+      return;
+    }
+    // Warn if the destination is already in use, and name what's there.
+    const tMarks = allMarks.filter((m) => m.bookId === targetBookId);
+    const markedRefs = new Set(tMarks.map((m) => m.reference));
+    if (markedRefs.size > 0) {
+      const owners: string[] = [];
+      searchStudies.forEach((s) => {
+        if (
+          s.id !== study.id &&
+          s.bookId === targetBookId &&
+          s.refs.some((r) => markedRefs.has(r))
+        )
+          owners.push(s.name);
+      });
+      studies.forEach((s) => {
+        if (s.bookId !== targetBookId) return;
+        const chs =
+          s.type === "linked"
+            ? Object.keys(chapterGroups).filter(
+                (c) => chapterGroups[c] === s.scopeRef
+              )
+            : [s.scopeRef];
+        if (tMarks.some((m) => chs.includes(scopeOf(m.reference))))
+          owners.push(s.name);
+      });
+      const belongs = owners.length
+        ? " They belong to: " + owners.join(", ") + "."
+        : "";
+      const ok = window.confirm(
+        targetName +
+          " already has " +
+          markedRefs.size +
+          " marked verse" +
+          (markedRefs.size === 1 ? "" : "s") +
+          "." +
+          belongs +
+          '\n\nMoving "' +
+          study.name +
+          '" here keeps both sets of marks together. Continue?'
+      );
+      if (!ok) return;
+    }
+    performMove(study, targetBookId);
   };
   // Search → "Next": stash the picked verses and open the source + name step.
   const onLinkConfirm = (refs: string[]) => {
@@ -5877,7 +5953,8 @@ export default function MobileApp() {
             icon?: React.ReactNode,
             info?: React.ReactNode,
             expanded?: boolean,
-            onInfo?: () => void
+            onInfo?: () => void,
+            onMove?: () => void
           ) => (
             <div key={key} style={{ borderTop: "1px solid " + C.border }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -5948,6 +6025,36 @@ export default function MobileApp() {
                     }}
                   >
                     <IconInfo color={expanded ? accent : C.muted} />
+                  </button>
+                )}
+                {onMove && (
+                  <button
+                    onClick={onMove}
+                    aria-label="Move study to another book"
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg
+                      width="17"
+                      height="17"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke={C.muted}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
                   </button>
                 )}
                 <button
@@ -6215,13 +6322,100 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === ss.id ? null : ss.id
-                              )
+                              ),
+                            () => setMoveStudy(ss)
                           )
                         )
                       )}
                   </>
                 )}
               </div>
+            </div>
+          );
+        })()}
+
+      {/* Move a keyword study into a different book */}
+      {moveStudy &&
+        (() => {
+          const study = moveStudy;
+          const dateStr = new Date().toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          });
+          const choiceBtn = (
+            label: string,
+            sub: string,
+            onClick: () => void
+          ) => (
+            <button
+              key={label}
+              onClick={onClick}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1px solid " + C.border,
+                borderRadius: "12px",
+                padding: "13px 14px",
+                marginBottom: "8px",
+                color: C.text,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <div style={{ fontSize: "14px", fontWeight: 600 }}>{label}</div>
+              <div
+                style={{ fontSize: "11px", color: C.muted, marginTop: "2px" }}
+              >
+                {sub}
+              </div>
+            </button>
+          );
+          return sheet(
+            () => setMoveStudy(null),
+            <div>
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 700,
+                  marginBottom: "2px",
+                }}
+              >
+                Move “{study.name}”
+              </div>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: C.muted,
+                  marginBottom: "16px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Moves the study and its marks into the chosen book, clearing them
+                from the old one.
+              </div>
+
+              {study.bookId !== "master" &&
+                choiceBtn("Master Book", "your default book", () =>
+                  tryMove(study, "master", "Master Book")
+                )}
+
+              {books
+                .filter((b) => !b.isMaster && b.id !== study.bookId)
+                .map((b) =>
+                  choiceBtn(
+                    b.name,
+                    b.markCount + " mark" + (b.markCount === 1 ? "" : "s"),
+                    () => tryMove(study, b.id, b.name)
+                  )
+                )}
+
+              {choiceBtn("New session", "a fresh dedicated book", () => {
+                const nm = window.prompt("Name this session", study.name);
+                if (nm === null) return;
+                const id = createSession(nm.trim() || "Session · " + dateStr);
+                performMove(study, id);
+              })}
             </div>
           );
         })()}
