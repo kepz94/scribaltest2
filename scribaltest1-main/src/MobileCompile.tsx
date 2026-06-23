@@ -30,6 +30,10 @@ interface Props {
   // The view to open in — a saved study reopens on the tab it was saved in.
   // Absent → Outline.
   initialFormat?: "outline" | "distilled" | "covenants";
+  // When this is a saved Relational study, lock the compile to the Relational
+  // view: the format tabs are hidden and the view can't be switched, since a
+  // relational study's whole point is the pairing.
+  viewLocked?: boolean;
   // This study's saved relational condition/promise roles (synced) + a setter
   // to persist changes. Forwarded straight to the Relational (Covenants) view.
   relSavedRoles?: Record<string, { a: number; b: number }>;
@@ -110,6 +114,7 @@ export default function MobileCompile({
   setNote,
   onSave,
   initialFormat,
+  viewLocked,
   relSavedRoles,
   onRelRoles,
   defaultName,
@@ -140,8 +145,11 @@ export default function MobileCompile({
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
   // Distilled and Covenants are their own formats, each its own view.
   const [format, setFormat] = useState<"outline" | "distilled" | "covenants">(
-    initialFormat || "outline"
+    viewLocked ? "covenants" : initialFormat || "outline"
   );
+  // Whether the tucked-away view options (Focused/Full, In order/By points) are
+  // showing. Collapsed by default so the study itself stays the focus.
+  const [optionsOpen, setOptionsOpen] = useState(false);
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
   // Which synthesis / verse-note is in edit mode (textarea open). Otherwise the
@@ -791,27 +799,47 @@ export default function MobileCompile({
               gap: "8px",
             }}
           >
-            <div
-              data-tour="ex-formats"
-              style={{
-                display: "flex",
-                gap: "4px",
-                backgroundColor: C.soft,
-                borderRadius: "10px",
-                padding: "4px",
-              }}
-            >
-              {seg(format === "outline", "Outline", () =>
-                setFormat("outline")
-              )}
-              {seg(format === "distilled", "Distilled", () =>
-                setFormat("distilled")
-              )}
-              {seg(format === "covenants", "Relational", () =>
-                setFormat("covenants")
-              )}
-            </div>
+            {!viewLocked && (
+              <div
+                data-tour="ex-formats"
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(format === "outline", "Outline", () =>
+                  setFormat("outline")
+                )}
+                {seg(format === "distilled", "Distilled", () =>
+                  setFormat("distilled")
+                )}
+                {seg(format === "covenants", "Relational", () =>
+                  setFormat("covenants")
+                )}
+              </div>
+            )}
             {format === "outline" && (
+              <button
+                onClick={() => setOptionsOpen((o) => !o)}
+                style={{
+                  alignSelf: "flex-start",
+                  background: "transparent",
+                  border: "none",
+                  color: C.muted,
+                  fontFamily: "inherit",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px",
+                }}
+              >
+                {optionsOpen ? "Hide options ▲" : "View options ▼"}
+              </button>
+            )}
+            {format === "outline" && optionsOpen && (
               <div
                 style={{
                   display: "flex",
@@ -825,7 +853,7 @@ export default function MobileCompile({
                 {seg(view === "full", "Full verse", () => setView("full"))}
               </div>
             )}
-            {format === "outline" && (
+            {format === "outline" && optionsOpen && (
               <div
                 style={{
                   display: "flex",
