@@ -38,6 +38,8 @@ interface Props {
   // to persist changes. Forwarded straight to the Relational (Covenants) view.
   relSavedRoles?: Record<string, { a: number; b: number }>;
   onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
+  relSavedLens?: string;
+  onRelLens?: (lens: string) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -117,6 +119,8 @@ export default function MobileCompile({
   savedStudy,
   relSavedRoles,
   onRelRoles,
+  relSavedLens,
+  onRelLens,
   defaultName,
   onClose,
   dark,
@@ -1112,6 +1116,8 @@ export default function MobileCompile({
             {...sharedViewProps}
             savedRoles={relSavedRoles}
             onRoles={onRelRoles}
+            savedLens={relSavedLens}
+            onLens={onRelLens}
             shareSignal={covShareSignal}
           />
         )}
