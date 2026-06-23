@@ -2169,7 +2169,7 @@ export default function App() {
   };
   const compileScrollToVerse = (ref: string) => {
     if (compileView === "outline") {
-      const colors = Array.from(
+      const colors: number[] = Array.from(
         new Set(
           effectiveMarks.filter((m) => m.reference === ref).map((m) => m.color)
         )
