@@ -30,6 +30,10 @@ interface Props {
   // The view to open in — a saved study reopens on the tab it was saved in.
   // Absent → Outline.
   initialFormat?: "outline" | "distilled" | "covenants";
+  // True when this compile is a saved study (opened from the Studies tab). Saved
+  // studies open straight to their saved format with the format switcher tucked
+  // behind a button, to keep the study itself the focus.
+  savedStudy?: boolean;
   // This study's saved relational condition/promise roles (synced) + a setter
   // to persist changes. Forwarded straight to the Relational (Covenants) view.
   relSavedRoles?: Record<string, { a: number; b: number }>;
@@ -110,6 +114,7 @@ export default function MobileCompile({
   setNote,
   onSave,
   initialFormat,
+  savedStudy,
   relSavedRoles,
   onRelRoles,
   defaultName,
@@ -145,6 +150,9 @@ export default function MobileCompile({
   // Whether the tucked-away view options (Focused/Full, In order/By points) are
   // showing. Collapsed by default so the study itself stays the focus.
   const [optionsOpen, setOptionsOpen] = useState(false);
+  // For saved studies: whether the format switcher (Outline/Distilled/Relational)
+  // is revealed. Collapsed by default — the study opens on its saved format.
+  const [showFormats, setShowFormats] = useState(false);
   // Which verse card is flipped to its note side (one at a time).
   const [flippedRef, setFlippedRef] = useState<string | null>(null);
   // Which synthesis / verse-note is in edit mode (textarea open). Otherwise the
@@ -794,26 +802,80 @@ export default function MobileCompile({
               gap: "8px",
             }}
           >
-            <div
-              data-tour="ex-formats"
-              style={{
-                display: "flex",
-                gap: "4px",
-                backgroundColor: C.soft,
-                borderRadius: "10px",
-                padding: "4px",
-              }}
-            >
-              {seg(format === "outline", "Outline", () =>
-                setFormat("outline")
-              )}
-              {seg(format === "distilled", "Distilled", () =>
-                setFormat("distilled")
-              )}
-              {seg(format === "covenants", "Relational", () =>
-                setFormat("covenants")
-              )}
-            </div>
+            {savedStudy ? (
+              <>
+                <button
+                  onClick={() => setShowFormats((s) => !s)}
+                  style={{
+                    alignSelf: "flex-start",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: C.soft,
+                    border: "none",
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    padding: "8px 14px",
+                    borderRadius: "10px",
+                  }}
+                >
+                  {format === "covenants"
+                    ? "Relational"
+                    : format === "distilled"
+                    ? "Distilled"
+                    : "Outline"}
+                  <span style={{ fontSize: "11px", opacity: 0.6 }}>
+                    {showFormats ? "▲" : "▼"}
+                  </span>
+                </button>
+                {showFormats && (
+                  <div
+                    data-tour="ex-formats"
+                    style={{
+                      display: "flex",
+                      gap: "4px",
+                      backgroundColor: C.soft,
+                      borderRadius: "10px",
+                      padding: "4px",
+                    }}
+                  >
+                    {seg(format === "outline", "Outline", () =>
+                      setFormat("outline")
+                    )}
+                    {seg(format === "distilled", "Distilled", () =>
+                      setFormat("distilled")
+                    )}
+                    {seg(format === "covenants", "Relational", () =>
+                      setFormat("covenants")
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div
+                data-tour="ex-formats"
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(format === "outline", "Outline", () =>
+                  setFormat("outline")
+                )}
+                {seg(format === "distilled", "Distilled", () =>
+                  setFormat("distilled")
+                )}
+                {seg(format === "covenants", "Relational", () =>
+                  setFormat("covenants")
+                )}
+              </div>
+            )}
             {format === "outline" && (
               <button
                 onClick={() => setOptionsOpen((o) => !o)}
