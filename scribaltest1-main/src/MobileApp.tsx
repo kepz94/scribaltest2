@@ -7214,9 +7214,11 @@ export default function MobileApp() {
           const bookMarksOf = (bid: string) =>
             allMarks.filter((m) => m.bookId === bid);
           const studiesInBook = (bid: string) =>
-            studies.filter((s) => s.bookId === bid);
+            studies.filter((s) => s.bookId === bid && !isStudyDeleted(s));
           const searchesInBook = (bid: string) =>
-            searchStudies.filter((ss) => ss.bookId === bid);
+            searchStudies.filter(
+              (ss) => ss.bookId === bid && !isSearchDeleted(ss)
+            );
           const countInBook = (bid: string) =>
             studiesInBook(bid).length + searchesInBook(bid).length;
           const countChapter = (s: Study) =>
