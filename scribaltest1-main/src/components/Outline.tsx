@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import NoteField from "./NoteField";
@@ -24,6 +25,12 @@ interface OutlineProps {
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
   onJumpToReference: (reference: string) => void;
+  // Optional controlled collapse state — the colors whose theme sections are
+  // collapsed. When supplied, the parent owns it, so a quick-find result can
+  // open a collapsed section before scrolling to that verse's card. Falls back
+  // to local state when omitted, so the view still works on its own.
+  collapsed?: number[];
+  onCollapsedChange?: Dispatch<SetStateAction<number[]>>;
 }
 
 type SortMode = "points" | "order";
@@ -83,7 +90,9 @@ export default function Outline(props: OutlineProps) {
 
   const [sortMode, setSortMode] = useState<SortMode>("points");
   const [view, setView] = useState<"full" | "focused">("focused");
-  const [collapsed, setCollapsed] = useState<number[]>([]);
+  const [collapsedInternal, setCollapsedInternal] = useState<number[]>([]);
+  const collapsed = props.collapsed ?? collapsedInternal;
+  const setCollapsed = props.onCollapsedChange ?? setCollapsedInternal;
 
   const tabLabel = (t: Tab) =>
     vols[t.volume].books[t.book].book +
@@ -452,6 +461,7 @@ export default function Outline(props: OutlineProps) {
                     return (
                       <div
                         key={entry.reference}
+                        data-vref={entry.reference}
                         style={{ marginLeft: "36px", marginTop: "14px" }}
                       >
                         {/* Level 2 — Verse */}
