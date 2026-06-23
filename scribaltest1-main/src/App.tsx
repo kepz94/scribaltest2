@@ -1216,6 +1216,7 @@ export default function App() {
     if (showTutorial && !gateOpen) {
       localStorage.setItem("scribal_tutorial_seen", "1");
       setShowTutorial(false);
+      setExampleOpen(false);
       setTourStart(0);
       setTourOpen(true);
     }
@@ -3178,7 +3179,7 @@ export default function App() {
         </div>
       )}
 
-      {exampleOpen && (
+      {exampleOpen && !tourOpen && (
         <DesktopExample
           dark={dark}
           onClose={() => setExampleOpen(false)}
@@ -5438,6 +5439,7 @@ export default function App() {
                     <div
                       onClick={() => {
                         setBackupOpen(false);
+                        setExampleOpen(false);
                         setTourOpen(true);
                       }}
                       style={{
