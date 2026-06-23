@@ -4,6 +4,18 @@ export type MarkStyle = "bold" | "circle" | "underline" | "italic" | "highlight"
 export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type Tool = MarkStyle | "eraser" | "pointer" | "define";
 
+// A definition tag: one looked-up word occurrence, anchored to its verse and
+// exact character range. Stores the dictionary key (not the text) so the
+// dictionary stays the single source of truth.
+export interface WordTag {
+  id: string;
+  reference: string;
+  start: number;
+  end: number;
+  word: string;
+  dictKey: string;
+}
+
 export interface Mark {
   id: string;
   reference: string;
