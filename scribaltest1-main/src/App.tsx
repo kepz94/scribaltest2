@@ -539,6 +539,12 @@ export default function App() {
       ? saved
       : "outline";
   });
+  // Quick-find on the compiled board: the live query, the Outline collapse
+  // state lifted here (so a result can open a collapsed theme before scrolling),
+  // and a ref to the board container so a result can scroll its card into view.
+  const [compileFindQ, setCompileFindQ] = useState("");
+  const [compileCollapsed, setCompileCollapsed] = useState<number[]>([]);
+  const scribalSwapRef = useRef<HTMLDivElement>(null);
 
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const saved = localStorage.getItem("scribal_tabs_v2");
@@ -2102,8 +2108,77 @@ export default function App() {
         )
       : marks;
 
-  // Word-study tags scoped to the compiled study, gathered the same way as the
-  // marks above so the glossary covers exactly what's in scope.
+  // ── Quick-find (compiled board) ────────────────────────────────────────────
+  // A per-verse index of the compiled study's marks. A verse matches the Find
+  // bar on its reference, on any word marked in it, or on any theme name.
+  const compileFindIndex = (() => {
+    const byRef = new Map<
+      string,
+      { color: number; themes: Set<string>; texts: string[] }
+    >();
+    effectiveMarks.forEach((m) => {
+      const sealed = m.label !== undefined && m.label.trim() !== "";
+      const theme = sealed
+        ? (m.label as string).trim()
+        : (effectiveScopedLabels[m.color] || "Color " + m.color).trim();
+      let cur = byRef.get(m.reference);
+      if (!cur) {
+        cur = { color: m.color, themes: new Set<string>(), texts: [] };
+        byRef.set(m.reference, cur);
+      }
+      if (theme) cur.themes.add(theme);
+      if (m.markedText.trim()) cur.texts.push(m.markedText.trim());
+    });
+    return Array.from(byRef.entries())
+      .map(([reference, v]) => ({
+        reference,
+        color: v.color,
+        themes: Array.from(v.themes),
+        texts: v.texts,
+      }))
+      .sort((a, b) => orderOfRef(a.reference) - orderOfRef(b.reference));
+  })();
+  const compileFindQuery = compileFindQ.trim().toLowerCase();
+  const compileFindResults = compileFindQuery
+    ? compileFindIndex
+        .filter(
+          (r) =>
+            r.reference.toLowerCase().includes(compileFindQuery) ||
+            r.themes.some((t) => t.toLowerCase().includes(compileFindQuery)) ||
+            r.texts.some((t) => t.toLowerCase().includes(compileFindQuery))
+        )
+        .slice(0, 40)
+    : [];
+
+  // Scroll the board to a verse's card and flash it. In Outline the verse's
+  // theme section may be collapsed (its card not mounted), so open the matching
+  // color section(s) first; the rAF retry waits for the card before scrolling.
+  const compileFlashAndScroll = (ref: string, tries = 0) => {
+    const box = scribalSwapRef.current;
+    const el = box
+      ? (box.querySelector(`[data-vref="${ref}"]`) as HTMLElement | null)
+      : null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("qf-flash");
+      window.setTimeout(() => el.classList.remove("qf-flash"), 1400);
+      return;
+    }
+    if (tries < 14)
+      requestAnimationFrame(() => compileFlashAndScroll(ref, tries + 1));
+  };
+  const compileScrollToVerse = (ref: string) => {
+    if (compileView === "outline") {
+      const colors = Array.from(
+        new Set(
+          effectiveMarks.filter((m) => m.reference === ref).map((m) => m.color)
+        )
+      );
+      if (colors.length)
+        setCompileCollapsed((prev) => prev.filter((c) => !colors.includes(c)));
+    }
+    compileFlashAndScroll(ref);
+  };
   const effectiveTags =
     compileStudy && studyRefSet
       ? wordTags.filter((t) => studyRefSet.has(t.reference))
@@ -7248,9 +7323,179 @@ export default function App() {
             </div>
           </div>
 
-          <div className="scribal-swap" key={compileView}>
+          <style>{`
+            @keyframes qf-flash {
+              0% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
+              18% { box-shadow: 0 0 0 3px rgba(217,164,65,.95); }
+              100% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
+            }
+            .qf-flash { animation: qf-flash 1.4s ease; border-radius: 8px; }
+          `}</style>
+          {/* Quick-find — filter this study's marked verses and jump the board
+              to a chosen verse's card. 16px input keeps it consistent with
+              mobile (and avoids iOS zoom there). */}
+          {effectiveMarks.length > 0 && (
+            <div style={{ maxWidth: "760px", margin: "0 auto 14px", padding: "0 4px" }}>
+              <div style={{ position: "relative" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "var(--soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    padding: "0 12px",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{ color: "var(--muted)", fontSize: "16px", flexShrink: 0 }}
+                  >
+                    ⌕
+                  </span>
+                  <input
+                    value={compileFindQ}
+                    onChange={(e) => setCompileFindQ(e.target.value)}
+                    placeholder="Find a verse, word, or theme"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "none",
+                      outline: "none",
+                      background: "transparent",
+                      color: "var(--text)",
+                      fontFamily: "inherit",
+                      fontSize: "16px",
+                      padding: "10px 0",
+                    }}
+                  />
+                  {compileFindQ !== "" && (
+                    <button
+                      onClick={() => setCompileFindQ("")}
+                      aria-label="Clear find"
+                      style={{
+                        flexShrink: 0,
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--muted)",
+                        fontSize: "20px",
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        padding: "2px 4px",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {compileFindQuery !== "" && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      left: 0,
+                      right: 0,
+                      zIndex: 60,
+                      background: "var(--panel)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "12px",
+                      boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+                      maxHeight: "50vh",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {compileFindResults.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "14px 16px",
+                          color: "var(--muted)",
+                          fontSize: "13.5px",
+                        }}
+                      >
+                        No marked verses match “{compileFindQ.trim()}”.
+                      </div>
+                    ) : (
+                      compileFindResults.map((r, i) => {
+                        const snippet =
+                          r.texts.join("  ·  ") || r.themes.join(", ");
+                        return (
+                          <button
+                            key={r.reference}
+                            onClick={() => {
+                              compileScrollToVerse(r.reference);
+                              setCompileFindQ("");
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              width: "100%",
+                              textAlign: "left",
+                              background: "transparent",
+                              border: "none",
+                              borderBottom:
+                                i < compileFindResults.length - 1
+                                  ? "1px solid var(--border)"
+                                  : "none",
+                              padding: "11px 14px",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: COLOR_MAP[r.color as MarkColor],
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                fontWeight: 700,
+                                fontSize: "12.5px",
+                                color: "var(--text)",
+                              }}
+                            >
+                              {r.reference}
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                fontSize: "12.5px",
+                                color: "var(--muted)",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                fontFamily: '"Times New Roman", Times, serif',
+                              }}
+                            >
+                              {snippet}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="scribal-swap" key={compileView} ref={scribalSwapRef}>
             {compileView === "outline" && (
-              <Outline {...sharedCompileProps} notes={notes} setNote={setNote} />
+              <Outline
+                {...sharedCompileProps}
+                notes={notes}
+                setNote={setNote}
+                collapsed={compileCollapsed}
+                onCollapsedChange={setCompileCollapsed}
+              />
             )}
             {compileView === "charting" && <Charting {...sharedCompileProps} />}
             {compileView === "distilled" && (
