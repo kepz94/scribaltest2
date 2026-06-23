@@ -165,6 +165,10 @@ export default function MobileCompile({
   // so the scroll area never resizes mid-scroll (which is what was stuttering).
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(0);
+  // Quick-find: a ref to the board's scroll container (so a result can scroll
+  // its verse card into view) and the live query the Find bar is filtering on.
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
+  const [findQ, setFindQ] = useState("");
   useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -502,6 +506,79 @@ export default function MobileCompile({
     </button>
   );
 
+  // ── Quick-find ─────────────────────────────────────────────────────────────
+  // A per-verse index of this study's marks. A verse matches the Find bar on
+  // its reference, on any word that was marked in it, or on any of its theme
+  // names — the three ways someone reaches for a verse mid-class.
+  const findIndex = (() => {
+    const byRef = new Map<
+      string,
+      { color: number; themes: Set<string>; texts: string[] }
+    >();
+    liveMarks.forEach((m) => {
+      const theme = sealedOf(m)
+        ? (m.label as string).trim()
+        : (colorLabels[m.color] || "Color " + m.color).trim();
+      let cur = byRef.get(m.reference);
+      if (!cur) {
+        cur = { color: m.color, themes: new Set<string>(), texts: [] };
+        byRef.set(m.reference, cur);
+      }
+      if (theme) cur.themes.add(theme);
+      if (m.markedText.trim()) cur.texts.push(m.markedText.trim());
+    });
+    return Array.from(byRef.entries())
+      .map(([reference, v]) => ({
+        reference,
+        color: v.color,
+        themes: Array.from(v.themes),
+        texts: v.texts,
+      }))
+      .sort((a, b) => orderOf(a.reference) - orderOf(b.reference));
+  })();
+  const findQuery = findQ.trim().toLowerCase();
+  const findResults = findQuery
+    ? findIndex
+        .filter(
+          (r) =>
+            r.reference.toLowerCase().includes(findQuery) ||
+            r.themes.some((t) => t.toLowerCase().includes(findQuery)) ||
+            r.texts.some((t) => t.toLowerCase().includes(findQuery))
+        )
+        .slice(0, 40)
+    : [];
+
+  // Scroll the board to a verse's card and flash it briefly. In Outline the
+  // verse's theme group may be collapsed (its card not yet mounted), so open
+  // the group first; the rAF retry waits for that card to appear, then scrolls.
+  const flashAndScroll = (ref: string, tries = 0) => {
+    const box = scrollBoxRef.current;
+    const el = box
+      ? (box.querySelector(`[data-vref="${ref}"]`) as HTMLElement | null)
+      : null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("qf-flash");
+      window.setTimeout(() => el.classList.remove("qf-flash"), 1400);
+      return;
+    }
+    if (tries < 14) requestAnimationFrame(() => flashAndScroll(ref, tries + 1));
+  };
+  const scrollToVerse = (ref: string) => {
+    if (format === "outline") {
+      const keys = Array.from(
+        new Set(
+          liveMarks
+            .filter((m) => m.reference === ref)
+            .map((m) => groupKeyOf(m))
+        )
+      );
+      if (keys.length)
+        setExpanded((prev) => Array.from(new Set([...prev, ...keys])));
+    }
+    flashAndScroll(ref);
+  };
+
   return (
     <div
       style={{
@@ -516,6 +593,14 @@ export default function MobileCompile({
         animation: "mob-fadein 0.2s ease",
       }}
     >
+      <style>{`
+        @keyframes qf-flash {
+          0% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
+          18% { box-shadow: 0 0 0 3px rgba(217,164,65,.95); }
+          100% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
+        }
+        .qf-flash { animation: qf-flash 1.4s ease; border-radius: 8px; }
+      `}</style>
       {/* chrome (header + toggles) — an absolute overlay that slides up while
           reading down and back on scroll-up, like the reading screen. Because
           it's an overlay, the scroll area never resizes, so scrolling is smooth. */}
@@ -758,6 +843,163 @@ export default function MobileCompile({
                 )}
               </div>
             )}
+            {/* Quick-find — filters this study's marked verses live and jumps
+                the board to a chosen verse's card. 16px input so iOS Safari
+                doesn't zoom the page on focus. */}
+            <div style={{ position: "relative" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  backgroundColor: C.soft,
+                  border: "1px solid " + C.border,
+                  borderRadius: "10px",
+                  padding: "0 12px",
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{ color: C.muted, fontSize: "16px", flexShrink: 0 }}
+                >
+                  ⌕
+                </span>
+                <input
+                  value={findQ}
+                  onChange={(e) => setFindQ(e.target.value)}
+                  placeholder="Find a verse, word, or theme"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: "none",
+                    outline: "none",
+                    background: "transparent",
+                    color: C.text,
+                    fontFamily: "inherit",
+                    fontSize: "16px",
+                    padding: "11px 0",
+                  }}
+                />
+                {findQ !== "" && (
+                  <button
+                    onClick={() => setFindQ("")}
+                    aria-label="Clear find"
+                    style={{
+                      flexShrink: 0,
+                      background: "transparent",
+                      border: "none",
+                      color: C.muted,
+                      fontSize: "20px",
+                      lineHeight: 1,
+                      cursor: "pointer",
+                      padding: "2px 4px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {findQuery !== "" && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    left: 0,
+                    right: 0,
+                    zIndex: 20,
+                    backgroundColor: C.bg,
+                    border: "1px solid " + C.border,
+                    borderRadius: "12px",
+                    boxShadow: "0 12px 34px rgba(0,0,0,.28)",
+                    maxHeight: "46vh",
+                    overflowY: "auto",
+                    WebkitOverflowScrolling: "touch",
+                  }}
+                >
+                  {findResults.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        color: C.muted,
+                        fontSize: "13.5px",
+                      }}
+                    >
+                      No marked verses match “{findQ.trim()}”.
+                    </div>
+                  ) : (
+                    findResults.map((r, i) => {
+                      const snippet =
+                        r.texts.join("  ·  ") || r.themes.join(", ");
+                      return (
+                        <button
+                          key={r.reference}
+                          onClick={() => {
+                            scrollToVerse(r.reference);
+                            setFindQ("");
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            width: "100%",
+                            textAlign: "left",
+                            background: "transparent",
+                            border: "none",
+                            borderBottom:
+                              i < findResults.length - 1
+                                ? "1px solid " + C.border
+                                : "none",
+                            padding: "11px 14px",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "10px",
+                              height: "10px",
+                              borderRadius: "50%",
+                              backgroundColor:
+                                COLOR_MAP[r.color as MarkColor],
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              fontWeight: 700,
+                              fontSize: "12.5px",
+                              color: C.text,
+                            }}
+                          >
+                            {r.reference}
+                          </span>
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: "12.5px",
+                              color: C.muted,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              fontFamily: '"Times New Roman", Times, serif',
+                            }}
+                          >
+                            {snippet}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
           </div>
       )}
       </div>
@@ -765,6 +1007,7 @@ export default function MobileCompile({
       {/* verses — fill the whole screen; top-padded to clear the chrome so
           nothing reflows when the chrome slides away */}
       <div
+        ref={scrollBoxRef}
         onScroll={(e) => onScroll((e.target as HTMLDivElement).scrollTop)}
         style={{
           position: "absolute",
@@ -1136,6 +1379,7 @@ export default function MobileCompile({
                           return (
                             <div
                               key={ve.reference}
+                              data-vref={ve.reference}
                               style={{ perspective: "1200px" }}
                             >
                               <div
