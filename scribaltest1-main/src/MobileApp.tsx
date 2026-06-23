@@ -1387,35 +1387,66 @@ export default function MobileApp() {
     if (openStudyId === id) closeStudy();
   };
 
-  // Move a completed keyword study (with its marks, notes, theme names and
-  // relational pair) into a different book, clearing them from the old one — for
-  // giving certain studies their own dedicated book.
-  const [moveStudy, setMoveStudy] = useState<SearchStudy | null>(null);
-  const performMove = (study: SearchStudy, targetBookId: string) => {
-    if (targetBookId !== study.bookId) {
-      moveStudyMarks(
-        study.bookId,
-        targetBookId,
-        study.refs,
-        "searchstudy:" + study.id
-      );
-      setSearchStudies((prev) =>
-        prev.map((s) =>
-          s.id === study.id
-            ? { ...s, bookId: targetBookId, updatedAt: Date.now() }
-            : s
-        )
-      );
+  // Move a study (with its marks, notes, theme names and relational pair) into a
+  // different book, clearing them from the old one — for giving a study its own
+  // dedicated book. Works for chapter, linked, and keyword studies.
+  type MoveTarget = {
+    id: string;
+    kind: "chapter" | "linked" | "keyword";
+    bookId: string;
+    name: string;
+    refs: string[];
+    scope: string;
+  };
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  // Every reference a study owns in its book — marked verses in scope, verses it
+  // carries notes on, plus loose added verses.
+  const studyRefsFor = (
+    bid: string,
+    refOk: (ref: string) => boolean,
+    extra?: string[]
+  ) => {
+    const set = new Set<string>(extra || []);
+    allMarks.forEach((m) => {
+      if (m.bookId === bid && refOk(m.reference)) set.add(m.reference);
+    });
+    const bk = getBook(bid);
+    Object.keys(bk.notes || {}).forEach((k) => {
+      const ref = k.split("|").pop();
+      if (ref && refOk(ref)) set.add(ref);
+    });
+    return Array.from(set);
+  };
+  const performMove = (target: MoveTarget, targetBookId: string) => {
+    if (targetBookId !== target.bookId) {
+      moveStudyMarks(target.bookId, targetBookId, target.refs, target.scope);
+      if (target.kind === "keyword") {
+        setSearchStudies((prev) =>
+          prev.map((s) =>
+            s.id === target.id
+              ? { ...s, bookId: targetBookId, updatedAt: Date.now() }
+              : s
+          )
+        );
+      } else {
+        setStudies((prev) =>
+          prev.map((s) =>
+            s.id === target.id
+              ? { ...s, bookId: targetBookId, compiledAt: Date.now() }
+              : s
+          )
+        );
+      }
     }
-    setMoveStudy(null);
+    setMoveTarget(null);
   };
   const tryMove = (
-    study: SearchStudy,
+    target: MoveTarget,
     targetBookId: string,
     targetName: string
   ) => {
-    if (targetBookId === study.bookId) {
-      setMoveStudy(null);
+    if (targetBookId === target.bookId) {
+      setMoveTarget(null);
       return;
     }
     // Warn if the destination is already in use, and name what's there.
@@ -1425,14 +1456,14 @@ export default function MobileApp() {
       const owners: string[] = [];
       searchStudies.forEach((s) => {
         if (
-          s.id !== study.id &&
           s.bookId === targetBookId &&
+          !(target.kind === "keyword" && s.id === target.id) &&
           s.refs.some((r) => markedRefs.has(r))
         )
           owners.push(s.name);
       });
       studies.forEach((s) => {
-        if (s.bookId !== targetBookId) return;
+        if (s.bookId !== targetBookId || s.id === target.id) return;
         const chs =
           s.type === "linked"
             ? Object.keys(chapterGroups).filter(
@@ -1454,12 +1485,12 @@ export default function MobileApp() {
           "." +
           belongs +
           '\n\nMoving "' +
-          study.name +
+          target.name +
           '" here keeps both sets of marks together. Continue?'
       );
       if (!ok) return;
     }
-    performMove(study, targetBookId);
+    performMove(target, targetBookId);
   };
   // Search → "Next": stash the picked verses and open the source + name step.
   const onLinkConfirm = (refs: string[]) => {
@@ -6224,7 +6255,20 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              )
+                              ),
+                            () =>
+                              setMoveTarget({
+                                id: s.id,
+                                kind: "chapter",
+                                bookId: s.bookId,
+                                name: s.name,
+                                refs: studyRefsFor(
+                                  s.bookId,
+                                  (r) => scopeOf(r) === s.scopeRef,
+                                  s.extraRefs
+                                ),
+                                scope: resolveScope(s.scopeRef),
+                              })
                           )
                         )
                       )}
@@ -6275,7 +6319,21 @@ export default function MobileApp() {
                             () =>
                               setInfoStudyId(
                                 infoStudyId === s.id ? null : s.id
-                              )
+                              ),
+                            () =>
+                              setMoveTarget({
+                                id: s.id,
+                                kind: "linked",
+                                bookId: s.bookId,
+                                name: s.name,
+                                refs: studyRefsFor(
+                                  s.bookId,
+                                  (r) =>
+                                    chapterGroups[scopeOf(r)] === s.scopeRef,
+                                  s.extraRefs
+                                ),
+                                scope: "group:" + s.scopeRef,
+                              })
                           )
                         )
                       )}
@@ -6323,7 +6381,15 @@ export default function MobileApp() {
                               setInfoStudyId(
                                 infoStudyId === ss.id ? null : ss.id
                               ),
-                            () => setMoveStudy(ss)
+                            () =>
+                              setMoveTarget({
+                                id: ss.id,
+                                kind: "keyword",
+                                bookId: ss.bookId,
+                                name: ss.name,
+                                refs: ss.refs,
+                                scope: "searchstudy:" + ss.id,
+                              })
                           )
                         )
                       )}
@@ -6334,10 +6400,10 @@ export default function MobileApp() {
           );
         })()}
 
-      {/* Move a keyword study into a different book */}
-      {moveStudy &&
+      {/* Move a study into a different book */}
+      {moveTarget &&
         (() => {
-          const study = moveStudy;
+          const target = moveTarget;
           const dateStr = new Date().toLocaleDateString(undefined, {
             month: "short",
             day: "numeric",
@@ -6372,7 +6438,7 @@ export default function MobileApp() {
             </button>
           );
           return sheet(
-            () => setMoveStudy(null),
+            () => setMoveTarget(null),
             <div>
               <div
                 style={{
@@ -6381,7 +6447,7 @@ export default function MobileApp() {
                   marginBottom: "2px",
                 }}
               >
-                Move “{study.name}”
+                Move “{target.name}”
               </div>
               <div
                 style={{
@@ -6395,26 +6461,26 @@ export default function MobileApp() {
                 from the old one.
               </div>
 
-              {study.bookId !== "master" &&
+              {target.bookId !== "master" &&
                 choiceBtn("Master Book", "your default book", () =>
-                  tryMove(study, "master", "Master Book")
+                  tryMove(target, "master", "Master Book")
                 )}
 
               {books
-                .filter((b) => !b.isMaster && b.id !== study.bookId)
+                .filter((b) => !b.isMaster && b.id !== target.bookId)
                 .map((b) =>
                   choiceBtn(
                     b.name,
                     b.markCount + " mark" + (b.markCount === 1 ? "" : "s"),
-                    () => tryMove(study, b.id, b.name)
+                    () => tryMove(target, b.id, b.name)
                   )
                 )}
 
               {choiceBtn("New session", "a fresh dedicated book", () => {
-                const nm = window.prompt("Name this session", study.name);
+                const nm = window.prompt("Name this session", target.name);
                 if (nm === null) return;
                 const id = createSession(nm.trim() || "Session · " + dateStr);
-                performMove(study, id);
+                performMove(target, id);
               })}
             </div>
           );
