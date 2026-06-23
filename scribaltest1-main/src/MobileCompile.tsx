@@ -799,12 +799,20 @@ export default function MobileCompile({
               gap: "8px",
             }}
           >
-            {savedStudy ? (
-              <>
+            {/* format selector + quick-find share one row */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              {savedStudy ? (
                 <button
                   onClick={() => setShowFormats((s) => !s)}
                   style={{
-                    alignSelf: "flex-start",
+                    flexShrink: 0,
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
@@ -815,7 +823,7 @@ export default function MobileCompile({
                     fontSize: "13px",
                     fontWeight: 700,
                     cursor: "pointer",
-                    padding: "8px 14px",
+                    padding: "11px 14px",
                     borderRadius: "10px",
                   }}
                 >
@@ -828,105 +836,32 @@ export default function MobileCompile({
                     {showFormats ? "▲" : "▼"}
                   </span>
                 </button>
-                {showFormats && (
-                  <div
-                    data-tour="ex-formats"
-                    style={{
-                      display: "flex",
-                      gap: "4px",
-                      backgroundColor: C.soft,
-                      borderRadius: "10px",
-                      padding: "4px",
-                    }}
-                  >
-                    {seg(format === "outline", "Outline", () =>
-                      setFormat("outline")
-                    )}
-                    {seg(format === "distilled", "Distilled", () =>
-                      setFormat("distilled")
-                    )}
-                    {seg(format === "covenants", "Relational", () =>
-                      setFormat("covenants")
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div
-                data-tour="ex-formats"
-                style={{
-                  display: "flex",
-                  gap: "4px",
-                  backgroundColor: C.soft,
-                  borderRadius: "10px",
-                  padding: "4px",
-                }}
-              >
-                {seg(format === "outline", "Outline", () =>
-                  setFormat("outline")
-                )}
-                {seg(format === "distilled", "Distilled", () =>
-                  setFormat("distilled")
-                )}
-                {seg(format === "covenants", "Relational", () =>
-                  setFormat("covenants")
-                )}
-              </div>
-            )}
-            {format === "outline" && (
-              <button
-                onClick={() => setOptionsOpen((o) => !o)}
-                style={{
-                  alignSelf: "flex-start",
-                  background: "transparent",
-                  border: "none",
-                  color: C.muted,
-                  fontFamily: "inherit",
-                  fontSize: "12.5px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  padding: "2px",
-                }}
-              >
-                {optionsOpen ? "Hide options ▲" : "View options ▼"}
-              </button>
-            )}
-            {format === "outline" && optionsOpen && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "4px",
-                  backgroundColor: C.soft,
-                  borderRadius: "10px",
-                  padding: "4px",
-                }}
-              >
-                {seg(view === "focused", "Focused", () => setView("focused"))}
-                {seg(view === "full", "Full verse", () => setView("full"))}
-              </div>
-            )}
-            {format === "outline" && optionsOpen && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "4px",
-                  backgroundColor: C.soft,
-                  borderRadius: "10px",
-                  padding: "4px",
-                }}
-              >
-                {seg(sortMode === "order", "In order", () =>
-                  setSortMode("order")
-                )}
-                {seg(sortMode === "points", "By points", () =>
-                  setSortMode("points")
-                )}
-              </div>
-            )}
+              ) : (
+                <div
+                  data-tour="ex-formats"
+                  style={{
+                    display: "flex",
+                    gap: "4px",
+                    backgroundColor: C.soft,
+                    borderRadius: "10px",
+                    padding: "4px",
+                  }}
+                >
+                  {seg(format === "outline", "Outline", () =>
+                    setFormat("outline")
+                  )}
+                  {seg(format === "distilled", "Distilled", () =>
+                    setFormat("distilled")
+                  )}
+                  {seg(format === "covenants", "Relational", () =>
+                    setFormat("covenants")
+                  )}
+                </div>
+              )}
             {/* Quick-find — filters this study's marked verses live and jumps
                 the board to a chosen verse's card. 16px input so iOS Safari
                 doesn't zoom the page on focus. */}
-            <div style={{ position: "relative" }}>
+              <div style={{ position: "relative", flex: 1, minWidth: "150px" }}>
               <div
                 style={{
                   display: "flex",
@@ -1080,6 +1015,79 @@ export default function MobileCompile({
                 </div>
               )}
             </div>
+            </div>
+            {savedStudy && showFormats && (
+              <div
+                data-tour="ex-formats"
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(format === "outline", "Outline", () =>
+                  setFormat("outline")
+                )}
+                {seg(format === "distilled", "Distilled", () =>
+                  setFormat("distilled")
+                )}
+                {seg(format === "covenants", "Relational", () =>
+                  setFormat("covenants")
+                )}
+              </div>
+            )}
+            {format === "outline" && (
+              <button
+                onClick={() => setOptionsOpen((o) => !o)}
+                style={{
+                  alignSelf: "flex-start",
+                  background: "transparent",
+                  border: "none",
+                  color: C.muted,
+                  fontFamily: "inherit",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px",
+                }}
+              >
+                {optionsOpen ? "Hide options ▲" : "View options ▼"}
+              </button>
+            )}
+            {format === "outline" && optionsOpen && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(view === "focused", "Focused", () => setView("focused"))}
+                {seg(view === "full", "Full verse", () => setView("full"))}
+              </div>
+            )}
+            {format === "outline" && optionsOpen && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  backgroundColor: C.soft,
+                  borderRadius: "10px",
+                  padding: "4px",
+                }}
+              >
+                {seg(sortMode === "order", "In order", () =>
+                  setSortMode("order")
+                )}
+                {seg(sortMode === "points", "By points", () =>
+                  setSortMode("points")
+                )}
+              </div>
+            )}
           </div>
       )}
       </div>
