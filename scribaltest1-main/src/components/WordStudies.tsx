@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { WordTag } from "../types";
-import { loadWebster, definitionForKey } from "../webster";
+import { loadWebster, definitionForKey, isLoaded } from "../webster";
 
 interface WordStudiesColors {
   text: string;
@@ -32,7 +32,7 @@ export default function WordStudies({
   colors,
   heading = "Word Studies",
 }: WordStudiesProps) {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(isLoaded);
   useEffect(() => {
     let alive = true;
     loadWebster().then(() => {
