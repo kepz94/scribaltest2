@@ -592,43 +592,7 @@ export default function Covenants(props: CovenantsProps) {
         <h2 style={{ margin: "0 0 12px 0", fontWeight: 500 }}>
           {compileTabs.map(tabLabel).join("  ·  ")}
         </h2>
-      ) : (
-        <div style={{ margin: "0 0 12px 0" }}>
-          <button
-            onClick={() => setShowChapters((s) => !s)}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              color: "inherit",
-              fontSize: "18px",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            {compileTabs.length + " chapters"}
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
-              {showChapters ? "▲" : "▾"}
-            </span>
-          </button>
-          {showChapters && (
-            <div
-              style={{
-                marginTop: "8px",
-                fontSize: "13px",
-                lineHeight: 1.5,
-                color: "var(--muted)",
-              }}
-            >
-              {compileTabs.map(tabLabel).join("  ·  ")}
-            </div>
-          )}
-        </div>
-      )}
+      ) : null}
 
       <div
         style={{
@@ -863,6 +827,42 @@ export default function Covenants(props: CovenantsProps) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {compileTabs.length > 1 && (
+        <div style={{ marginTop: "28px" }}>
+          <button
+            onClick={() => setShowChapters((s) => !s)}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              color: "var(--muted)",
+              fontSize: "13px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            {compileTabs.length + " chapters in this study"}
+            <span style={{ fontSize: "10px" }}>{showChapters ? "▲" : "▾"}</span>
+          </button>
+          {showChapters && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              }}
+            >
+              {compileTabs.map(tabLabel).join("  ·  ")}
+            </div>
+          )}
         </div>
       )}
 
