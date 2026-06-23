@@ -2274,6 +2274,9 @@ export default function App() {
           ]
     );
     setActiveTabId(tabId);
+    // Reopen on the view this study was saved in, so a relational keyword study
+    // lands on Relational instead of whatever view was last on screen.
+    setCompileView(study.view ?? "outline");
   };
   const onLinkStudy = (refs: string[]) => {
     if (!refs.length) return;
@@ -7295,32 +7298,49 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <div
-                data-tour="compile-views"
-                style={{
-                  display: "flex",
-                  border: "1px solid var(--border)",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                  backgroundColor: "var(--panel)",
-                  flexWrap: "wrap",
-                }}
-              >
-                {viewTabButton(compileView === "outline", "Outline", () =>
-                  setCompileView("outline")
-                )}
-                {viewTabButton(compileView === "charting", "Charting", () =>
-                  setCompileView("charting")
-                )}
-                {viewTabButton(compileView === "distilled", "Distilled", () =>
-                  setCompileView("distilled")
-                )}
-                {viewTabButton(compileView === "covenants", "Relational", () =>
-                  setCompileView("covenants")
-                )}
+            {compileStudy?.view === "covenants" ? (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "1px",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    padding: "6px 0",
+                  }}
+                >
+                  Relational study
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <div
+                  data-tour="compile-views"
+                  style={{
+                    display: "flex",
+                    border: "1px solid var(--border)",
+                    borderRadius: "999px",
+                    overflow: "hidden",
+                    backgroundColor: "var(--panel)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {viewTabButton(compileView === "outline", "Outline", () =>
+                    setCompileView("outline")
+                  )}
+                  {viewTabButton(compileView === "charting", "Charting", () =>
+                    setCompileView("charting")
+                  )}
+                  {viewTabButton(compileView === "distilled", "Distilled", () =>
+                    setCompileView("distilled")
+                  )}
+                  {viewTabButton(compileView === "covenants", "Relational", () =>
+                    setCompileView("covenants")
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <style>{`
