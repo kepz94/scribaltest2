@@ -828,9 +828,23 @@ export default function App() {
   const [studyDraftName, setStudyDraftName] = useState("");
   const [studyDraftBook, setStudyDraftBook] = useState<string>("master");
   const [studyDraftNewName, setStudyDraftNewName] = useState("");
-  const [moveStudyId, setMoveStudyId] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<{
+    id: string;
+    kind: "chapter" | "linked" | "keyword";
+    bookId: string;
+    name: string;
+    refs: string[];
+    scope: string;
+  } | null>(null);
   const [moveStudyBook, setMoveStudyBook] = useState<string>("master");
   const [moveStudyNewName, setMoveStudyNewName] = useState("");
+  // When a move starts, default the destination picker to the study's own book.
+  useEffect(() => {
+    if (moveTarget) {
+      setMoveStudyBook(moveTarget.bookId);
+      setMoveStudyNewName("");
+    }
+  }, [moveTarget]);
 
   // ScriptureNotes importer
   const [snImportOpen, setSnImportOpen] = useState(false);
@@ -2213,28 +2227,26 @@ export default function App() {
     openStudyTab(study);
   };
 
-  // Reassign a keyword study to a different session book, taking its marks (and
-  // notes, theme names, relational pair) with it and clearing them from the old
-  // book. Lets you carve a completed study into its own dedicated book. If the
-  // destination already has marks, confirm first and name what's there.
+  // Move a study to a different session book, taking its marks (and notes, theme
+  // names, relational pair) with it and clearing them from the old book — for
+  // giving a study its own dedicated book. Works for chapter, linked, and keyword
+  // studies. If the destination already has marks, confirm first and name what's
+  // there.
   const confirmMoveStudy = () => {
-    if (!moveStudyId) return;
-    const study = searchStudies.find((s) => s.id === moveStudyId);
-    if (!study) {
-      setMoveStudyId(null);
-      return;
-    }
+    if (!moveTarget) return;
+    const t = moveTarget;
     const runMove = (bookId: string) => {
-      if (bookId !== study.bookId) {
-        moveStudyMarks(
-          study.bookId,
-          bookId,
-          study.refs,
-          "searchstudy:" + study.id
-        );
-        updateStudy(study.id, { bookId });
+      if (bookId !== t.bookId) {
+        moveStudyMarks(t.bookId, bookId, t.refs, t.scope);
+        if (t.kind === "keyword") updateStudy(t.id, { bookId });
+        else
+          setRecordedStudies((prev) =>
+            prev.map((s) =>
+              s.id === t.id ? { ...s, bookId, compiledAt: Date.now() } : s
+            )
+          );
       }
-      setMoveStudyId(null);
+      setMoveTarget(null);
       setMoveStudyBook("master");
       setMoveStudyNewName("");
     };
@@ -2250,8 +2262,8 @@ export default function App() {
     }
 
     const target = moveStudyBook;
-    if (target === study.bookId) {
-      setMoveStudyId(null);
+    if (target === t.bookId) {
+      setMoveTarget(null);
       return;
     }
 
@@ -2265,11 +2277,11 @@ export default function App() {
     }
     const owners: string[] = [];
     searchStudies.forEach((s) => {
-      if (s.id === study.id || s.bookId !== target) return;
+      if (s.bookId !== target || (t.kind === "keyword" && s.id === t.id)) return;
       if (s.refs.some((r) => markedRefs.has(r))) owners.push(s.name);
     });
     recordedStudies.forEach((s) => {
-      if (s.bookId !== target) return;
+      if (s.bookId !== target || s.id === t.id) return;
       const chs =
         s.type === "linked"
           ? Object.keys(chapterGroups).filter(
@@ -2287,7 +2299,7 @@ export default function App() {
     const belongs = owners.length
       ? " Those marks belong to: " + owners.join(", ") + "."
       : "";
-    setMoveStudyId(null);
+    setMoveTarget(null);
     askConfirm({
       title: targetName + " already has marks",
       body:
@@ -2299,7 +2311,7 @@ export default function App() {
         "." +
         belongs +
         ' Moving "' +
-        study.name +
+        t.name +
         '" here keeps both sets of marks together. Continue?',
       confirmLabel: "Move here",
       onConfirm: () => runMove(target),
@@ -2950,6 +2962,25 @@ export default function App() {
   const buildStudyRows = (): StudyRow[] => {
     const bookMarksOf = (bid: string) =>
       allMarks.filter((m) => m.bookId === bid);
+    // Every reference a study "owns" in its book — marked verses in scope, any
+    // verses it carries notes on, plus loose added verses — so a move takes the
+    // whole study with it.
+    const studyRefsFor = (
+      bid: string,
+      refOk: (ref: string) => boolean,
+      extra?: string[]
+    ) => {
+      const set = new Set<string>(extra || []);
+      bookMarksOf(bid).forEach((m) => {
+        if (refOk(m.reference)) set.add(m.reference);
+      });
+      const bk = getBook(bid);
+      Object.keys(bk.notes || {}).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (ref && refOk(ref)) set.add(ref);
+      });
+      return Array.from(set);
+    };
     const bookLabel = (bid: string) =>
       bid === "master"
         ? ""
@@ -3007,6 +3038,15 @@ export default function App() {
             " · " +
             fmtDate(s.compiledAt),
           themes: themesFor(s.bookId, s.scopeRef, refOk),
+          onMove: () =>
+            setMoveTarget({
+              id: s.id,
+              kind: "chapter",
+              bookId: s.bookId,
+              name: s.name,
+              refs: studyRefsFor(s.bookId, refOk, s.extraRefs),
+              scope: resolveScope(s.scopeRef),
+            }),
           onOpen: () => openRecordedStudy(s),
           onDelete: () =>
             askConfirm({
@@ -3042,6 +3082,15 @@ export default function App() {
             " · " +
             fmtDate(s.compiledAt),
           themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
+          onMove: () =>
+            setMoveTarget({
+              id: s.id,
+              kind: "linked",
+              bookId: s.bookId,
+              name: s.name,
+              refs: studyRefsFor(s.bookId, refOk, s.extraRefs),
+              scope: "group:" + s.scopeRef,
+            }),
           onOpen: () => openRecordedStudy(s),
           onDelete: () =>
             askConfirm({
@@ -3075,11 +3124,15 @@ export default function App() {
           setAddToStudyId(ss.id);
           setShowSearch(true);
         },
-        onMove: () => {
-          setMoveStudyId(ss.id);
-          setMoveStudyBook(ss.bookId);
-          setMoveStudyNewName("");
-        },
+        onMove: () =>
+          setMoveTarget({
+            id: ss.id,
+            kind: "keyword",
+            bookId: ss.bookId,
+            name: ss.name,
+            refs: ss.refs,
+            scope: "searchstudy:" + ss.id,
+          }),
         onDelete: () =>
           askConfirm({
             title: "Delete this study?",
@@ -5017,10 +5070,10 @@ export default function App() {
         </div>
       )}
 
-      {moveStudyId && (
+      {moveTarget && (
         <div
           className="scribal-fade"
-          onClick={() => setMoveStudyId(null)}
+          onClick={() => setMoveTarget(null)}
           style={{
             position: "fixed",
             inset: 0,
@@ -5128,7 +5181,7 @@ export default function App() {
               }}
             >
               <button
-                onClick={() => setMoveStudyId(null)}
+                onClick={() => setMoveTarget(null)}
                 style={{
                   padding: "10px 16px",
                   borderRadius: "10px",
