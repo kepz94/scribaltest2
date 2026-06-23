@@ -12,6 +12,7 @@ import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
+import WordStudies from "./components/WordStudies";
 import { NEUTRAL, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
@@ -414,6 +415,7 @@ interface PrintData {
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
+  tags: WordTag[];
 }
 
 export default function App() {
@@ -2073,6 +2075,19 @@ export default function App() {
         )
       : marks;
 
+  // Word-study tags scoped to the compiled study, gathered the same way as the
+  // marks above so the glossary covers exactly what's in scope.
+  const effectiveTags =
+    compileStudy && studyRefSet
+      ? wordTags.filter((t) => studyRefSet.has(t.reference))
+      : studyScopeSet && extrasSet
+      ? wordTags.filter(
+          (t) =>
+            studyScopeSet.has(scopeOfRef(t.reference)) ||
+            extrasSet.has(t.reference)
+        )
+      : wordTags;
+
   // The per-chapter (group-aware) theme name for any verse — used by search.
   const labelFor = (reference: string, color: MarkColor | null) =>
     color == null
@@ -2389,6 +2404,7 @@ export default function App() {
       !compileStudy && effectiveCompileTabs.length > 1
         ? " +" + (effectiveCompileTabs.length - 1)
         : "";
+    loadWebster();
     setPrintData({
       view: compileView,
       title: VIEW_NAMES[compileView] + " — " + first + extra,
@@ -2396,6 +2412,7 @@ export default function App() {
       marks: effectiveMarks,
       colorLabels: effectiveScopedLabels,
       notes,
+      tags: effectiveTags,
     });
   };
 
@@ -4912,6 +4929,7 @@ export default function App() {
           marks={printData.marks}
           colorLabels={printData.colorLabels}
           notes={printData.notes}
+          tags={printData.tags}
           onClose={() => setPrintData(null)}
         />
       )}
@@ -6863,6 +6881,19 @@ export default function App() {
                 savedRoles={scopedRoles[effectiveScope]}
                 onRoles={(r) => setScopedRoles(effectiveScope, r)}
               />
+            )}
+            {effectiveTags.length > 0 && (
+              <div style={{ marginTop: "24px" }}>
+                <WordStudies
+                  tags={effectiveTags}
+                  colors={{
+                    text: "var(--text)",
+                    muted: "var(--muted)",
+                    border: "var(--border)",
+                    soft: "var(--soft)",
+                  }}
+                />
+              </div>
             )}
           </div>
         </div>
