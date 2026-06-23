@@ -1039,11 +1039,56 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
     const sp = ctx.measureText(" ").width;
     lines.forEach((ln) => {
       const lineBase = ty + size;
-      let x = tx;
+      // Pass 1: resolve every token's x position and width first, so a circled
+      // phrase can be boxed as one continuous shape rather than one box per
+      // word. Width depends on the token's font, so set it before measuring.
+      const pos: { x: number; w: number }[] = [];
+      let cx = tx;
       ln.forEach((t, i) => {
-        if (i > 0) x += sp;
+        if (i > 0) cx += sp;
         ctx.font = tokFont(t, size);
-        const w = ctx.measureText(t.text).width;
+        pos.push({ x: cx, w: ctx.measureText(t.text).width });
+        cx += pos[i].w;
+      });
+
+      // Pass 2: one rounded box around each run of consecutive same-fragment
+      // circled words — this is what "circle" does in the reading view.
+      let ci = 0;
+      while (ci < ln.length) {
+        const t = ln[ci];
+        if (!t.gap && t.style === "circle") {
+          let cj = ci;
+          while (
+            cj + 1 < ln.length &&
+            !ln[cj + 1].gap &&
+            ln[cj + 1].style === "circle" &&
+            ln[cj + 1].frag === t.frag
+          ) {
+            cj++;
+          }
+          const startX = pos[ci].x;
+          const endX = pos[cj].x + pos[cj].w;
+          ctx.strokeStyle = penHex(t.color, dark);
+          ctx.lineWidth = 2.5;
+          roundRect(
+            ctx,
+            startX - 5,
+            lineBase - size * 0.86,
+            endX - startX + 10,
+            size * 1.12,
+            size * 0.55
+          );
+          ctx.stroke();
+          ci = cj + 1;
+        } else {
+          ci++;
+        }
+      }
+
+      // Pass 3: highlight backgrounds, the words, then underlines.
+      ln.forEach((t, i) => {
+        const x = pos[i].x;
+        const w = pos[i].w;
         const next = ln[i + 1];
         const contig = !!next && !t.gap && !next.gap && next.frag === t.frag;
         if (!t.gap && t.style === "highlight") {
@@ -1068,13 +1113,7 @@ export function renderCovenantCard(o: CovenantCardOpts): HTMLCanvasElement {
           ctx.moveTo(x, uy);
           ctx.lineTo(x + uw, uy);
           ctx.stroke();
-        } else if (!t.gap && t.style === "circle") {
-          ctx.strokeStyle = penHex(t.color, dark);
-          ctx.lineWidth = 2.5;
-          roundRect(ctx, x - 4, lineBase - size * 0.86, w + 8, size * 1.12, size * 0.55);
-          ctx.stroke();
         }
-        x += w;
       });
       ty += size * lineMul;
     });
