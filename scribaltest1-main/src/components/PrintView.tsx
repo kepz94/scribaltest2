@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Mark, MarkStyle, MarkColor, COLORS, STYLE_POINTS, Tab } from "../types";
+import { Mark, MarkStyle, MarkColor, WordTag, COLORS, STYLE_POINTS, Tab } from "../types";
 import scriptures from "../data/scriptures.json";
+import WordStudies from "./WordStudies";
 
 const vols = scriptures.volumes;
 
@@ -11,6 +12,7 @@ interface PrintViewProps {
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
+  tags?: WordTag[];
   onClose: () => void;
 }
 
@@ -90,7 +92,7 @@ const phraseStyle = (style: MarkStyle): React.CSSProperties => {
 };
 
 export default function PrintView(props: PrintViewProps) {
-  const { view, title, compileTabs, marks, colorLabels, notes, onClose } =
+  const { view, title, compileTabs, marks, colorLabels, notes, tags, onClose } =
     props;
   const [full, setFull] = useState(false);
 
@@ -664,6 +666,20 @@ export default function PrintView(props: PrintViewProps) {
               ) : null
             )}
           </section>
+        )}
+
+        {tags && tags.length > 0 && (
+          <div style={{ marginTop: "32px" }}>
+            <WordStudies
+              tags={tags}
+              colors={{
+                text: "#1a1a1a",
+                muted: "#666",
+                border: "#ccc",
+                soft: "#f5f5f5",
+              }}
+            />
+          </div>
         )}
 
         <div
