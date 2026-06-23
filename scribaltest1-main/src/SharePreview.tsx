@@ -33,7 +33,7 @@ interface CompData {
   totalMarks: number;
   passages: number;
   themes: CompTheme[];
-  candidates: { text: string; reference: string }[];
+  candidates: { text: string; reference: string; style: string; color: number }[];
   defaultFeatured: number;
 }
 
