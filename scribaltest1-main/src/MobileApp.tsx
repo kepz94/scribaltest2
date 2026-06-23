@@ -10,6 +10,8 @@ import {
   HIGHLIGHT_MAP,
 } from "./types";
 import MobileVerse from "./MobileVerse";
+import DefinitionView from "./components/DefinitionView";
+import { lookup as websterLookup, loadWebster, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
 import { NEUTRAL, ACCENT } from "./theme";
 import ScribalMark from "./components/ScribalMark";
@@ -297,6 +299,7 @@ const STYLE_LABELS: { tool: Tool; label: string }[] = [
   { tool: "italic", label: "Italic" },
   { tool: "circle", label: "Circle" },
   { tool: "eraser", label: "Eraser" },
+  { tool: "define", label: "Define" },
 ];
 
 interface Loc {
@@ -1828,6 +1831,12 @@ export default function MobileApp() {
 
   const armedName = chapterColorName(title, pen.color);
   const isEraser = pen.tool === "eraser";
+  const isDefine = pen.tool === "define";
+  // Warm the dictionary the moment Define mode is armed, so the first tap is
+  // instant rather than waiting on the (one-time) fetch.
+  useEffect(() => {
+    if (isDefine) loadWebster();
+  }, [isDefine]);
   const isSession = activeBookId !== "master";
   const activeBookName =
     books.find((b) => b.id === activeBookId)?.name || "Master Book";
@@ -1885,7 +1894,23 @@ export default function MobileApp() {
     flash((armedName || "Color " + pen.color) + " · " + count);
   };
 
+  const [defn, setDefn] = useState<{
+    word: string;
+    result: WebsterResult | null;
+  } | null>(null);
+  // In Define mode a tap looks the word up instead of marking. We take the
+  // first whole word of the selection so a stray range still resolves cleanly.
+  const openDefine = (text: string, s: number, e: number) => {
+    const w = text.slice(s, e).trim().split(/\s+/)[0] || "";
+    if (!w) return;
+    websterLookup(w).then((result) => setDefn({ word: w, result }));
+  };
+
   const onTap = (ref: string, text: string, s: number, e: number) => {
+    if (isDefine) {
+      openDefine(text, s, e);
+      return;
+    }
     if (isEraser) {
       eraseRange(ref, s, e);
       return;
@@ -1907,6 +1932,10 @@ export default function MobileApp() {
   };
 
   const onRange = (ref: string, text: string, s: number, e: number) => {
+    if (isDefine) {
+      openDefine(text, s, e);
+      return;
+    }
     if (isEraser) eraseRange(ref, s, e);
     else addRange(ref, text, s, e);
   };
@@ -2993,7 +3022,9 @@ export default function MobileApp() {
                 whiteSpace: "nowrap",
               }}
             >
-              {isEraser
+              {isDefine
+                ? "Define · tap a word to look it up"
+                : isEraser
                 ? "Eraser · tap a mark to remove it"
                 : armedName
                 ? "Theme: " + armedName
@@ -6654,6 +6685,12 @@ export default function MobileApp() {
       )}
 
       {/* Manage a mark (long-press) */}
+      {defn &&
+        sheet(
+          () => setDefn(null),
+          <DefinitionView word={defn.word} result={defn.result} colors={C} />
+        )}
+
       {manage &&
         (() => {
           const cover: Mark[] = marks.filter(
