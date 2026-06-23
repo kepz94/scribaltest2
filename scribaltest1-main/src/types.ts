@@ -58,6 +58,7 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
   h: "highlight",
   e: "eraser",
   p: "pointer",
+  d: "define",
 };
 
 export const COLOR_MAP: Record<MarkColor, string> = {
