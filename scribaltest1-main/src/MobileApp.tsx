@@ -2414,14 +2414,18 @@ export default function MobileApp() {
   }, [connected, cloudSignedIn]);
 
   // ---- shared sheet backdrop ----
-  const sheet = (onClose: () => void, children: React.ReactNode) => (
+  const sheet = (
+    onClose: () => void,
+    children: React.ReactNode,
+    z: number = 200
+  ) => (
     <div
       onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
         backgroundColor: "rgba(0,0,0,0.4)",
-        zIndex: 200,
+        zIndex: z,
         display: "flex",
         alignItems: "flex-end",
         animation: "mob-fadein 0.18s ease",
@@ -6749,7 +6753,8 @@ export default function MobileApp() {
                   }
                 : undefined
             }
-          />
+          />,
+          1000
         )}
 
       {manage &&
