@@ -144,7 +144,7 @@ export default function Distilled(props: DistilledProps) {
           }}
         >
           {distilled.map(({ e, frags }, vi) => (
-            <span key={e.reference}>
+            <span key={e.reference} data-vref={e.reference}>
               {frags.map((f, i) => (
                 <span key={i}>
                   {f.gapBefore && (
