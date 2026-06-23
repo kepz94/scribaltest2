@@ -3,6 +3,8 @@ import "./desktop.css";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import VerseViewer from "./components/VerseViewer";
+import DefinitionView from "./components/DefinitionView";
+import { lookup as websterLookup, loadWebster, WebsterResult } from "./webster";
 import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import Outline from "./components/Outline";
@@ -663,6 +665,30 @@ export default function App() {
   } | null>(null);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
   const [selectedColor, setSelectedColor] = useState<MarkColor>(1);
+  // Define: the looked-up word's verse + exact range + result (range lets a tag
+  // anchor to that occurrence, same as mobile).
+  const [defn, setDefn] = useState<{
+    ref: string;
+    word: string;
+    start: number;
+    end: number;
+    result: WebsterResult | null;
+  } | null>(null);
+  const handleDefine = (
+    reference: string,
+    _verseText: string,
+    start: number,
+    end: number,
+    word: string
+  ) => {
+    websterLookup(word).then((result) =>
+      setDefn({ ref: reference, word, start, end, result })
+    );
+  };
+  // Warm the dictionary when Define mode is armed so the first lookup is instant.
+  useEffect(() => {
+    if (selectedTool === "define") loadWebster();
+  }, [selectedTool]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
@@ -3952,6 +3978,47 @@ export default function App() {
         </div>
       )}
 
+      {defn && (
+        <div
+          onClick={() => setDefn(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.4)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(560px, 92vw)",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              backgroundColor: "var(--panel)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "22px",
+              boxShadow: "0 12px 48px rgba(0,0,0,0.3)",
+            }}
+          >
+            <DefinitionView
+              word={defn.word}
+              result={defn.result}
+              colors={{
+                text: "var(--text)",
+                muted: "var(--muted)",
+                border: "var(--border)",
+                soft: "var(--soft)",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {compilePrompt && (
         <div
           className="scribal-fade"
@@ -4246,6 +4313,7 @@ export default function App() {
                   onMark={addMark}
                   onEraseMark={deleteMark}
                   onMarkMany={addMarks}
+                  onDefine={handleDefine}
                   marks={getBook(st.bookId).marks}
                   showToolbar={true}
                   toolbarPos={toolbarPos}
@@ -6245,6 +6313,7 @@ export default function App() {
                     onMark={addMark}
                     onEraseMark={deleteMark}
                     onMarkMany={addMarks}
+                    onDefine={handleDefine}
                     marks={getBook(t.bookId).marks}
                     showToolbar={isActive}
                     toolbarPos={toolbarPos}
