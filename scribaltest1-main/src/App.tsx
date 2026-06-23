@@ -474,10 +474,17 @@ export default function App() {
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
 
+  const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
+    useWordTags();
+
   // Live-merge from a pulled cloud backup: the study lists (recorded + keyword)
   // and the chapter-link groups. All additive — syncing only ADDS studies/links
   // made on another device; it never deletes or overwrites local ones.
   const mergeRemoteStudies = (data: Record<string, string | null>) => {
+    wordTagsMergeRemote(
+      data["scribal_wordtags"],
+      data["scribal_wordtags_tomb"]
+    );
     mergeRecordedRemote(data["scribal_studies_v1"]);
     mergeSearchRemote(data["scribal_search_studies"]);
     // Chapter-link groups + their per-scope timestamps. Converges links AND
@@ -678,7 +685,6 @@ export default function App() {
     end: number;
     result: WebsterResult | null;
   } | null>(null);
-  const { wordTags, hasTag, addTag, removeTag } = useWordTags();
   const handleDefine = (
     reference: string,
     _verseText: string,
