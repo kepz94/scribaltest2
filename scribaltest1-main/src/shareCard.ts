@@ -272,14 +272,27 @@ export function renderVerseCard(o: VerseCardOpts): HTMLCanvasElement {
       roundRect(ctx, W / 2 - tw / 2 - 14, y - chosen + chosen * 0.18, tw + 28, chosen * 1.12, 8);
       ctx.fill();
     }
-    ctx.fillStyle = p.text;
+    ctx.fillStyle =
+      o.style === "bold" || o.style === "italic" ? accent : p.text;
     ctx.fillText(ln, W / 2, y);
-    if (o.style === "underline" || o.style === "circle") {
+    if (o.style === "underline") {
       ctx.strokeStyle = accent;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(W / 2 - tw / 2, y + 12);
       ctx.lineTo(W / 2 + tw / 2, y + 12);
+      ctx.stroke();
+    } else if (o.style === "circle") {
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      roundRect(
+        ctx,
+        W / 2 - tw / 2 - 16,
+        y - chosen + chosen * 0.14,
+        tw + 32,
+        chosen * 1.12,
+        chosen * 0.55
+      );
       ctx.stroke();
     }
     y += lineH;
@@ -493,15 +506,28 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
           );
           ctx.fill();
         }
-        ctx.fillStyle = p.text;
+        ctx.fillStyle =
+          pl.style === "bold" || pl.style === "italic" ? accent : p.text;
         ctx.textAlign = "left";
         ctx.fillText(ln, contentX, lineBase);
-        if (pl.style === "underline" || pl.style === "circle") {
+        if (pl.style === "underline") {
           ctx.strokeStyle = accent;
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.moveTo(contentX, lineBase + 9);
           ctx.lineTo(contentX + tw, lineBase + 9);
+          ctx.stroke();
+        } else if (pl.style === "circle") {
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 2.5;
+          roundRect(
+            ctx,
+            contentX - 6,
+            lineBase - size * 0.86,
+            tw + 12,
+            size * 1.12,
+            size * 0.55
+          );
           ctx.stroke();
         }
         y += size * 1.34;
