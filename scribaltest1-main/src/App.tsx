@@ -7796,6 +7796,62 @@ export default function App() {
                       {study.note}
                     </div>
                   )}
+                  {(() => {
+                    let tgt:
+                      | { kind: "keyword" | "rec"; id: string }
+                      | null = null;
+                    if (t.studyId) {
+                      const ss = searchStudies.find((s) => s.id === t.studyId);
+                      if (ss && !isSearchStudyDeleted(ss))
+                        tgt = { kind: "keyword", id: ss.id };
+                    } else if (t.groupId) {
+                      const rec = recordedStudies.find(
+                        (s) =>
+                          s.type === "linked" &&
+                          s.scopeRef === t.groupId &&
+                          s.bookId === t.bookId
+                      );
+                      if (rec) tgt = { kind: "rec", id: rec.id };
+                    } else {
+                      const rec = recordedStudies.find(
+                        (s) =>
+                          s.type === "chapter" &&
+                          s.scopeRef === chapterScopeOf(t) &&
+                          s.bookId === t.bookId
+                      );
+                      if (rec) tgt = { kind: "rec", id: rec.id };
+                    }
+                    if (!tgt) return null;
+                    const target = tgt;
+                    return (
+                      <div style={{ padding: "8px 4px 4px" }}>
+                        <button
+                          onClick={() => {
+                            if (target.kind === "keyword")
+                              setAddToStudyId(target.id);
+                            else setAddVersesRecId(target.id);
+                            setShowSearch(true);
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "7px 14px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontSize: "12.5px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          + Add verses
+                        </button>
+                      </div>
+                    );
+                  })()}
                   <VerseViewer
                     key={t.id}
                     selectedVolume={t.volume}
@@ -8148,121 +8204,6 @@ export default function App() {
                 >
                   Saved ✓
                 </span>
-              )}
-              {compileStudyId == null && compileTabs.length > 0 && (
-                <button
-                  onClick={() => {
-                    if (compileTabs[0]) openLinkPrompt(compileTabs[0]);
-                  }}
-                  title="Link another chapter into this study"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "7px",
-                    height: "40px",
-                    padding: "0 16px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "transparent",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                  Add chapter
-                </button>
-              )}
-              {compiledRec && (
-                <button
-                  onClick={() => {
-                    setAddVersesRecId(compiledRec.id);
-                    setShowSearch(true);
-                  }}
-                  title="Search and add loose verses to this study"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "7px",
-                    height: "40px",
-                    padding: "0 16px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "transparent",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M21 21l-4.3-4.3" />
-                  </svg>
-                  Add verses
-                </button>
-              )}
-              {compileStudy && (
-                <button
-                  onClick={() => {
-                    setAddToStudyId(compileStudy.id);
-                    setShowSearch(true);
-                  }}
-                  title="Search and add verses to this study"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "7px",
-                    height: "40px",
-                    padding: "0 16px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "transparent",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M21 21l-4.3-4.3" />
-                  </svg>
-                  Add verses
-                </button>
               )}
               <div style={{ position: "relative", marginLeft: "auto" }}>
                 <button
