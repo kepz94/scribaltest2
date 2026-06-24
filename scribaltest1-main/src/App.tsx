@@ -18,7 +18,11 @@ import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
-import { useSearchStudies, SearchStudy } from "./hooks/useSearchStudies";
+import {
+  useSearchStudies,
+  SearchStudy,
+  isSearchStudyDeleted,
+} from "./hooks/useSearchStudies";
 import {
   extractPdfText,
   parseScriptureNotes,
@@ -776,6 +780,13 @@ export default function App() {
 
   // "Which open tabs do you want to link this one with?" prompt.
   const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
+  // When set, the "link this keyword search to a chapter" prompt is open for the
+  // keyword study with this id.
+  const [linkKwStudyId, setLinkKwStudyId] = useState<string | null>(null);
+  const [linkSearchDraft, setLinkSearchDraft] = useState<{
+    refs: string[];
+    label: string;
+  } | null>(null);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
@@ -1754,6 +1765,12 @@ export default function App() {
     const seen: Record<string, { label: string; tabIds: string[] }> = {};
     const seenTabs: Record<string, Tab[]> = {};
     tabs.forEach((t) => {
+      if (t.studyId) {
+        const ks = searchStudies.find((s) => s.id === t.studyId);
+        // A linked keyword search is not its own compile unit — it folds into
+        // its linked chapter's compile (by scope), so skip it here.
+        if (ks?.linkedScope) return;
+      }
       const gid = chapterGroups[chapterScopeOf(t)];
       if (gid) {
         if (!seen[gid]) {
@@ -1820,7 +1837,45 @@ export default function App() {
     setCompileAnim({ show: true, duration });
   };
 
-  // After changing a chapter's links from inside compile mode, reopen the
+  // Compile a linked keyword search together with its chapter: compile the
+  // linked chapter (opening it if it isn't already in a tab) so the scope-based
+  // fold pulls this search's verses in. Same combined result as compiling from
+  // the chapter side, themed by the chapter.
+  const compileLinkedSearch = (st: SearchStudy) => {
+    const scope = st.linkedScope;
+    if (!scope) {
+      startStudyCompile(st);
+      return;
+    }
+    const target = resolveScope(scope);
+    let chapterTabIds = tabs
+      .filter((t) => !t.studyId && resolveScope(chapterScopeOf(t)) === target)
+      .map((t) => t.id);
+    if (chapterTabIds.length === 0) {
+      const loc = chapterLoc.get(scope);
+      if (!loc) {
+        startStudyCompile(st);
+        return;
+      }
+      const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+      setTabs((prev) =>
+        prev.some((t) => t.id === id)
+          ? prev
+          : [
+              ...prev,
+              {
+                id,
+                volume: loc.volume,
+                book: loc.book,
+                chapter: loc.chapter,
+                bookId: activeBookId,
+              },
+            ]
+      );
+      chapterTabIds = [id];
+    }
+    runCompile(chapterTabIds);
+  };
   // resulting unit's chapters as tabs and recompile, so the notes reflect the
   // new link set. `groups` is the just-computed map (state isn't updated yet).
   const reCompileFromLink = (
@@ -2012,8 +2067,16 @@ export default function App() {
   const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
 
   // The label scope for the active chapter (its group's scope if linked).
+  // A keyword search linked to a chapter borrows that chapter's scope, so its
+  // tab shows and edits the chapter's themes (shared palette) rather than its
+  // own separate set.
+  const activeKwStudy = activeTab.studyId
+    ? searchStudies.find((s) => s.id === activeTab.studyId)
+    : undefined;
   const activeScope = activeTab.studyId
-    ? "searchstudy:" + activeTab.studyId
+    ? activeKwStudy?.linkedScope
+      ? resolveScope(activeKwStudy.linkedScope)
+      : "searchstudy:" + activeTab.studyId
     : resolveScope(chapterScopeOf(activeTab));
   const activeScopedLabels = scopedLabels[activeScope] || {};
 
@@ -2102,8 +2165,35 @@ export default function App() {
           );
         })()
       : null;
-  const compiledExtras =
-    compiledRec && compiledRec.extraRefs ? compiledRec.extraRefs : [];
+  // Keyword searches linked to any chapter being compiled — their verses fold
+  // in as extras so the compiled study shows the chapter's marks and the linked
+  // search's marks together. Driven by the search's saved linkedScope, so it
+  // holds across reopens.
+  const linkedSearchRefs = compileStudy
+    ? []
+    : (() => {
+        const compiledScopes = new Set(
+          compileTabs.map((t) => resolveScope(chapterScopeOf(t)))
+        );
+        return Array.from(
+          new Set(
+            searchStudies
+              .filter(
+                (s) =>
+                  !isSearchStudyDeleted(s) &&
+                  s.linkedScope &&
+                  compiledScopes.has(resolveScope(s.linkedScope))
+              )
+              .flatMap((s) => s.refs)
+          )
+        );
+      })();
+  const compiledExtras = Array.from(
+    new Set([
+      ...(compiledRec && compiledRec.extraRefs ? compiledRec.extraRefs : []),
+      ...linkedSearchRefs,
+    ])
+  );
   // A tab for each extra verse's chapter (so the views can render it). The marks
   // filter below keeps only the extra verses from those chapters, not the whole
   // chapter — so an added verse from elsewhere doesn't drag its neighbours in.
@@ -2270,6 +2360,15 @@ export default function App() {
     }[];
     if (!locs.length) return;
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
+    // Keyword searches linked to any of this study's chapters reopen alongside
+    // it as their own tabs (their verses also fold into the compile below).
+    const scopeKeys = new Set(scopes.map((sc) => resolveScope(sc)));
+    const linkedKw = searchStudies.filter(
+      (ks) =>
+        !isSearchStudyDeleted(ks) &&
+        ks.linkedScope &&
+        scopeKeys.has(resolveScope(ks.linkedScope))
+    );
     // Compute the tab ids synchronously, up front — these drive the compile
     // selection below. Collecting them INSIDE the setTabs updater (which React
     // runs later, during render) left runCompile receiving an empty array, so
@@ -2293,6 +2392,22 @@ export default function App() {
               bookId: s.bookId,
             },
           ];
+      });
+      linkedKw.forEach((ks) => {
+        const id = "studytab_" + ks.id;
+        if (next.some((t) => t.id === id)) return;
+        const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
+        next = [
+          ...next,
+          {
+            id,
+            volume: loc ? loc.volume : 0,
+            book: loc ? loc.book : 0,
+            chapter: loc ? loc.chapter : 0,
+            bookId: ks.bookId,
+            studyId: ks.id,
+          },
+        ];
       });
       return next;
     });
@@ -2354,6 +2469,37 @@ export default function App() {
     setStudyDraftBook("master");
     setStudyDraftNewName("");
     openStudyTab(study);
+  };
+
+  // Link a keyword search to a chapter at the moment of search — no naming or
+  // book step. The search opens as its own tab in the chapter's book, linked so
+  // it shares the chapter's themes and folds into the chapter's compile.
+  const linkSearchToChapterTab = (refs: string[], label: string, ct: Tab) => {
+    if (!refs.length) return;
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const scope = chapterScopeOf(ct);
+    const study = addStudy(label.trim() || "Search", ct.bookId, ordered);
+    updateStudy(study.id, { linkedScope: scope });
+    setLinkSearchDraft(null);
+    setShowSearch(false);
+    openStudyTab(study);
+  };
+  const onLinkSearchToChapter = (refs: string[], label: string) => {
+    if (!refs.length) return;
+    const chapterTabs = tabs.filter((t) => !t.studyId);
+    if (chapterTabs.length === 0) {
+      // Nothing open to link to — fall back to the name/book draft so the
+      // selection isn't lost.
+      onLinkStudy(refs);
+      return;
+    }
+    if (chapterTabs.length === 1) {
+      linkSearchToChapterTab(refs, label, chapterTabs[0]);
+      return;
+    }
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    setLinkSearchDraft({ refs: ordered, label });
+    setShowSearch(false);
   };
 
   // Move a study to a different session book, taking its marks (and notes, theme
@@ -3516,6 +3662,7 @@ export default function App() {
           }}
           onJumpToMark={jumpToMark}
           onLinkStudy={onLinkStudy}
+          onLinkSearchToChapter={onLinkSearchToChapter}
           initialSelected={
             addToStudyId
               ? searchStudies.find((s) => s.id === addToStudyId)?.refs
@@ -3547,6 +3694,284 @@ export default function App() {
           }}
         />
       )}
+      {linkKwStudyId &&
+        (() => {
+          const ks = searchStudies.find((s) => s.id === linkKwStudyId);
+          const chapterTabs = tabs.filter((x) => !x.studyId);
+          const setLink = (scope: string | undefined) => {
+            updateStudy(linkKwStudyId, { linkedScope: scope });
+            setLinkKwStudyId(null);
+          };
+          return (
+            <div
+              className="scribal-fade"
+              onClick={() => setLinkKwStudyId(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 380,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+              }}
+            >
+              <div
+                className="scribal-rise"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "420px",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  borderRadius: "16px",
+                  border: "1px solid var(--border)",
+                  padding: "20px",
+                  boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+                  maxHeight: "80vh",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Link to a chapter
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {ks ? "\u201C" + ks.name + "\u201D" : "This search"} will compile
+                  together with the chapter you pick, and reopen alongside it.
+                </div>
+                {chapterTabs.length === 0 ? (
+                  <div
+                    style={{
+                      fontSize: "13.5px",
+                      color: "var(--muted)",
+                      padding: "18px 2px",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Open a chapter in a tab first, then link this search to it.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {chapterTabs.map((ct) => {
+                      const scope = chapterScopeOf(ct);
+                      const on = ks?.linkedScope === scope;
+                      return (
+                        <button
+                          key={ct.id}
+                          onClick={() => setLink(on ? undefined : scope)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "10px",
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: on
+                              ? "2px solid " + ACCENT
+                              : "1px solid var(--border)",
+                            background: "var(--bg)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontSize: "14px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <span>{tabLabel(ct)}</span>
+                          {on && (
+                            <span
+                              style={{
+                                fontSize: "11.5px",
+                                fontWeight: 500,
+                                color: "var(--muted)",
+                              }}
+                            >
+                              Linked · tap to unlink
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    onClick={() => setLinkKwStudyId(null)}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {linkSearchDraft &&
+        (() => {
+          const chapterTabs = tabs.filter((x) => !x.studyId);
+          return (
+            <div
+              className="scribal-fade"
+              onClick={() => setLinkSearchDraft(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 380,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+              }}
+            >
+              <div
+                className="scribal-rise"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "420px",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  borderRadius: "16px",
+                  border: "1px solid var(--border)",
+                  padding: "20px",
+                  boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+                  maxHeight: "80vh",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Link this search to a chapter
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Your{" "}
+                  {linkSearchDraft.refs.length === 1
+                    ? "verse"
+                    : linkSearchDraft.refs.length + " verses"}{" "}
+                  open as their own tab, sharing the chapter&rsquo;s themes and
+                  compiling together with it.
+                </div>
+                {chapterTabs.length === 0 ? (
+                  <div
+                    style={{
+                      fontSize: "13.5px",
+                      color: "var(--muted)",
+                      padding: "18px 2px",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Open a chapter in a tab first, then link this search to it.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {chapterTabs.map((ct) => (
+                      <button
+                        key={ct.id}
+                        onClick={() =>
+                          linkSearchToChapterTab(
+                            linkSearchDraft.refs,
+                            linkSearchDraft.label,
+                            ct
+                          )
+                        }
+                        style={{
+                          textAlign: "left",
+                          padding: "11px 13px",
+                          borderRadius: "10px",
+                          border: "1px solid var(--border)",
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: "14px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {tabLabel(ct)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    onClick={() => setLinkSearchDraft(null)}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {linkPromptTabId && (
         <div
           className="scribal-fade"
@@ -6564,7 +6989,9 @@ export default function App() {
                         const st = searchStudies.find(
                           (s) => s.id === activeTab.studyId
                         );
-                        if (st) startStudyCompile(st);
+                        if (!st) return;
+                        if (st.linkedScope) compileLinkedSearch(st);
+                        else startStudyCompile(st);
                       }
                     : startCompile,
                   true
@@ -6605,8 +7032,12 @@ export default function App() {
           {tabs.map((t) => {
             const active = t.id === activeTabId;
             const gid = chapterGroups[chapterScopeOf(t)];
-            const linked = !t.studyId && !!gid;
-            const linkColor = gid ? groupColor(gid) : ACCENT;
+            const kwStudy = t.studyId
+              ? searchStudies.find((s) => s.id === t.studyId)
+              : undefined;
+            const kwLinked = !!kwStudy?.linkedScope;
+            const linked = (!t.studyId && !!gid) || kwLinked;
+            const linkColor = !t.studyId && gid ? groupColor(gid) : ACCENT;
             return (
               <div
                 key={t.id}
@@ -6644,6 +7075,38 @@ export default function App() {
                       display: "inline-flex",
                       lineHeight: 1,
                       opacity: linked ? 1 : 0.45,
+                    }}
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke={active ? "#fff" : ACCENT}
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                    </svg>
+                  </span>
+                )}
+                {t.studyId && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLinkKwStudyId(t.studyId as string);
+                    }}
+                    title={
+                      kwLinked
+                        ? "Linked to a chapter — click to change or unlink"
+                        : "Link this search to an open chapter so they compile together"
+                    }
+                    style={{
+                      display: "inline-flex",
+                      lineHeight: 1,
+                      opacity: kwLinked ? 1 : 0.45,
                     }}
                   >
                     <svg
