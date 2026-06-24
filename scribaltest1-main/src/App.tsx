@@ -30,6 +30,7 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
+import { useStudyStore } from "./hooks/useStudyStore";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 import Shortcuts from "./components/Shortcuts";
@@ -511,6 +512,13 @@ export default function App() {
     setStudies: setRecordedStudies,
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
+
+  // Unified study store (spec §3) — brought live here. Seeds itself from the
+  // old stores on first mount (read-only) and persists under its own key.
+  // Nothing writes through it yet; for now it only powers the read-only
+  // "migrated" confirmation in the Studies hub so the conversion can be checked
+  // against real data before anything routes through it.
+  const unifiedStore = useStudyStore();
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -5472,6 +5480,14 @@ export default function App() {
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
           onImport={openSnImport}
+          migrated={unifiedStore.studies.map((s) => ({
+            name: s.name,
+            chapters: s.members.filter((m) => m.kind === "chapter").length,
+            verses: s.members.reduce(
+              (n, m) => n + (m.kind === "verses" ? m.refs.length : 0),
+              0
+            ),
+          }))}
         />
       )}
 
