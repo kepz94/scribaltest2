@@ -119,14 +119,19 @@ export function removeVersesFrom(study: Study, refs: string[]): Study {
 }
 
 function loadOrSeed(): Study[] {
-  const raw = safeGet(KEY);
-  if (raw) {
-    const parsed = safeParse<Study[] | null>(raw, null);
-    if (parsed && Array.isArray(parsed)) return parsed;
+  try {
+    const raw = safeGet(KEY);
+    if (raw) {
+      const parsed = safeParse<Study[] | null>(raw, null);
+      if (parsed && Array.isArray(parsed)) return parsed;
+    }
+    // First adoption: seed from the existing stores (read-only).
+    const o = readOldStores();
+    return migrateStudies(o.recorded, o.searches, o.chapterGroups);
+  } catch {
+    // Never let unexpected legacy data crash mount — start empty instead.
+    return [];
   }
-  // First adoption: seed from the existing stores (read-only).
-  const o = readOldStores();
-  return migrateStudies(o.recorded, o.searches, o.chapterGroups);
 }
 
 // --- The hook ---------------------------------------------------------------
