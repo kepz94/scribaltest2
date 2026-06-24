@@ -117,4 +117,5 @@ export interface Tab {
   chapter: number;
   bookId: string; // which StudyBook ("session") this tab reads/writes; "master" by default
   studyId?: string; // set => this tab is a keyword study, rendering its picked verses
+  groupId?: string; // set => this single tab stands in for a whole linked-chapter group; the compile expands it into every chapter in the group
 }
