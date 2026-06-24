@@ -24,6 +24,10 @@ export interface SearchStudy {
   // The compile view this study was saved in. A relational study reopens on
   // (and is locked to) the Relational view; carried so it survives sync.
   view?: "outline" | "distilled" | "covenants";
+  // A chapter scope ("1 Nephi 3") this search is linked to. When set, the
+  // chapter compiles together with this search's verses, and reopening the
+  // chapter study reopens this search alongside it as its own tab.
+  linkedScope?: string;
 }
 
 // Hidden iff its delete is its newest action.
@@ -135,6 +139,7 @@ export function useSearchStudies() {
                 refs: r.refs,
                 note: r.note ?? local.note,
                 view: r.view ?? local.view,
+                linkedScope: r.linkedScope ?? local.linkedScope,
                 updatedAt: rAt,
               }
             : { ...local };
