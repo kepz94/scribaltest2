@@ -672,10 +672,10 @@ export default function Covenants(props: CovenantsProps) {
             lineHeight: 1.8,
           }}
         >
-          <div style={{ marginBottom: "8px" }}>Nothing paired yet.</div>
+          <div style={{ marginBottom: "8px" }}>Nothing marked yet.</div>
           <div style={{ fontSize: "13.5px" }}>
-            Mark one side {dot(a)} and the other {dot(b)} in the same verse, and
-            the pair appears here. {cfg.caveat}
+            Mark one side {dot(a)} and the other {dot(b)} — together in a verse
+            to pair them, or in separate verses to line them up side by side.
           </div>
         </div>
       )}
@@ -768,65 +768,119 @@ export default function Covenants(props: CovenantsProps) {
         <div style={{ marginTop: "26px" }}>
           <div
             style={{
+              display: "flex",
+              gap: "12px",
+              padding: "0 4px 8px",
               fontSize: "11px",
               letterSpacing: "1.5px",
               textTransform: "uppercase",
               color: "var(--muted)",
               fontWeight: 700,
-              marginBottom: "10px",
             }}
           >
-            Half-marked — add the other side
-          </div>
-          {half.map((h, i) => (
             <div
-              key={h.reference + "_" + i}
-              data-vref={h.reference}
               style={{
+                flex: 1,
+                minWidth: 0,
                 display: "flex",
-                gap: "10px",
-                alignItems: "baseline",
-                marginBottom: "7px",
-                fontSize: "13.5px",
+                alignItems: "center",
+                gap: "6px",
               }}
             >
-              <button
-                onClick={() => onJumpToReference(h.reference)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  padding: 0,
-                  fontSize: "13.5px",
-                  fontFamily: "inherit",
-                }}
-              >
-                {h.reference}
-              </button>
-              <span
-                style={{
-                  fontFamily: '"Times New Roman", Times, serif',
-                  color: "var(--text)",
-                }}
-              >
-                {renderFrags(h.frags)}{" "}
-                <span
+              {dot(a)}
+              {cfg.leftHeader}
+            </div>
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              {dot(b)}
+              {cfg.rightHeader}
+            </div>
+          </div>
+          <div
+            style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}
+          >
+            {[
+              { side: "left" as "left" | "right", color: a },
+              { side: "right" as "left" | "right", color: b },
+            ].map((col) => {
+              const items = half.filter((h) => h.side === col.side);
+              return (
+                <div
+                  key={col.side}
                   style={{
-                    fontFamily: "system-ui, sans-serif",
-                    color: "var(--muted)",
-                    fontSize: "12px",
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
                   }}
                 >
-                  — needs the {h.side === "left" ? cfg.rightHeader : cfg.leftHeader}
-                </span>
-              </span>
-            </div>
-          ))}
+                  {items.length === 0 ? (
+                    <div
+                      style={{
+                        color: "var(--muted)",
+                        fontSize: "12.5px",
+                        fontStyle: "italic",
+                        padding: "6px 2px",
+                      }}
+                    >
+                      None marked.
+                    </div>
+                  ) : (
+                    items.map((h, i) => (
+                      <div
+                        key={h.reference + "_" + col.side + "_" + i}
+                        data-vref={h.reference}
+                        style={{
+                          background: "var(--soft)",
+                          borderLeft: "3px solid " + COLOR_MAP[col.color],
+                          borderRadius: "8px",
+                          padding: "10px 12px",
+                        }}
+                      >
+                        <button
+                          onClick={() => onJumpToReference(h.reference)}
+                          title="Open in reading view"
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--muted)",
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            textDecorationStyle: "dotted",
+                            padding: 0,
+                            fontSize: "11px",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {h.reference}
+                        </button>
+                        <div
+                          style={{
+                            fontFamily: '"Times New Roman", Times, serif',
+                            fontSize: "15px",
+                            lineHeight: 1.6,
+                            color: "var(--text)",
+                            marginTop: "4px",
+                            overflowWrap: "break-word",
+                          }}
+                        >
+                          {renderFrags(h.frags)}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
