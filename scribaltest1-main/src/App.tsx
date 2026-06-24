@@ -3571,7 +3571,10 @@ export default function App() {
           " · " +
           fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-        onOpen: () => openStudyCompiled(ss),
+        onOpen: () => {
+          openStudyTab(ss);
+          setMode("read");
+        },
         onMove: () =>
           setMoveTarget({
             id: ss.id,
@@ -4377,17 +4380,75 @@ export default function App() {
                     chapter
                   </div>
                   {members.length > 0 && (
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginBottom: "16px",
-                      }}
-                    >
-                      Linked with{" "}
-                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
-                        {members.join(", ")}
-                      </span>
+                    <div style={{ marginBottom: "16px" }}>
+                      <div
+                        style={{
+                          fontSize: "12.5px",
+                          color: "var(--muted)",
+                          marginBottom: "7px",
+                        }}
+                      >
+                        Linked with — tap to open in a tab
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "6px",
+                        }}
+                      >
+                        {members.map((m) => {
+                          const loc = chapterLoc.get(m);
+                          return (
+                            <button
+                              key={m}
+                              disabled={!loc}
+                              onClick={() => {
+                                if (!loc) return;
+                                const bid = t.bookId || "master";
+                                const id = makeTabId(
+                                  bid,
+                                  loc.volume,
+                                  loc.book,
+                                  loc.chapter
+                                );
+                                setTabs((prev) =>
+                                  prev.some((x) => x.id === id)
+                                    ? prev
+                                    : [
+                                        ...prev,
+                                        {
+                                          id,
+                                          volume: loc.volume,
+                                          book: loc.book,
+                                          chapter: loc.chapter,
+                                          bookId: bid,
+                                        },
+                                      ]
+                                );
+                                setActiveTabId(id);
+                                setLinkPromptTabId(null);
+                              }}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                padding: "6px 12px",
+                                borderRadius: "999px",
+                                border: "1px solid " + gColor,
+                                background: "var(--bg)",
+                                color: "var(--text)",
+                                cursor: loc ? "pointer" : "default",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 
