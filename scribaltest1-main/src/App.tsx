@@ -30,7 +30,8 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
-import { useStudyStore } from "./hooks/useStudyStore";
+import { resolveStudy } from "./studyModel";
+import { migrateStudies } from "./migrateStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 import Shortcuts from "./components/Shortcuts";
@@ -513,12 +514,11 @@ export default function App() {
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
 
-  // Unified study store (spec §3) — brought live here. Seeds itself from the
-  // old stores on first mount (read-only) and persists under its own key.
-  // Nothing writes through it yet; for now it only powers the read-only
-  // "migrated" confirmation in the Studies hub so the conversion can be checked
-  // against real data before anything routes through it.
-  const unifiedStore = useStudyStore();
+  // When set, an isolated read-only "new-model" preview overlay compiles that
+  // unified study through the resolver, using the real format components but a
+  // freshly-built feed. Entirely separate from the live compile path (mode ===
+  // "compile"); opened from the Studies-hub migrated list, closed back to null.
+  const [unifiedCompileId, setUnifiedCompileId] = useState<string | null>(null);
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -683,6 +683,16 @@ export default function App() {
     chapterGroupsRef.current = chapterGroups;
     chapterGroupsAtRef.current = chapterGroupsAt;
   }, [chapterGroups, chapterGroupsAt]);
+
+  // Live, always-current migration of the existing stores into the unified
+  // model. Read-only and derived (not the stateful store) so the Studies-hub
+  // "migrated" list and the new-model preview always reflect current studies
+  // rather than a one-time snapshot. The stateful store returns when writes
+  // actually move into the unified model.
+  const migratedStudies = useMemo(
+    () => migrateStudies(recordedStudies, searchStudies, chapterGroups),
+    [recordedStudies, searchStudies, chapterGroups]
+  );
 
   // Stamp "changed now" for every scope whose group membership differs between
   // prev and next — this is what makes a link OR an unlink propagate.
@@ -5480,7 +5490,8 @@ export default function App() {
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
           onImport={openSnImport}
-          migrated={unifiedStore.studies.map((s) => ({
+          migrated={migratedStudies.map((s) => ({
+            id: s.id,
             name: s.name,
             chapters: s.members.filter((m) => m.kind === "chapter").length,
             verses: s.members.reduce(
@@ -5488,8 +5499,154 @@ export default function App() {
               0
             ),
           }))}
+          onOpenMigrated={(id) => {
+            setUnifiedCompileId(id);
+            setStudiesOpen(false);
+          }}
         />
       )}
+
+      {unifiedCompileId &&
+        (() => {
+          const study = migratedStudies.find(
+            (s) => s.id === unifiedCompileId
+          );
+          if (!study) return null;
+          // Theme names: merge each member chapter's saved labels. Desktop
+          // already uses one label set per compile, so a merge is faithful.
+          const memberScopes = Array.from(
+            new Set(
+              study.members.flatMap((m) =>
+                m.kind === "chapter"
+                  ? [resolveScope(m.scope)]
+                  : m.refs.map((r) => resolveScope(scopeOfRef(r)))
+              )
+            )
+          );
+          const mergedLabels = {} as Record<MarkColor, string>;
+          memberScopes.forEach((sc) => {
+            const lbl = scopedLabels[sc];
+            if (lbl) Object.assign(mergedLabels, lbl);
+          });
+          const resolved = resolveStudy(
+            study.members,
+            getBook(study.bookId).marks,
+            mergedLabels
+          );
+          // One pseudo-tab per chapter, in scripture order (refs are sorted).
+          const previewTabs: Tab[] = [];
+          const seenChapter = new Set<string>();
+          resolved.refs.forEach((r) => {
+            const loc = refLoc.get(r);
+            if (!loc) return;
+            const key = loc.volume + ":" + loc.book + ":" + loc.chapter;
+            if (seenChapter.has(key)) return;
+            seenChapter.add(key);
+            previewTabs.push({
+              id: "unifiedpreview_" + key,
+              volume: loc.volume,
+              book: loc.book,
+              chapter: loc.chapter,
+              bookId: study.bookId,
+            });
+          });
+          const scopeKey = "unified:" + study.id;
+          const previewProps = {
+            tabs: previewTabs,
+            compileTabs: previewTabs,
+            compileSelection: previewTabs.map((t) => t.id),
+            onToggleCompileTab: () => undefined,
+            hideTabPicker: true,
+            marks: resolved.marks,
+            colorLabels: mergedLabels,
+            setColorLabel: () => undefined,
+            onJumpToReference: jumpToReference,
+          };
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 385,
+                background: "var(--bg)",
+                color: "var(--text)",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "14px 18px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "var(--bg)",
+                }}
+              >
+                <div style={{ flex: 1, fontSize: "15px", fontWeight: 700 }}>
+                  {study.name}{" "}
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 400,
+                      color: "var(--muted)",
+                    }}
+                  >
+                    · new-model preview
+                  </span>
+                </div>
+                <button
+                  onClick={() => setUnifiedCompileId(null)}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    borderRadius: "999px",
+                    padding: "8px 14px",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div
+                style={{
+                  maxWidth: "900px",
+                  margin: "0 auto",
+                  padding: "18px 16px 60px",
+                }}
+              >
+                {study.view === "outline" && (
+                  <Outline
+                    {...previewProps}
+                    notes={notes}
+                    setNote={setNote}
+                    collapsed={compileCollapsed}
+                    onCollapsedChange={setCompileCollapsed}
+                  />
+                )}
+                {study.view === "charting" && <Charting {...previewProps} />}
+                {study.view === "distilled" && <Distilled {...previewProps} />}
+                {study.view === "covenants" && (
+                  <Covenants
+                    key={scopeKey}
+                    {...previewProps}
+                    savedRoles={scopedRoles[scopeKey]}
+                    onRoles={(r) => setScopedRoles(scopeKey, r)}
+                    savedLens={scopedLens[scopeKey]}
+                    onLens={(l) => setScopedLens(scopeKey, l)}
+                    onSavePicksAsStudy={onSavePicksAsStudy}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       {snImportOpen && (
         <div
