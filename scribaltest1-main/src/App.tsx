@@ -2768,6 +2768,28 @@ export default function App() {
     openStudyTab(study);
   };
 
+  // Create a brand-new keyword study from the verses checked while reading a
+  // chapter. Reuses the standard "name this study" draft (name + book picker),
+  // so the verses can land in a session book and arrive unmarked. Defaults the
+  // book to the most recent keyword-study session (or a fresh session), matching
+  // the send-to-existing behavior of keeping marks out of the new study.
+  const createStudyFromSend = () => {
+    const ordered = sendSelected
+      .slice()
+      .sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    setSendPickerOpen(false);
+    setSendTabId(null);
+    setSendSelected([]);
+    if (!ordered.length) return;
+    const recentSession = searchStudies
+      .filter((s) => !isSearchStudyDeleted(s) && s.bookId !== "master")
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+    setStudyDraftRefs(ordered);
+    setStudyDraftName("");
+    setStudyDraftBook(recentSession ? recentSession.bookId : "__new__");
+    setStudyDraftNewName("");
+  };
+
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
   // jump to the first added verse in read mode so they can be marked. A banner
   // (rendered below) offers to compile the study once they're marked.
@@ -7690,30 +7712,10 @@ export default function App() {
                                   const list = searchStudies.filter(
                                     (s) => !isSearchStudyDeleted(s)
                                   );
-                                  if (!list.length)
-                                    return (
-                                      <div
-                                        style={{
-                                          padding: "10px 12px",
-                                          fontSize: "12.5px",
-                                          color: "var(--muted)",
-                                        }}
-                                      >
-                                        No keyword studies yet.
-                                      </div>
-                                    );
-                                  return list.map((s) => {
-                                    const bn =
-                                      s.bookId === "master"
-                                        ? "Master"
-                                        : books.find((b) => b.id === s.bookId)
-                                            ?.name || "session";
-                                    return (
+                                  return (
+                                    <>
                                       <button
-                                        key={s.id}
-                                        onClick={() =>
-                                          sendVersesToStudy(s.id, sendSelected)
-                                        }
+                                        onClick={createStudyFromSend}
                                         style={{
                                           display: "block",
                                           width: "100%",
@@ -7722,25 +7724,81 @@ export default function App() {
                                           borderRadius: "7px",
                                           border: "none",
                                           background: "transparent",
-                                          color: "var(--text)",
+                                          color: "#0d9488",
                                           cursor: "pointer",
                                           fontSize: "13px",
+                                          fontWeight: 700,
                                           fontFamily: "inherit",
                                         }}
                                       >
-                                        📑 {s.name}
-                                        <span
+                                        + Create new study…
+                                      </button>
+                                      {list.length > 0 && (
+                                        <div
                                           style={{
+                                            height: "1px",
+                                            background: "var(--border)",
+                                            margin: "4px 6px",
+                                          }}
+                                        />
+                                      )}
+                                      {list.length === 0 ? (
+                                        <div
+                                          style={{
+                                            padding: "8px 12px",
+                                            fontSize: "12px",
                                             color: "var(--muted)",
-                                            fontSize: "11.5px",
-                                            marginLeft: "6px",
                                           }}
                                         >
-                                          {bn}
-                                        </span>
-                                      </button>
-                                    );
-                                  });
+                                          No existing studies yet.
+                                        </div>
+                                      ) : (
+                                        list.map((s) => {
+                                          const bn =
+                                            s.bookId === "master"
+                                              ? "Master"
+                                              : books.find(
+                                                  (b) => b.id === s.bookId
+                                                )?.name || "session";
+                                          return (
+                                            <button
+                                              key={s.id}
+                                              onClick={() =>
+                                                sendVersesToStudy(
+                                                  s.id,
+                                                  sendSelected
+                                                )
+                                              }
+                                              style={{
+                                                display: "block",
+                                                width: "100%",
+                                                textAlign: "left",
+                                                padding: "9px 12px",
+                                                borderRadius: "7px",
+                                                border: "none",
+                                                background: "transparent",
+                                                color: "var(--text)",
+                                                cursor: "pointer",
+                                                fontSize: "13px",
+                                                fontFamily: "inherit",
+                                              }}
+                                            >
+                                              📑 {s.name}
+                                              <span
+                                                style={{
+                                                  color: "var(--muted)",
+                                                  fontSize: "11.5px",
+                                                  marginLeft: "6px",
+                                                }}
+                                              >
+                                                {bn}
+                                              </span>
+                                            </button>
+                                          );
+                                        })
+                                      )}
+                                    </>
+                                  );
                                 })()}
                               </div>
                             )}
