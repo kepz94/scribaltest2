@@ -3572,10 +3572,6 @@ export default function App() {
           fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
         onOpen: () => openStudyCompiled(ss),
-        onAddVerses: () => {
-          setAddToStudyId(ss.id);
-          setShowSearch(true);
-        },
         onMove: () =>
           setMoveTarget({
             id: ss.id,
@@ -8197,6 +8193,45 @@ export default function App() {
                     setShowSearch(true);
                   }}
                   title="Search and add loose verses to this study"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "7px",
+                    height: "40px",
+                    padding: "0 16px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.3-4.3" />
+                  </svg>
+                  Add verses
+                </button>
+              )}
+              {compileStudy && (
+                <button
+                  onClick={() => {
+                    setAddToStudyId(compileStudy.id);
+                    setShowSearch(true);
+                  }}
+                  title="Search and add verses to this study"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
