@@ -180,7 +180,7 @@ const applyIntensityToTheme = (
   intensity: number
 ): Record<string, string> => {
   const scaled = { ...themeObj };
-  for (let i = 1; i <= 7; i++) {
+  for (let i = 1; i <= COLORS.length; i++) {
     const penKey = `--pen${i}`;
     if (scaled[penKey]) scaled[penKey] = adjustColor(scaled[penKey], intensity, false);
     const hlKey = `--hl${i}`;
@@ -203,6 +203,9 @@ const LIGHT_THEME = {
   "--pen5": "#2f6fb0",
   "--pen6": "#7b4fbf",
   "--pen7": "#1a1a1a",
+  "--pen8": "#8b5a2b",
+  "--pen9": "#d6398e",
+  "--pen10": "#6f9e16",
   "--hl1": "#ffd6d6",
   "--hl2": "#ffe2c2",
   "--hl3": "#fbedb0",
@@ -210,6 +213,9 @@ const LIGHT_THEME = {
   "--hl5": "#cfe2f7",
   "--hl6": "#e6d9f7",
   "--hl7": "#e0e0e0",
+  "--hl8": "#e8d9c4",
+  "--hl9": "#fcd6ea",
+  "--hl10": "#e6f2c4",
 };
 
 const DARK_THEME = {
@@ -226,6 +232,9 @@ const DARK_THEME = {
   "--pen5": "#7cb0e8",
   "--pen6": "#b794f6",
   "--pen7": "#f2efe8",
+  "--pen8": "#c89a6a",
+  "--pen9": "#f48fbf",
+  "--pen10": "#a6dd5a",
   "--hl1": "#5c2b2e",
   "--hl2": "#5c3f1f",
   "--hl3": "#5a4a1c",
@@ -233,6 +242,9 @@ const DARK_THEME = {
   "--hl5": "#243d56",
   "--hl6": "#3d2b5c",
   "--hl7": "#3f3e3a",
+  "--hl8": "#4d3826",
+  "--hl9": "#5a2b45",
+  "--hl10": "#3f4d1e",
 };
 
 const makeTabId = (
