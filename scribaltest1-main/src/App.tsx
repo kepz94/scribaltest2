@@ -1080,6 +1080,17 @@ export default function App() {
       bookId: "master",
     };
 
+  // Self-heal a stale activeTabId: if it points at a tab that no longer exists
+  // (e.g. a tab's id changed underneath it, or a restored layout), snap it back
+  // to a real tab. Without this, every tab's `isActive` reads false at once and
+  // per-tab controls (like "Send verses to a study") silently vanish until the
+  // next navigation re-sets the active tab.
+  useEffect(() => {
+    if (tabs.length && !tabs.some((t) => t.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [tabs, activeTabId]);
+
   // Keep the active study book in sync with the active tab's bookId
   useEffect(() => {
     const bid = activeTab.bookId || "master";
@@ -7535,7 +7546,7 @@ export default function App() {
             }}
           >
             {tabs.map((t) => {
-              const isActive = t.id === activeTabId;
+              const isActive = t.id === activeTab.id;
               const multi = tabs.length > 1;
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
