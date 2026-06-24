@@ -19,6 +19,7 @@ interface Props {
   rows: StudyRow[];
   onClose: () => void;
   onImport?: () => void;
+  migrated?: { name: string; chapters: number; verses: number }[];
 }
 
 const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
@@ -27,7 +28,7 @@ const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
   { kind: "keyword", label: "Keyword studies", icon: "📑" },
 ];
 
-export default function StudiesList({ rows, onClose, onImport }: Props) {
+export default function StudiesList({ rows, onClose, onImport, migrated }: Props) {
   return (
     <div
       className="scribal-fade"
@@ -107,6 +108,43 @@ export default function StudiesList({ rows, onClose, onImport }: Props) {
         </div>
 
         <div style={{ padding: "10px 14px 16px" }}>
+          {migrated && migrated.length > 0 && (
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "12px",
+                fontSize: "12px",
+                color: "var(--muted)",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  marginBottom: "6px",
+                }}
+              >
+                ✓ New model ready — {migrated.length}{" "}
+                {migrated.length === 1 ? "study" : "studies"} migrated
+              </div>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "3px" }}
+              >
+                {migrated.map((m, i) => (
+                  <div key={i}>
+                    {m.name}{" "}
+                    <span style={{ opacity: 0.7 }}>
+                      · {m.chapters}{" "}
+                      {m.chapters === 1 ? "chapter" : "chapters"} · {m.verses}{" "}
+                      {m.verses === 1 ? "verse" : "verses"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {rows.length === 0 && (
             <div
               style={{
