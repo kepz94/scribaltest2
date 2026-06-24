@@ -758,6 +758,18 @@ export default function App() {
   // When set, the search panel is in "add verses to this keyword study" mode:
   // the study's verses are pre-selected and the link bar offers update-vs-copy.
   const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
+  // "Send verses to a study" while reading a chapter: pick verses with
+  // checkboxes and push them into an existing keyword study. Keyed to the tab
+  // it was started on, so switching tabs doesn't disturb that tab's marking.
+  const [sendTabId, setSendTabId] = useState<string | null>(null);
+  const [sendSelected, setSendSelected] = useState<string[]>([]);
+  const [sendPickerOpen, setSendPickerOpen] = useState(false);
+  // After sending, the target study opens in its own tab with the just-added
+  // verses shown at the top under "Just added" so they're easy to mark.
+  const [justAddedToStudy, setJustAddedToStudy] = useState<{
+    studyId: string;
+    refs: string[];
+  } | null>(null);
   // When set, the search panel is adding loose verses to this recorded
   // chapter/linked study (writing its extraRefs).
   const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
@@ -2717,6 +2729,32 @@ export default function App() {
       updateStudy(study.id, { refs: ordered });
       openStudyTab(study);
     }
+  };
+
+  // Push the verses checked while reading a chapter into an existing keyword
+  // study. The study keeps its own book, so the verses arrive as that book's
+  // (unmarked) version — e.g. marking on Master but sending the "deep studies"
+  // session version. New refs merge into the study in scripture order; the study
+  // opens in its own tab (the chapter tab stays put) with the just-added verses
+  // pulled to the top so they're ready to mark.
+  const sendVersesToStudy = (studyId: string, refs: string[]) => {
+    setSendPickerOpen(false);
+    setSendTabId(null);
+    const picked = refs.slice();
+    setSendSelected([]);
+    if (!picked.length) return;
+    const study = searchStudies.find((s) => s.id === studyId);
+    if (!study) return;
+    const existing = new Set(study.refs);
+    const newRefs = picked
+      .filter((r) => !existing.has(r))
+      .sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const merged = Array.from(new Set([...study.refs, ...picked])).sort(
+      (a, b) => orderOfRef(a) - orderOfRef(b)
+    );
+    updateStudy(study.id, { refs: merged });
+    setJustAddedToStudy(newRefs.length ? { studyId: study.id, refs: newRefs } : null);
+    openStudyTab(study);
   };
 
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
@@ -7532,6 +7570,174 @@ export default function App() {
                       {study.note}
                     </div>
                   )}
+                  {isActive && !t.studyId && !t.groupId && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                        padding: "6px 4px 12px",
+                      }}
+                    >
+                      {sendTabId !== t.id ? (
+                        <button
+                          onClick={() => {
+                            setSendTabId(t.id);
+                            setSendSelected([]);
+                            setSendPickerOpen(false);
+                          }}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontSize: "12.5px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          Send verses to a study
+                        </button>
+                      ) : (
+                        <>
+                          <span
+                            style={{
+                              fontSize: "12.5px",
+                              color: "var(--muted)",
+                            }}
+                          >
+                            {sendSelected.length === 0
+                              ? "Check the verses you want to send"
+                              : sendSelected.length +
+                                " verse" +
+                                (sendSelected.length === 1 ? "" : "s") +
+                                " selected"}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setSendTabId(null);
+                              setSendSelected([]);
+                              setSendPickerOpen(false);
+                            }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "999px",
+                              border: "1px solid var(--border)",
+                              background: "transparent",
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                              fontSize: "12.5px",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <div style={{ position: "relative" }}>
+                            <button
+                              disabled={sendSelected.length === 0}
+                              onClick={() => setSendPickerOpen((o) => !o)}
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: "999px",
+                                border: "none",
+                                background: sendSelected.length
+                                  ? "#0d9488"
+                                  : "var(--border)",
+                                color: "#fff",
+                                cursor: sendSelected.length
+                                  ? "pointer"
+                                  : "default",
+                                fontSize: "12.5px",
+                                fontWeight: 700,
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              Send to study ▾
+                            </button>
+                            {sendPickerOpen && sendSelected.length > 0 && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "calc(100% + 6px)",
+                                  left: 0,
+                                  zIndex: 50,
+                                  background: "var(--panel)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "10px",
+                                  boxShadow:
+                                    "0 8px 24px rgba(0,0,0,0.18)",
+                                  minWidth: "240px",
+                                  maxHeight: "320px",
+                                  overflowY: "auto",
+                                  padding: "6px",
+                                }}
+                              >
+                                {(() => {
+                                  const list = searchStudies.filter(
+                                    (s) => !isSearchStudyDeleted(s)
+                                  );
+                                  if (!list.length)
+                                    return (
+                                      <div
+                                        style={{
+                                          padding: "10px 12px",
+                                          fontSize: "12.5px",
+                                          color: "var(--muted)",
+                                        }}
+                                      >
+                                        No keyword studies yet.
+                                      </div>
+                                    );
+                                  return list.map((s) => {
+                                    const bn =
+                                      s.bookId === "master"
+                                        ? "Master"
+                                        : books.find((b) => b.id === s.bookId)
+                                            ?.name || "session";
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        onClick={() =>
+                                          sendVersesToStudy(s.id, sendSelected)
+                                        }
+                                        style={{
+                                          display: "block",
+                                          width: "100%",
+                                          textAlign: "left",
+                                          padding: "9px 12px",
+                                          borderRadius: "7px",
+                                          border: "none",
+                                          background: "transparent",
+                                          color: "var(--text)",
+                                          cursor: "pointer",
+                                          fontSize: "13px",
+                                          fontFamily: "inherit",
+                                        }}
+                                      >
+                                        📑 {s.name}
+                                        <span
+                                          style={{
+                                            color: "var(--muted)",
+                                            fontSize: "11.5px",
+                                            marginLeft: "6px",
+                                          }}
+                                        >
+                                          {bn}
+                                        </span>
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <VerseViewer
                     key={t.id}
                     selectedVolume={t.volume}
@@ -7549,7 +7755,7 @@ export default function App() {
                     tags={wordTags}
                     onTagTap={openTagRef}
                     marks={getBook(t.bookId).marks}
-                    showToolbar={isActive}
+                    showToolbar={isActive && sendTabId !== t.id}
                     toolbarPos={toolbarPos}
                     onToolbarPos={setToolbarPos}
                     toolbarOrient={toolbarOrient}
@@ -7560,10 +7766,45 @@ export default function App() {
                     warm={reading.warm}
                     dark={dark}
                     sidebarOpen={sidebarOpen}
+                    sendMode={isActive && sendTabId === t.id}
+                    sendSelected={sendSelected}
+                    onToggleSend={(ref) =>
+                      setSendSelected((prev) =>
+                        prev.includes(ref)
+                          ? prev.filter((r) => r !== ref)
+                          : [...prev, ref]
+                      )
+                    }
                     studyRefs={
-                      study ? study.refs : t.studyId ? [] : undefined
+                      study
+                        ? justAddedToStudy &&
+                          justAddedToStudy.studyId === study.id
+                          ? [
+                              ...justAddedToStudy.refs,
+                              ...study.refs.filter(
+                                (r) => !justAddedToStudy.refs.includes(r)
+                              ),
+                            ]
+                          : study.refs
+                        : t.studyId
+                        ? []
+                        : undefined
                     }
                     studyTitle={study ? study.name : "Study"}
+                    splitAfter={
+                      study &&
+                      justAddedToStudy &&
+                      justAddedToStudy.studyId === study.id
+                        ? justAddedToStudy.refs.length
+                        : undefined
+                    }
+                    splitLabels={
+                      study &&
+                      justAddedToStudy &&
+                      justAddedToStudy.studyId === study.id
+                        ? { first: "Just added", second: "Study verses" }
+                        : undefined
+                    }
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
                   />
