@@ -24,6 +24,7 @@ interface SearchPanelProps {
   onJumpToMark: (bookId: string, reference: string) => void;
   onOpenNewTab: (reference: string) => void;
   onLinkStudy?: (refs: string[]) => void;
+  onLinkSearchToChapter?: (refs: string[], label: string) => void;
   // When set, the panel is adding verses to an existing keyword study: its
   // verses come pre-selected, and the link bar offers update-vs-new-copy.
   initialSelected?: string[];
@@ -63,6 +64,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onJumpToMark,
     onOpenNewTab,
     onLinkStudy,
+    onLinkSearchToChapter,
     addToStudyName,
     onAddToStudy,
     addVersesName,
@@ -820,43 +822,69 @@ export default function SearchPanel(props: SearchPanelProps) {
                       </button>
                     </>
                   ) : (
-                    onLinkStudy && (
-                      <button
-                        onClick={() => {
-                          onLinkStudy(Array.from(selectedRefs));
-                          setSelectedRefs(new Set());
-                        }}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          padding: "6px 14px",
-                          borderRadius: "999px",
-                          border: "none",
-                          background: "#0d9488",
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontSize: "12.5px",
-                          fontWeight: 700,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#fff"
-                          strokeWidth={2.4}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                    <>
+                      {onLinkSearchToChapter && (
+                        <button
+                          onClick={() => {
+                            onLinkSearchToChapter(
+                              Array.from(selectedRefs),
+                              query.trim()
+                            );
+                            setSelectedRefs(new Set());
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "6px 14px",
+                            borderRadius: "999px",
+                            border: "none",
+                            background: "#0d9488",
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontSize: "12.5px",
+                            fontWeight: 700,
+                            fontFamily: "inherit",
+                          }}
                         >
-                          <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                          <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                        </svg>
-                        Link verses into a study
-                      </button>
-                    )
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#fff"
+                            strokeWidth={2.4}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                            <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                          </svg>
+                          Link to a chapter
+                        </button>
+                      )}
+                      {onLinkStudy && (
+                        <button
+                          onClick={() => {
+                            onLinkStudy(Array.from(selectedRefs));
+                            setSelectedRefs(new Set());
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "transparent",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontSize: "12.5px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          Save as study
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
