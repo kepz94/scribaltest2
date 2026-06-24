@@ -7885,7 +7885,16 @@ export default function App() {
                     if (!tgt) return null;
                     const target = tgt;
                     return (
-                      <div style={{ padding: "8px 4px 4px" }}>
+                      <div
+                        style={{
+                          maxWidth: "860px",
+                          margin: "0 auto",
+                          padding: "16px 20px 0",
+                          display: "flex",
+                          justifyContent: "center",
+                          boxSizing: "border-box",
+                        }}
+                      >
                         <button
                           onClick={() => {
                             if (target.kind === "keyword")
@@ -7897,13 +7906,13 @@ export default function App() {
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "6px",
-                            padding: "7px 14px",
+                            padding: "9px 18px",
                             borderRadius: "999px",
                             border: "1px solid var(--border)",
                             background: "var(--panel)",
                             color: "var(--text)",
                             cursor: "pointer",
-                            fontSize: "12.5px",
+                            fontSize: "13px",
                             fontWeight: 600,
                             fontFamily: "inherit",
                           }}
