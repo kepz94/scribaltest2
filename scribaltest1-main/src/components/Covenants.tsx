@@ -258,6 +258,11 @@ export default function Covenants(props: CovenantsProps) {
   const [cardDark, setCardDark] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
+  // In-session curation of the two-column collect: which one-sided verses to
+  // show. null = show all (default). Resets on reopen; this never touches the
+  // synced data layer. (Persist a curated contrast via Save as a study.)
+  const [curating, setCurating] = useState(false);
+  const [picked, setPicked] = useState<string[] | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const openRef = useRef<() => void>(() => {});
 
@@ -345,6 +350,28 @@ export default function Covenants(props: CovenantsProps) {
         half.push({ reference: e.reference, side: "right", frags: rf });
     });
   }
+
+  // ----- in-session curation of the collect -----
+  const allHalfRefs = half.map((h) => h.reference);
+  const isPicked = (ref: string) => picked == null || picked.includes(ref);
+  const pickedShownCount = picked
+    ? picked.filter((r) => allHalfRefs.includes(r)).length
+    : allHalfRefs.length;
+  const togglePick = (ref: string) =>
+    setPicked((prev) => {
+      const base = prev == null ? allHalfRefs : prev;
+      return base.includes(ref)
+        ? base.filter((r) => r !== ref)
+        : [...base, ref];
+    });
+  const startCurate = () => {
+    if (picked == null) setPicked(allHalfRefs);
+    setCurating(true);
+  };
+  const showAllCollect = () => {
+    setPicked(null);
+    setCurating(false);
+  };
 
   const renderFrags = (frags: Frag[]) =>
     frags.map((f, i) => (
@@ -769,6 +796,74 @@ export default function Covenants(props: CovenantsProps) {
           <div
             style={{
               display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "10px",
+            }}
+          >
+            {picked != null && !curating && (
+              <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                Showing {pickedShownCount} of {allHalfRefs.length}
+              </span>
+            )}
+            {curating ? (
+              <button
+                onClick={() => setCurating(false)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background: "#0d9488",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                }}
+              >
+                Done
+              </button>
+            ) : (
+              <button
+                onClick={startCurate}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                }}
+              >
+                Pick verses
+              </button>
+            )}
+            {picked != null && (
+              <button
+                onClick={showAllCollect}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  color: "var(--muted)",
+                  fontSize: "12px",
+                  fontFamily: "inherit",
+                  textDecoration: "underline",
+                  textDecorationStyle: "dotted",
+                }}
+              >
+                Show all
+              </button>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
               gap: "12px",
               padding: "0 4px 8px",
               fontSize: "11px",
@@ -810,7 +905,10 @@ export default function Covenants(props: CovenantsProps) {
               { side: "left" as "left" | "right", color: a },
               { side: "right" as "left" | "right", color: b },
             ].map((col) => {
-              const items = half.filter((h) => h.side === col.side);
+              const sideAll = half.filter((h) => h.side === col.side);
+              const items = curating
+                ? sideAll
+                : sideAll.filter((h) => isPicked(h.reference));
               return (
                 <div
                   key={col.side}
@@ -831,51 +929,110 @@ export default function Covenants(props: CovenantsProps) {
                         padding: "6px 2px",
                       }}
                     >
-                      None marked.
+                      {sideAll.length === 0 ? "None marked." : "None picked."}
                     </div>
                   ) : (
-                    items.map((h, i) => (
-                      <div
-                        key={h.reference + "_" + col.side + "_" + i}
-                        data-vref={h.reference}
-                        style={{
-                          background: "var(--soft)",
-                          borderLeft: "3px solid " + COLOR_MAP[col.color],
-                          borderRadius: "8px",
-                          padding: "10px 12px",
-                        }}
-                      >
-                        <button
-                          onClick={() => onJumpToReference(h.reference)}
-                          title="Open in reading view"
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            color: "var(--muted)",
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                            textDecorationStyle: "dotted",
-                            padding: 0,
-                            fontSize: "11px",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          {h.reference}
-                        </button>
+                    items.map((h, i) => {
+                      const on = isPicked(h.reference);
+                      return (
                         <div
+                          key={h.reference + "_" + col.side + "_" + i}
+                          data-vref={h.reference}
+                          onClick={
+                            curating
+                              ? () => togglePick(h.reference)
+                              : undefined
+                          }
                           style={{
-                            fontFamily: '"Times New Roman", Times, serif',
-                            fontSize: "15px",
-                            lineHeight: 1.6,
-                            color: "var(--text)",
-                            marginTop: "4px",
-                            overflowWrap: "break-word",
+                            background: "var(--soft)",
+                            borderLeft: "3px solid " + COLOR_MAP[col.color],
+                            borderRadius: "8px",
+                            padding: "10px 12px",
+                            cursor: curating ? "pointer" : "default",
+                            opacity: curating && !on ? 0.45 : 1,
+                            outline:
+                              curating && on
+                                ? "2px solid " + COLOR_MAP[col.color]
+                                : "none",
                           }}
                         >
-                          {renderFrags(h.frags)}
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            {curating && (
+                              <span
+                                style={{
+                                  width: "16px",
+                                  height: "16px",
+                                  borderRadius: "4px",
+                                  flexShrink: 0,
+                                  border:
+                                    "2px solid " +
+                                    (on
+                                      ? COLOR_MAP[col.color]
+                                      : "var(--border)"),
+                                  background: on
+                                    ? COLOR_MAP[col.color]
+                                    : "transparent",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#fff",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {on ? "\u2713" : ""}
+                              </span>
+                            )}
+                            {curating ? (
+                              <span
+                                style={{
+                                  color: "var(--muted)",
+                                  fontSize: "11px",
+                                }}
+                              >
+                                {h.reference}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => onJumpToReference(h.reference)}
+                                title="Open in reading view"
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "var(--muted)",
+                                  cursor: "pointer",
+                                  textDecoration: "underline",
+                                  textDecorationStyle: "dotted",
+                                  padding: 0,
+                                  fontSize: "11px",
+                                  fontFamily: "inherit",
+                                }}
+                              >
+                                {h.reference}
+                              </button>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: '"Times New Roman", Times, serif',
+                              fontSize: "15px",
+                              lineHeight: 1.6,
+                              color: "var(--text)",
+                              marginTop: "4px",
+                              overflowWrap: "break-word",
+                            }}
+                          >
+                            {renderFrags(h.frags)}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               );
