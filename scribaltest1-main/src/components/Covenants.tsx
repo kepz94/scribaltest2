@@ -38,6 +38,15 @@ interface CovenantsProps {
   // setter to persist a change — so the lens you chose is what you reopen to.
   savedLens?: string;
   onLens?: (lens: string) => void;
+  // Save the currently shown/picked relational verses as their own study,
+  // carrying the role colors + lens so it reopens to the same view. Optional —
+  // only wired on shells that support it. (Desktop first.)
+  onSavePicksAsStudy?: (
+    refs: string[],
+    roles: Record<string, { a: number; b: number }>,
+    lens: string,
+    name: string
+  ) => void;
 }
 
 type Lens = "covenant" | "contrast" | "type" | "question";
@@ -835,6 +844,35 @@ export default function Covenants(props: CovenantsProps) {
                 }}
               >
                 Pick verses
+              </button>
+            )}
+            {props.onSavePicksAsStudy && !curating && (
+              <button
+                onClick={() => {
+                  const refsToSave =
+                    picked != null
+                      ? allRefs.filter((r) => picked.includes(r))
+                      : allRefs;
+                  props.onSavePicksAsStudy?.(
+                    refsToSave,
+                    roles,
+                    lens,
+                    cfg.cardHeading
+                  );
+                }}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background: "#0d9488",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                }}
+              >
+                Save as study
               </button>
             )}
             {picked != null && (
