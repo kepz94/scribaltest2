@@ -73,6 +73,12 @@ interface VerseViewerProps {
   hideStudyHeader?: boolean;
   jumpTarget: string | null;
   onJumpHandled: () => void;
+  // Send-to-study selection (desktop chapter reading): when on, each verse shows
+  // a checkbox and marking is suspended, so the reader can pick verses to push
+  // into a keyword study. Off for every other use.
+  sendMode?: boolean;
+  sendSelected?: string[];
+  onToggleSend?: (reference: string) => void;
 }
 
 type Orientation = "vertical" | "horizontal";
@@ -138,6 +144,9 @@ export default function VerseViewer(props: VerseViewerProps) {
     hideStudyHeader,
     jumpTarget,
     onJumpHandled,
+    sendMode = false,
+    sendSelected,
+    onToggleSend,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -390,7 +399,8 @@ export default function VerseViewer(props: VerseViewerProps) {
   const handleMouseUp = () => {
     // Pointer tool (and eraser) leave the selection alone, so you can read and
     // copy without marking. A pen tool marks instantly — one motion, done.
-    if (selectedTool === "pointer" || erasing || dragging) return;
+    // Send mode suspends marking entirely (clicks pick verses instead).
+    if (selectedTool === "pointer" || erasing || dragging || sendMode) return;
     try {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) return;
@@ -1022,18 +1032,10 @@ export default function VerseViewer(props: VerseViewerProps) {
             className="scribal-swap"
             key={selectedVolume + "-" + selectedBook + "-" + selectedChapter}
           >
-          {studyRefs ? studyBody : currentChapter?.verses.map((verse) => (
-            <div
-              key={verse.reference}
-              style={{
-                borderRadius: "6px",
-                transition: "background-color 0.6s",
-                backgroundColor:
-                  flashRef === verse.reference ? "var(--soft)" : "transparent",
-                margin: "0 -8px",
-                padding: "0 8px",
-              }}
-            >
+          {studyRefs ? studyBody : currentChapter?.verses.map((verse) => {
+            const checked =
+              !!sendSelected && sendSelected.includes(verse.reference);
+            const mv = (
               <MarkedVerse
                 reference={verse.reference}
                 verseNumber={verse.verse}
@@ -1045,8 +1047,61 @@ export default function VerseViewer(props: VerseViewerProps) {
                 tags={tags}
                 onTagTap={onTagTap}
               />
-            </div>
-          ))}
+            );
+            return (
+              <div
+                key={verse.reference}
+                onClick={
+                  sendMode && onToggleSend
+                    ? () => onToggleSend(verse.reference)
+                    : undefined
+                }
+                style={
+                  sendMode
+                    ? {
+                        borderRadius: "6px",
+                        transition: "background-color 0.2s",
+                        backgroundColor: checked ? "var(--soft)" : "transparent",
+                        margin: "0 -8px",
+                        padding: "3px 8px",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "10px",
+                        cursor: "pointer",
+                      }
+                    : {
+                        borderRadius: "6px",
+                        transition: "background-color 0.6s",
+                        backgroundColor:
+                          flashRef === verse.reference
+                            ? "var(--soft)"
+                            : "transparent",
+                        margin: "0 -8px",
+                        padding: "0 8px",
+                      }
+                }
+              >
+                {sendMode && (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      onToggleSend && onToggleSend(verse.reference)
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      marginTop: "7px",
+                      width: "16px",
+                      height: "16px",
+                      flexShrink: 0,
+                      cursor: "pointer",
+                    }}
+                  />
+                )}
+                {sendMode ? <div style={{ flex: 1, minWidth: 0 }}>{mv}</div> : mv}
+              </div>
+            );
+          })}
           </div>
         </div>
 
