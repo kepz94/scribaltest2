@@ -2446,6 +2446,16 @@ export default function App() {
     // lands on Relational instead of whatever view was last on screen.
     setCompileView(study.view ?? "outline");
   };
+  // Opening a study from the library jumps straight to its compiled view rather
+  // than the reading tab. Recorded chapter/linked studies already do this (they
+  // run a compile on open); this brings keyword studies in line. A keyword study
+  // linked to a chapter compiles together with that chapter; a plain keyword
+  // study compiles on its own.
+  const openStudyCompiled = (study: SearchStudy) => {
+    openStudyTab(study);
+    if (study.linkedScope) compileLinkedSearch(study);
+    else startStudyCompile(study);
+  };
   // "Open as a study": open the selected verses as their own working study tab
   // right away — no naming or book step. Nothing is saved here; the study is
   // saved later, at compile (Save to Studies). Auto-named from the search words,
@@ -2516,8 +2526,7 @@ export default function App() {
     const newScope = "searchstudy:" + study.id;
     setScopedRoles(newScope, roles);
     setScopedLens(newScope, lens);
-    setMode("read");
-    openStudyTab({ ...study, view: "covenants" });
+    openStudyCompiled({ ...study, view: "covenants" });
   };
 
   // Move a study to a different session book, taking its marks (and notes, theme
@@ -3412,7 +3421,7 @@ export default function App() {
           " · " +
           fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-        onOpen: () => openStudyTab(ss),
+        onOpen: () => openStudyCompiled(ss),
         onAddVerses: () => {
           setAddToStudyId(ss.id);
           setShowSearch(true);
