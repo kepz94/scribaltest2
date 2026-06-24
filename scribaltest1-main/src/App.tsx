@@ -1906,7 +1906,7 @@ export default function App() {
   const openLinkedGroup = (
     gid: string,
     bookId: string,
-    view?: SearchStudy["view"],
+    view?: CompileView,
     groupsMap?: Record<string, string>
   ) => {
     const groups = groupsMap || chapterGroups;
