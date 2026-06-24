@@ -134,6 +134,40 @@ const vols = scriptures.volumes;
 const ROLES_KEY = "scribal_relational_roles";
 const OLD_KEY = "scribal_covenant_roles";
 
+// Curated relational picks, persisted locally per study + lens. (Foundation
+// first; cross-device sync of this is a later step.) Shape on disk:
+// { [studyKey]: { [lens]: string[] | null } } — null/absent means "show all".
+const PICKS_KEY = "scribal_relational_picks";
+const loadStudyPicks = (key: string): Record<string, string[] | null> => {
+  try {
+    const raw = localStorage.getItem(PICKS_KEY);
+    if (!raw) return {};
+    const all = JSON.parse(raw) as Record<
+      string,
+      Record<string, string[] | null>
+    >;
+    return all[key] || {};
+  } catch {
+    /* unreadable storage — start with no picks */
+    return {};
+  }
+};
+const saveStudyPicks = (
+  key: string,
+  map: Record<string, string[] | null>
+) => {
+  try {
+    const raw = localStorage.getItem(PICKS_KEY);
+    const all = raw
+      ? (JSON.parse(raw) as Record<string, Record<string, string[] | null>>)
+      : {};
+    all[key] = map;
+    localStorage.setItem(PICKS_KEY, JSON.stringify(all));
+  } catch {
+    /* storage unavailable — picks just won't persist this session */
+  }
+};
+
 function clampColor(x: unknown, d: MarkColor): MarkColor {
   return COLORS.indexOf(x as MarkColor) >= 0 ? (x as MarkColor) : d;
 }
@@ -261,8 +295,31 @@ export default function Covenants(props: CovenantsProps) {
   // In-session curation of the two-column collect: which one-sided verses to
   // show. null = show all (default). Resets on reopen; this never touches the
   // synced data layer. (Persist a curated contrast via Save as a study.)
+  // Persisted curation of the relational view. Picks are saved per study + per
+  // lens. `curating` is just the in-progress edit mode (not persisted).
   const [curating, setCurating] = useState(false);
-  const [picked, setPicked] = useState<string[] | null>(null);
+  const studyKey = compileTabs
+    .map((t) =>
+      t.studyId
+        ? "s:" + t.studyId
+        : t.bookId + ":" + t.volume + "." + t.book + "." + t.chapter
+    )
+    .slice()
+    .sort()
+    .join("|");
+  const [picksByLens, setPicksByLens] = useState<
+    Record<string, string[] | null>
+  >(() => loadStudyPicks(studyKey));
+  // Some shells keep this component mounted across studies; reload picks when
+  // the compiled scope changes so the right study's curation shows.
+  const studyKeyRef = useRef(studyKey);
+  useEffect(() => {
+    if (studyKeyRef.current === studyKey) return;
+    studyKeyRef.current = studyKey;
+    setPicksByLens(loadStudyPicks(studyKey));
+    setCurating(false);
+  }, [studyKey]);
+  const picked = picksByLens[lens] ?? null;
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const openRef = useRef<() => void>(() => {});
 
@@ -351,27 +408,42 @@ export default function Covenants(props: CovenantsProps) {
     });
   }
 
-  // ----- in-session curation of the collect -----
-  const allHalfRefs = half.map((h) => h.reference);
+  // ----- persisted curation across the whole relational view -----
+  // References are unique across rows and the collect (each verse yields a row
+  // OR a one-sided entry), so one picked set governs both.
+  const allRefs = [
+    ...rows.map((r) => r.reference),
+    ...half.map((h) => h.reference),
+  ];
   const isPicked = (ref: string) => picked == null || picked.includes(ref);
   const pickedShownCount = picked
-    ? picked.filter((r) => allHalfRefs.includes(r)).length
-    : allHalfRefs.length;
-  const togglePick = (ref: string) =>
-    setPicked((prev) => {
-      const base = prev == null ? allHalfRefs : prev;
-      return base.includes(ref)
-        ? base.filter((r) => r !== ref)
-        : [...base, ref];
-    });
+    ? picked.filter((r) => allRefs.includes(r)).length
+    : allRefs.length;
+  const setLensPicks = (next: string[] | null) => {
+    const map: Record<string, string[] | null> = {
+      ...picksByLens,
+      [lens]: next,
+    };
+    setPicksByLens(map);
+    saveStudyPicks(studyKey, map);
+  };
+  const togglePick = (ref: string) => {
+    const base = picked == null ? allRefs : picked;
+    setLensPicks(
+      base.includes(ref) ? base.filter((r) => r !== ref) : [...base, ref]
+    );
+  };
   const startCurate = () => {
-    if (picked == null) setPicked(allHalfRefs);
+    if (picked == null) setLensPicks(allRefs);
     setCurating(true);
   };
   const showAllCollect = () => {
-    setPicked(null);
+    setLensPicks(null);
     setCurating(false);
   };
+  const shownRows = curating
+    ? rows
+    : rows.filter((r) => isPicked(r.reference));
 
   const renderFrags = (frags: Frag[]) =>
     frags.map((f, i) => (
@@ -707,92 +779,9 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {rows.length > 0 && !externalTrigger && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginBottom: "10px",
-          }}
-        >
-          <button onClick={openShare} style={shareBtnStyle}>
-            Share image
-          </button>
-        </div>
-      )}
-
-      {rows.length > 0 && (
-        <div>
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              alignItems: "center",
-              padding: "0 4px 8px",
-              fontSize: "11px",
-              letterSpacing: "1.5px",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-              fontWeight: 700,
-            }}
-          >
-            <div style={{ flex: 1 }}>{cfg.leftHeader}</div>
-            <div style={{ width: "22px" }} />
-            <div style={{ flex: 1 }}>{cfg.rightHeader}</div>
-            <div style={{ width: "64px" }} />
-          </div>
-          {rows.map((r, i) => (
-            <div
-              key={rowKey(r, i)}
-              data-vref={r.reference}
-              style={{
-                display: "flex",
-                gap: "12px",
-                alignItems: "stretch",
-                marginBottom: "10px",
-                flexWrap: "wrap",
-              }}
-            >
-              {card(r.left, a)}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "22px",
-                  color: "var(--muted)",
-                  fontSize: "18px",
-                }}
-              >
-                {cfg.connector}
-              </div>
-              {card(r.right, b)}
-              <button
-                onClick={() => onJumpToReference(r.reference)}
-                title="Open in reading view"
-                style={{
-                  width: "64px",
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  padding: 0,
-                  alignSelf: "center",
-                  fontFamily: "inherit",
-                }}
-              >
-                {r.reference}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {half.length > 0 && (
-        <div style={{ marginTop: "26px" }}>
+      {compileTabs.length > 0 &&
+        !sameColor &&
+        (rows.length > 0 || half.length > 0) && (
           <div
             style={{
               display: "flex",
@@ -800,12 +789,18 @@ export default function Covenants(props: CovenantsProps) {
               alignItems: "center",
               gap: "10px",
               marginBottom: "10px",
+              flexWrap: "wrap",
             }}
           >
             {picked != null && !curating && (
               <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-                Showing {pickedShownCount} of {allHalfRefs.length}
+                Showing {pickedShownCount} of {allRefs.length}
               </span>
+            )}
+            {rows.length > 0 && !externalTrigger && !curating && (
+              <button onClick={openShare} style={shareBtnStyle}>
+                Share image
+              </button>
             )}
             {curating ? (
               <button
@@ -861,6 +856,119 @@ export default function Covenants(props: CovenantsProps) {
               </button>
             )}
           </div>
+        )}
+
+      {shownRows.length > 0 && (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+              padding: "0 4px 8px",
+              fontSize: "11px",
+              letterSpacing: "1.5px",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontWeight: 700,
+            }}
+          >
+            {curating && <div style={{ width: "24px" }} />}
+            <div style={{ flex: 1 }}>{cfg.leftHeader}</div>
+            <div style={{ width: "22px" }} />
+            <div style={{ flex: 1 }}>{cfg.rightHeader}</div>
+            <div style={{ width: "64px" }} />
+          </div>
+          {shownRows.map((r, i) => {
+            const on = isPicked(r.reference);
+            return (
+              <div
+                key={rowKey(r, i)}
+                data-vref={r.reference}
+                onClick={curating ? () => togglePick(r.reference) : undefined}
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  alignItems: "stretch",
+                  marginBottom: "10px",
+                  flexWrap: "wrap",
+                  cursor: curating ? "pointer" : "default",
+                  opacity: curating && !on ? 0.45 : 1,
+                }}
+              >
+                {curating && (
+                  <div
+                    style={{
+                      width: "24px",
+                      display: "flex",
+                      alignItems: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        borderRadius: "4px",
+                        border:
+                          "2px solid " + (on ? "var(--text)" : "var(--border)"),
+                        background: on ? "var(--text)" : "transparent",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "var(--bg)",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {on ? "\u2713" : ""}
+                    </span>
+                  </div>
+                )}
+                {card(r.left, a)}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "22px",
+                    color: "var(--muted)",
+                    fontSize: "18px",
+                  }}
+                >
+                  {cfg.connector}
+                </div>
+                {card(r.right, b)}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJumpToReference(r.reference);
+                  }}
+                  title="Open in reading view"
+                  style={{
+                    width: "64px",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--muted)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted",
+                    padding: 0,
+                    alignSelf: "center",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {r.reference}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {half.length > 0 && (
+        <div style={{ marginTop: "26px" }}>
           <div
             style={{
               display: "flex",
@@ -989,34 +1097,26 @@ export default function Covenants(props: CovenantsProps) {
                                 {on ? "\u2713" : ""}
                               </span>
                             )}
-                            {curating ? (
-                              <span
-                                style={{
-                                  color: "var(--muted)",
-                                  fontSize: "11px",
-                                }}
-                              >
-                                {h.reference}
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => onJumpToReference(h.reference)}
-                                title="Open in reading view"
-                                style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  color: "var(--muted)",
-                                  cursor: "pointer",
-                                  textDecoration: "underline",
-                                  textDecorationStyle: "dotted",
-                                  padding: 0,
-                                  fontSize: "11px",
-                                  fontFamily: "inherit",
-                                }}
-                              >
-                                {h.reference}
-                              </button>
-                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onJumpToReference(h.reference);
+                              }}
+                              title="Open in reading view"
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                                textDecorationStyle: "dotted",
+                                padding: 0,
+                                fontSize: "11px",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {h.reference}
+                            </button>
                           </div>
                           <div
                             style={{
