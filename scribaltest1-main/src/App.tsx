@@ -589,6 +589,7 @@ export default function App() {
               chapter: t.chapter,
               bookId,
               studyId: t.studyId,
+              groupId: t.groupId,
             };
           });
         }
@@ -1216,8 +1217,13 @@ export default function App() {
       t.studyId
         ? "📑 " +
           (searchStudies.find((s) => s.id === t.studyId)?.name || "Study")
+        : t.groupId
+        ? "🔗 " +
+          (recordedStudies.find(
+            (s) => s.type === "linked" && s.scopeRef === t.groupId
+          )?.name || "Linked study")
         : vols[t.volume].books[t.book].book + " " + getChapter(t).chapter,
-    [getChapter, searchStudies]
+    [getChapter, searchStudies, recordedStudies]
   );
 
   useEffect(() => {
@@ -1878,6 +1884,65 @@ export default function App() {
     }
     runCompile(chapterTabIds);
   };
+  // Open a linked-chapter study as a SINGLE tab and compile the whole group —
+  // the desktop version of mobile's "one thing open, compile shows everything
+  // linked." The lone tab carries groupId; expandGroupTabs turns it into every
+  // chapter at compile time. Any individual chapter tabs already open for this
+  // group are folded away so the tab bar shows just the one tab. `groupsMap`
+  // lets callers pass a freshly-computed group map (when chapterGroups state
+  // hasn't applied yet, e.g. right after a link change).
+  const openLinkedGroup = (
+    gid: string,
+    bookId: string,
+    view?: SearchStudy["view"],
+    groupsMap?: Record<string, string>
+  ) => {
+    const groups = groupsMap || chapterGroups;
+    const locs = Object.keys(groups)
+      .filter((sc) => groups[sc] === gid)
+      .map((sc) => chapterLoc.get(sc))
+      .filter(Boolean) as {
+      volume: number;
+      book: number;
+      chapter: number;
+    }[];
+    if (!locs.length) return;
+    locs.sort(
+      (a, b) => a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
+    );
+    const loc0 = locs[0];
+    const groupTabId = "grouptab_" + bookId + "_" + gid;
+    const memberScopes = new Set(
+      Object.keys(groups).filter((sc) => groups[sc] === gid)
+    );
+    setTabs((prev) => {
+      // Keep the group tab, keyword-study tabs, other group tabs, and unrelated
+      // chapters; drop plain chapter tabs that belong to this group.
+      let next = prev.filter(
+        (t) =>
+          t.id === groupTabId ||
+          t.studyId ||
+          t.groupId ||
+          !memberScopes.has(chapterScopeOf(t))
+      );
+      if (!next.some((t) => t.id === groupTabId))
+        next = [
+          ...next,
+          {
+            id: groupTabId,
+            volume: loc0.volume,
+            book: loc0.book,
+            chapter: loc0.chapter,
+            bookId,
+            groupId: gid,
+          },
+        ];
+      return next;
+    });
+    setActiveTabId(groupTabId);
+    if (view) setCompileView(view);
+    runCompile([groupTabId]);
+  };
   // resulting unit's chapters as tabs and recompile, so the notes reflect the
   // new link set. `groups` is the just-computed map (state isn't updated yet).
   const reCompileFromLink = (
@@ -1924,23 +1989,21 @@ export default function App() {
         return changed ? out : prevS;
       });
     }
-    const scopes = gid
-      ? Object.keys(groups).filter((s) => groups[s] === gid)
-      : [member];
-    const locs = scopes
-      .map((sc) => chapterLoc.get(sc))
-      .filter(Boolean) as { volume: number; book: number; chapter: number }[];
-    if (!locs.length) return;
-    const tabIds = locs.map((loc) =>
-      makeTabId(activeBookId, loc.volume, loc.book, loc.chapter)
-    );
-    setTabs((prev) => {
-      let nx = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
-        if (!nx.some((t) => t.id === id))
-          nx = [
-            ...nx,
+    if (gid) {
+      // Linked: collapse to one group tab and compile the whole group. Pass the
+      // freshly-computed `groups` since chapterGroups state hasn't applied yet.
+      openLinkedGroup(gid, activeBookId, undefined, groups);
+      return;
+    }
+    // Unlinked single chapter — compile just it.
+    const loc = chapterLoc.get(member);
+    if (!loc) return;
+    const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+    setTabs((prev) =>
+      prev.some((t) => t.id === id)
+        ? prev
+        : [
+            ...prev,
             {
               id,
               volume: loc.volume,
@@ -1948,16 +2011,21 @@ export default function App() {
               chapter: loc.chapter,
               bookId: activeBookId,
             },
-          ];
-      });
-      return nx;
-    });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
-    runCompile(tabIds);
+          ]
+    );
+    setActiveTabId(id);
+    runCompile([id]);
   };
 
   const startCompile = () => {
     setCompileStudyId(null);
+    // Already viewing a linked group as its single tab — just recompile it; the
+    // compile expands it into every chapter. (No "whole group vs just this"
+    // prompt, since this tab already IS the whole group.)
+    if (activeTab?.groupId) {
+      runCompile([activeTab.id]);
+      return;
+    }
     const gid =
       activeTab && !activeTab.studyId
         ? chapterGroups[chapterScopeOf(activeTab)]
@@ -1985,42 +2053,7 @@ export default function App() {
   // not currently in a tab), then compile them together.
   const compileLinkedAll = (gid: string) => {
     setLinkedCompilePrompt(null);
-    const scopes = Object.keys(chapterGroups).filter(
-      (c) => chapterGroups[c] === gid
-    );
-    const locs = scopes
-      .map((sc) => chapterLoc.get(sc))
-      .filter(Boolean) as {
-      volume: number;
-      book: number;
-      chapter: number;
-    }[];
-    if (!locs.length) return;
-    // Same fix as openRecordedStudy: compute the tab ids synchronously so
-    // runCompile scopes to this group, not to whatever tabs are already open.
-    const tabIds = locs.map((loc) =>
-      makeTabId(activeBookId, loc.volume, loc.book, loc.chapter)
-    );
-    setTabs((prev) => {
-      let next = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
-        if (!next.some((t) => t.id === id))
-          next = [
-            ...next,
-            {
-              id,
-              volume: loc.volume,
-              book: loc.book,
-              chapter: loc.chapter,
-              bookId: activeBookId,
-            },
-          ];
-      });
-      return next;
-    });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
-    runCompile(tabIds);
+    openLinkedGroup(gid, activeBookId);
   };
 
   // Study just this chapter on its own: copy its marks into a fresh session
@@ -2066,7 +2099,53 @@ export default function App() {
     );
   };
 
-  const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
+  // A linked study lives in ONE tab (tab.groupId set). At compile time that tab
+  // stands in for every chapter in its group, so expand it here into the real
+  // chapter tabs the compiled views read from, in scripture order. Plain tabs
+  // pass through unchanged, so non-linked compiles are byte-identical. This
+  // mirrors how mobile compiles a linked study from its group without opening a
+  // tab per chapter.
+  const expandGroupTabs = (ts: Tab[]): Tab[] => {
+    const out: Tab[] = [];
+    const seen = new Set<string>();
+    const push = (t: Tab) => {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        out.push(t);
+      }
+    };
+    ts.forEach((t) => {
+      if (!t.groupId) {
+        push(t);
+        return;
+      }
+      const locs = Object.keys(chapterGroups)
+        .filter((sc) => chapterGroups[sc] === t.groupId)
+        .map((sc) => chapterLoc.get(sc))
+        .filter(Boolean) as {
+        volume: number;
+        book: number;
+        chapter: number;
+      }[];
+      locs.sort(
+        (a, b) =>
+          a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
+      );
+      locs.forEach((loc) =>
+        push({
+          id: makeTabId(t.bookId, loc.volume, loc.book, loc.chapter),
+          volume: loc.volume,
+          book: loc.book,
+          chapter: loc.chapter,
+          bookId: t.bookId,
+        })
+      );
+    });
+    return out;
+  };
+  const compileTabs = expandGroupTabs(
+    tabs.filter((t) => compileSelection.includes(t.id))
+  );
 
   // The label scope for the active chapter (its group's scope if linked).
   // A keyword search linked to a chapter borrows that chapter's scope, so its
@@ -2347,23 +2426,15 @@ export default function App() {
   // book and compile them fresh (live, from current marks).
   const openRecordedStudy = (s: Study) => {
     setStudiesOpen(false);
+    if (s.bookId !== activeBookId) setActiveBook(s.bookId);
     const scopes =
       s.type === "linked"
         ? Object.keys(chapterGroups).filter(
             (c) => chapterGroups[c] === s.scopeRef
           )
         : [s.scopeRef];
-    const locs = scopes
-      .map((sc) => chapterLoc.get(sc))
-      .filter(Boolean) as {
-      volume: number;
-      book: number;
-      chapter: number;
-    }[];
-    if (!locs.length) return;
-    if (s.bookId !== activeBookId) setActiveBook(s.bookId);
     // Keyword searches linked to any of this study's chapters reopen alongside
-    // it as their own tabs (their verses also fold into the compile below).
+    // it as their own tab (their verses also fold into the compile).
     const scopeKeys = new Set(scopes.map((sc) => resolveScope(sc)));
     const linkedKw = searchStudies.filter(
       (ks) =>
@@ -2371,53 +2442,60 @@ export default function App() {
         ks.linkedScope &&
         scopeKeys.has(resolveScope(ks.linkedScope))
     );
-    // Compute the tab ids synchronously, up front — these drive the compile
-    // selection below. Collecting them INSIDE the setTabs updater (which React
-    // runs later, during render) left runCompile receiving an empty array, so
-    // it fell back to "all open tabs" and the notes showed whatever was already
-    // on screen instead of this study.
-    const tabIds = locs.map((loc) =>
-      makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
-    );
-    setTabs((prev) => {
-      let next = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
-        if (!next.some((t) => t.id === id))
+    const addLinkedKwTabs = () => {
+      if (!linkedKw.length) return;
+      setTabs((prev) => {
+        let next = prev;
+        linkedKw.forEach((ks) => {
+          const id = "studytab_" + ks.id;
+          if (next.some((t) => t.id === id)) return;
+          const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
           next = [
             ...next,
             {
               id,
+              volume: loc ? loc.volume : 0,
+              book: loc ? loc.book : 0,
+              chapter: loc ? loc.chapter : 0,
+              bookId: ks.bookId,
+              studyId: ks.id,
+            },
+          ];
+        });
+        return next;
+      });
+    };
+
+    if (s.type === "linked") {
+      // One tab for the whole linked group; the compile expands it into every
+      // chapter (mobile-style). Linked keyword studies reopen beside it.
+      openLinkedGroup(s.scopeRef, s.bookId, s.view);
+      addLinkedKwTabs();
+      return;
+    }
+
+    // Single-chapter study: one chapter tab (+ any linked keyword tab).
+    const loc = chapterLoc.get(s.scopeRef);
+    if (!loc) return;
+    const chapterTabId = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
+    setTabs((prev) =>
+      prev.some((t) => t.id === chapterTabId)
+        ? prev
+        : [
+            ...prev,
+            {
+              id: chapterTabId,
               volume: loc.volume,
               book: loc.book,
               chapter: loc.chapter,
               bookId: s.bookId,
             },
-          ];
-      });
-      linkedKw.forEach((ks) => {
-        const id = "studytab_" + ks.id;
-        if (next.some((t) => t.id === id)) return;
-        const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
-        next = [
-          ...next,
-          {
-            id,
-            volume: loc ? loc.volume : 0,
-            book: loc ? loc.book : 0,
-            chapter: loc ? loc.chapter : 0,
-            bookId: ks.bookId,
-            studyId: ks.id,
-          },
-        ];
-      });
-      return next;
-    });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
-    // Reopen on the view this study was saved in (Relational, Distilled, …)
-    // instead of whatever view happened to be on screen.
+          ]
+    );
+    addLinkedKwTabs();
+    setActiveTabId(chapterTabId);
     setCompileView(s.view ?? "outline");
-    runCompile(tabIds);
+    runCompile([chapterTabId]);
   };
 
   // ---- keyword (search) studies ----
