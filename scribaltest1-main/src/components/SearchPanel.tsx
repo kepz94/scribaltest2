@@ -23,7 +23,7 @@ interface SearchPanelProps {
   onJump: (reference: string) => void;
   onJumpToMark: (bookId: string, reference: string) => void;
   onOpenNewTab: (reference: string) => void;
-  onLinkStudy?: (refs: string[]) => void;
+  onLinkStudy?: (refs: string[], label: string) => void;
   onLinkSearchToChapter?: (refs: string[], label: string) => void;
   // When set, the panel is adding verses to an existing keyword study: its
   // verses come pre-selected, and the link bar offers update-vs-new-copy.
@@ -866,7 +866,10 @@ export default function SearchPanel(props: SearchPanelProps) {
                       {onLinkStudy && (
                         <button
                           onClick={() => {
-                            onLinkStudy(Array.from(selectedRefs));
+                            onLinkStudy(
+                              Array.from(selectedRefs),
+                              query.trim()
+                            );
                             setSelectedRefs(new Set());
                           }}
                           style={{
@@ -881,7 +884,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                             fontFamily: "inherit",
                           }}
                         >
-                          Save as study
+                          Open as a study
                         </button>
                       )}
                     </>
