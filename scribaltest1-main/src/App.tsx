@@ -7570,7 +7570,7 @@ export default function App() {
                       {study.note}
                     </div>
                   )}
-                  {isActive && !t.studyId && !t.groupId && (
+                  {isActive && !t.studyId && (
                     <div
                       style={{
                         display: "flex",
