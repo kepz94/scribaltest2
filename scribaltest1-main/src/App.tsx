@@ -860,10 +860,6 @@ export default function App() {
   const [sharingVerses, setSharingVerses] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [studiesOpen, setStudiesOpen] = useState(false);
-  const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
-  const [studyDraftName, setStudyDraftName] = useState("");
-  const [studyDraftBook, setStudyDraftBook] = useState<string>("master");
-  const [studyDraftNewName, setStudyDraftNewName] = useState("");
   const [moveTarget, setMoveTarget] = useState<{
     id: string;
     kind: "chapter" | "linked" | "keyword";
@@ -2444,30 +2440,15 @@ export default function App() {
     // lands on Relational instead of whatever view was last on screen.
     setCompileView(study.view ?? "outline");
   };
-  const onLinkStudy = (refs: string[]) => {
+  // "Open as a study": open the selected verses as their own working study tab
+  // right away — no naming or book step. Nothing is saved here; the study is
+  // saved later, at compile (Save to Studies). Auto-named from the search words,
+  // in whatever book is active.
+  const onLinkStudy = (refs: string[], label: string) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
-    setStudyDraftRefs(ordered);
-    setStudyDraftName("");
-    setStudyDraftBook(activeBookId);
-    setStudyDraftNewName("");
+    const study = addStudy(label.trim() || "Search", activeBookId, ordered);
     setShowSearch(false);
-  };
-  const createStudyFromDraft = () => {
-    const refs = studyDraftRefs;
-    if (!refs || !refs.length) return;
-    let bookId = studyDraftBook;
-    if (bookId === "__new__") {
-      bookId = createSession(
-        studyDraftNewName.trim() ||
-          studyDraftName.trim() ||
-          "Session · " + fmtShortDate(Date.now())
-      );
-    }
-    const study = addStudy(studyDraftName, bookId, refs);
-    setStudyDraftRefs(null);
-    setStudyDraftBook("master");
-    setStudyDraftNewName("");
     openStudyTab(study);
   };
 
@@ -2486,17 +2467,7 @@ export default function App() {
   };
   const onLinkSearchToChapter = (refs: string[], label: string) => {
     if (!refs.length) return;
-    const chapterTabs = tabs.filter((t) => !t.studyId);
-    if (chapterTabs.length === 0) {
-      // Nothing open to link to — fall back to the name/book draft so the
-      // selection isn't lost.
-      onLinkStudy(refs);
-      return;
-    }
-    if (chapterTabs.length === 1) {
-      linkSearchToChapterTab(refs, label, chapterTabs[0]);
-      return;
-    }
+    // Always confirm in a window — which chapter, even when only one is open.
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
     setLinkSearchDraft({ refs: ordered, label });
     setShowSearch(false);
@@ -3876,97 +3847,173 @@ export default function App() {
                   flexDirection: "column",
                 }}
               >
-                <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                  Link this search to a chapter
-                </div>
-                <div
-                  style={{
-                    fontSize: "12.5px",
-                    color: "var(--muted)",
-                    marginTop: "3px",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Your{" "}
-                  {linkSearchDraft.refs.length === 1
-                    ? "verse"
-                    : linkSearchDraft.refs.length + " verses"}{" "}
-                  open as their own tab, sharing the chapter&rsquo;s themes and
-                  compiling together with it.
-                </div>
-                {chapterTabs.length === 0 ? (
-                  <div
-                    style={{
-                      fontSize: "13.5px",
-                      color: "var(--muted)",
-                      padding: "18px 2px",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Open a chapter in a tab first, then link this search to it.
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      marginTop: "14px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      overflowY: "auto",
-                    }}
-                  >
-                    {chapterTabs.map((ct) => (
+                {chapterTabs.length === 1 ? (
+                  <>
+                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                      Link to this chapter?
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12.5px",
+                        color: "var(--muted)",
+                        marginTop: "3px",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Your{" "}
+                      {linkSearchDraft.refs.length === 1
+                        ? "verse"
+                        : linkSearchDraft.refs.length + " verses"}{" "}
+                      will open as their own tab linked to{" "}
+                      <strong style={{ color: "var(--text)" }}>
+                        {tabLabel(chapterTabs[0])}
+                      </strong>
+                      , sharing its themes and compiling together with it.
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        justifyContent: "flex-end",
+                        marginTop: "18px",
+                      }}
+                    >
                       <button
-                        key={ct.id}
+                        onClick={() => setLinkSearchDraft(null)}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "10px",
+                          border: "1px solid var(--border)",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
                         onClick={() =>
                           linkSearchToChapterTab(
                             linkSearchDraft.refs,
                             linkSearchDraft.label,
-                            ct
+                            chapterTabs[0]
                           )
                         }
                         style={{
-                          textAlign: "left",
-                          padding: "11px 13px",
+                          padding: "10px 18px",
                           borderRadius: "10px",
-                          border: "1px solid var(--border)",
-                          background: "var(--bg)",
-                          color: "var(--text)",
+                          border: "none",
+                          background: "#0d9488",
+                          color: "#fff",
                           cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: 700,
                           fontFamily: "inherit",
-                          fontSize: "14px",
-                          fontWeight: 600,
                         }}
                       >
-                        {tabLabel(ct)}
+                        Link to {tabLabel(chapterTabs[0])}
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                      Link this search to a chapter
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12.5px",
+                        color: "var(--muted)",
+                        marginTop: "3px",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Your{" "}
+                      {linkSearchDraft.refs.length === 1
+                        ? "verse"
+                        : linkSearchDraft.refs.length + " verses"}{" "}
+                      open as their own tab, sharing the chapter&rsquo;s themes
+                      and compiling together with it.
+                    </div>
+                    {chapterTabs.length === 0 ? (
+                      <div
+                        style={{
+                          fontSize: "13.5px",
+                          color: "var(--muted)",
+                          padding: "18px 2px",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        Open a chapter in a tab first, then link this search to
+                        it.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          marginTop: "14px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                          overflowY: "auto",
+                        }}
+                      >
+                        {chapterTabs.map((ct) => (
+                          <button
+                            key={ct.id}
+                            onClick={() =>
+                              linkSearchToChapterTab(
+                                linkSearchDraft.refs,
+                                linkSearchDraft.label,
+                                ct
+                              )
+                            }
+                            style={{
+                              textAlign: "left",
+                              padding: "11px 13px",
+                              borderRadius: "10px",
+                              border: "1px solid var(--border)",
+                              background: "var(--bg)",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              fontSize: "14px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {tabLabel(ct)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginTop: "16px",
+                      }}
+                    >
+                      <button
+                        onClick={() => setLinkSearchDraft(null)}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "10px",
+                          border: "1px solid var(--border)",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
                 )}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    marginTop: "16px",
-                  }}
-                >
-                  <button
-                    onClick={() => setLinkSearchDraft(null)}
-                    style={{
-                      padding: "10px 16px",
-                      borderRadius: "10px",
-                      border: "1px solid var(--border)",
-                      background: "transparent",
-                      color: "var(--text)",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
               </div>
             </div>
           );
@@ -5478,170 +5525,6 @@ export default function App() {
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {studyDraftRefs && (
-        <div
-          className="scribal-fade"
-          onClick={() => setStudyDraftRefs(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 380,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px",
-          }}
-        >
-          <div
-            className="scribal-rise"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: "420px",
-              background: "var(--bg)",
-              color: "var(--text)",
-              borderRadius: "16px",
-              border: "1px solid var(--border)",
-              padding: "20px",
-              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
-            }}
-          >
-            <div style={{ fontSize: "16px", fontWeight: 700 }}>
-              Name this study
-            </div>
-            <div
-              style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: "3px" }}
-            >
-              {studyDraftRefs.length}{" "}
-              {studyDraftRefs.length === 1 ? "verse" : "verses"}
-            </div>
-            <input
-              autoFocus
-              value={studyDraftName}
-              onChange={(e) => setStudyDraftName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") createStudyFromDraft();
-              }}
-              placeholder="e.g. Covenant"
-              style={{
-                width: "100%",
-                marginTop: "14px",
-                padding: "11px 13px",
-                borderRadius: "10px",
-                border: "1px solid var(--border)",
-                background: "var(--panel)",
-                color: "var(--text)",
-                fontSize: "15px",
-                fontFamily: "inherit",
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-            />
-            <div style={{ marginTop: "14px" }}>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "var(--muted)",
-                  marginBottom: "6px",
-                }}
-              >
-                Marks save to
-              </div>
-              <select
-                value={studyDraftBook}
-                onChange={(e) => setStudyDraftBook(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "11px 13px",
-                  borderRadius: "10px",
-                  border: "1px solid var(--border)",
-                  background: "var(--panel)",
-                  color: "var(--text)",
-                  fontSize: "14px",
-                  fontFamily: "inherit",
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              >
-                <option value="master">Master Book</option>
-                {books
-                  .filter((b) => !b.isMaster)
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                <option value="__new__">+ New session…</option>
-              </select>
-              {studyDraftBook === "__new__" && (
-                <input
-                  value={studyDraftNewName}
-                  onChange={(e) => setStudyDraftNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") createStudyFromDraft();
-                  }}
-                  placeholder="New session name (optional)"
-                  style={{
-                    width: "100%",
-                    marginTop: "8px",
-                    padding: "11px 13px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: "14px",
-                    fontFamily: "inherit",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
-              )}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                marginTop: "16px",
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                onClick={() => setStudyDraftRefs(null)}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: "10px",
-                  border: "1px solid var(--border)",
-                  background: "transparent",
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  fontSize: "13.5px",
-                  fontFamily: "inherit",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createStudyFromDraft}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: "10px",
-                  border: "none",
-                  background: ICON_ACCENT,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: "13.5px",
-                  fontWeight: 700,
-                  fontFamily: "inherit",
-                }}
-              >
-                Create study
-              </button>
-            </div>
           </div>
         </div>
       )}
