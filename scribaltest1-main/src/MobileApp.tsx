@@ -2248,6 +2248,37 @@ export default function MobileApp() {
     setCompileStudy(ss);
     setCompileOpen(true);
   };
+  // Save the relational view's picked verses as their own keyword study —
+  // separate from where they were selected. It lives in the same book (so the
+  // marks come with it) and carries the role colors + lens so it reopens to the
+  // same relational view. Mirrors the desktop "Save as study"; lands straight in
+  // the new study's relational compile.
+  const onSavePicksAsStudy = (
+    refs: string[],
+    roles: Record<string, { a: number; b: number }>,
+    lens: string,
+    name: string
+  ) => {
+    if (!refs.length) return;
+    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const study: SearchStudy = {
+      id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      name: name.trim() || "Relational study",
+      bookId: activeBookId,
+      refs: ordered,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      view: "covenants",
+    };
+    setSearchStudies((prev) => [study, ...prev]);
+    const studyScope = "searchstudy:" + study.id;
+    Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+      seedScopeLabels(studyScope, scopedLabels[ch] || {})
+    );
+    setScopedRoles(studyScope, roles);
+    setScopedLens(studyScope, lens);
+    openKeywordCompile(study);
+  };
   const deleteStudy = (id: string) => {
     setStudies((prev) =>
       prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
@@ -6939,6 +6970,7 @@ export default function MobileApp() {
               onRelRoles={(r) => setScopedRoles(cScope, r)}
               relSavedLens={scopedLens[cScope]}
               onRelLens={(l) => setScopedLens(cScope, l)}
+              onSavePicksAsStudy={onSavePicksAsStudy}
               marks={cMarks}
               tags={cTags}
               studyScopes={cScopes}
