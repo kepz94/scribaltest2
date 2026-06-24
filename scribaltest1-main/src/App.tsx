@@ -758,10 +758,11 @@ export default function App() {
   // When set, the search panel is in "add verses to this keyword study" mode:
   // the study's verses are pre-selected and the link bar offers update-vs-copy.
   const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
-  // "Send verses to a study" while reading a chapter: pick verses with
-  // checkboxes and push them into an existing keyword study. Keyed to the tab
-  // it was started on, so switching tabs doesn't disturb that tab's marking.
-  const [sendTabId, setSendTabId] = useState<string | null>(null);
+  // "Send verses to a study" while reading: a single mode (shared across every
+  // open tab) where each chapter pane shows verse checkboxes. Selections from
+  // all panes accumulate into one list, so you can gather verses across multiple
+  // open chapters and push them into one keyword study.
+  const [sendMode, setSendMode] = useState(false);
   const [sendSelected, setSendSelected] = useState<string[]>([]);
   const [sendPickerOpen, setSendPickerOpen] = useState(false);
   // After sending, the target study opens in its own tab with the just-added
@@ -2750,7 +2751,7 @@ export default function App() {
   // pulled to the top so they're ready to mark.
   const sendVersesToStudy = (studyId: string, refs: string[]) => {
     setSendPickerOpen(false);
-    setSendTabId(null);
+    setSendMode(false);
     const picked = refs.slice();
     setSendSelected([]);
     if (!picked.length) return;
@@ -2778,7 +2779,7 @@ export default function App() {
       .slice()
       .sort((a, b) => orderOfRef(a) - orderOfRef(b));
     setSendPickerOpen(false);
-    setSendTabId(null);
+    setSendMode(false);
     setSendSelected([]);
     if (!ordered.length) return;
     const recentSession = searchStudies
@@ -7409,6 +7410,202 @@ export default function App() {
               +
             </button>
           )}
+          {tabs.some((tt) => !tt.studyId) && (
+            <div
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              {!sendMode ? (
+                <button
+                  onClick={() => {
+                    setSendMode(true);
+                    setSendSelected([]);
+                    setSendPickerOpen(false);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    border: "1px solid #0d9488",
+                    background: "var(--panel)",
+                    color: "#0d9488",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Send verses to a study
+                </button>
+              ) : (
+                <>
+                  <span style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                    {sendSelected.length === 0
+                      ? "Check verses to send"
+                      : sendSelected.length +
+                        " verse" +
+                        (sendSelected.length === 1 ? "" : "s") +
+                        " selected"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSendMode(false);
+                      setSendSelected([]);
+                      setSendPickerOpen(false);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "12.5px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <div style={{ position: "relative" }}>
+                    <button
+                      disabled={sendSelected.length === 0}
+                      onClick={() => setSendPickerOpen((o) => !o)}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: "none",
+                        background: sendSelected.length
+                          ? "#0d9488"
+                          : "var(--border)",
+                        color: "#fff",
+                        cursor: sendSelected.length ? "pointer" : "default",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Send to study ▾
+                    </button>
+                    {sendPickerOpen && sendSelected.length > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 6px)",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          zIndex: 60,
+                          background: "var(--panel)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "10px",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                          minWidth: "240px",
+                          maxHeight: "320px",
+                          overflowY: "auto",
+                          padding: "6px",
+                          textAlign: "left",
+                        }}
+                      >
+                        {(() => {
+                          const list = searchStudies.filter(
+                            (s) => !isSearchStudyDeleted(s)
+                          );
+                          return (
+                            <>
+                              <button
+                                onClick={createStudyFromSend}
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: "9px 12px",
+                                  borderRadius: "7px",
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "#0d9488",
+                                  cursor: "pointer",
+                                  fontSize: "13px",
+                                  fontWeight: 700,
+                                  fontFamily: "inherit",
+                                }}
+                              >
+                                + Create new study…
+                              </button>
+                              {list.length > 0 && (
+                                <div
+                                  style={{
+                                    height: "1px",
+                                    background: "var(--border)",
+                                    margin: "4px 6px",
+                                  }}
+                                />
+                              )}
+                              {list.length === 0 ? (
+                                <div
+                                  style={{
+                                    padding: "8px 12px",
+                                    fontSize: "12px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  No existing studies yet.
+                                </div>
+                              ) : (
+                                list.map((s) => {
+                                  const bn =
+                                    s.bookId === "master"
+                                      ? "Master"
+                                      : books.find((b) => b.id === s.bookId)
+                                          ?.name || "session";
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      onClick={() =>
+                                        sendVersesToStudy(s.id, sendSelected)
+                                      }
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        textAlign: "left",
+                                        padding: "9px 12px",
+                                        borderRadius: "7px",
+                                        border: "none",
+                                        background: "transparent",
+                                        color: "var(--text)",
+                                        cursor: "pointer",
+                                        fontSize: "13px",
+                                        fontFamily: "inherit",
+                                      }}
+                                    >
+                                      📑 {s.name}
+                                      <span
+                                        style={{
+                                          color: "var(--muted)",
+                                          fontSize: "11.5px",
+                                          marginLeft: "6px",
+                                        }}
+                                      >
+                                        {bn}
+                                      </span>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -7603,210 +7800,6 @@ export default function App() {
                       {study.note}
                     </div>
                   )}
-                  {isActive && !t.studyId && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        flexWrap: "wrap",
-                        padding: "6px 4px 12px",
-                      }}
-                    >
-                      {sendTabId !== t.id ? (
-                        <button
-                          onClick={() => {
-                            setSendTabId(t.id);
-                            setSendSelected([]);
-                            setSendPickerOpen(false);
-                          }}
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: "999px",
-                            border: "1px solid var(--border)",
-                            background: "var(--panel)",
-                            color: "var(--text)",
-                            cursor: "pointer",
-                            fontSize: "12.5px",
-                            fontWeight: 600,
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Send verses to a study
-                        </button>
-                      ) : (
-                        <>
-                          <span
-                            style={{
-                              fontSize: "12.5px",
-                              color: "var(--muted)",
-                            }}
-                          >
-                            {sendSelected.length === 0
-                              ? "Check the verses you want to send"
-                              : sendSelected.length +
-                                " verse" +
-                                (sendSelected.length === 1 ? "" : "s") +
-                                " selected"}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setSendTabId(null);
-                              setSendSelected([]);
-                              setSendPickerOpen(false);
-                            }}
-                            style={{
-                              padding: "6px 12px",
-                              borderRadius: "999px",
-                              border: "1px solid var(--border)",
-                              background: "transparent",
-                              color: "var(--muted)",
-                              cursor: "pointer",
-                              fontSize: "12.5px",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            Cancel
-                          </button>
-                          <div style={{ position: "relative" }}>
-                            <button
-                              disabled={sendSelected.length === 0}
-                              onClick={() => setSendPickerOpen((o) => !o)}
-                              style={{
-                                padding: "6px 14px",
-                                borderRadius: "999px",
-                                border: "none",
-                                background: sendSelected.length
-                                  ? "#0d9488"
-                                  : "var(--border)",
-                                color: "#fff",
-                                cursor: sendSelected.length
-                                  ? "pointer"
-                                  : "default",
-                                fontSize: "12.5px",
-                                fontWeight: 700,
-                                fontFamily: "inherit",
-                              }}
-                            >
-                              Send to study ▾
-                            </button>
-                            {sendPickerOpen && sendSelected.length > 0 && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "calc(100% + 6px)",
-                                  left: 0,
-                                  zIndex: 50,
-                                  background: "var(--panel)",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: "10px",
-                                  boxShadow:
-                                    "0 8px 24px rgba(0,0,0,0.18)",
-                                  minWidth: "240px",
-                                  maxHeight: "320px",
-                                  overflowY: "auto",
-                                  padding: "6px",
-                                }}
-                              >
-                                {(() => {
-                                  const list = searchStudies.filter(
-                                    (s) => !isSearchStudyDeleted(s)
-                                  );
-                                  return (
-                                    <>
-                                      <button
-                                        onClick={createStudyFromSend}
-                                        style={{
-                                          display: "block",
-                                          width: "100%",
-                                          textAlign: "left",
-                                          padding: "9px 12px",
-                                          borderRadius: "7px",
-                                          border: "none",
-                                          background: "transparent",
-                                          color: "#0d9488",
-                                          cursor: "pointer",
-                                          fontSize: "13px",
-                                          fontWeight: 700,
-                                          fontFamily: "inherit",
-                                        }}
-                                      >
-                                        + Create new study…
-                                      </button>
-                                      {list.length > 0 && (
-                                        <div
-                                          style={{
-                                            height: "1px",
-                                            background: "var(--border)",
-                                            margin: "4px 6px",
-                                          }}
-                                        />
-                                      )}
-                                      {list.length === 0 ? (
-                                        <div
-                                          style={{
-                                            padding: "8px 12px",
-                                            fontSize: "12px",
-                                            color: "var(--muted)",
-                                          }}
-                                        >
-                                          No existing studies yet.
-                                        </div>
-                                      ) : (
-                                        list.map((s) => {
-                                          const bn =
-                                            s.bookId === "master"
-                                              ? "Master"
-                                              : books.find(
-                                                  (b) => b.id === s.bookId
-                                                )?.name || "session";
-                                          return (
-                                            <button
-                                              key={s.id}
-                                              onClick={() =>
-                                                sendVersesToStudy(
-                                                  s.id,
-                                                  sendSelected
-                                                )
-                                              }
-                                              style={{
-                                                display: "block",
-                                                width: "100%",
-                                                textAlign: "left",
-                                                padding: "9px 12px",
-                                                borderRadius: "7px",
-                                                border: "none",
-                                                background: "transparent",
-                                                color: "var(--text)",
-                                                cursor: "pointer",
-                                                fontSize: "13px",
-                                                fontFamily: "inherit",
-                                              }}
-                                            >
-                                              📑 {s.name}
-                                              <span
-                                                style={{
-                                                  color: "var(--muted)",
-                                                  fontSize: "11.5px",
-                                                  marginLeft: "6px",
-                                                }}
-                                              >
-                                                {bn}
-                                              </span>
-                                            </button>
-                                          );
-                                        })
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
                   <VerseViewer
                     key={t.id}
                     selectedVolume={t.volume}
@@ -7824,7 +7817,7 @@ export default function App() {
                     tags={wordTags}
                     onTagTap={openTagRef}
                     marks={getBook(t.bookId).marks}
-                    showToolbar={isActive && sendTabId !== t.id}
+                    showToolbar={isActive && !sendMode}
                     toolbarPos={toolbarPos}
                     onToolbarPos={setToolbarPos}
                     toolbarOrient={toolbarOrient}
@@ -7835,7 +7828,7 @@ export default function App() {
                     warm={reading.warm}
                     dark={dark}
                     sidebarOpen={sidebarOpen}
-                    sendMode={isActive && sendTabId === t.id}
+                    sendMode={sendMode && !t.studyId}
                     sendSelected={sendSelected}
                     onToggleSend={(ref) =>
                       setSendSelected((prev) =>
