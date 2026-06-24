@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 export type MarkStyle = "bold" | "circle" | "underline" | "italic" | "highlight";
-export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Tool = MarkStyle | "eraser" | "pointer" | "define";
 
 // A definition tag: one looked-up word occurrence, anchored to its verse and
@@ -31,7 +31,7 @@ export interface Mark {
   label?: string;
 }
 
-export const COLORS: MarkColor[] = [1, 2, 3, 4, 5, 6, 7];
+export const COLORS: MarkColor[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export const STYLE_POINTS: Record<MarkStyle, number> = {
   bold: 5,
@@ -69,6 +69,9 @@ export const COLOR_MAP: Record<MarkColor, string> = {
   5: "var(--pen5)",
   6: "var(--pen6)",
   7: "var(--pen7)",
+  8: "var(--pen8)",
+  9: "var(--pen9)",
+  10: "var(--pen10)",
 };
 
 export const HIGHLIGHT_MAP: Record<MarkColor, string> = {
@@ -79,6 +82,9 @@ export const HIGHLIGHT_MAP: Record<MarkColor, string> = {
   5: "var(--hl5)",
   6: "var(--hl6)",
   7: "var(--hl7)",
+  8: "var(--hl8)",
+  9: "var(--hl9)",
+  10: "var(--hl10)",
 };
 
 export function markStyleCSS(style: MarkStyle, color: MarkColor): CSSProperties {
