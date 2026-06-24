@@ -459,6 +459,8 @@ export default function App() {
     seedScopeLabels,
     scopedRoles,
     setScopedRoles,
+    scopedLens,
+    setScopedLens,
     notes,
     setNote,
     books,
@@ -2494,6 +2496,28 @@ export default function App() {
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
     setLinkSearchDraft({ refs: ordered, label });
     setShowSearch(false);
+  };
+
+  // Save the relational view's picked verses as their own keyword study —
+  // separate from the chapter/study they were selected from. It lives in the
+  // same book (so the marks come with it) and carries the role colors + lens so
+  // it reopens straight to the same relational view.
+  const onSavePicksAsStudy = (
+    refs: string[],
+    roles: Record<string, { a: number; b: number }>,
+    lens: string,
+    name: string
+  ) => {
+    if (!refs.length) return;
+    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const srcBook = compileStudy ? compileStudy.bookId : activeBookId;
+    const study = addStudy(name.trim() || "Relational study", srcBook, ordered);
+    updateStudy(study.id, { view: "covenants" });
+    const newScope = "searchstudy:" + study.id;
+    setScopedRoles(newScope, roles);
+    setScopedLens(newScope, lens);
+    setMode("read");
+    openStudyTab({ ...study, view: "covenants" });
   };
 
   // Move a study to a different session book, taking its marks (and notes, theme
@@ -8133,6 +8157,9 @@ export default function App() {
                 {...sharedCompileProps}
                 savedRoles={scopedRoles[effectiveScope]}
                 onRoles={(r) => setScopedRoles(effectiveScope, r)}
+                savedLens={scopedLens[effectiveScope]}
+                onLens={(l) => setScopedLens(effectiveScope, l)}
+                onSavePicksAsStudy={onSavePicksAsStudy}
               />
             )}
             {effectiveTags.length > 0 && (
