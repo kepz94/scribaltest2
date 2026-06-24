@@ -2244,6 +2244,12 @@ export default function App() {
   const usedColors = COLORS.filter((c) =>
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
   );
+  // The color legend shows the study's established themes on a linked chapter
+  // (so a blank linked chapter still shows the shared palette), otherwise just
+  // the colors used in this chapter.
+  const legendColors = isLinkedChapter
+    ? establishedThemes.map((t) => t.color)
+    : usedColors;
 
   // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
   // book and compile them fresh (live, from current marks).
@@ -6712,7 +6718,7 @@ export default function App() {
             fontSize: "11.5px",
           }}
         >
-          {usedColors.length === 0 ? (
+          {legendColors.length === 0 ? (
             <span
               style={{
                 display: "inline-flex",
@@ -6734,7 +6740,7 @@ export default function App() {
               Highlight a verse, then name its color here
             </span>
           ) : (
-            usedColors.map((c) => {
+            legendColors.map((c) => {
             const editing = editingColor === c;
             const commit = () => {
               setScopedLabel(activeScope, c, colorDraft.trim());
@@ -6984,79 +6990,7 @@ export default function App() {
                 {activeBookName} · {tabLabel(activeTab)}
               </p>
 
-              {isLinkedChapter && establishedThemes.length > 0 && (
-                <div style={{ marginBottom: "14px" }}>
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      color: "var(--muted)",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Themes in this study
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "6px",
-                    }}
-                  >
-                    {establishedThemes.map((th) => (
-                      <button
-                        key={th.color}
-                        onClick={() => setSelectedColor(th.color)}
-                        title={"Mark with " + th.name}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "9px",
-                          textAlign: "left",
-                          padding: "7px 9px",
-                          borderRadius: "8px",
-                          border:
-                            selectedColor === th.color
-                              ? "2px solid var(--text)"
-                              : "1px solid var(--border)",
-                          background: "var(--soft)",
-                          color: "var(--text)",
-                          fontSize: "13px",
-                          fontWeight: selectedColor === th.color ? 600 : 500,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: "13px",
-                            height: "13px",
-                            borderRadius: "50%",
-                            backgroundColor: COLOR_MAP[th.color],
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span style={{ flex: 1 }}>{th.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--muted)",
-                      lineHeight: 1.5,
-                      marginTop: "8px",
-                    }}
-                  >
-                    Shared across all linked chapters. Tap one to mark with its
-                    color.
-                  </div>
-                </div>
-              )}
-
-              {groups.length === 0 &&
-                !(isLinkedChapter && establishedThemes.length > 0) && (
+              {groups.length === 0 && (
                 <div
                   style={{
                     display: "flex",
