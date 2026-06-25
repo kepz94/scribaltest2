@@ -3522,130 +3522,122 @@ export default function App() {
     const withBook = (bl: string) => (bl ? " · " + bl : "");
     const rows: StudyRow[] = [];
 
-    recordedStudies
-      .filter((s) => s.type === "chapter")
-      .forEach((s) => {
-        const refOk = (ref: string) => scopeOfRef(ref) === s.scopeRef;
-        const n = bookMarksOf(s.bookId).filter((m) =>
-          refOk(m.reference)
-        ).length;
-        rows.push({
-          id: s.id,
-          kind: "chapter",
-          bookId: s.bookId,
-          name: s.name,
-          meta:
-            n +
-            markWord(n) +
-            withBook(bookLabel(s.bookId)) +
-            " · " +
-            fmtDate(s.compiledAt),
-          themes: themesFor(s.bookId, s.scopeRef, refOk),
-          onMove: () =>
-            setMoveTarget({
-              id: s.id,
-              kind: "chapter",
-              bookId: s.bookId,
-              name: s.name,
-              refs: studyRefsFor(s.bookId, refOk, s.extraRefs),
-              scope: resolveScope(s.scopeRef),
-            }),
-          onOpen: () => openRecordedStudy(s),
-          onDelete: () =>
-            askConfirm({
-              title: "Delete this study?",
-              body:
-                'Delete "' +
-                s.name +
-                "\" from your studies? This can't be undone.",
-              onConfirm: () => deleteRecordedStudy(s.id),
-            }),
-        });
-      });
+    // One row per unified study (the store is now the source). Display is
+    // derived from the study's members; row actions still dispatch to the
+    // old-store ops this step (writes move to the store in a later step).
+    unifiedStudies.forEach((u) => {
+      const rec = recordedStudies.find((x) => x.id === u.id);
+      const ss = searchStudies.find((x) => x.id === u.id);
 
-    recordedStudies
-      .filter((s) => s.type === "linked")
-      .forEach((s) => {
-        const chs = Object.keys(chapterGroups).filter(
-          (c) => chapterGroups[c] === s.scopeRef
-        );
-        const refOk = (ref: string) => chs.includes(scopeOfRef(ref));
-        const n = bookMarksOf(s.bookId).filter((m) =>
-          refOk(m.reference)
-        ).length;
-        rows.push({
-          id: s.id,
-          kind: "linked",
-          bookId: s.bookId,
-          name: s.name,
-          meta:
-            n +
-            markWord(n) +
-            withBook(bookLabel(s.bookId)) +
-            " · " +
-            fmtDate(s.compiledAt),
-          themes: themesFor(s.bookId, chs[0] || s.scopeRef, refOk),
-          onMove: () =>
-            setMoveTarget({
-              id: s.id,
-              kind: "linked",
-              bookId: s.bookId,
-              name: s.name,
-              refs: studyRefsFor(s.bookId, refOk, s.extraRefs),
-              scope: "group:" + s.scopeRef,
-            }),
-          onOpen: () => openRecordedStudy(s),
-          onDelete: () =>
-            askConfirm({
-              title: "Delete this study?",
-              body:
-                'Delete "' +
-                s.name +
-                "\" from your studies? This can't be undone.",
-              onConfirm: () => deleteRecordedStudy(s.id),
-            }),
-        });
-      });
+      // Kind inferred from structure (spec-pure): any chapter member → a
+      // chapter/linked study; pure verses → keyword. So a keyword search linked
+      // to a chapter reads as chapter/linked and opens in the viewer.
+      const chapterCount = u.members.filter((m) => m.kind === "chapter").length;
+      const hasChapter = chapterCount > 0;
+      const kind: StudyRow["kind"] = !hasChapter
+        ? "keyword"
+        : chapterCount > 1
+        ? "linked"
+        : "chapter";
 
-    searchStudies.forEach((ss) => {
-      const refSet = new Set(ss.refs);
-      const refOk = (ref: string) => refSet.has(ref);
-      rows.push({
-        id: ss.id,
-        kind: "keyword",
-        bookId: ss.bookId,
-        name: ss.name,
-        meta:
-          ss.refs.length +
-          " verses" +
-          withBook(bookLabel(ss.bookId)) +
+      // Scope-based ref test, built straight from members — custom-book safe
+      // (doesn't depend on the resolver's standard-works chapter expansion).
+      const chapterScopes = new Set<string>();
+      const verseRefs = new Set<string>();
+      u.members.forEach((m) => {
+        if (m.kind === "chapter") chapterScopes.add(m.scope);
+        else m.refs.forEach((r) => verseRefs.add(r));
+      });
+      const refOk = (ref: string) =>
+        chapterScopes.has(scopeOfRef(ref)) || verseRefs.has(ref);
+
+      const firstChapter = u.members.find((m) => m.kind === "chapter");
+      const repScope =
+        firstChapter && firstChapter.kind === "chapter"
+          ? firstChapter.scope
+          : "searchstudy:" + u.id;
+
+      const n = bookMarksOf(u.bookId).filter((m) => refOk(m.reference)).length;
+      const meta = hasChapter
+        ? n +
+          markWord(n) +
+          withBook(bookLabel(u.bookId)) +
           " · " +
-          fmtDate(ss.createdAt),
-        themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-        onOpen: () => {
-          openStudyTab(ss);
-          setMode("read");
+          fmtDate(u.compiledAt ?? u.createdAt)
+        : verseRefs.size +
+          " verses" +
+          withBook(bookLabel(u.bookId)) +
+          " · " +
+          fmtDate(u.createdAt);
+
+      rows.push({
+        id: u.id,
+        kind,
+        bookId: u.bookId,
+        name: u.name,
+        meta,
+        themes: themesFor(u.bookId, repScope, refOk),
+        onMove: () => {
+          if (rec && rec.type === "linked")
+            setMoveTarget({
+              id: u.id,
+              kind: "linked",
+              bookId: u.bookId,
+              name: u.name,
+              refs: studyRefsFor(u.bookId, refOk, rec.extraRefs),
+              scope: "group:" + rec.scopeRef,
+            });
+          else if (rec)
+            setMoveTarget({
+              id: u.id,
+              kind: "chapter",
+              bookId: u.bookId,
+              name: u.name,
+              refs: studyRefsFor(u.bookId, refOk, rec.extraRefs),
+              scope: resolveScope(rec.scopeRef),
+            });
+          else if (ss)
+            setMoveTarget({
+              id: u.id,
+              kind: "keyword",
+              bookId: u.bookId,
+              name: u.name,
+              refs: ss.refs,
+              scope: "searchstudy:" + ss.id,
+            });
         },
-        onMove: () =>
-          setMoveTarget({
-            id: ss.id,
-            kind: "keyword",
-            bookId: ss.bookId,
-            name: ss.name,
-            refs: ss.refs,
-            scope: "searchstudy:" + ss.id,
-          }),
+        onOpen: () => {
+          if (kind === "keyword" && ss) {
+            openStudyTab(ss);
+            setMode("read");
+          } else {
+            setPreviewView(u.view ?? "outline");
+            setUnifiedCompileId(u.id);
+            setStudiesOpen(false);
+          }
+        },
         onDelete: () =>
           askConfirm({
             title: "Delete this study?",
             body:
               'Delete "' +
-              ss.name +
+              u.name +
               "\" from your studies? This can't be undone.",
-            onConfirm: () => removeStudy(ss.id),
+            onConfirm: () => {
+              if (rec) deleteRecordedStudy(u.id);
+              else if (ss) removeStudy(u.id);
+            },
           }),
       });
     });
+
+    // Preserve the old grouping: chapter, then linked, then keyword (stable).
+    const kindOrder: Record<StudyRow["kind"], number> = {
+      chapter: 0,
+      linked: 1,
+      keyword: 2,
+    };
+    rows.sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind]);
 
     return rows;
   };
