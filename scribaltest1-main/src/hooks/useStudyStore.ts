@@ -14,11 +14,14 @@
 // the hook is a thin React wrapper (state + persistence + seeding).
 // ===========================================================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Study, Member, StudyView } from "../studyModel";
 import { migrateStudies, readOldStores } from "../migrateStudies";
 
-const KEY = "scribal_studies_unified_v1";
+// v2: the v1 key may hold a stale one-time snapshot from when this store was
+// briefly mounted earlier in development. Bumping the key forces a fresh seed
+// from the current stores on first mount; the old v1 entry is just ignored.
+const KEY = "scribal_studies_unified_v2";
 
 function uid(): string {
   return (
@@ -200,9 +203,16 @@ export function useStudyStore() {
 
   const live = studies.filter((s) => !s.deletedAt);
 
+  // Replace the whole set. Used during the migration window by an App-side
+  // effect that keeps this store in lock-step with the still-authoritative old
+  // stores. Stable identity (useCallback) so it can sit in that effect's deps
+  // without looping.
+  const setAll = useCallback((next: Study[]) => setStudies(next), []);
+
   return {
     studies: live,
     allStudies: studies,
+    setAll,
     create,
     rename,
     setView,
