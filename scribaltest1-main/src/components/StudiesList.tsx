@@ -21,8 +21,6 @@ interface Props {
   onImport?: () => void;
   migrated?: { id: string; name: string; chapters: number; verses: number }[];
   onOpenMigrated?: (id: string) => void;
-  onOpenThemeMap?: () => void;
-  onNewChart?: () => void;
 }
 
 const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
@@ -37,8 +35,6 @@ export default function StudiesList({
   onImport,
   migrated,
   onOpenMigrated,
-  onOpenThemeMap,
-  onNewChart,
 }: Props) {
   return (
     <div
@@ -83,42 +79,6 @@ export default function StudiesList({
           <div style={{ flex: 1, fontSize: "16px", fontWeight: 700 }}>
             Studies
           </div>
-          {onNewChart && (
-            <button
-              onClick={onNewChart}
-              title="Build a chart from chapters across different books"
-              style={{
-                background: "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-                borderRadius: "999px",
-                padding: "8px 14px",
-                fontSize: "13px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              + Chart
-            </button>
-          )}
-          {onOpenThemeMap && (
-            <button
-              onClick={onOpenThemeMap}
-              title="See where each theme appears across all of scripture"
-              style={{
-                background: "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-                borderRadius: "999px",
-                padding: "8px 14px",
-                fontSize: "13px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Themes
-            </button>
-          )}
           {onImport && (
             <button
               onClick={onImport}
