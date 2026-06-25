@@ -25,6 +25,10 @@ interface SearchPanelProps {
   onOpenNewTab: (reference: string) => void;
   onLinkStudy?: (refs: string[]) => void;
   onLinkSearchToChapter?: (refs: string[], label: string) => void;
+  // When set, the search was opened from a chapter's link prompt: the link
+  // button names that chapter (e.g. Link to "1 Nephi 1") instead of reading
+  // generically, since the destination is already fixed.
+  linkChapterLabel?: string;
   // When set, the panel is adding verses to an existing keyword study: its
   // verses come pre-selected, and the link bar offers update-vs-new-copy.
   initialSelected?: string[];
@@ -65,6 +69,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onOpenNewTab,
     onLinkStudy,
     onLinkSearchToChapter,
+    linkChapterLabel,
     addToStudyName,
     onAddToStudy,
     addVersesName,
@@ -860,7 +865,9 @@ export default function SearchPanel(props: SearchPanelProps) {
                             <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
                             <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
                           </svg>
-                          Link to a chapter
+                          {linkChapterLabel
+                            ? "Link to \u201c" + linkChapterLabel + "\u201d"
+                            : "Link to a chapter"}
                         </button>
                       )}
                       {onLinkStudy && (
