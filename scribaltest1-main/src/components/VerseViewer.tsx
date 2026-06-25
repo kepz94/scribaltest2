@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, ReactNode } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
@@ -79,6 +79,10 @@ interface VerseViewerProps {
   sendMode?: boolean;
   sendSelected?: string[];
   onToggleSend?: (reference: string) => void;
+  // Optional element slotted at the LEFT of the header row above the reading
+  // panel (opposite "Find conditionals"). The desktop shell passes the unified
+  // Add button here; when omitted the header is unchanged. Additive.
+  addSlot?: ReactNode;
 }
 
 type Orientation = "vertical" | "horizontal";
@@ -147,6 +151,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     sendMode = false,
     sendSelected,
     onToggleSend,
+    addSlot,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -943,10 +948,12 @@ export default function VerseViewer(props: VerseViewerProps) {
         <div
           style={{
             display: "flex",
-            justifyContent: "flex-end",
+            justifyContent: addSlot ? "space-between" : "flex-end",
+            alignItems: "center",
             marginBottom: "10px",
           }}
         >
+          {addSlot}
           <button
             onClick={toggleConditionals}
             title={
