@@ -30,6 +30,7 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
+import { useStudyStore } from "./hooks/useStudyStore";
 import { resolveStudy } from "./studyModel";
 import { migrateStudies } from "./migrateStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
@@ -514,6 +515,11 @@ export default function App() {
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
 
+  // The unified study store — now live and persisted. During the migration
+  // window the old stores remain authoritative for writes; an effect below
+  // keeps this store in lock-step with them. Opening/viewing reads from here.
+  const { studies: unifiedStudies, setAll: setAllUnified } = useStudyStore();
+
   // When set, an isolated read-only "new-model" preview overlay compiles that
   // unified study through the resolver, using the real format components but a
   // freshly-built feed. Entirely separate from the live compile path (mode ===
@@ -687,15 +693,17 @@ export default function App() {
     chapterGroupsAtRef.current = chapterGroupsAt;
   }, [chapterGroups, chapterGroupsAt]);
 
-  // Live, always-current migration of the existing stores into the unified
-  // model. Read-only and derived (not the stateful store) so the Studies-hub
-  // "migrated" list and the new-model preview always reflect current studies
-  // rather than a one-time snapshot. The stateful store returns when writes
-  // actually move into the unified model.
-  const migratedStudies = useMemo(
-    () => migrateStudies(recordedStudies, searchStudies, chapterGroups),
-    [recordedStudies, searchStudies, chapterGroups]
-  );
+  // Migration window: keep the live store in lock-step with the still-
+  // authoritative old stores. Whenever any old store changes (a save, rename,
+  // delete, link, move…), re-derive the unified set and push it into the store.
+  // Reads (open/banner/viewer) come from the store's `unifiedStudies`, so this
+  // is what keeps them current. When writes move into the store directly (a
+  // later step), this effect retires path by path.
+  useEffect(() => {
+    setAllUnified(
+      migrateStudies(recordedStudies, searchStudies, chapterGroups)
+    );
+  }, [recordedStudies, searchStudies, chapterGroups, setAllUnified]);
 
   // Stamp "changed now" for every scope whose group membership differs between
   // prev and next — this is what makes a link OR an unlink propagate.
@@ -2485,7 +2493,7 @@ export default function App() {
     // Open through the unified model: chapter/linked studies now compile via the
     // resolver in the new-model viewer. The legacy compile path below runs only
     // if (defensively) no unified counterpart exists for this study.
-    const unified = migratedStudies.find((x) => x.id === s.id);
+    const unified = unifiedStudies.find((x) => x.id === s.id);
     if (unified) {
       setPreviewView(unified.view ?? "outline");
       setUnifiedCompileId(s.id);
@@ -5503,7 +5511,7 @@ export default function App() {
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
           onImport={openSnImport}
-          migrated={migratedStudies.map((s) => ({
+          migrated={unifiedStudies.map((s) => ({
             id: s.id,
             name: s.name,
             chapters: s.members.filter((m) => m.kind === "chapter").length,
@@ -5513,7 +5521,7 @@ export default function App() {
             ),
           }))}
           onOpenMigrated={(id) => {
-            const s = migratedStudies.find((x) => x.id === id);
+            const s = unifiedStudies.find((x) => x.id === id);
             setPreviewView(s?.view ?? "outline");
             setUnifiedCompileId(id);
             setStudiesOpen(false);
@@ -5523,7 +5531,7 @@ export default function App() {
 
       {unifiedCompileId &&
         (() => {
-          const study = migratedStudies.find(
+          const study = unifiedStudies.find(
             (s) => s.id === unifiedCompileId
           );
           if (!study) return null;
