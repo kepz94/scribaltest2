@@ -38,7 +38,7 @@ interface OldSearchStudy {
   linkedScope?: string;
   note?: string;
   createdAt: number;
-  updatedAt: number;
+  updatedAt?: number;
   deletedAt?: number;
 }
 
@@ -107,8 +107,8 @@ function convertSearch(s: OldSearchStudy): Study {
     view: normalizeView(s.view),
     bookId: s.bookId,
     createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    compiledAt: s.updatedAt, // keyword studies become "compiled" in the new model
+    updatedAt: s.updatedAt || s.createdAt,
+    compiledAt: s.updatedAt || s.createdAt, // keyword studies become "compiled"
   };
 }
 
