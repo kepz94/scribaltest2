@@ -31,7 +31,9 @@ import {
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import { useStudyStore } from "./hooks/useStudyStore";
-import { resolveStudy } from "./studyModel";
+import { resolveStudy, orderOf } from "./studyModel";
+import ThemeMap from "./components/ThemeMap";
+import type { ThemeEntry, ThemeHit } from "./components/ThemeMap";
 import { migrateStudies } from "./migrateStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
@@ -528,6 +530,8 @@ export default function App() {
   // Which format the preview overlay shows. Set to the study's saved view on
   // open; switchable in the overlay just like the real compile view.
   const [previewView, setPreviewView] = useState<CompileView>("outline");
+  // Cross-scripture theme correlation overlay (read-only over all marks).
+  const [themeMapOpen, setThemeMapOpen] = useState(false);
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -5503,6 +5507,10 @@ export default function App() {
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
           onImport={openSnImport}
+          onOpenThemeMap={() => {
+            setThemeMapOpen(true);
+            setStudiesOpen(false);
+          }}
           migrated={unifiedStudies.map((s) => ({
             id: s.id,
             name: s.name,
@@ -5694,6 +5702,100 @@ export default function App() {
                 )}
               </div>
             </div>
+          );
+        })()}
+
+      {themeMapOpen &&
+        (() => {
+          // Group hits by scripture book (parsed from the reference), not the
+          // StudyBook — so the standard works split into Genesis, 1 Nephi, …
+          const bookOf = (ref: string) =>
+            scopeOfRef(ref).replace(/\s+\d+$/, "");
+
+          const acc = new Map<
+            string,
+            { colors: Set<MarkColor>; books: Map<string, Map<string, ThemeHit>> }
+          >();
+          // Walk every book's full marks (allMarks is a lossy projection: it
+          // drops verseText/indices/style and rewrites label to the book color
+          // label). Resolve each mark's theme name the way the app does: a
+          // sealed label wins, else the per-scope color name (group-aware via
+          // resolveScope), else the book's color label. Empty = unnamed (skip).
+          Object.keys(books).forEach((bookId) => {
+            const book = books[bookId];
+            if (!book) return;
+            const scopedLabels = book.scopedLabels || {};
+            const colorLabels = book.colorLabels || {};
+            book.marks.forEach((m) => {
+              let name = (m.label || "").trim();
+              if (!name) {
+                const scoped =
+                  scopedLabels[resolveScope(scopeOfRef(m.reference))];
+                name = scoped ? (scoped[m.color] || "").trim() : "";
+              }
+              if (!name) name = (colorLabels[m.color] || "").trim();
+              if (!name) return;
+
+              let e = acc.get(name);
+              if (!e) {
+                e = { colors: new Set<MarkColor>(), books: new Map() };
+                acc.set(name, e);
+              }
+              e.colors.add(m.color);
+              const bn = bookOf(m.reference);
+              let bm = e.books.get(bn);
+              if (!bm) {
+                bm = new Map<string, ThemeHit>();
+                e.books.set(bn, bm);
+              }
+              if (!bm.has(m.reference))
+                bm.set(m.reference, {
+                  reference: m.reference,
+                  verseText: m.verseText,
+                  markedText: m.markedText,
+                  startIndex: m.startIndex,
+                  endIndex: m.endIndex,
+                  style: m.style,
+                  color: m.color,
+                });
+            });
+          });
+
+          const themes: ThemeEntry[] = [];
+          acc.forEach((e, name) => {
+            const groups = Array.from(e.books.entries()).map(
+              ([book, refMap]) => ({
+                book,
+                hits: Array.from(refMap.values()).sort(
+                  (a, b) =>
+                    orderOf(a.reference) - orderOf(b.reference) ||
+                    a.reference.localeCompare(b.reference)
+                ),
+              })
+            );
+            groups.sort((a, b) => {
+              const ao = a.hits.length
+                ? orderOf(a.hits[0].reference)
+                : Number.MAX_SAFE_INTEGER;
+              const bo = b.hits.length
+                ? orderOf(b.hits[0].reference)
+                : Number.MAX_SAFE_INTEGER;
+              return ao - bo || a.book.localeCompare(b.book);
+            });
+            const count = groups.reduce((n, g) => n + g.hits.length, 0);
+            themes.push({
+              name,
+              colors: Array.from(e.colors).sort((a, b) => a - b),
+              count,
+              groups,
+            });
+          });
+          themes.sort(
+            (a, b) => b.count - a.count || a.name.localeCompare(b.name)
+          );
+
+          return (
+            <ThemeMap themes={themes} onClose={() => setThemeMapOpen(false)} />
           );
         })()}
 
