@@ -533,6 +533,12 @@ export default function App() {
   // Which format the preview overlay shows. Set to the study's saved view on
   // open; switchable in the overlay just like the real compile view.
   const [previewView, setPreviewView] = useState<CompileView>("outline");
+  // Reading-surface "+ Add" (spec §7.1): replaces the bare "+" add-tab button.
+  // Opens a sheet to grow the working set of open tabs. Source 1 = "Another
+  // chapter" (a chapter picker → opens it as a tab). addOpen is the open flag.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addPickBook, setAddPickBook] = useState(""); // "volIdx:bookIdx"
+  const [addPickChap, setAddPickChap] = useState(""); // chapterIdx as string
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -1363,24 +1369,20 @@ export default function App() {
     }
   }, [showTutorial, gateOpen]);
 
-  const addNewTab = () => {
-    if (tabs.length >= 5) return; // up to 5 panels
-    const openIds = new Set(tabs.map((t) => t.id));
-    for (let v = 0; v < vols.length; v++) {
-      for (let b = 0; b < vols[v].books.length; b++) {
-        for (let c = 0; c < vols[v].books[b].chapters.length; c++) {
-          const id = makeTabId("master", v, b, c);
-          if (!openIds.has(id)) {
-            setTabs((prev) => [
-              ...prev,
-              { id, volume: v, book: b, chapter: c, bookId: "master" },
-            ]);
-            setActiveTabId(id);
-            return;
-          }
-        }
-      }
-    }
+  // Open a specific standard-works chapter as a new reading tab — the "Another
+  // chapter" source of "+ Add". Adds to the working set of open tabs (which
+  // compile later crystallizes into a study). If the chapter is already open,
+  // just switch to it. Respects the same open-tab cap as the bare add button.
+  const addChapterTab = (volume: number, book: number, chapter: number) => {
+    const id = makeTabId("master", volume, book, chapter);
+    const already = tabs.some((t) => t.id === id);
+    if (!already && tabs.length >= 5) return;
+    setTabs((prev) =>
+      prev.some((t) => t.id === id)
+        ? prev
+        : [...prev, { id, volume, book, chapter, bookId: "master" }]
+    );
+    setActiveTabId(id);
   };
 
   const closeTab = (id: string) => {
@@ -5702,6 +5704,156 @@ export default function App() {
           );
         })()}
 
+      {addOpen &&
+        (() => {
+          const selStyle = {
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: "10px",
+            border: "1px solid var(--border)",
+            background: "var(--panel)",
+            color: "var(--text)",
+            fontSize: "14px",
+            fontFamily: "inherit",
+            marginBottom: "10px",
+          };
+          const close = () => {
+            setAddOpen(false);
+            setAddPickBook("");
+            setAddPickChap("");
+          };
+          return (
+            <div
+              onClick={close}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 400,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  width: "100%",
+                  maxWidth: "520px",
+                  borderRadius: "16px 16px 0 0",
+                  border: "1px solid var(--border)",
+                  padding: "18px 18px 24px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div style={{ flex: 1, fontSize: "15px", fontWeight: 700 }}>
+                    Add to your study
+                  </div>
+                  <button
+                    onClick={close}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                      borderRadius: "999px",
+                      padding: "6px 12px",
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: "var(--muted)",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Another chapter
+                </div>
+                <select
+                  value={addPickBook}
+                  onChange={(e) => {
+                    setAddPickBook(e.target.value);
+                    setAddPickChap("");
+                  }}
+                  style={selStyle}
+                >
+                  <option value="">Choose a book…</option>
+                  {vols.map((vol, vi) => (
+                    <optgroup key={vi} label={vol.volume}>
+                      {vol.books.map((bk, bi) => (
+                        <option key={vi + ":" + bi} value={vi + ":" + bi}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                {addPickBook &&
+                  (() => {
+                    const parts = addPickBook.split(":").map(Number);
+                    const vi = parts[0];
+                    const bi = parts[1];
+                    return (
+                      <select
+                        value={addPickChap}
+                        onChange={(e) => setAddPickChap(e.target.value)}
+                        style={selStyle}
+                      >
+                        <option value="">Choose a chapter…</option>
+                        {vols[vi].books[bi].chapters.map((ch, ci) => (
+                          <option key={ci} value={String(ci)}>
+                            {ch.reference}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                <button
+                  disabled={!addPickBook || !addPickChap}
+                  onClick={() => {
+                    if (addPickBook && addPickChap) {
+                      const parts = addPickBook.split(":").map(Number);
+                      addChapterTab(parts[0], parts[1], Number(addPickChap));
+                    }
+                    close();
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "11px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background:
+                      addPickBook && addPickChap ? "#0d9488" : "var(--border)",
+                    color: addPickBook && addPickChap ? "#fff" : "var(--muted)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor:
+                      addPickBook && addPickChap ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Open chapter
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
       {snImportOpen && (
         <div
           className="scribal-fade"
@@ -7687,25 +7839,38 @@ export default function App() {
               </div>
             );
           })}
-          {tabs.length < 5 && (
-            <button
-              onClick={addNewTab}
-              title="Open another tab"
-              style={{
-                width: "34px",
-                height: "34px",
-                borderRadius: "50%",
-                border: "1px dashed var(--border)",
-                backgroundColor: "transparent",
-                color: "var(--muted)",
-                cursor: "pointer",
-                fontSize: "18px",
-                lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setAddOpen(true);
+              setAddPickBook("");
+              setAddPickChap("");
+            }}
+            disabled={tabs.length >= 5}
+            title={
+              tabs.length >= 5
+                ? "Close a tab to add another"
+                : "Add a chapter to your study"
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              height: "34px",
+              padding: "0 13px",
+              borderRadius: "999px",
+              border: "1px dashed var(--border)",
+              backgroundColor: "transparent",
+              color: tabs.length >= 5 ? "var(--border)" : "var(--muted)",
+              cursor: tabs.length >= 5 ? "default" : "pointer",
+              fontSize: "13px",
+              fontWeight: 600,
+              fontFamily: "inherit",
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            + Add
+          </button>
           {tabs.some((tt) => !tt.studyId) && (
             <div
               style={{
