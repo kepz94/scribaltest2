@@ -19,7 +19,8 @@ interface Props {
   rows: StudyRow[];
   onClose: () => void;
   onImport?: () => void;
-  migrated?: { name: string; chapters: number; verses: number }[];
+  migrated?: { id: string; name: string; chapters: number; verses: number }[];
+  onOpenMigrated?: (id: string) => void;
 }
 
 const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
@@ -28,7 +29,13 @@ const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
   { kind: "keyword", label: "Keyword studies", icon: "📑" },
 ];
 
-export default function StudiesList({ rows, onClose, onImport, migrated }: Props) {
+export default function StudiesList({
+  rows,
+  onClose,
+  onImport,
+  migrated,
+  onOpenMigrated,
+}: Props) {
   return (
     <div
       className="scribal-fade"
@@ -128,19 +135,42 @@ export default function StudiesList({ rows, onClose, onImport, migrated }: Props
               >
                 ✓ New model ready — {migrated.length}{" "}
                 {migrated.length === 1 ? "study" : "studies"} migrated
+                {onOpenMigrated && (
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                    {" "}
+                    · tap one to preview
+                  </span>
+                )}
               </div>
               <div
                 style={{ display: "flex", flexDirection: "column", gap: "3px" }}
               >
-                {migrated.map((m, i) => (
-                  <div key={i}>
+                {migrated.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => onOpenMigrated && onOpenMigrated(m.id)}
+                    disabled={!onOpenMigrated}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      padding: "2px 0",
+                      margin: 0,
+                      color: "inherit",
+                      fontSize: "12px",
+                      fontFamily: "inherit",
+                      cursor: onOpenMigrated ? "pointer" : "default",
+                    }}
+                  >
                     {m.name}{" "}
                     <span style={{ opacity: 0.7 }}>
                       · {m.chapters}{" "}
                       {m.chapters === 1 ? "chapter" : "chapters"} · {m.verses}{" "}
                       {m.verses === 1 ? "verse" : "verses"}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
