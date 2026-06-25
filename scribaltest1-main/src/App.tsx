@@ -31,10 +31,7 @@ import {
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import { useStudyStore } from "./hooks/useStudyStore";
-import { resolveStudy, orderOf } from "./studyModel";
-import ThemeMap from "./components/ThemeMap";
-import type { ThemeEntry, ThemeHit } from "./components/ThemeMap";
-import CrossBookChartBuilder from "./components/CrossBookChartBuilder";
+import { resolveStudy } from "./studyModel";
 import { migrateStudies } from "./migrateStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
@@ -531,10 +528,6 @@ export default function App() {
   // Which format the preview overlay shows. Set to the study's saved view on
   // open; switchable in the overlay just like the real compile view.
   const [previewView, setPreviewView] = useState<CompileView>("outline");
-  // Cross-scripture theme correlation overlay (read-only over all marks).
-  const [themeMapOpen, setThemeMapOpen] = useState(false);
-  // Mixed-book chart builder overlay.
-  const [chartBuilderOpen, setChartBuilderOpen] = useState(false);
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -2496,43 +2489,6 @@ export default function App() {
 
   // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
   // book and compile them fresh (live, from current marks).
-  // Build a saved mixed-book chart: one recorded study whose chapters span
-  // different books, carried as extraScopes so they're NOT linked (no
-  // chapterGroups, so each chapter keeps its own marking palette). It persists
-  // and syncs like any recorded study, and opens in the new-model viewer, which
-  // already charts across books.
-  const createCrossBookChart = (scopes: string[], rawName: string) => {
-    if (!scopes.length) return;
-    const ordered = [...scopes].sort((a, b) => {
-      const la = chapterLoc.get(a);
-      const lb = chapterLoc.get(b);
-      if (!la || !lb) return 0;
-      return (
-        la.volume - lb.volume || la.book - lb.book || la.chapter - lb.chapter
-      );
-    });
-    const [first, ...rest] = ordered;
-    const now = Date.now();
-    const id = "xbook_" + now + "_" + Math.random().toString(36).slice(2, 7);
-    const record: Study = {
-      id,
-      type: "chapter",
-      bookId: "master",
-      name: rawName || "Mixed-book chart",
-      scopeRef: first,
-      view: "charting",
-      compiledAt: now,
-      nameAt: now,
-    };
-    if (rest.length) record.extraScopes = rest;
-    setRecordedStudies((prev) => [record, ...prev]);
-    setChartBuilderOpen(false);
-    // The recorded change re-derives the unified store; open the new study in
-    // the viewer (it resolves once the store catches up).
-    setPreviewView("charting");
-    setUnifiedCompileId(id);
-  };
-
   const openRecordedStudy = (s: Study) => {
     // Open through the unified model: chapter/linked studies now compile via the
     // resolver in the new-model viewer. The legacy compile path below runs only
@@ -5547,14 +5503,6 @@ export default function App() {
           rows={buildStudyRows()}
           onClose={() => setStudiesOpen(false)}
           onImport={openSnImport}
-          onOpenThemeMap={() => {
-            setThemeMapOpen(true);
-            setStudiesOpen(false);
-          }}
-          onNewChart={() => {
-            setChartBuilderOpen(true);
-            setStudiesOpen(false);
-          }}
           migrated={unifiedStudies.map((s) => ({
             id: s.id,
             name: s.name,
@@ -5748,108 +5696,6 @@ export default function App() {
             </div>
           );
         })()}
-
-      {themeMapOpen &&
-        (() => {
-          // Group hits by scripture book (parsed from the reference), not the
-          // StudyBook — so the standard works split into Genesis, 1 Nephi, …
-          const bookOf = (ref: string) =>
-            scopeOfRef(ref).replace(/\s+\d+$/, "");
-
-          const acc = new Map<
-            string,
-            { colors: Set<MarkColor>; books: Map<string, Map<string, ThemeHit>> }
-          >();
-          // Walk every book's full marks. The destructured `books` is only a
-          // lightweight summary (id/name/counts) — getBook(id) returns the real
-          // marks + label stores. allMarks is also too lossy here (it drops
-          // verseText/indices/style and rewrites label to the book color label).
-          // Resolve each mark's theme name the way the app does: a sealed label
-          // wins, else the per-scope color name (group-aware via resolveScope),
-          // else the book's color label. Empty = unnamed (skip).
-          books.forEach((b) => {
-            const full = getBook(b.id);
-            const scopedLabels = full.scopedLabels;
-            const colorLabels = full.colorLabels;
-            full.marks.forEach((m) => {
-              let name = (m.label || "").trim();
-              if (!name) {
-                const scoped =
-                  scopedLabels[resolveScope(scopeOfRef(m.reference))];
-                name = scoped ? (scoped[m.color] || "").trim() : "";
-              }
-              if (!name) name = (colorLabels[m.color] || "").trim();
-              if (!name) return;
-
-              let e = acc.get(name);
-              if (!e) {
-                e = { colors: new Set<MarkColor>(), books: new Map() };
-                acc.set(name, e);
-              }
-              e.colors.add(m.color);
-              const bn = bookOf(m.reference);
-              let bm = e.books.get(bn);
-              if (!bm) {
-                bm = new Map<string, ThemeHit>();
-                e.books.set(bn, bm);
-              }
-              if (!bm.has(m.reference))
-                bm.set(m.reference, {
-                  reference: m.reference,
-                  verseText: m.verseText,
-                  markedText: m.markedText,
-                  startIndex: m.startIndex,
-                  endIndex: m.endIndex,
-                  style: m.style,
-                  color: m.color,
-                });
-            });
-          });
-
-          const themes: ThemeEntry[] = [];
-          acc.forEach((e, name) => {
-            const groups = Array.from(e.books.entries()).map(
-              ([book, refMap]) => ({
-                book,
-                hits: Array.from(refMap.values()).sort(
-                  (a, b) =>
-                    orderOf(a.reference) - orderOf(b.reference) ||
-                    a.reference.localeCompare(b.reference)
-                ),
-              })
-            );
-            groups.sort((a, b) => {
-              const ao = a.hits.length
-                ? orderOf(a.hits[0].reference)
-                : Number.MAX_SAFE_INTEGER;
-              const bo = b.hits.length
-                ? orderOf(b.hits[0].reference)
-                : Number.MAX_SAFE_INTEGER;
-              return ao - bo || a.book.localeCompare(b.book);
-            });
-            const count = groups.reduce((n, g) => n + g.hits.length, 0);
-            themes.push({
-              name,
-              colors: Array.from(e.colors).sort((a, b) => a - b),
-              count,
-              groups,
-            });
-          });
-          themes.sort(
-            (a, b) => b.count - a.count || a.name.localeCompare(b.name)
-          );
-
-          return (
-            <ThemeMap themes={themes} onClose={() => setThemeMapOpen(false)} />
-          );
-        })()}
-
-      {chartBuilderOpen && (
-        <CrossBookChartBuilder
-          onCreate={createCrossBookChart}
-          onClose={() => setChartBuilderOpen(false)}
-        />
-      )}
 
       {snImportOpen && (
         <div
