@@ -4403,73 +4403,6 @@ export default function App() {
                     {chMarks.length === 1 ? "marking" : "markings"} in this
                     chapter
                   </div>
-                  {members.length > 0 && (
-                    <div style={{ marginBottom: "16px" }}>
-                      <div style={eyebrow}>Linked chapters</div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "6px",
-                        }}
-                      >
-                        {members.map((s) => (
-                          <div
-                            key={s}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                            }}
-                          >
-                            <button
-                              onClick={() => jumpLinkedTab(s)}
-                              title="Jump to this chapter in this tab"
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                textAlign: "left",
-                                padding: "9px 12px",
-                                borderRadius: "10px",
-                                border: "1px solid var(--border)",
-                                background: "var(--bg)",
-                                color: "var(--text)",
-                                cursor: "pointer",
-                                fontSize: "14px",
-                                fontWeight: 600,
-                                fontFamily: "inherit",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {s}
-                            </button>
-                            <button
-                              onClick={() => openLinkedTab(s)}
-                              title="Open this chapter in a new tab"
-                              style={{
-                                flexShrink: 0,
-                                padding: "9px 12px",
-                                borderRadius: "10px",
-                                border: "1px solid var(--border)",
-                                background: "transparent",
-                                color: "var(--text)",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                fontWeight: 600,
-                                fontFamily: "inherit",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              New tab
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {themes.length > 0 && (
                     <>
                       <div style={eyebrow}>Themes here</div>
@@ -4551,60 +4484,117 @@ export default function App() {
                       {linkRows.map((r) => {
                         const on = linkSelected.includes(r.scope);
                         return (
-                          <button
+                          <div
                             key={r.scope}
-                            onClick={() => toggleLinkSelect(r.scope)}
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "10px",
-                              textAlign: "left",
-                              padding: "11px 13px",
-                              borderRadius: "10px",
-                              border: on
-                                ? "2px solid " + gColor
-                                : "1px solid var(--border)",
-                              background: "var(--bg)",
-                              color: "var(--text)",
-                              fontSize: "14px",
-                              fontWeight: on ? 600 : 400,
-                              cursor: "pointer",
+                              gap: "8px",
                             }}
                           >
-                            <span
+                            <button
+                              onClick={() => toggleLinkSelect(r.scope)}
                               style={{
-                                width: "16px",
-                                height: "16px",
-                                borderRadius: "4px",
-                                border: on
-                                  ? "1px solid " + gColor
-                                  : "1px solid var(--muted)",
-                                background: on ? gColor : "transparent",
-                                color: "#fff",
-                                display: "inline-flex",
+                                flex: 1,
+                                minWidth: 0,
+                                display: "flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                flexShrink: 0,
-                                fontSize: "11px",
+                                gap: "10px",
+                                textAlign: "left",
+                                padding: "11px 13px",
+                                borderRadius: "10px",
+                                border: on
+                                  ? "2px solid " + gColor
+                                  : "1px solid var(--border)",
+                                background: "var(--bg)",
+                                color: "var(--text)",
+                                fontSize: "14px",
+                                fontWeight: on ? 600 : 400,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
                               }}
                             >
-                              {on ? "✓" : ""}
-                            </span>
-                            <span style={{ flex: 1 }}>
-                              {r.label}
-                              {(r.next || !r.open) && (
-                                <span
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "var(--muted)",
-                                  }}
-                                >
-                                  {" "}
-                                  · {r.next ? "next chapter" : "not open"}
-                                </span>
-                              )}
-                            </span>
-                          </button>
+                              <span
+                                style={{
+                                  width: "16px",
+                                  height: "16px",
+                                  borderRadius: "4px",
+                                  border: on
+                                    ? "1px solid " + gColor
+                                    : "1px solid var(--muted)",
+                                  background: on ? gColor : "transparent",
+                                  color: "#fff",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  fontSize: "11px",
+                                }}
+                              >
+                                {on ? "✓" : ""}
+                              </span>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.label}
+                                {(r.next || !r.open) && (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "var(--muted)",
+                                    }}
+                                  >
+                                    {" "}
+                                    · {r.next ? "next chapter" : "not open"}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => jumpLinkedTab(r.scope)}
+                              title="Jump to this chapter in this tab"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 11px",
+                                borderRadius: "8px",
+                                border: "none",
+                                background: gColor,
+                                color: "#fff",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Go to
+                            </button>
+                            <button
+                              onClick={() => openLinkedTab(r.scope)}
+                              title="Open this chapter in a new tab"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 11px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--border)",
+                                background: "transparent",
+                                color: "var(--text)",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              New tab
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
