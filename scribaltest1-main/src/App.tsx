@@ -5716,17 +5716,18 @@ export default function App() {
             string,
             { colors: Set<MarkColor>; books: Map<string, Map<string, ThemeHit>> }
           >();
-          // Walk every book's full marks (allMarks is a lossy projection: it
-          // drops verseText/indices/style and rewrites label to the book color
-          // label). Resolve each mark's theme name the way the app does: a
-          // sealed label wins, else the per-scope color name (group-aware via
-          // resolveScope), else the book's color label. Empty = unnamed (skip).
-          Object.keys(books).forEach((bookId) => {
-            const book = books[bookId];
-            if (!book) return;
-            const scopedLabels = book.scopedLabels || {};
-            const colorLabels = book.colorLabels || {};
-            book.marks.forEach((m) => {
+          // Walk every book's full marks. The destructured `books` is only a
+          // lightweight summary (id/name/counts) — getBook(id) returns the real
+          // marks + label stores. allMarks is also too lossy here (it drops
+          // verseText/indices/style and rewrites label to the book color label).
+          // Resolve each mark's theme name the way the app does: a sealed label
+          // wins, else the per-scope color name (group-aware via resolveScope),
+          // else the book's color label. Empty = unnamed (skip).
+          books.forEach((b) => {
+            const full = getBook(b.id);
+            const scopedLabels = full.scopedLabels;
+            const colorLabels = full.colorLabels;
+            full.marks.forEach((m) => {
               let name = (m.label || "").trim();
               if (!name) {
                 const scoped =
