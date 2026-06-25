@@ -4,6 +4,7 @@ import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
 import VerseViewer from "./components/VerseViewer";
+import AddToStudyMenu from "./components/AddToStudyMenu";
 import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import * as drive from "./googleDrive";
@@ -30,6 +31,7 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
+import { useStudyLibrary } from "./hooks/useStudyLibrary";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 import Shortcuts from "./components/Shortcuts";
@@ -499,6 +501,11 @@ export default function App() {
     setStudies: setRecordedStudies,
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
+
+  // Unified study library (scribal_studies_v2), stood up ALONGSIDE the old study
+  // hooks during the cutover. The Add button writes here; nothing reads it yet.
+  // Additive: the migration runs on first load and the old keys are untouched.
+  const studyLib = useStudyLibrary();
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -7919,6 +7926,23 @@ export default function App() {
                     selectedBook={t.book}
                     selectedChapter={t.chapter}
                     onChange={(v, b, c) => updateTab(t.id, v, b, c)}
+                    addSlot={
+                      <AddToStudyMenu
+                        studies={studyLib.studies}
+                        defaultBookId={t.bookId}
+                        currentLocation={{
+                          volume: t.volume,
+                          book: t.book,
+                          chapter: t.chapter,
+                        }}
+                        selectedRefs={sendSelected}
+                        onCreateStudy={studyLib.createStudy}
+                        onAddScope={studyLib.addScope}
+                        onAddLooseRefs={studyLib.addLooseRefs}
+                        onRequestSearch={() => {}}
+                        dark={dark}
+                      />
+                    }
                     selectedTool={selectedTool}
                     selectedColor={selectedColor}
                     onChangeTool={setSelectedTool}
