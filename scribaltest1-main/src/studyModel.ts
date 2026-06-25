@@ -1,24 +1,25 @@
 // studyModel.ts
 // -----------------------------------------------------------------------------
-// The unified study model: ONE record type that replaces the four old linking
-// representations --
-//   - the global chapterGroups map       (kept; applied here, not duplicated)
-//   - recorded Study.scopeRef / extraRefs
-//   - SearchStudy.refs / linkedScope
-//   - the Send flow's two separate write paths
+// The unified study model: ONE record type that replaces the old separate
+// linking representations. There is no "linking", "keyword search into a
+// chapter", or "send" as distinct acts anymore -- there is only ADDING to a
+// study, in one of two ways:
+//   - Add scope:  a chapter / book / volume -> goes in `scopes` (live; marks
+//                 always reflect the current state of those chapters).
+//   - Add verses: hand-picked or found by search -> goes in `looseRefs`.
 //
-// A Study carries two lists and nothing else linkage-related:
-//   - scopes:    live scope TOKENS (chapter / book / volume). Marks always reflect
-//                the current state of those chapters.
-//   - looseRefs: hand-picked verse references (keyword search or Send).
+// Linking is PER-STUDY: two chapters are "linked" precisely because they are in
+// the same study's `scopes` list. There is no global link map at runtime -- a
+// study's `scopes` list is the only thing that groups chapters (KISS / DRY: one
+// place, the study itself).
 //
-// Compiled set = (every verse in `scopes`, expanded, with GLOBAL links folded in)
-//                + looseRefs.  That single rule is resolveStudyRefs() below.
+// Compiled set = (every verse in `scopes`, expanded) + looseRefs. That single
+// rule is resolveStudyRefs() below.
 //
-// Decision 1 (global linking stays): chapter links live ONLY in the existing
-// chapterGroups map and are applied here at resolve time, so a Study just says
-// "include this chapter" and the global map decides what it is linked to. Linkage
-// is recorded in exactly one place (DRY).
+// NOTE on migration: the OLD system stored chapter links in a global map
+// (scribal_linked_chapters). migrateToStudyLibrary() reads that map ONCE to
+// reconstruct each existing linked study into its member chapters; afterward the
+// map is never consulted again (the key is left in storage as a rollback).
 // -----------------------------------------------------------------------------
 
 import {
@@ -79,45 +80,27 @@ function chapterScopesOfToken(token: string): readonly string[] {
 // React and no storage -- so it is trivially unit-testable (principle: make code
 // easy to test) and is the ONLY place the compiled reference set is defined.
 //
-// `chapterGroups` is the existing global link map (scope -> groupId), passed in
-// so this stays pure. For every chapter scope the study includes, any chapter in
-// the same global group is folded in too (Decision 1's auto-fold) -- applied
-// uniformly, whether a scope was added directly or arrived via a book/volume
-// token.
+// Per-study model: a study compiles exactly the scopes in its own list (chapter
+// tokens expanded, book/volume tokens fanned out) plus its loose verses. No
+// global link map is consulted -- the `scopes` list IS the grouping.
 export function resolveStudyRefs(
-  study: Pick<Study, "scopes" | "looseRefs">,
-  chapterGroups: Record<string, string>
+  study: Pick<Study, "scopes" | "looseRefs">
 ): string[] {
-  // 1) scope tokens -> the set of chapter scopes they cover
+  // 1) scope tokens -> the set of chapter scopes they cover (de-duped, so an
+  //    overlapping chapter + book/volume token never double-counts)
   const chapterScopeSet = new Set<string>();
   study.scopes.forEach((token) =>
     chapterScopesOfToken(token).forEach((s) => chapterScopeSet.add(s))
   );
 
-  // 2) fold in global links (authoritative). Index groupId -> members once.
-  if (Object.keys(chapterGroups).length > 0) {
-    const membersByGroup = new Map<string, string[]>();
-    Object.keys(chapterGroups).forEach((scope) => {
-      const gid = chapterGroups[scope];
-      const arr = membersByGroup.get(gid);
-      if (arr) arr.push(scope);
-      else membersByGroup.set(gid, [scope]);
-    });
-    Array.from(chapterScopeSet).forEach((scope) => {
-      const gid = chapterGroups[scope];
-      const members = gid ? membersByGroup.get(gid) : undefined;
-      if (members) members.forEach((m) => chapterScopeSet.add(m));
-    });
-  }
-
-  // 3) chapter scopes -> verse refs, then add the loose refs
+  // 2) chapter scopes -> verse refs, then add the loose refs
   const refSet = new Set<string>();
   chapterScopeSet.forEach((scope) =>
     versesInScope(scope).forEach((r) => refSet.add(r))
   );
   (study.looseRefs || []).forEach((r) => refSet.add(r));
 
-  // 4) one ordered, de-duplicated list in scripture order
+  // 3) one ordered, de-duplicated list in scripture order
   return Array.from(refSet).sort((a, b) => orderOfRef(a) - orderOfRef(b));
 }
 
@@ -126,9 +109,10 @@ export function resolveStudyRefs(
 //
 // READS the legacy localStorage values and produces the new list; it never
 // writes (the hook persists the result, and the old keys stay as a rollback).
-// Mapping (the agreed migration map):
+// Mapping:
 //   recorded chapter study : scopes = [scopeRef]
-//   recorded linked study  : scopes = the group's member chapters (from chapterGroups)
+//   recorded linked study  : scopes = the group's member chapters, read ONCE
+//                            from the old global link map (chapterGroups)
 //   keyword study          : scopes = linkedScope ? [linkedScope] : []
 //   extraRefs / refs       -> looseRefs
 // 1:1 and id-preserving: each old record becomes exactly one Study; two studies
@@ -190,8 +174,9 @@ export function migrateToStudyLibrary(
   searchRaw: string | null | undefined,
   linkedChaptersRaw: string | null | undefined
 ): Study[] {
+  // Old global link map, read ONCE here only to reconstruct existing linked
+  // studies into their member chapters. Never consulted again after migration.
   const chapterGroups = parseGroups(linkedChaptersRaw);
-  // groupId -> member chapter scopes, to expand a linked study's group id.
   const membersByGroup = new Map<string, string[]>();
   Object.keys(chapterGroups).forEach((scope) => {
     const gid = chapterGroups[scope];
