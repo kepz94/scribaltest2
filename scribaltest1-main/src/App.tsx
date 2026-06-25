@@ -519,6 +519,9 @@ export default function App() {
   // freshly-built feed. Entirely separate from the live compile path (mode ===
   // "compile"); opened from the Studies-hub migrated list, closed back to null.
   const [unifiedCompileId, setUnifiedCompileId] = useState<string | null>(null);
+  // Which format the preview overlay shows. Set to the study's saved view on
+  // open; switchable in the overlay just like the real compile view.
+  const [previewView, setPreviewView] = useState<CompileView>("outline");
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -5500,6 +5503,8 @@ export default function App() {
             ),
           }))}
           onOpenMigrated={(id) => {
+            const s = migratedStudies.find((x) => x.id === id);
+            setPreviewView(s?.view ?? "outline");
             setUnifiedCompileId(id);
             setStudiesOpen(false);
           }}
@@ -5621,7 +5626,31 @@ export default function App() {
                   padding: "18px 16px 60px",
                 }}
               >
-                {study.view === "outline" && (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                    marginBottom: "18px",
+                  }}
+                >
+                  {viewTabButton(previewView === "outline", "Outline", () =>
+                    setPreviewView("outline")
+                  )}
+                  {viewTabButton(previewView === "charting", "Charting", () =>
+                    setPreviewView("charting")
+                  )}
+                  {viewTabButton(previewView === "distilled", "Distilled", () =>
+                    setPreviewView("distilled")
+                  )}
+                  {viewTabButton(
+                    previewView === "covenants",
+                    "Relational",
+                    () => setPreviewView("covenants")
+                  )}
+                </div>
+                {previewView === "outline" && (
                   <Outline
                     {...previewProps}
                     notes={notes}
@@ -5630,9 +5659,9 @@ export default function App() {
                     onCollapsedChange={setCompileCollapsed}
                   />
                 )}
-                {study.view === "charting" && <Charting {...previewProps} />}
-                {study.view === "distilled" && <Distilled {...previewProps} />}
-                {study.view === "covenants" && (
+                {previewView === "charting" && <Charting {...previewProps} />}
+                {previewView === "distilled" && <Distilled {...previewProps} />}
+                {previewView === "covenants" && (
                   <Covenants
                     key={scopeKey}
                     {...previewProps}
