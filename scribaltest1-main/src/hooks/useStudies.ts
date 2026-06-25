@@ -15,6 +15,12 @@ export interface Study {
   // last-write via extraRefsAt, exactly like a keyword study's refs/updatedAt.
   extraRefs?: string[];
   extraRefsAt?: number;
+  // Additional chapter scopes ("1 Nephi 3", "Alma 5") charted alongside scopeRef
+  // without linking them — the mixed-book chart builder writes these to gather
+  // chapters from different books into one study. Carried through sync via the
+  // new-study branch and the ...local spread (an existing-study merge preserves
+  // whatever this device already has).
+  extraScopes?: string[];
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational / Charting), so reopening it lands on the same tab instead of
   // resetting to Outline. Optional; studies without it open on Outline.
