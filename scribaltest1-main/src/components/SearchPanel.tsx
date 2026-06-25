@@ -867,7 +867,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           </svg>
                           {linkChapterLabel
                             ? "Link to \u201c" + linkChapterLabel + "\u201d"
-                            : "Link to a chapter"}
+                            : "Link to an existing study"}
                         </button>
                       )}
                       {onLinkStudy && (
@@ -888,7 +888,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                             fontFamily: "inherit",
                           }}
                         >
-                          Link verses into a study
+                          Create a new study
                         </button>
                       )}
                     </>
