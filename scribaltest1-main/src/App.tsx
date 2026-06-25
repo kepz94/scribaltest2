@@ -518,7 +518,7 @@ export default function App() {
   // The unified study store — now live and persisted. During the migration
   // window the old stores remain authoritative for writes; an effect below
   // keeps this store in lock-step with them. Opening/viewing reads from here.
-  const { studies: unifiedStudies, setAll: setAllUnified } = useStudyStore();
+  const { studies: unifiedStudies, reconcileFromOld } = useStudyStore();
 
   // When set, an isolated read-only "new-model" preview overlay compiles that
   // unified study through the resolver, using the real format components but a
@@ -695,15 +695,15 @@ export default function App() {
 
   // Migration window: keep the live store in lock-step with the still-
   // authoritative old stores. Whenever any old store changes (a save, rename,
-  // delete, link, move…), re-derive the unified set and push it into the store.
-  // Reads (open/banner/viewer) come from the store's `unifiedStudies`, so this
-  // is what keeps them current. When writes move into the store directly (a
-  // later step), this effect retires path by path.
+  // delete, link, move…), re-derive the migrated set and reconcile it into the
+  // store — refreshing migrated studies while PRESERVING any created directly in
+  // the store (so a direct store write survives). Reads (open/banner/viewer)
+  // come from `unifiedStudies`. As writes move into the store, this retires.
   useEffect(() => {
-    setAllUnified(
+    reconcileFromOld(
       migrateStudies(recordedStudies, searchStudies, chapterGroups)
     );
-  }, [recordedStudies, searchStudies, chapterGroups, setAllUnified]);
+  }, [recordedStudies, searchStudies, chapterGroups, reconcileFromOld]);
 
   // Stamp "changed now" for every scope whose group membership differs between
   // prev and next — this is what makes a link OR an unlink propagate.
