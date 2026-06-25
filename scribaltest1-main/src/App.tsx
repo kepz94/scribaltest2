@@ -907,18 +907,24 @@ export default function App() {
     body: string;
     confirmLabel: string;
     onConfirm: () => void;
+    secondaryLabel?: string;
+    onSecondary?: () => void;
   } | null>(null);
   const askConfirm = (opts: {
     title: string;
     body: string;
     confirmLabel?: string;
     onConfirm: () => void;
+    secondaryLabel?: string;
+    onSecondary?: () => void;
   }) =>
     setConfirmAction({
       title: opts.title,
       body: opts.body,
       confirmLabel: opts.confirmLabel || "Delete",
       onConfirm: opts.onConfirm,
+      secondaryLabel: opts.secondaryLabel,
+      onSecondary: opts.onSecondary,
     });
 
   // The live guided tour over the real screen. Steps may drive app state via
@@ -2709,9 +2715,17 @@ export default function App() {
         belongs +
         ' Moving "' +
         t.name +
-        '" here keeps both sets of marks together. Continue?',
+        '" here keeps both sets of marks together, or migrate it to a brand-new book to keep it on its own.',
       confirmLabel: "Move here",
       onConfirm: () => runMove(target),
+      secondaryLabel: "Migrate to a new book instead",
+      onSecondary: () =>
+        runMove(
+          createSession(
+            moveStudyNewName.trim() ||
+              "Session \u00b7 " + fmtShortDate(Date.now())
+          )
+        ),
     });
   };
 
@@ -6059,6 +6073,30 @@ export default function App() {
             >
               {confirmAction.body}
             </p>
+            {confirmAction.onSecondary && (
+              <button
+                onClick={() => {
+                  const fn = confirmAction.onSecondary!;
+                  setConfirmAction(null);
+                  fn();
+                }}
+                style={{
+                  width: "100%",
+                  marginBottom: "10px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {confirmAction.secondaryLabel}
+              </button>
+            )}
             <div
               style={{
                 display: "flex",
