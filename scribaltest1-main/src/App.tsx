@@ -34,6 +34,7 @@ import { useStudyStore } from "./hooks/useStudyStore";
 import { resolveStudy, orderOf } from "./studyModel";
 import ThemeMap from "./components/ThemeMap";
 import type { ThemeEntry, ThemeHit } from "./components/ThemeMap";
+import CrossBookChartBuilder from "./components/CrossBookChartBuilder";
 import { migrateStudies } from "./migrateStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
@@ -532,6 +533,8 @@ export default function App() {
   const [previewView, setPreviewView] = useState<CompileView>("outline");
   // Cross-scripture theme correlation overlay (read-only over all marks).
   const [themeMapOpen, setThemeMapOpen] = useState(false);
+  // Mixed-book chart builder overlay.
+  const [chartBuilderOpen, setChartBuilderOpen] = useState(false);
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -2493,6 +2496,43 @@ export default function App() {
 
   // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
   // book and compile them fresh (live, from current marks).
+  // Build a saved mixed-book chart: one recorded study whose chapters span
+  // different books, carried as extraScopes so they're NOT linked (no
+  // chapterGroups, so each chapter keeps its own marking palette). It persists
+  // and syncs like any recorded study, and opens in the new-model viewer, which
+  // already charts across books.
+  const createCrossBookChart = (scopes: string[], rawName: string) => {
+    if (!scopes.length) return;
+    const ordered = [...scopes].sort((a, b) => {
+      const la = chapterLoc.get(a);
+      const lb = chapterLoc.get(b);
+      if (!la || !lb) return 0;
+      return (
+        la.volume - lb.volume || la.book - lb.book || la.chapter - lb.chapter
+      );
+    });
+    const [first, ...rest] = ordered;
+    const now = Date.now();
+    const id = "xbook_" + now + "_" + Math.random().toString(36).slice(2, 7);
+    const record: Study = {
+      id,
+      type: "chapter",
+      bookId: "master",
+      name: rawName || "Mixed-book chart",
+      scopeRef: first,
+      view: "charting",
+      compiledAt: now,
+      nameAt: now,
+    };
+    if (rest.length) record.extraScopes = rest;
+    setRecordedStudies((prev) => [record, ...prev]);
+    setChartBuilderOpen(false);
+    // The recorded change re-derives the unified store; open the new study in
+    // the viewer (it resolves once the store catches up).
+    setPreviewView("charting");
+    setUnifiedCompileId(id);
+  };
+
   const openRecordedStudy = (s: Study) => {
     // Open through the unified model: chapter/linked studies now compile via the
     // resolver in the new-model viewer. The legacy compile path below runs only
@@ -5511,6 +5551,10 @@ export default function App() {
             setThemeMapOpen(true);
             setStudiesOpen(false);
           }}
+          onNewChart={() => {
+            setChartBuilderOpen(true);
+            setStudiesOpen(false);
+          }}
           migrated={unifiedStudies.map((s) => ({
             id: s.id,
             name: s.name,
@@ -5799,6 +5843,13 @@ export default function App() {
             <ThemeMap themes={themes} onClose={() => setThemeMapOpen(false)} />
           );
         })()}
+
+      {chartBuilderOpen && (
+        <CrossBookChartBuilder
+          onCreate={createCrossBookChart}
+          onClose={() => setChartBuilderOpen(false)}
+        />
+      )}
 
       {snImportOpen && (
         <div
