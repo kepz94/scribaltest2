@@ -1352,7 +1352,24 @@ export default function App() {
   ) => {
     const target = tabs.find((t) => t.id === tabId);
     const bookId = target?.bookId || "master";
-    const newId = makeTabId(bookId, volume, book, chapter);
+    // Re-aiming a tab by volume or book lands on chapter 1 by default. Since a
+    // tab's id is its location, that chapter can't be open in two tabs, so if
+    // it's already open elsewhere the move would bounce and the tab would get
+    // stuck (e.g. selecting Book of Mormon always defaults to 1 Nephi 1). When
+    // the volume or book changed, skip to the first chapter of the chosen book
+    // that isn't already open so navigation can continue; an explicit chapter
+    // pick is honored exactly.
+    let c = chapter;
+    if (target && (volume !== target.volume || book !== target.book)) {
+      const count = vols[volume].books[book].chapters.length;
+      const openElsewhere = new Set(
+        tabs.filter((t) => t.id !== tabId).map((t) => t.id)
+      );
+      while (c < count && openElsewhere.has(makeTabId(bookId, volume, book, c)))
+        c++;
+      if (c >= count) c = chapter;
+    }
+    const newId = makeTabId(bookId, volume, book, c);
     setTabs((prev) => {
       const existing = prev.find((t) => t.id === newId);
       if (existing) {
@@ -1360,7 +1377,7 @@ export default function App() {
         return prev;
       }
       const next = prev.map((t) =>
-        t.id === tabId ? { id: newId, volume, book, chapter, bookId } : t
+        t.id === tabId ? { id: newId, volume, book, chapter: c, bookId } : t
       );
       setActiveTabId(newId);
       return next;
