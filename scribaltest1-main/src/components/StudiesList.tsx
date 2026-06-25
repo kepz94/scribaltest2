@@ -19,8 +19,6 @@ interface Props {
   rows: StudyRow[];
   onClose: () => void;
   onImport?: () => void;
-  migrated?: { id: string; name: string; chapters: number; verses: number }[];
-  onOpenMigrated?: (id: string) => void;
 }
 
 const SECTIONS: { kind: StudyRow["kind"]; label: string; icon: string }[] = [
@@ -33,8 +31,6 @@ export default function StudiesList({
   rows,
   onClose,
   onImport,
-  migrated,
-  onOpenMigrated,
 }: Props) {
   return (
     <div
@@ -115,66 +111,6 @@ export default function StudiesList({
         </div>
 
         <div style={{ padding: "10px 14px 16px" }}>
-          {migrated && migrated.length > 0 && (
-            <div
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "12px",
-                padding: "10px 12px",
-                marginBottom: "12px",
-                fontSize: "12px",
-                color: "var(--muted)",
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 600,
-                  color: "var(--text)",
-                  marginBottom: "6px",
-                }}
-              >
-                ✓ New model ready — {migrated.length}{" "}
-                {migrated.length === 1 ? "study" : "studies"} migrated
-                {onOpenMigrated && (
-                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
-                    {" "}
-                    · tap one to preview
-                  </span>
-                )}
-              </div>
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: "3px" }}
-              >
-                {migrated.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => onOpenMigrated && onOpenMigrated(m.id)}
-                    disabled={!onOpenMigrated}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
-                      padding: "2px 0",
-                      margin: 0,
-                      color: "inherit",
-                      fontSize: "12px",
-                      fontFamily: "inherit",
-                      cursor: onOpenMigrated ? "pointer" : "default",
-                    }}
-                  >
-                    {m.name}{" "}
-                    <span style={{ opacity: 0.7 }}>
-                      · {m.chapters}{" "}
-                      {m.chapters === 1 ? "chapter" : "chapters"} · {m.verses}{" "}
-                      {m.verses === 1 ? "verse" : "verses"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
           {rows.length === 0 && (
             <div
               style={{
