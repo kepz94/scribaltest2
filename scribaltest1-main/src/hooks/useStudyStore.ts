@@ -203,16 +203,26 @@ export function useStudyStore() {
 
   const live = studies.filter((s) => !s.deletedAt);
 
-  // Replace the whole set. Used during the migration window by an App-side
-  // effect that keeps this store in lock-step with the still-authoritative old
-  // stores. Stable identity (useCallback) so it can sit in that effect's deps
-  // without looping.
-  const setAll = useCallback((next: Study[]) => setStudies(next), []);
+  // Reconcile a freshly re-derived snapshot of the OLD stores with this store's
+  // own native studies. Migrated studies carry their old ids and are owned by
+  // the old stores — they're refreshed from `derived` here. Studies created
+  // directly in this store get an "st_" id and never appear in that snapshot,
+  // so they're carried forward: this is what lets a direct write to the unified
+  // store survive the re-derive during the migration window. Once every write
+  // path lives in the store, the App-side effect that calls this retires and the
+  // store is simply authoritative. Stable identity (useCallback) so it can sit
+  // in that effect's deps without looping.
+  const reconcileFromOld = useCallback((derived: Study[]) => {
+    setStudies((prev) => {
+      const native = prev.filter((s) => s.id.startsWith("st_"));
+      return native.length ? [...derived, ...native] : derived;
+    });
+  }, []);
 
   return {
     studies: live,
     allStudies: studies,
-    setAll,
+    reconcileFromOld,
     create,
     rename,
     setView,
