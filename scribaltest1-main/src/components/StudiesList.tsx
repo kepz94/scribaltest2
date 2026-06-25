@@ -275,50 +275,6 @@ export default function StudiesList({ rows, onClose, onImport }: Props) {
                       )}
                     </button>
 
-                    {r.onAddVerses && (
-                      <button
-                        onClick={r.onAddVerses}
-                        title="Add or edit verses"
-                        style={{
-                          flexShrink: 0,
-                          height: "28px",
-                          padding: "0 11px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        + Verses
-                      </button>
-                    )}
-                    {r.onMove && (
-                      <button
-                        onClick={r.onMove}
-                        title="Move to another session"
-                        style={{
-                          flexShrink: 0,
-                          height: "28px",
-                          padding: "0 11px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Move
-                      </button>
-                    )}
                     <button
                       onClick={r.onDelete}
                       title="Remove from Studies"
