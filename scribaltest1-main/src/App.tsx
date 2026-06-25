@@ -522,6 +522,7 @@ export default function App() {
     studies: unifiedStudies,
     reconcileFromOld,
     create: createUnified,
+    remove: removeUnified,
   } = useStudyStore();
 
   // When set, an isolated read-only "new-model" preview overlay compiles that
@@ -3634,6 +3635,10 @@ export default function App() {
             onConfirm: () => {
               if (rec) deleteRecordedStudy(u.id);
               else if (ss) removeStudy(u.id);
+              // Store-native study (no old-store record): tombstone it in the
+              // unified store. The reconcile (slice 1) keeps the tombstone, so
+              // the delete sticks and is hidden from the live list.
+              else removeUnified(u.id);
             },
           }),
       });
