@@ -751,8 +751,11 @@ export default function VerseViewer(props: VerseViewerProps) {
           style={{
             display: "flex",
             flexDirection: isV ? "column" : "row",
+            flexWrap: "wrap",
             gap: "7px",
             alignItems: "center",
+            maxWidth: isV ? undefined : "165px",
+            maxHeight: isV ? "165px" : undefined,
           }}
         >
           {COLORS.map((color) => {
@@ -761,7 +764,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               <button
                 key={color}
                 onClick={() => onChangeColor(color)}
-                title={"Color " + color + " · shortcut: " + color}
+                title={"Color " + color + " · shortcut: " + (color === 10 ? "0" : color)}
                 style={{
                   width: "26px",
                   height: "26px",
