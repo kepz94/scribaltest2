@@ -787,6 +787,14 @@ export default function App() {
     refs: string[];
     label: string;
   } | null>(null);
+  // When the search is opened from a chapter's link prompt, this holds that
+  // chapter's tab so the gathered verses link straight to it (no "which chapter"
+  // step). Cleared whenever the search closes so it never leaks into a later,
+  // ordinary search.
+  const [linkSearchTab, setLinkSearchTab] = useState<Tab | null>(null);
+  useEffect(() => {
+    if (!showSearch) setLinkSearchTab(null);
+  }, [showSearch]);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
@@ -2490,10 +2498,113 @@ export default function App() {
   };
   const onLinkSearchToChapter = (refs: string[], label: string) => {
     if (!refs.length) return;
-    // Always confirm in a window — which chapter, even when only one is open.
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    // Launched from a chapter's link prompt: the destination chapter is already
+    // chosen, so link straight to it (after a mark-collision check) instead of
+    // asking which chapter. The standalone search path below is unchanged.
+    if (linkSearchTab) {
+      const ct = linkSearchTab;
+      setShowSearch(false);
+      linkGatheredToChapter(ordered, label, ct);
+      return;
+    }
+    // Always confirm in a window — which chapter, even when only one is open.
     setLinkSearchDraft({ refs: ordered, label });
     setShowSearch(false);
+  };
+
+  // Link verses gathered from a chapter's link prompt to that chapter. They
+  // always arrive unmarked. If any already carry marks in this study's book —
+  // where a verse can hold only one set of marks — the clean way to give them a
+  // fresh slate is to move the whole study into its own session, so offer that.
+  const linkGatheredToChapter = (refs: string[], label: string, ct: Tab) => {
+    if (!refs.length) return;
+    const bookMarked = new Set(
+      allMarks.filter((m) => m.bookId === ct.bookId).map((m) => m.reference)
+    );
+    const collides = refs.some((r) => bookMarked.has(r));
+    if (!collides) {
+      linkSearchBesideTab(refs, label, ct);
+      return;
+    }
+    askConfirm({
+      title: "Some of these verses are already marked here",
+      body:
+        "Some of the verses you gathered are already marked in this study\u2019s book, and a verse can only hold one set of marks per book. Move this whole study into a new session book? Your gathered verses start unmarked there, every mark you\u2019ve already made comes with it, and the existing marks on those verses stay where they are.",
+      confirmLabel: "Move to a new session",
+      onConfirm: () => moveStudyThenLink(refs, label, ct),
+    });
+  };
+
+  // No collision: create the gathered verses as a keyword study in the study's
+  // current book, linked to the chapter, and open it in a tab right beside the
+  // chapter it was linked from (mirrors linkSearchToChapterTab, adjacent open).
+  const linkSearchBesideTab = (refs: string[], label: string, ct: Tab) => {
+    const scope = chapterScopeOf(ct);
+    const study = addStudy(label.trim() || "Search", ct.bookId, refs);
+    updateStudy(study.id, { linkedScope: scope });
+    const loc = refs.length ? refLoc.get(refs[0]) : undefined;
+    const tabId = "studytab_" + study.id;
+    setTabs((prev) => {
+      if (prev.some((t) => t.id === tabId)) return prev;
+      const tab: Tab = {
+        id: tabId,
+        volume: loc ? loc.volume : 0,
+        book: loc ? loc.book : 0,
+        chapter: loc ? loc.chapter : 0,
+        bookId: study.bookId,
+        studyId: study.id,
+      };
+      const i = prev.findIndex((t) => t.id === ct.id);
+      return i < 0
+        ? [...prev, tab]
+        : [...prev.slice(0, i + 1), tab, ...prev.slice(i + 1)];
+    });
+    setActiveTabId(tabId);
+    setCompileView("outline");
+  };
+
+  // Collision: move the whole study (this chapter, or its linked group) into a
+  // fresh session so the gathered verses can be marked cleanly, carrying the
+  // marks already made — exactly as confirmMoveStudy moves a study. The marks
+  // already on the gathered verses (in other chapters) stay behind in the old
+  // book, untouched.
+  const moveStudyThenLink = (refs: string[], label: string, ct: Tab) => {
+    const cs = chapterScopeOf(ct);
+    const gid = chapterGroups[cs];
+    const groupScopes = gid
+      ? Object.keys(chapterGroups).filter((s) => chapterGroups[s] === gid)
+      : [cs];
+    const scope = resolveScope(cs);
+    // The study's OWN marked verses in its current book (not the gathered ones).
+    const studyRefs = Array.from(
+      new Set(
+        allMarks
+          .filter(
+            (m) =>
+              m.bookId === ct.bookId &&
+              groupScopes.indexOf(scopeOfRef(m.reference)) !== -1
+          )
+          .map((m) => m.reference)
+      )
+    );
+    const newBook = createSession("Session \u00b7 " + fmtShortDate(Date.now()));
+    moveStudyMarks(ct.bookId, newBook, studyRefs, scope);
+    // Re-point any saved study for this chapter/group at the new book.
+    setRecordedStudies((prev) =>
+      prev.map((s) => {
+        if (isStudyDeleted(s) || s.bookId !== ct.bookId) return s;
+        const match =
+          (s.type === "chapter" && groupScopes.indexOf(s.scopeRef) !== -1) ||
+          (s.type === "linked" && s.scopeRef === gid);
+        return match ? { ...s, bookId: newBook, compiledAt: Date.now() } : s;
+      })
+    );
+    // The gathered verses become a keyword study in the new session, unmarked.
+    const study = addStudy(label.trim() || "Search", newBook, refs);
+    updateStudy(study.id, { linkedScope: cs });
+    setActiveBook(newBook);
+    openStudyTab(study);
   };
 
   // Move a study to a different session book, taking its marks (and notes, theme
@@ -4473,6 +4584,33 @@ export default function App() {
                       </button>
                     );
                   })()}
+
+                  <div style={{ ...eyebrow, marginTop: "18px" }}>
+                    Or link a keyword search
+                  </div>
+                  <button
+                    onClick={() => {
+                      setLinkSearchTab(t);
+                      setLinkPromptTabId(null);
+                      setShowSearch(true);
+                    }}
+                    style={{
+                      marginTop: "10px",
+                      width: "100%",
+                      padding: "11px 13px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    🔍 Search verses to link to this study
+                  </button>
                 </>
               );
             })()}
