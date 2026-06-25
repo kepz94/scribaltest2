@@ -23,6 +23,11 @@ interface OldRecordedStudy {
   scopeRef: string; // chapter scope (chapter) OR a group id (linked)
   extraRefs?: string[];
   extraRefsAt?: number;
+  // Additional chapter scopes charted alongside scopeRef, WITHOUT linking them
+  // (no chapterGroups, so their marking palettes stay separate). Used by the
+  // mixed-book chart builder to gather chapters from different books into one
+  // study. Each becomes its own chapter member.
+  extraScopes?: string[];
   view?: StudyView;
   compiledAt?: number;
   nameAt?: number;
@@ -72,6 +77,11 @@ function convertRecorded(s: OldRecordedStudy, groups: ChapterGroups): Study {
     for (const scope of scopes) members.push({ kind: "chapter", scope });
   } else {
     members.push({ kind: "chapter", scope: s.scopeRef });
+    // Extra chapters from other books, each its own chapter member. Existing
+    // studies have no extraScopes, so this is a no-op for them.
+    if (s.extraScopes && s.extraScopes.length) {
+      for (const scope of s.extraScopes) members.push({ kind: "chapter", scope });
+    }
   }
 
   if (s.extraRefs && s.extraRefs.length) {
