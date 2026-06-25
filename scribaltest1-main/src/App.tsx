@@ -2482,6 +2482,16 @@ export default function App() {
   // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
   // book and compile them fresh (live, from current marks).
   const openRecordedStudy = (s: Study) => {
+    // Open through the unified model: chapter/linked studies now compile via the
+    // resolver in the new-model viewer. The legacy compile path below runs only
+    // if (defensively) no unified counterpart exists for this study.
+    const unified = migratedStudies.find((x) => x.id === s.id);
+    if (unified) {
+      setPreviewView(unified.view ?? "outline");
+      setUnifiedCompileId(s.id);
+      setStudiesOpen(false);
+      return;
+    }
     setStudiesOpen(false);
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
     const scopes =
@@ -5556,6 +5566,15 @@ export default function App() {
             });
           });
           const scopeKey = "unified:" + study.id;
+          // Editable per-study palette: the study's own saved color names
+          // (under scopeKey) layered over the chapter-derived defaults, so
+          // renaming a theme color here persists to this study without
+          // touching the underlying chapter labels.
+          const studyPalette = scopedLabels[scopeKey] || {};
+          const editableLabels = {
+            ...mergedLabels,
+            ...studyPalette,
+          } as Record<MarkColor, string>;
           const previewProps = {
             tabs: previewTabs,
             compileTabs: previewTabs,
@@ -5563,8 +5582,9 @@ export default function App() {
             onToggleCompileTab: () => undefined,
             hideTabPicker: true,
             marks: resolved.marks,
-            colorLabels: mergedLabels,
-            setColorLabel: () => undefined,
+            colorLabels: editableLabels,
+            setColorLabel: (c: MarkColor, l: string) =>
+              setScopedLabel(scopeKey, c, l),
             onJumpToReference: jumpToReference,
           };
           return (
@@ -5600,7 +5620,7 @@ export default function App() {
                       color: "var(--muted)",
                     }}
                   >
-                    · new-model preview
+                    · new model
                   </span>
                 </div>
                 <button
