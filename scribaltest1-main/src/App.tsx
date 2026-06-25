@@ -1764,6 +1764,67 @@ export default function App() {
     setShowSearch(false);
   };
 
+  // Resolve a chapter scope ("1 Nephi 1") to its canon location.
+  const locOfScope = (scope: string) => {
+    for (let v = 0; v < vols.length; v++)
+      for (let b = 0; b < vols[v].books.length; b++)
+        for (let c = 0; c < vols[v].books[b].chapters.length; c++) {
+          const r = vols[v].books[b].chapters[c].verses[0]?.reference;
+          if (r && scopeOfRef(r) === scope) return { v, b, c };
+        }
+    return null;
+  };
+
+  // From the link prompt: point its own tab at a linked chapter (mirrors
+  // jumpToMark, but for the prompt's tab and book). If that chapter is already
+  // open in another tab, focus it rather than duplicate it.
+  const jumpLinkedTab = (scope: string) => {
+    const t = tabs.find((x) => x.id === linkPromptTabId);
+    if (!t) return;
+    const loc = locOfScope(scope);
+    if (!loc) return;
+    const newId = makeTabId(t.bookId, loc.v, loc.b, loc.c);
+    setTabs((prev) => {
+      if (prev.some((x) => x.id === newId && x.id !== t.id)) {
+        return prev.filter((x) => x.id !== t.id);
+      }
+      return prev.map((x) =>
+        x.id === t.id
+          ? { ...x, id: newId, volume: loc.v, book: loc.b, chapter: loc.c }
+          : x
+      );
+    });
+    setActiveTabId(newId);
+    setMode("read");
+    setLinkPromptTabId(null);
+  };
+
+  // From the link prompt: open a linked chapter in a new tab, in the same book.
+  const openLinkedTab = (scope: string) => {
+    const t = tabs.find((x) => x.id === linkPromptTabId);
+    if (!t) return;
+    const loc = locOfScope(scope);
+    if (!loc) return;
+    const id = makeTabId(t.bookId, loc.v, loc.b, loc.c);
+    setTabs((prev) =>
+      prev.some((x) => x.id === id)
+        ? prev
+        : [
+            ...prev,
+            {
+              id,
+              volume: loc.v,
+              book: loc.b,
+              chapter: loc.c,
+              bookId: t.bookId,
+            },
+          ]
+    );
+    setActiveTabId(id);
+    setMode("read");
+    setLinkPromptTabId(null);
+  };
+
   const activeChapterRefs = useMemo(() => {
     if (activeTab.studyId) {
       const st = searchStudies.find((s) => s.id === activeTab.studyId);
@@ -4343,17 +4404,69 @@ export default function App() {
                     chapter
                   </div>
                   {members.length > 0 && (
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginBottom: "16px",
-                      }}
-                    >
-                      Linked with{" "}
-                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
-                        {members.join(", ")}
-                      </span>
+                    <div style={{ marginBottom: "16px" }}>
+                      <div style={eyebrow}>Linked chapters</div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "6px",
+                        }}
+                      >
+                        {members.map((s) => (
+                          <div
+                            key={s}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            <button
+                              onClick={() => jumpLinkedTab(s)}
+                              title="Jump to this chapter in this tab"
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                textAlign: "left",
+                                padding: "9px 12px",
+                                borderRadius: "10px",
+                                border: "1px solid var(--border)",
+                                background: "var(--bg)",
+                                color: "var(--text)",
+                                cursor: "pointer",
+                                fontSize: "14px",
+                                fontWeight: 600,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {s}
+                            </button>
+                            <button
+                              onClick={() => openLinkedTab(s)}
+                              title="Open this chapter in a new tab"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 12px",
+                                borderRadius: "10px",
+                                border: "1px solid var(--border)",
+                                background: "transparent",
+                                color: "var(--text)",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              New tab
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
