@@ -523,6 +523,7 @@ export default function App() {
     reconcileFromOld,
     create: createUnified,
     remove: removeUnified,
+    addMembers: addMembersToUnified,
   } = useStudyStore();
 
   // When set, an isolated read-only "new-model" preview overlay compiles that
@@ -533,6 +534,12 @@ export default function App() {
   // Which format the preview overlay shows. Set to the study's saved view on
   // open; switchable in the overlay just like the real compile view.
   const [previewView, setPreviewView] = useState<CompileView>("outline");
+  // "+ Add" sheet (spec §6): grow a study by adding members. Slice 1 is the
+  // "Another chapter" source, shown for store-native studies in the viewer.
+  // addSheetStudyId doubles as the open flag (the study being added to).
+  const [addSheetStudyId, setAddSheetStudyId] = useState<string | null>(null);
+  const [addPickBook, setAddPickBook] = useState(""); // "volIdx:bookIdx"
+  const [addPickScope, setAddPickScope] = useState(""); // chosen chapter scope
 
   const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
     useWordTags();
@@ -5636,6 +5643,28 @@ export default function App() {
                     · new model
                   </span>
                 </div>
+                {study.id.startsWith("st_") && (
+                  <button
+                    onClick={() => {
+                      setAddSheetStudyId(study.id);
+                      setAddPickBook("");
+                      setAddPickScope("");
+                    }}
+                    style={{
+                      background: "var(--panel)",
+                      border: "1px solid #0d9488",
+                      color: "#0d9488",
+                      borderRadius: "999px",
+                      padding: "8px 14px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    + Add
+                  </button>
+                )}
                 <button
                   onClick={() => setUnifiedCompileId(null)}
                   style={{
@@ -5705,6 +5734,156 @@ export default function App() {
                     onSavePicksAsStudy={onSavePicksAsStudy}
                   />
                 )}
+              </div>
+            </div>
+          );
+        })()}
+
+      {addSheetStudyId &&
+        (() => {
+          const st = unifiedStudies.find((s) => s.id === addSheetStudyId);
+          if (!st) return null;
+          const close = () => {
+            setAddSheetStudyId(null);
+            setAddPickBook("");
+            setAddPickScope("");
+          };
+          const selStyle = {
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: "10px",
+            border: "1px solid var(--border)",
+            background: "var(--panel)",
+            color: "var(--text)",
+            fontSize: "14px",
+            fontFamily: "inherit",
+            marginBottom: "10px",
+          };
+          return (
+            <div
+              onClick={close}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 400,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  width: "100%",
+                  maxWidth: "520px",
+                  borderRadius: "16px 16px 0 0",
+                  border: "1px solid var(--border)",
+                  padding: "18px 18px 24px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div style={{ flex: 1, fontSize: "15px", fontWeight: 700 }}>
+                    Add to {st.name}
+                  </div>
+                  <button
+                    onClick={close}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                      borderRadius: "999px",
+                      padding: "6px 12px",
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: "var(--muted)",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Another chapter
+                </div>
+                <select
+                  value={addPickBook}
+                  onChange={(e) => {
+                    setAddPickBook(e.target.value);
+                    setAddPickScope("");
+                  }}
+                  style={selStyle}
+                >
+                  <option value="">Choose a book…</option>
+                  {vols.map((vol, vi) => (
+                    <optgroup key={vi} label={vol.volume}>
+                      {vol.books.map((bk, bi) => (
+                        <option key={vi + ":" + bi} value={vi + ":" + bi}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                {addPickBook &&
+                  (() => {
+                    const parts = addPickBook.split(":").map(Number);
+                    const vi = parts[0];
+                    const bi = parts[1];
+                    return (
+                      <select
+                        value={addPickScope}
+                        onChange={(e) => setAddPickScope(e.target.value)}
+                        style={selStyle}
+                      >
+                        <option value="">Choose a chapter…</option>
+                        {vols[vi].books[bi].chapters.map((ch) => (
+                          <option key={ch.reference} value={ch.reference}>
+                            {ch.reference}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                <button
+                  disabled={!addPickScope}
+                  onClick={() => {
+                    if (addPickScope)
+                      addMembersToUnified(st.id, [
+                        { kind: "chapter", scope: addPickScope },
+                      ]);
+                    close();
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "11px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: addPickScope ? "#0d9488" : "var(--border)",
+                    color: addPickScope ? "#fff" : "var(--muted)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: addPickScope ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Add chapter
+                </button>
               </div>
             </div>
           );
