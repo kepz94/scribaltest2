@@ -3766,8 +3766,11 @@ export default function App() {
             setShowSearch(false);
           }}
           onJumpToMark={jumpToMark}
-          onLinkStudy={onLinkStudy}
+          onLinkStudy={linkSearchTab ? undefined : onLinkStudy}
           onLinkSearchToChapter={onLinkSearchToChapter}
+          linkChapterLabel={
+            linkSearchTab ? tabLabel(linkSearchTab) : undefined
+          }
           initialSelected={
             addToStudyId
               ? searchStudies.find((s) => s.id === addToStudyId)?.refs
@@ -4609,7 +4612,7 @@ export default function App() {
                       textAlign: "left",
                     }}
                   >
-                    🔍 Search verses to link to this study
+                    Search verses to link to this study
                   </button>
                 </>
               );
