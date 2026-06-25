@@ -518,7 +518,11 @@ export default function App() {
   // The unified study store — now live and persisted. During the migration
   // window the old stores remain authoritative for writes; an effect below
   // keeps this store in lock-step with them. Opening/viewing reads from here.
-  const { studies: unifiedStudies, reconcileFromOld } = useStudyStore();
+  const {
+    studies: unifiedStudies,
+    reconcileFromOld,
+    create: createUnified,
+  } = useStudyStore();
 
   // When set, an isolated read-only "new-model" preview overlay compiles that
   // unified study through the resolver, using the real format components but a
@@ -2604,11 +2608,6 @@ export default function App() {
   // run a compile on open); this brings keyword studies in line. A keyword study
   // linked to a chapter compiles together with that chapter; a plain keyword
   // study compiles on its own.
-  const openStudyCompiled = (study: SearchStudy) => {
-    openStudyTab(study);
-    if (study.linkedScope) compileLinkedSearch(study);
-    else startStudyCompile(study);
-  };
   // "Open as a study": open the selected verses as their own working study tab
   // right away — no naming or book step. Nothing is saved here; the study is
   // saved later, at compile (Save to Studies). Auto-named from the search words,
@@ -2674,12 +2673,21 @@ export default function App() {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
     const srcBook = compileStudy ? compileStudy.bookId : activeBookId;
-    const study = addStudy(name.trim() || "Relational study", srcBook, ordered);
-    updateStudy(study.id, { view: "covenants" });
-    const newScope = "searchstudy:" + study.id;
+    // First creation routed to the unified store: this makes a store-native
+    // study (id "st_…") that survives the re-derive (slice 1), shows in the
+    // Studies list, and opens in the new-model viewer. Its relational roles/lens
+    // are keyed to the viewer's scope ("unified:"+id) so they persist + render.
+    const id = createUnified(
+      name.trim() || "Relational study",
+      [{ kind: "verses", refs: ordered }],
+      srcBook,
+      "covenants"
+    );
+    const newScope = "unified:" + id;
     setScopedRoles(newScope, roles);
     setScopedLens(newScope, lens);
-    openStudyCompiled({ ...study, view: "covenants" });
+    setPreviewView("covenants");
+    setUnifiedCompileId(id);
   };
 
   // Move a study to a different session book, taking its marks (and notes, theme
