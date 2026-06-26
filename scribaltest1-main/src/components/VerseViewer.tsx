@@ -73,6 +73,9 @@ interface VerseViewerProps {
   hideStudyHeader?: boolean;
   jumpTarget: string | null;
   onJumpHandled: () => void;
+  // Optional: enable "Send verses" mode (toolbar button + verse checkboxes).
+  // Emits the chosen verse references; the parent runs the send/create-study UI.
+  onSendVerses?: (refs: string[]) => void;
 }
 
 type Orientation = "vertical" | "horizontal";
@@ -138,6 +141,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     hideStudyHeader,
     jumpTarget,
     onJumpHandled,
+    onSendVerses,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -158,6 +162,20 @@ export default function VerseViewer(props: VerseViewerProps) {
   const showConditionals = !!condByTab[tabKey];
   const toggleConditionals = () =>
     setCondByTab((m) => ({ ...m, [tabKey]: !m[tabKey] }));
+
+  // "Send verses": check off verses on this tab to send to a study (new or
+  // existing). The selection lives here; the parent runs the send UI.
+  const [sendMode, setSendMode] = useState(false);
+  const [sendSel, setSendSel] = useState<string[]>([]);
+  const toggleSend = (ref: string) =>
+    setSendSel((p) =>
+      p.includes(ref) ? p.filter((r) => r !== ref) : [...p, ref]
+    );
+  // Navigating to another chapter drops any in-progress selection.
+  useEffect(() => {
+    setSendMode(false);
+    setSendSel([]);
+  }, [selectedVolume, selectedBook, selectedChapter]);
 
   // Warm reading palette (matches the phone): paper-toned bg + ink text.
   const readBg = warm ? (dark ? "#1a1410" : "#f4ecd6") : "var(--panel)";
@@ -388,6 +406,8 @@ export default function VerseViewer(props: VerseViewerProps) {
   };
 
   const handleMouseUp = () => {
+    // In "send verses" mode the panel is for picking verses, not marking.
+    if (sendMode) return;
     // Pointer tool (and eraser) leave the selection alone, so you can read and
     // copy without marking. A pen tool marks instantly — one motion, done.
     if (selectedTool === "pointer" || erasing || dragging) return;
@@ -933,10 +953,54 @@ export default function VerseViewer(props: VerseViewerProps) {
         <div
           style={{
             display: "flex",
-            justifyContent: "flex-end",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "10px",
             marginBottom: "10px",
           }}
         >
+          {onSendVerses && !studyRefs ? (
+            <button
+              onClick={() => {
+                setSendMode((v) => !v);
+                setSendSel([]);
+              }}
+              title="Pick verses on this tab to send to a study"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border:
+                  "1px solid " +
+                  (sendMode
+                    ? dark
+                      ? "#a5b4fc"
+                      : "#4f46e5"
+                    : "var(--border)"),
+                backgroundColor: sendMode
+                  ? dark
+                    ? "rgba(165,180,252,0.16)"
+                    : "rgba(79,70,229,0.10)"
+                  : "var(--panel)",
+                color: sendMode
+                  ? dark
+                    ? "#a5b4fc"
+                    : "#4f46e5"
+                  : "var(--muted)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {sendMode ? "Selecting…" : "Send verses"}
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             onClick={toggleConditionals}
             title={
@@ -990,6 +1054,112 @@ export default function VerseViewer(props: VerseViewerProps) {
           </button>
         </div>
 
+        {sendMode && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              padding: "10px 12px",
+              marginBottom: "10px",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "13px",
+                color: "var(--muted)",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              {sendSel.length
+                ? sendSel.length +
+                  (sendSel.length === 1
+                    ? " verse selected"
+                    : " verses selected")
+                : "Tap verses to select"}
+            </span>
+            <button
+              onClick={() => {
+                const all =
+                  currentChapter?.verses.map((v) => v.reference) ?? [];
+                setSendSel(sendSel.length === all.length ? [] : all);
+              }}
+              style={{
+                padding: "5px 10px",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text)",
+                fontSize: "12px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              {sendSel.length > 0 &&
+              sendSel.length === (currentChapter?.verses.length ?? 0)
+                ? "Clear all"
+                : "Select all"}
+            </button>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => {
+                setSendMode(false);
+                setSendSel([]);
+              }}
+              style={{
+                padding: "7px 12px",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text)",
+                fontSize: "13px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (!sendSel.length) return;
+                const refs = sendSel.slice();
+                setSendMode(false);
+                setSendSel([]);
+                onSendVerses && onSendVerses(refs);
+              }}
+              disabled={!sendSel.length}
+              style={{
+                padding: "7px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: sendSel.length
+                  ? dark
+                    ? "#a5b4fc"
+                    : "#4f46e5"
+                  : "var(--border)",
+                color: sendSel.length
+                  ? dark
+                    ? "#1a1410"
+                    : "#fff"
+                  : "var(--muted)",
+                fontSize: "13px",
+                fontWeight: 700,
+                fontFamily: "system-ui, sans-serif",
+                cursor: sendSel.length ? "pointer" : "default",
+                transition: "all 0.15s",
+              }}
+            >
+              Send{sendSel.length ? " (" + sendSel.length + ")" : ""}
+            </button>
+          </div>
+        )}
+
         {erasing && (
           <p
             style={{
@@ -1014,7 +1184,9 @@ export default function VerseViewer(props: VerseViewerProps) {
             lineHeight: lineScale,
             fontSize: (18 * fontScale).toFixed(1) + "px",
             fontFamily: '"Times New Roman", Times, serif',
-            cursor: erasing ? "default" : "text",
+            cursor: sendMode ? "default" : erasing ? "default" : "text",
+            userSelect: sendMode ? "none" : undefined,
+            WebkitUserSelect: sendMode ? "none" : undefined,
             transition: "background-color 0.25s, color 0.25s",
           }}
         >
@@ -1022,31 +1194,78 @@ export default function VerseViewer(props: VerseViewerProps) {
             className="scribal-swap"
             key={selectedVolume + "-" + selectedBook + "-" + selectedChapter}
           >
-          {studyRefs ? studyBody : currentChapter?.verses.map((verse) => (
+          {studyRefs ? studyBody : currentChapter?.verses.map((verse) => {
+            const picked = sendMode && sendSel.includes(verse.reference);
+            return (
             <div
               key={verse.reference}
+              onClickCapture={
+                sendMode
+                  ? (e) => {
+                      e.stopPropagation();
+                      toggleSend(verse.reference);
+                    }
+                  : undefined
+              }
               style={{
                 borderRadius: "6px",
                 transition: "background-color 0.6s",
-                backgroundColor:
-                  flashRef === verse.reference ? "var(--soft)" : "transparent",
+                backgroundColor: picked
+                  ? "var(--soft)"
+                  : flashRef === verse.reference
+                  ? "var(--soft)"
+                  : "transparent",
                 margin: "0 -8px",
-                padding: "0 8px",
+                padding: sendMode ? "3px 8px" : "0 8px",
+                cursor: sendMode ? "pointer" : undefined,
+                display: sendMode ? "flex" : undefined,
+                alignItems: sendMode ? "flex-start" : undefined,
+                gap: sendMode ? "10px" : undefined,
               }}
             >
-              <MarkedVerse
-                reference={verse.reference}
-                verseNumber={verse.verse}
-                text={verse.text}
-                marks={marks}
-                onEraseMark={erasing ? onEraseMark : undefined}
-                showConditionals={showConditionals}
-                dark={dark}
-                tags={tags}
-                onTagTap={onTagTap}
-              />
+              {sendMode && (
+                <span
+                  style={{
+                    flexShrink: 0,
+                    marginTop: "5px",
+                    width: "18px",
+                    height: "18px",
+                    borderRadius: "4px",
+                    border:
+                      "1px solid " +
+                      (picked ? (dark ? "#a5b4fc" : "#4f46e5") : "var(--muted)"),
+                    background: picked
+                      ? dark
+                        ? "#a5b4fc"
+                        : "#4f46e5"
+                      : "transparent",
+                    color: dark ? "#1a1410" : "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "12px",
+                    fontFamily: "system-ui, sans-serif",
+                  }}
+                >
+                  {picked ? "✓" : ""}
+                </span>
+              )}
+              <div style={sendMode ? { flex: 1, minWidth: 0 } : undefined}>
+                <MarkedVerse
+                  reference={verse.reference}
+                  verseNumber={verse.verse}
+                  text={verse.text}
+                  marks={marks}
+                  onEraseMark={erasing ? onEraseMark : undefined}
+                  showConditionals={showConditionals}
+                  dark={dark}
+                  tags={tags}
+                  onTagTap={onTagTap}
+                />
+              </div>
             </div>
-          ))}
+            );
+          })}
           </div>
         </div>
 
