@@ -525,7 +525,7 @@ export default function VerseViewer(props: VerseViewerProps) {
           position: "relative",
           border: active
             ? "1.5px solid var(--text)"
-            : "1.5px solid transparent",
+            : "1.5px solid var(--border)",
           backgroundColor: active ? "var(--text)" : "transparent",
           color: active ? "var(--bg)" : "var(--text)",
           transition: "all 0.15s",
