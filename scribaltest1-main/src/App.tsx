@@ -843,7 +843,7 @@ export default function App() {
     () =>
       (localStorage.getItem("scribal_toolbar_orient") as
         | "vertical"
-        | "horizontal") || "vertical"
+        | "horizontal") || "horizontal"
   );
   useEffect(() => {
     localStorage.setItem("scribal_toolbar_orient", toolbarOrient);
@@ -1300,6 +1300,11 @@ export default function App() {
           setSelectedColor(c);
           e.preventDefault();
         }
+        return;
+      }
+      if (key === "r") {
+        setToolbarOrient((o) => (o === "vertical" ? "horizontal" : "vertical"));
+        e.preventDefault();
         return;
       }
       if (KEY_TO_TOOL[key]) {
