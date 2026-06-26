@@ -75,11 +75,11 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
   s: "underline",
   d: "bold",
   f: "italic",
-  // Styles, bottom row (X C V B)
-  x: "circle",
-  c: "box",
-  v: "dashed",
-  b: "squiggly",
+  // Styles, bottom row (Z X C V)
+  z: "circle",
+  x: "box",
+  c: "dashed",
+  v: "squiggly",
 };
 
 export const COLOR_MAP: Record<MarkColor, string> = {
