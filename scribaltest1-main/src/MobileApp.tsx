@@ -16,6 +16,7 @@ import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult }
 import MobileCompile from "./MobileCompile";
 import { NEUTRAL, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
+import SplashScreen from "./components/SplashScreen";
 import CompileAnimation from "./components/CompileAnimation";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
@@ -2663,6 +2664,7 @@ export default function MobileApp() {
         } as React.CSSProperties),
       }}
     >
+      <SplashScreen />
       {/* Keep the iOS status-bar strip dark (and its white text readable) in
           both themes, now that the app draws under the translucent status bar. */}
       <div
