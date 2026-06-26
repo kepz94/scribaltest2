@@ -91,6 +91,16 @@ interface VerseViewerProps {
   // Optional: enable "Send verses" mode (toolbar button + verse checkboxes).
   // Emits the chosen verse references; the parent runs the send/create-study UI.
   onSendVerses?: (refs: string[]) => void;
+  // Optional: "Link scriptures" control shown in the panel header, next to Send
+  // verses. Carries the chapter-link button's exact behavior up from the tab —
+  // the parent supplies the same click handler, linked flag, group color, and
+  // tooltip it previously computed for the tab icon.
+  linkScriptures?: {
+    onClick: () => void;
+    linked: boolean;
+    color: string;
+    title: string;
+  };
 }
 
 type Orientation = "vertical" | "horizontal";
@@ -157,6 +167,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     jumpTarget,
     onJumpHandled,
     onSendVerses,
+    linkScriptures,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -998,6 +1009,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             marginBottom: "10px",
           }}
         >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {onSendVerses && !studyRefs ? (
             <button
               onClick={() => {
@@ -1037,9 +1049,50 @@ export default function VerseViewer(props: VerseViewerProps) {
             >
               {sendMode ? "Selecting…" : "Send verses"}
             </button>
-          ) : (
-            <span />
+          ) : null}
+          {linkScriptures && (
+            <button
+              onClick={linkScriptures.onClick}
+              title={linkScriptures.title}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border:
+                  "1px solid " +
+                  (linkScriptures.linked
+                    ? linkScriptures.color
+                    : "var(--border)"),
+                backgroundColor: "var(--panel)",
+                color: linkScriptures.linked
+                  ? linkScriptures.color
+                  : "var(--muted)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+              </svg>
+              Link scriptures
+            </button>
           )}
+          </div>
           <button
             onClick={toggleConditionals}
             title={
