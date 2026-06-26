@@ -1656,22 +1656,22 @@ export default function App() {
       }
     }
     };
-    // Warn if any chapter being linked is already in a different group, then
-    // apply once confirmed.
-    const csTG0 = chapterGroups[csT];
-    const conflicting = members.filter(
-      (m) => chapterGroups[m] && chapterGroups[m] !== csTG0
-    );
-    if (conflicting.length) {
+    // Confirm only when this commit UNLINKS — i.e. removes a chapter that is
+    // currently part of this chapter's linked study (you unchecked it). Linking
+    // or adding chapters never prompts.
+    const prevGid = chapterGroups[csT];
+    const prevMembers = prevGid
+      ? Object.keys(chapterGroups).filter(
+          (s) => chapterGroups[s] === prevGid && s !== csT
+        )
+      : [];
+    const removed = prevMembers.filter((m) => !members.includes(m));
+    if (removed.length > 0) {
       askConfirm({
-        title: "Already linked elsewhere",
+        title: "Unlink?",
         body:
-          conflicting.join(", ") +
-          (conflicting.length > 1 ? " are" : " is") +
-          " already linked to another study. Linking here will move " +
-          (conflicting.length > 1 ? "them" : "it") +
-          " into this study.",
-        confirmLabel: "Link anyway",
+          "This unlinks the chapters you unchecked from this study. You can re-link them anytime.",
+        confirmLabel: "Unlink",
         onConfirm: doApply,
       });
       return;
@@ -4038,7 +4038,22 @@ export default function App() {
                       return (
                         <button
                           key={ct.id}
-                          onClick={() => setLink(on ? undefined : scope)}
+                          onClick={() => {
+                            if (on) {
+                              askConfirm({
+                                title: "Unlink this search?",
+                                body:
+                                  (ks?.name
+                                    ? "\u201C" + ks.name + "\u201D"
+                                    : "This search") +
+                                  " will no longer compile with this chapter. You can re-link it anytime.",
+                                confirmLabel: "Unlink",
+                                onConfirm: () => setLink(undefined),
+                              });
+                            } else {
+                              setLink(scope);
+                            }
+                          }}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -4783,7 +4798,19 @@ export default function App() {
                             </button>
                             <button
                               onClick={() =>
-                                updateStudy(ks.id, { linkedScope: undefined })
+                                askConfirm({
+                                  title: "Unlink this search?",
+                                  body:
+                                    (ks.name
+                                      ? "\u201C" + ks.name + "\u201D"
+                                      : "This search") +
+                                    " will no longer compile with this chapter. You can re-link it anytime.",
+                                  confirmLabel: "Unlink",
+                                  onConfirm: () =>
+                                    updateStudy(ks.id, {
+                                      linkedScope: undefined,
+                                    }),
+                                })
                               }
                               title="Unlink this search from this chapter"
                               style={{
@@ -4989,10 +5016,18 @@ export default function App() {
                 if (linkedCount < 2) return null;
                 return (
                   <button
-                    onClick={() => {
-                      unlinkScope(lcs);
-                      setLinkPromptTabId(null);
-                    }}
+                    onClick={() =>
+                      askConfirm({
+                        title: "Unlink this chapter?",
+                        body:
+                          "This chapter will be removed from its linked study. You can re-link it anytime.",
+                        confirmLabel: "Unlink",
+                        onConfirm: () => {
+                          unlinkScope(lcs);
+                          setLinkPromptTabId(null);
+                        },
+                      })
+                    }
                     style={{
                       padding: "11px 16px",
                       borderRadius: "10px",
@@ -8386,7 +8421,14 @@ export default function App() {
                 >
                   <button
                     onClick={() =>
-                      deleteMarkGroup(group.reference, group.color)
+                      askConfirm({
+                        title: "Remove these marks?",
+                        body:
+                          "This removes all marks of this color on this verse. You can undo it.",
+                        confirmLabel: "Remove",
+                        onConfirm: () =>
+                          deleteMarkGroup(group.reference, group.color),
+                      })
                     }
                     title="Remove all marks of this color on this verse"
                     style={{
