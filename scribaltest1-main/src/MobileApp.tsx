@@ -15,7 +15,7 @@ import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
 import { NEUTRAL, ACCENT } from "./theme";
-import ScribalMark from "./components/ScribalMark";
+import ScribalWordmark from "./components/ScribalWordmark";
 import CompileAnimation from "./components/CompileAnimation";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
@@ -4117,28 +4117,17 @@ export default function MobileApp() {
               style={{
                 display: "flex",
                 justifyContent: "center",
-                marginBottom: "14px",
+                marginBottom: "2px",
               }}
             >
-              <ScribalMark size={68} />
-            </div>
-            <div
-              style={{
-                fontFamily: '"Times New Roman", Times, serif',
-                fontSize: "30px",
-                fontWeight: 700,
-                letterSpacing: "0.16em",
-                color: C.text,
-              }}
-            >
-              SCRIBAL
+              <ScribalWordmark size={36} />
             </div>
             <div
               style={{
                 fontSize: "11px",
                 letterSpacing: "0.2em",
                 color: C.muted,
-                marginTop: "5px",
+                marginTop: "10px",
                 textTransform: "uppercase",
               }}
             >
