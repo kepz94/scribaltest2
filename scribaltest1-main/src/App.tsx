@@ -7896,38 +7896,6 @@ export default function App() {
                 }}
               >
                 {tabLabel(t)}
-                {!t.studyId && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openLinkPrompt(t);
-                    }}
-                    title={
-                      linked
-                        ? "Linked study — click to change which chapters it links, or unlink"
-                        : "Link this chapter — choose which open tabs to link it with"
-                    }
-                    style={{
-                      display: "inline-flex",
-                      lineHeight: 1,
-                      opacity: linked ? 1 : 0.45,
-                    }}
-                  >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={active ? "#fff" : ACCENT}
-                      strokeWidth={2.4}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                    </svg>
-                  </span>
-                )}
                 {t.studyId && (
                   <span
                     onClick={(e) => {
@@ -8157,6 +8125,9 @@ export default function App() {
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
+              const linkGid = !t.studyId
+                ? chapterGroups[chapterScopeOf(t)]
+                : undefined;
               return (
                 <div
                   key={t.id}
@@ -8227,6 +8198,18 @@ export default function App() {
                         setSendPicking(false);
                       }
                     }}
+                    linkScriptures={
+                      t.studyId
+                        ? undefined
+                        : {
+                            onClick: () => openLinkPrompt(t),
+                            linked: !!linkGid,
+                            color: linkGid ? groupColor(linkGid) : ACCENT,
+                            title: linkGid
+                              ? "Linked study — click to change which chapters it links, or unlink"
+                              : "Link this chapter — choose which open tabs to link it with",
+                          }
+                    }
                   />
                 </div>
               );
