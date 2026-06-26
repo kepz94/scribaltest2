@@ -65,17 +65,21 @@ export const STYLE_LABELS: Record<MarkStyle, string> = {
 
 // Keyboard map: which key selects which tool
 export const KEY_TO_TOOL: Record<string, Tool> = {
-  b: "bold",
-  c: "circle",
-  x: "box",
-  u: "underline",
-  "-": "dashed",
-  s: "squiggly",
-  i: "italic",
-  h: "highlight",
+  // Utilities row (Q W E); R flips orientation and is handled in the keydown
+  // handler, not here, since it isn't a tool.
+  q: "pointer",
+  w: "define",
   e: "eraser",
-  p: "pointer",
-  d: "define",
+  // Styles, top row (A S D F)
+  a: "highlight",
+  s: "underline",
+  d: "bold",
+  f: "italic",
+  // Styles, bottom row (X C V B)
+  x: "circle",
+  c: "box",
+  v: "dashed",
+  b: "squiggly",
 };
 
 export const COLOR_MAP: Record<MarkColor, string> = {
