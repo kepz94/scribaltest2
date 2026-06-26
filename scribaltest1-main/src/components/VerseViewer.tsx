@@ -762,13 +762,69 @@ export default function VerseViewer(props: VerseViewerProps) {
           {isV ? "⋮⋮" : "⠿"}
         </div>
         {divider}
-        {toolButton(
-          "pointer",
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 4l7.07 17 2.51-7.39L21 11.07z" />
-          </svg>,
-          "p"
-        )}
+        <div
+          style={{
+            display: "grid",
+            // Utilities, matching the section grids: 2 rows when horizontal, 2
+            // columns when vertical. Pointer / dictionary / eraser are tools
+            // (Q W E); the fourth cell flips the toolbar's orientation (R).
+            gridTemplateRows: isV ? "repeat(2, auto)" : undefined,
+            gridTemplateColumns: isV ? undefined : "repeat(2, auto)",
+            gridAutoFlow: isV ? "column" : "row",
+            gap: "7px",
+            justifyItems: "center",
+            alignItems: "center",
+          }}
+        >
+          {toolButton(
+            "pointer",
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 4l7.07 17 2.51-7.39L21 11.07z" />
+            </svg>,
+            "q"
+          )}
+          {toolButton(
+            "define",
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>,
+            "w"
+          )}
+          {toolButton("eraser", "⌫", "e")}
+          <button
+            onClick={() => setOrientation(isV ? "horizontal" : "vertical")}
+            title="Switch orientation (R)"
+            style={{
+              width: "40px",
+              height: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontSize: "15px",
+              position: "relative",
+              border: "1.5px solid var(--border)",
+              backgroundColor: "transparent",
+              color: "var(--text)",
+              transition: "all 0.15s",
+              flexShrink: 0,
+            }}
+          >
+            {isV ? "↔" : "↕"}
+            {keyBadge("R", false)}
+          </button>
+        </div>
         {divider}
         <div
           style={{
@@ -786,14 +842,14 @@ export default function VerseViewer(props: VerseViewerProps) {
             alignItems: "center",
           }}
         >
-          {toolButton("highlight", <StyleGlyph style="highlight" />, "h")}
-          {toolButton("underline", <StyleGlyph style="underline" />, "u")}
-          {toolButton("bold", <StyleGlyph style="bold" />, "b")}
-          {toolButton("italic", <StyleGlyph style="italic" />, "i")}
-          {toolButton("circle", <StyleGlyph style="circle" />, "c")}
-          {toolButton("box", <StyleGlyph style="box" />, "x")}
-          {toolButton("dashed", <StyleGlyph style="dashed" />, "-")}
-          {toolButton("squiggly", <StyleGlyph style="squiggly" />, "s")}
+          {toolButton("highlight", <StyleGlyph style="highlight" />, "a")}
+          {toolButton("underline", <StyleGlyph style="underline" />, "s")}
+          {toolButton("bold", <StyleGlyph style="bold" />, "d")}
+          {toolButton("italic", <StyleGlyph style="italic" />, "f")}
+          {toolButton("circle", <StyleGlyph style="circle" />, "x")}
+          {toolButton("box", <StyleGlyph style="box" />, "c")}
+          {toolButton("dashed", <StyleGlyph style="dashed" />, "v")}
+          {toolButton("squiggly", <StyleGlyph style="squiggly" />, "b")}
         </div>
         {divider}
         <div
@@ -859,43 +915,6 @@ export default function VerseViewer(props: VerseViewerProps) {
             );
           })}
         </div>
-        {divider}
-        {toolButton("eraser", "⌫", "e")}
-        {toolButton(
-          "define",
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-          </svg>,
-          "d"
-        )}
-        {divider}
-        <button
-          onClick={() => setOrientation(isV ? "horizontal" : "vertical")}
-          title="Switch orientation"
-          style={{
-            width: "40px",
-            height: "30px",
-            borderRadius: "8px",
-            cursor: "pointer",
-            border: "1px solid var(--border)",
-            backgroundColor: "transparent",
-            color: "var(--muted)",
-            fontSize: "14px",
-            flexShrink: 0,
-          }}
-        >
-          {isV ? "↔" : "↕"}
-        </button>
       </div>
       )}
 
