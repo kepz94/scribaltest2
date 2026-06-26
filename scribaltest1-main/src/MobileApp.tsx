@@ -3207,6 +3207,8 @@ export default function MobileApp() {
                   title={s.label}
                   style={{
                     flex: 1,
+                    minWidth: 0,
+                    padding: 0,
                     height: "30px",
                     borderRadius: "8px",
                     border: "1px solid " + (active ? C.text : C.border),
@@ -5821,6 +5823,8 @@ export default function MobileApp() {
                         title={s.label}
                         style={{
                           flex: 1,
+                          minWidth: 0,
+                          padding: 0,
                           height: "30px",
                           borderRadius: "8px",
                           border: "1px solid " + (on ? C.text : C.border),
@@ -6871,6 +6875,8 @@ export default function MobileApp() {
                         title={s.label}
                         style={{
                           flex: 1,
+                          minWidth: 0,
+                          padding: 0,
                           height: "30px",
                           borderRadius: "8px",
                           border: "1px solid " + (on ? C.text : C.border),
