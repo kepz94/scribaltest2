@@ -8,6 +8,7 @@ import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
+import ScribalWordmark from "./components/ScribalWordmark";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
@@ -6772,17 +6773,7 @@ export default function App() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
             <ScribalMark size={36} />
-            <h2
-              style={{
-                margin: 0,
-                fontFamily: '"Times New Roman", Times, serif',
-                fontSize: "23px",
-                letterSpacing: "0.13em",
-                fontWeight: 700,
-              }}
-            >
-              SCRIBAL
-            </h2>
+            <ScribalWordmark size={23} />
           </div>
 
           {vDivider}
