@@ -9,6 +9,7 @@ import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult }
 import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import ScribalWordmark from "./components/ScribalWordmark";
+import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
@@ -3757,6 +3758,7 @@ export default function App() {
         } as React.CSSProperties
       }
     >
+      <SplashScreen />
       {gateOpen && (
         <div
           className="scribal-fade-plain"
