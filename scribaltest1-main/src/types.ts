@@ -1,6 +1,14 @@
 import type { CSSProperties } from "react";
 
-export type MarkStyle = "bold" | "circle" | "underline" | "italic" | "highlight";
+export type MarkStyle =
+  | "bold"
+  | "circle"
+  | "box"
+  | "underline"
+  | "dashed"
+  | "squiggly"
+  | "italic"
+  | "highlight";
 export type MarkColor = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Tool = MarkStyle | "eraser" | "pointer" | "define";
 
@@ -36,7 +44,10 @@ export const COLORS: MarkColor[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const STYLE_POINTS: Record<MarkStyle, number> = {
   bold: 5,
   circle: 4,
+  box: 4,
   underline: 3,
+  dashed: 3,
+  squiggly: 3,
   italic: 2,
   highlight: 1,
 };
@@ -44,7 +55,10 @@ export const STYLE_POINTS: Record<MarkStyle, number> = {
 export const STYLE_LABELS: Record<MarkStyle, string> = {
   bold: "B",
   circle: "C",
+  box: "X",
   underline: "U",
+  dashed: "D",
+  squiggly: "S",
   italic: "I",
   highlight: "H",
 };
@@ -53,7 +67,10 @@ export const STYLE_LABELS: Record<MarkStyle, string> = {
 export const KEY_TO_TOOL: Record<string, Tool> = {
   b: "bold",
   c: "circle",
+  x: "box",
   u: "underline",
+  "-": "dashed",
+  s: "squiggly",
   i: "italic",
   h: "highlight",
   e: "eraser",
@@ -100,10 +117,32 @@ export function markStyleCSS(style: MarkStyle, color: MarkColor): CSSProperties 
     (css as any).boxDecorationBreak = "clone";
     (css as any).WebkitBoxDecorationBreak = "clone";
   }
+  if (style === "box") {
+    // Same enclosure as circle but with squared-off corners.
+    css.border = "2px solid " + COLOR_MAP[color];
+    css.borderRadius = "3px";
+    css.padding = "0px 5px";
+    (css as any).boxDecorationBreak = "clone";
+    (css as any).WebkitBoxDecorationBreak = "clone";
+  }
   if (style === "underline") {
     css.textDecoration = "underline";
     css.textDecorationColor = COLOR_MAP[color];
     css.textDecorationThickness = "2.5px";
+    css.textUnderlineOffset = "3px";
+  }
+  if (style === "dashed") {
+    css.textDecorationLine = "underline";
+    css.textDecorationStyle = "dashed";
+    css.textDecorationColor = COLOR_MAP[color];
+    css.textDecorationThickness = "2.5px";
+    css.textUnderlineOffset = "3px";
+  }
+  if (style === "squiggly") {
+    css.textDecorationLine = "underline";
+    css.textDecorationStyle = "wavy";
+    css.textDecorationColor = COLOR_MAP[color];
+    css.textDecorationThickness = "2px";
     css.textUnderlineOffset = "3px";
   }
   if (style === "italic") {
