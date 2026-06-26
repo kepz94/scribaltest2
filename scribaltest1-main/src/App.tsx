@@ -4781,6 +4781,27 @@ export default function App() {
                             >
                               Open
                             </button>
+                            <button
+                              onClick={() =>
+                                updateStudy(ks.id, { linkedScope: undefined })
+                              }
+                              title="Unlink this search from this chapter"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 13px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--border)",
+                                background: "transparent",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Unlink
+                            </button>
                           </div>
                         ))}
                       </div>
