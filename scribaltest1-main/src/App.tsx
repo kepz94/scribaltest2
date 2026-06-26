@@ -2455,8 +2455,9 @@ export default function App() {
     ? establishedThemes.map((t) => t.color)
     : usedColors;
 
-  // Reopen a recorded chapter/linked study: compile it fresh (live, from current
-  // marks) without opening its chapters as tabs — the open reading tabs stay put.
+  // Reopen a recorded chapter/linked study: open its chapter tab(s) AND any
+  // keyword searches linked to it (each as its own loose-verse tab), in its
+  // book, then compile them fresh (live, from current marks).
   const openRecordedStudy = (s: Study) => {
     setStudiesOpen(false);
     const scopes =
@@ -2474,30 +2475,62 @@ export default function App() {
     }[];
     if (!locs.length) return;
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
-    // Show this study's compile WITHOUT opening every chapter as a tab. Build
-    // synthetic compile tabs (scripture order) and compile them directly — the
-    // open reading tabs are left exactly as they are. Keyword searches linked to
-    // these chapters still fold into the compile by scope (linkedSearchRefs), so
-    // they don't need to be opened as tabs either.
-    const virtualTabs: Tab[] = locs
-      .map((loc) => ({
-        id: makeTabId(s.bookId, loc.volume, loc.book, loc.chapter),
-        volume: loc.volume,
-        book: loc.book,
-        chapter: loc.chapter,
-        bookId: s.bookId,
-      }))
-      .sort(
-        (a, b) =>
-          a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
-      );
-    const tabIds = virtualTabs.map((t) => t.id);
+    // Keyword searches linked to any of this study's chapters reopen alongside
+    // it as their own tabs (their verses also fold into the compile below).
+    const scopeKeys = new Set(scopes.map((sc) => resolveScope(sc)));
+    const linkedKw = searchStudies.filter(
+      (ks) =>
+        !isSearchStudyDeleted(ks) &&
+        ks.linkedScope &&
+        scopeKeys.has(resolveScope(ks.linkedScope))
+    );
+    // Compute the tab ids synchronously, up front — these drive the compile
+    // selection below. Collecting them INSIDE the setTabs updater (which React
+    // runs later, during render) left runCompile receiving an empty array, so
+    // it fell back to "all open tabs" and the notes showed whatever was already
+    // on screen instead of this study.
+    const tabIds = locs.map((loc) =>
+      makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
+    );
+    setTabs((prev) => {
+      let next = prev;
+      locs.forEach((loc) => {
+        const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
+        if (!next.some((t) => t.id === id))
+          next = [
+            ...next,
+            {
+              id,
+              volume: loc.volume,
+              book: loc.book,
+              chapter: loc.chapter,
+              bookId: s.bookId,
+            },
+          ];
+      });
+      linkedKw.forEach((ks) => {
+        const id = "studytab_" + ks.id;
+        if (next.some((t) => t.id === id)) return;
+        const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
+        next = [
+          ...next,
+          {
+            id,
+            volume: loc ? loc.volume : 0,
+            book: loc ? loc.book : 0,
+            chapter: loc ? loc.chapter : 0,
+            bookId: ks.bookId,
+            studyId: ks.id,
+          },
+        ];
+      });
+      return next;
+    });
+    if (tabIds[0]) setActiveTabId(tabIds[0]);
     // Reopen on the view this study was saved in (Relational, Distilled, …)
     // instead of whatever view happened to be on screen.
     setCompileView(s.view ?? "outline");
     runCompile(tabIds);
-    setCompileVirtualTabs(virtualTabs);
-    setCompileName(s.name);
   };
 
   // ---- keyword (search) studies ----
@@ -4397,6 +4430,19 @@ export default function App() {
                 fontSize: "14px",
                 fontFamily: "inherit",
               };
+              // Keyword searches linked to this chapter (or anywhere in its
+              // group) — each one its own gathered set of loose verses, opened in
+              // its own tab.
+              const linkScopeSet = new Set([
+                resolveScope(cs),
+                ...members.map((m) => resolveScope(m)),
+              ]);
+              const linkedSearches = searchStudies.filter(
+                (ks) =>
+                  !isSearchStudyDeleted(ks) &&
+                  ks.linkedScope &&
+                  linkScopeSet.has(resolveScope(ks.linkedScope))
+              );
               return (
                 <>
                   <div
@@ -4628,6 +4674,117 @@ export default function App() {
                         );
                       })}
                     </div>
+                  )}
+
+                  {linkedSearches.length > 0 && (
+                    <>
+                      <div style={{ ...eyebrow, marginTop: "18px" }}>
+                        Linked searches
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--muted)",
+                          lineHeight: 1.5,
+                          marginBottom: "12px",
+                        }}
+                      >
+                        Keyword searches gathered into this study. Open one to
+                        read its loose verses in its own tab.
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}
+                      >
+                        {linkedSearches.map((ks) => (
+                          <div
+                            key={ks.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                                padding: "11px 13px",
+                                borderRadius: "10px",
+                                border: "1px solid var(--border)",
+                                background: "var(--bg)",
+                                color: "var(--text)",
+                                fontSize: "14px",
+                              }}
+                            >
+                              <svg
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke={gColor}
+                                strokeWidth={2.4}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                style={{ flexShrink: 0 }}
+                              >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="M21 21l-4.3-4.3" />
+                              </svg>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {ks.name || "Search"}
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  {" "}
+                                  · {ks.refs.length}{" "}
+                                  {ks.refs.length === 1 ? "verse" : "verses"}
+                                </span>
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                openStudyTab(ks);
+                                setLinkPromptTabId(null);
+                              }}
+                              title="Open this search in its own tab"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 13px",
+                                borderRadius: "8px",
+                                border: "none",
+                                background: gColor,
+                                color: "#fff",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Open
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
 
                   <div style={{ ...eyebrow, marginTop: "18px" }}>
