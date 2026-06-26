@@ -180,12 +180,12 @@ const applyIntensityToTheme = (
   intensity: number
 ): Record<string, string> => {
   const scaled = { ...themeObj };
-  for (let i = 1; i <= 7; i++) {
+  COLORS.forEach((i) => {
     const penKey = `--pen${i}`;
     if (scaled[penKey]) scaled[penKey] = adjustColor(scaled[penKey], intensity, false);
     const hlKey = `--hl${i}`;
     if (scaled[hlKey]) scaled[hlKey] = adjustColor(scaled[hlKey], intensity, true);
-  }
+  });
   return scaled;
 };
 
@@ -203,6 +203,9 @@ const LIGHT_THEME = {
   "--pen5": "#2f6fb0",
   "--pen6": "#7b4fbf",
   "--pen7": "#1a1a1a",
+  "--pen8": "#d6448c",
+  "--pen9": "#5fa515",
+  "--pen10": "#0e9aab",
   "--hl1": "#ffd6d6",
   "--hl2": "#ffe2c2",
   "--hl3": "#fbedb0",
@@ -210,6 +213,9 @@ const LIGHT_THEME = {
   "--hl5": "#cfe2f7",
   "--hl6": "#e6d9f7",
   "--hl7": "#e0e0e0",
+  "--hl8": "#fcd9ea",
+  "--hl9": "#e8f5c4",
+  "--hl10": "#c9f0f5",
 };
 
 const DARK_THEME = {
@@ -226,6 +232,9 @@ const DARK_THEME = {
   "--pen5": "#7cb0e8",
   "--pen6": "#b794f6",
   "--pen7": "#f2efe8",
+  "--pen8": "#f48fb1",
+  "--pen9": "#b4e052",
+  "--pen10": "#4dd0e1",
   "--hl1": "#5c2b2e",
   "--hl2": "#5c3f1f",
   "--hl3": "#5a4a1c",
@@ -233,6 +242,9 @@ const DARK_THEME = {
   "--hl5": "#243d56",
   "--hl6": "#3d2b5c",
   "--hl7": "#3f3e3a",
+  "--hl8": "#5a2742",
+  "--hl9": "#3a4a12",
+  "--hl10": "#134048",
 };
 
 const makeTabId = (
@@ -1277,8 +1289,11 @@ export default function App() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
-      if (key >= "1" && key <= "7") {
-        const c = Number(key) as MarkColor;
+      // Number keys pick a marking color: 1–9 map to colors 1–9, and 0 maps to
+      // color 10 (the last swatch, mirroring the keyboard's 1234567890 row).
+      // Guarded on COLORS so it stays correct if the palette size changes.
+      if (key >= "0" && key <= "9") {
+        const c = (key === "0" ? 10 : Number(key)) as MarkColor;
         if (COLORS.includes(c)) {
           setSelectedColor(c);
           e.preventDefault();
