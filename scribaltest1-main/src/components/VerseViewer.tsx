@@ -784,8 +784,12 @@ export default function VerseViewer(props: VerseViewerProps) {
         <div
           style={{
             display: "grid",
-            gridTemplateRows: "repeat(5, auto)",
-            gridAutoFlow: "column",
+            // Lay the 10 colors along the toolbar's long axis: a vertical
+            // toolbar gets 2 columns of 5 (tall, narrow); a horizontal one gets
+            // 2 rows of 5 (short, wide) so it isn't needlessly bulky.
+            gridTemplateRows: isV ? "repeat(5, auto)" : undefined,
+            gridTemplateColumns: isV ? undefined : "repeat(5, auto)",
+            gridAutoFlow: isV ? "column" : "row",
             gap: "7px",
             justifyItems: "center",
             alignItems: "center",
