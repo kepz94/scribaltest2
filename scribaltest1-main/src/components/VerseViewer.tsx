@@ -759,9 +759,11 @@ export default function VerseViewer(props: VerseViewerProps) {
         {divider}
         <div
           style={{
-            display: "flex",
-            flexDirection: isV ? "column" : "row",
+            display: "grid",
+            gridTemplateRows: "repeat(5, auto)",
+            gridAutoFlow: "column",
             gap: "7px",
+            justifyItems: "center",
             alignItems: "center",
           }}
         >
@@ -771,7 +773,12 @@ export default function VerseViewer(props: VerseViewerProps) {
               <button
                 key={color}
                 onClick={() => onChangeColor(color)}
-                title={"Color " + color + " · shortcut: " + color}
+                title={
+                  "Color " +
+                  color +
+                  " · shortcut: " +
+                  (color === 10 ? "0" : color)
+                }
                 style={{
                   width: "26px",
                   height: "26px",
@@ -803,7 +810,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                     border: "1px solid var(--border)",
                   }}
                 >
-                  {color}
+                  {color === 10 ? "0" : color}
                 </span>
               </button>
             );
