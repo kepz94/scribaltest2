@@ -917,6 +917,7 @@ export default function App() {
     title: string;
     body: string;
     confirmLabel: string;
+    cancelLabel: string;
     onConfirm: () => void;
     secondaryLabel?: string;
     onSecondary?: () => void;
@@ -925,6 +926,7 @@ export default function App() {
     title: string;
     body: string;
     confirmLabel?: string;
+    cancelLabel?: string;
     onConfirm: () => void;
     secondaryLabel?: string;
     onSecondary?: () => void;
@@ -933,6 +935,7 @@ export default function App() {
       title: opts.title,
       body: opts.body,
       confirmLabel: opts.confirmLabel || "Delete",
+      cancelLabel: opts.cancelLabel || "Cancel",
       onConfirm: opts.onConfirm,
       secondaryLabel: opts.secondaryLabel,
       onSecondary: opts.onSecondary,
@@ -1656,47 +1659,10 @@ export default function App() {
       }
     }
     };
-    // Confirm only when this commit UNLINKS — i.e. removes a chapter that is
-    // currently part of this chapter's linked study (you unchecked it). Linking
-    // or adding chapters never prompts.
-    const prevGid = chapterGroups[csT];
-    const prevMembers = prevGid
-      ? Object.keys(chapterGroups).filter(
-          (s) => chapterGroups[s] === prevGid && s !== csT
-        )
-      : [];
-    const removed = prevMembers.filter((m) => !members.includes(m));
-    if (removed.length > 0) {
-      askConfirm({
-        title: "Unlink?",
-        body:
-          "This unlinks the chapters you unchecked from this study. You can re-link them anytime.",
-        confirmLabel: "Unlink",
-        onConfirm: doApply,
-      });
-      return;
-    }
+    // The unlink confirmation fires the moment a linked chapter is unchecked
+    // (see the link prompt's checkboxes), and linking never prompts, so the
+    // commit just applies.
     doApply();
-  };
-
-  // One-click unlink: drop this chapter from its group, dissolving any group
-  // left with a single chapter. Mirrors the mobile Unlink action.
-  const unlinkScope = (cs: string) => {
-    const prev = chapterGroups;
-    const next = { ...prev };
-    delete next[cs];
-    const counts: Record<string, number> = {};
-    Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
-    const survivors: Record<string, string> = {};
-    Object.keys(next).forEach((s) => {
-      if (counts[next[s]] < 2) survivors[next[s]] = s;
-    });
-    Object.keys(next).forEach((s) => {
-      if (counts[next[s]] < 2) delete next[s];
-    });
-    stampGroupChanges(prev, next); // record the unlink so it syncs
-    setChapterGroups(next);
-    convertDissolvedStudies(survivors);
   };
 
   const locateReference = (reference: string) => {
@@ -4041,13 +4007,11 @@ export default function App() {
                           onClick={() => {
                             if (on) {
                               askConfirm({
-                                title: "Unlink this search?",
+                                title: "Are you sure?",
                                 body:
-                                  (ks?.name
-                                    ? "\u201C" + ks.name + "\u201D"
-                                    : "This search") +
-                                  " will no longer compile with this chapter. You can re-link it anytime.",
-                                confirmLabel: "Unlink",
+                                  "This can be linked again in Studies.",
+                                confirmLabel: "Yes",
+                                cancelLabel: "No",
                                 onConfirm: () => setLink(undefined),
                               });
                             } else {
@@ -4574,6 +4538,13 @@ export default function App() {
                     >
                       {linkRows.map((r) => {
                         const on = linkSelected.includes(r.scope);
+                        // Unchecking a chapter that is actually part of this
+                        // chapter's linked study is an unlink, so confirm first.
+                        // Unchecking one just picked this session is a plain
+                        // deselect and needs no prompt.
+                        const isLinkedHere =
+                          !!chapterGroups[r.scope] &&
+                          chapterGroups[r.scope] === chapterGroups[cs];
                         return (
                           <div
                             key={r.scope}
@@ -4584,7 +4555,22 @@ export default function App() {
                             }}
                           >
                             <button
-                              onClick={() => toggleLinkSelect(r.scope)}
+                              onClick={() => {
+                                if (on && isLinkedHere) {
+                                  askConfirm({
+                                    title:
+                                      "Are you sure you want to unlink this study?",
+                                    body:
+                                      "You can re-link these chapters anytime.",
+                                    confirmLabel: "Yes",
+                                    cancelLabel: "No",
+                                    onConfirm: () =>
+                                      toggleLinkSelect(r.scope),
+                                  });
+                                } else {
+                                  toggleLinkSelect(r.scope);
+                                }
+                              }}
                               style={{
                                 flex: 1,
                                 minWidth: 0,
@@ -4799,13 +4785,11 @@ export default function App() {
                             <button
                               onClick={() =>
                                 askConfirm({
-                                  title: "Unlink this search?",
+                                  title: "Are you sure?",
                                   body:
-                                    (ks.name
-                                      ? "\u201C" + ks.name + "\u201D"
-                                      : "This search") +
-                                    " will no longer compile with this chapter. You can re-link it anytime.",
-                                  confirmLabel: "Unlink",
+                                    "This can be linked again in Studies.",
+                                  confirmLabel: "Yes",
+                                  cancelLabel: "No",
                                   onConfirm: () =>
                                     updateStudy(ks.id, {
                                       linkedScope: undefined,
@@ -5003,46 +4987,6 @@ export default function App() {
               >
                 Done
               </button>
-              {(() => {
-                const lt = tabs.find((x) => x.id === linkPromptTabId);
-                if (!lt) return null;
-                const lcs = chapterScopeOf(lt);
-                const lgid = chapterGroups[lcs];
-                const linkedCount = lgid
-                  ? Object.keys(chapterGroups).filter(
-                      (s) => chapterGroups[s] === lgid
-                    ).length
-                  : 0;
-                if (linkedCount < 2) return null;
-                return (
-                  <button
-                    onClick={() =>
-                      askConfirm({
-                        title: "Unlink this chapter?",
-                        body:
-                          "This chapter will be removed from its linked study. You can re-link it anytime.",
-                        confirmLabel: "Unlink",
-                        onConfirm: () => {
-                          unlinkScope(lcs);
-                          setLinkPromptTabId(null);
-                        },
-                      })
-                    }
-                    style={{
-                      padding: "11px 16px",
-                      borderRadius: "10px",
-                      border: "1px solid var(--border)",
-                      background: "transparent",
-                      color: "var(--text)",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Unlink
-                  </button>
-                );
-              })()}
               <button
                 onClick={() => setLinkPromptTabId(null)}
                 style={{
@@ -6658,7 +6602,7 @@ export default function App() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 600,
+            zIndex: 3000,
             backgroundColor: "rgba(0,0,0,0.45)",
             display: "flex",
             alignItems: "center",
@@ -6735,7 +6679,7 @@ export default function App() {
                   fontFamily: "inherit",
                 }}
               >
-                Cancel
+                {confirmAction.cancelLabel}
               </button>
               <button
                 onClick={() => {
