@@ -846,10 +846,10 @@ export default function VerseViewer(props: VerseViewerProps) {
           {toolButton("underline", <StyleGlyph style="underline" />, "s")}
           {toolButton("bold", <StyleGlyph style="bold" />, "d")}
           {toolButton("italic", <StyleGlyph style="italic" />, "f")}
-          {toolButton("circle", <StyleGlyph style="circle" />, "x")}
-          {toolButton("box", <StyleGlyph style="box" />, "c")}
-          {toolButton("dashed", <StyleGlyph style="dashed" />, "v")}
-          {toolButton("squiggly", <StyleGlyph style="squiggly" />, "b")}
+          {toolButton("circle", <StyleGlyph style="circle" />, "z")}
+          {toolButton("box", <StyleGlyph style="box" />, "x")}
+          {toolButton("dashed", <StyleGlyph style="dashed" />, "c")}
+          {toolButton("squiggly", <StyleGlyph style="squiggly" />, "v")}
         </div>
         {divider}
         <div
