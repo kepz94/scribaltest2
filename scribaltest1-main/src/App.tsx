@@ -691,6 +691,12 @@ export default function App() {
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
   const [compileStudyId, setCompileStudyId] = useState<string | null>(null);
+  // When set, the compile renders these synthetic chapter tabs instead of the
+  // open reading tabs — lets a linked study compile its whole group without
+  // popping every chapter open as a tab. Cleared on any normal compile.
+  const [compileVirtualTabs, setCompileVirtualTabs] = useState<Tab[] | null>(
+    null
+  );
   const [compileName, setCompileName] = useState("");
   const [savedToStudies, setSavedToStudies] = useState(false);
   const [compileSettingsOpen, setCompileSettingsOpen] = useState(false);
@@ -1889,6 +1895,8 @@ export default function App() {
   };
 
   const runCompile = (tabIds: string[]) => {
+    setCompileVirtualTabs(null);
+    setCompileStudyId(null);
     const ids = tabIds.length ? tabIds : tabs.map((t) => t.id);
     setCompileSelection(ids);
     // Saving is now an explicit step (Save to Studies). Seed the name field
@@ -1922,6 +1930,7 @@ export default function App() {
   };
 
   const startStudyCompile = (study: SearchStudy) => {
+    setCompileVirtualTabs(null);
     setCompileStudyId(study.id);
     setCompileName(study.name);
     const lastCount = Number(
@@ -2076,8 +2085,8 @@ export default function App() {
     runCompile(u.tabIds);
   };
 
-  // Compile the whole linked study: open every chapter in the group (even ones
-  // not currently in a tab), then compile them together.
+  // Compile the whole linked study (all chapters in the group) without opening
+  // them as tabs — the open reading tabs stay exactly as they are.
   const compileLinkedAll = (gid: string) => {
     setLinkedCompilePrompt(null);
     const scopes = Object.keys(chapterGroups).filter(
@@ -2091,31 +2100,37 @@ export default function App() {
       chapter: number;
     }[];
     if (!locs.length) return;
-    // Same fix as openRecordedStudy: compute the tab ids synchronously so
-    // runCompile scopes to this group, not to whatever tabs are already open.
-    const tabIds = locs.map((loc) =>
-      makeTabId(activeBookId, loc.volume, loc.book, loc.chapter)
-    );
-    setTabs((prev) => {
-      let next = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
-        if (!next.some((t) => t.id === id))
-          next = [
-            ...next,
-            {
-              id,
-              volume: loc.volume,
-              book: loc.book,
-              chapter: loc.chapter,
-              bookId: activeBookId,
-            },
-          ];
-      });
-      return next;
-    });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    // Compile the whole linked study WITHOUT opening every chapter as a tab:
+    // build synthetic compile tabs (scripture order) and feed them straight to
+    // the compile, exactly the way a keyword study compiles. The open reading
+    // tabs are left untouched.
+    const virtualTabs: Tab[] = locs
+      .map((loc) => ({
+        id: makeTabId(activeBookId, loc.volume, loc.book, loc.chapter),
+        volume: loc.volume,
+        book: loc.book,
+        chapter: loc.chapter,
+        bookId: activeBookId,
+      }))
+      .sort(
+        (a, b) =>
+          a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
+      );
+    const tabIds = virtualTabs.map((t) => t.id);
     runCompile(tabIds);
+    setCompileVirtualTabs(virtualTabs);
+    const linkedRec = recordedStudies.find(
+      (s) =>
+        s.type === "linked" &&
+        s.bookId === activeBookId &&
+        s.scopeRef === gid &&
+        !isStudyDeleted(s)
+    );
+    setCompileName(
+      linkedRec
+        ? linkedRec.name
+        : virtualTabs.map((t) => tabLabel(t)).join("  +  ")
+    );
   };
 
   // Study just this chapter on its own: copy its marks into a fresh session
@@ -2161,7 +2176,9 @@ export default function App() {
     );
   };
 
-  const compileTabs = tabs.filter((t) => compileSelection.includes(t.id));
+  const compileTabs = compileVirtualTabs
+    ? compileVirtualTabs
+    : tabs.filter((t) => compileSelection.includes(t.id));
 
   // The label scope for the active chapter (its group's scope if linked).
   // A keyword search linked to a chapter borrows that chapter's scope, so its
@@ -2438,8 +2455,8 @@ export default function App() {
     ? establishedThemes.map((t) => t.color)
     : usedColors;
 
-  // Reopen a recorded chapter/linked study: open its chapter tab(s) in its
-  // book and compile them fresh (live, from current marks).
+  // Reopen a recorded chapter/linked study: compile it fresh (live, from current
+  // marks) without opening its chapters as tabs — the open reading tabs stay put.
   const openRecordedStudy = (s: Study) => {
     setStudiesOpen(false);
     const scopes =
@@ -2457,62 +2474,30 @@ export default function App() {
     }[];
     if (!locs.length) return;
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
-    // Keyword searches linked to any of this study's chapters reopen alongside
-    // it as their own tabs (their verses also fold into the compile below).
-    const scopeKeys = new Set(scopes.map((sc) => resolveScope(sc)));
-    const linkedKw = searchStudies.filter(
-      (ks) =>
-        !isSearchStudyDeleted(ks) &&
-        ks.linkedScope &&
-        scopeKeys.has(resolveScope(ks.linkedScope))
-    );
-    // Compute the tab ids synchronously, up front — these drive the compile
-    // selection below. Collecting them INSIDE the setTabs updater (which React
-    // runs later, during render) left runCompile receiving an empty array, so
-    // it fell back to "all open tabs" and the notes showed whatever was already
-    // on screen instead of this study.
-    const tabIds = locs.map((loc) =>
-      makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
-    );
-    setTabs((prev) => {
-      let next = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
-        if (!next.some((t) => t.id === id))
-          next = [
-            ...next,
-            {
-              id,
-              volume: loc.volume,
-              book: loc.book,
-              chapter: loc.chapter,
-              bookId: s.bookId,
-            },
-          ];
-      });
-      linkedKw.forEach((ks) => {
-        const id = "studytab_" + ks.id;
-        if (next.some((t) => t.id === id)) return;
-        const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
-        next = [
-          ...next,
-          {
-            id,
-            volume: loc ? loc.volume : 0,
-            book: loc ? loc.book : 0,
-            chapter: loc ? loc.chapter : 0,
-            bookId: ks.bookId,
-            studyId: ks.id,
-          },
-        ];
-      });
-      return next;
-    });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    // Show this study's compile WITHOUT opening every chapter as a tab. Build
+    // synthetic compile tabs (scripture order) and compile them directly — the
+    // open reading tabs are left exactly as they are. Keyword searches linked to
+    // these chapters still fold into the compile by scope (linkedSearchRefs), so
+    // they don't need to be opened as tabs either.
+    const virtualTabs: Tab[] = locs
+      .map((loc) => ({
+        id: makeTabId(s.bookId, loc.volume, loc.book, loc.chapter),
+        volume: loc.volume,
+        book: loc.book,
+        chapter: loc.chapter,
+        bookId: s.bookId,
+      }))
+      .sort(
+        (a, b) =>
+          a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
+      );
+    const tabIds = virtualTabs.map((t) => t.id);
     // Reopen on the view this study was saved in (Relational, Distilled, …)
     // instead of whatever view happened to be on screen.
     setCompileView(s.view ?? "outline");
     runCompile(tabIds);
+    setCompileVirtualTabs(virtualTabs);
+    setCompileName(s.name);
   };
 
   // ---- keyword (search) studies ----
