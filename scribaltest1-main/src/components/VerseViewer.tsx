@@ -3,6 +3,11 @@ import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 
+// Tools that actually paint with the selected color. Everything else — eraser,
+// pointer, define — ignores color, so picking a color while one of them is
+// active signals that the reader wants to mark again.
+const PEN_TOOLS: Tool[] = ["highlight", "underline", "bold", "italic", "circle"];
+
 interface VerseViewerProps {
   selectedVolume: number;
   selectedBook: number;
@@ -152,6 +157,15 @@ export default function VerseViewer(props: VerseViewerProps) {
   const currentBook = currentVolume.books[selectedBook];
   const currentChapter = currentBook.chapters[selectedChapter];
   const erasing = selectedTool === "eraser";
+
+  // Remember the most recent pen tool. When the reader picks a color while a
+  // non-pen tool is active, we step back onto this one so marking just works.
+  const lastPenTool = useRef<MarkStyle>("highlight");
+  useEffect(() => {
+    if (PEN_TOOLS.includes(selectedTool)) {
+      lastPenTool.current = selectedTool as MarkStyle;
+    }
+  }, [selectedTool]);
 
   // Per-tab conditional lens — each open chapter / study remembers its own
   // on/off state, instead of one switch applying to the whole screen.
@@ -451,6 +465,16 @@ export default function VerseViewer(props: VerseViewerProps) {
   };
 
   const isV = orientation === "vertical";
+
+  // Picking a color is intent to mark. If a non-pen tool (eraser/pointer/
+  // define) is active, step back onto the last pen tool so the next selection
+  // actually marks instead of doing nothing.
+  const pickColor = (color: MarkColor) => {
+    onChangeColor(color);
+    if (!PEN_TOOLS.includes(selectedTool)) {
+      onChangeTool(lastPenTool.current);
+    }
+  };
 
   const keyBadge = (k: string, active: boolean) => (
     <span
@@ -772,7 +796,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             return (
               <button
                 key={color}
-                onClick={() => onChangeColor(color)}
+                onClick={() => pickColor(color)}
                 title={
                   "Color " +
                   color +
