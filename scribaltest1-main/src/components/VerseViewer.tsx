@@ -1,12 +1,22 @@
 import { useState, useRef, useEffect } from "react";
 import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
+import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 
 // Tools that actually paint with the selected color. Everything else — eraser,
 // pointer, define — ignores color, so picking a color while one of them is
 // active signals that the reader wants to mark again.
-const PEN_TOOLS: Tool[] = ["highlight", "underline", "bold", "italic", "circle"];
+const PEN_TOOLS: Tool[] = [
+  "highlight",
+  "underline",
+  "bold",
+  "italic",
+  "circle",
+  "box",
+  "dashed",
+  "squiggly",
+];
 
 interface VerseViewerProps {
   selectedVolume: number;
@@ -749,37 +759,31 @@ export default function VerseViewer(props: VerseViewerProps) {
           "p"
         )}
         {divider}
-        {toolButton(
-          "highlight",
-          <span
-            style={{
-              backgroundColor: "var(--hl3)",
-              padding: "0 4px",
-              borderRadius: "3px",
-              color: "var(--text)",
-            }}
-          >
-            H
-          </span>,
-          "h"
-        )}
-        {toolButton("underline", <u>U</u>, "u")}
-        {toolButton("bold", <b>B</b>, "b")}
-        {toolButton("italic", <i>I</i>, "i")}
-        {toolButton(
-          "circle",
-          <span
-            style={{
-              border: "1.5px solid currentColor",
-              borderRadius: "999px",
-              padding: "0 5px",
-              fontSize: "12px",
-            }}
-          >
-            C
-          </span>,
-          "c"
-        )}
+        <div
+          style={{
+            display: "grid",
+            // Mirror the color grid's orientation logic: a vertical toolbar
+            // gets 2 columns of 4 styles (tall, narrow); a horizontal one gets
+            // 2 rows of 4. Each button previews its own style and carries its
+            // shortcut badge, so the two new families (Box, and Dashed/Squiggly)
+            // read at a glance.
+            gridTemplateRows: isV ? "repeat(4, auto)" : undefined,
+            gridTemplateColumns: isV ? undefined : "repeat(4, auto)",
+            gridAutoFlow: isV ? "column" : "row",
+            gap: "7px",
+            justifyItems: "center",
+            alignItems: "center",
+          }}
+        >
+          {toolButton("highlight", <StyleGlyph style="highlight" />, "h")}
+          {toolButton("underline", <StyleGlyph style="underline" />, "u")}
+          {toolButton("bold", <StyleGlyph style="bold" />, "b")}
+          {toolButton("italic", <StyleGlyph style="italic" />, "i")}
+          {toolButton("circle", <StyleGlyph style="circle" />, "c")}
+          {toolButton("box", <StyleGlyph style="box" />, "x")}
+          {toolButton("dashed", <StyleGlyph style="dashed" />, "-")}
+          {toolButton("squiggly", <StyleGlyph style="squiggly" />, "s")}
+        </div>
         {divider}
         <div
           style={{
