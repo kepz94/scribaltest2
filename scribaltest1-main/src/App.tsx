@@ -872,6 +872,11 @@ export default function App() {
   const [studyDraftName, setStudyDraftName] = useState("");
   const [studyDraftBook, setStudyDraftBook] = useState<string>("master");
   const [studyDraftNewName, setStudyDraftNewName] = useState("");
+  // "Send verses" from a reading panel: the captured verse refs (dialog open when
+  // non-null), and whether the dialog is on its second step (picking an existing
+  // study) versus the first step (new study vs. existing study).
+  const [sendRefs, setSendRefs] = useState<string[] | null>(null);
+  const [sendPicking, setSendPicking] = useState(false);
   const [moveTarget, setMoveTarget] = useState<{
     id: string;
     kind: "chapter" | "linked" | "keyword";
@@ -2809,6 +2814,46 @@ export default function App() {
       updateStudy(study.id, { refs: ordered });
       openStudyTab(study);
     }
+  };
+
+  // Send loose verses (picked in a reading panel) into an existing keyword study,
+  // MERGING them with whatever the study already holds rather than replacing —
+  // the panel selection is only the additions, so the union is the new verse set.
+  // When `migrate` is true the study is given its own brand-new session book and
+  // its marks/notes/theme-names travel there (same path as "move to a new book"),
+  // otherwise the study stays in its current book.
+  const sendToExistingStudy = (
+    study: SearchStudy,
+    refs: string[],
+    migrate: boolean
+  ) => {
+    if (!refs.length) return;
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOfRef(a) - orderOfRef(b)
+    );
+    if (migrate) {
+      const newBook = createSession(
+        study.name.trim() || "Session \u00b7 " + fmtShortDate(Date.now())
+      );
+      moveStudyMarks(study.bookId, newBook, merged, "searchstudy:" + study.id);
+      updateStudy(study.id, { bookId: newBook, refs: merged });
+      // Re-point an already-open tab for this study at the new book so it shows
+      // the migrated marks instead of the now-emptied source book.
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.studyId === study.id ? { ...t, bookId: newBook } : t
+        )
+      );
+      openStudyTab({ ...study, bookId: newBook, refs: merged });
+    } else {
+      updateStudy(study.id, { refs: merged });
+      openStudyTab({ ...study, refs: merged });
+    }
+  };
+  // Display name for a study's book in the send picker.
+  const bookLabel = (bookId: string) => {
+    const b = books.find((x) => x.id === bookId);
+    return b ? (b.isMaster ? "Master Book" : b.name || "Session") : "Session";
   };
 
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
@@ -5991,6 +6036,278 @@ export default function App() {
         </div>
       )}
 
+      {sendRefs && (
+        <div
+          className="scribal-fade"
+          onClick={() => {
+            setSendRefs(null);
+            setSendPicking(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 380,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="scribal-rise"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: "16px",
+              border: "1px solid var(--border)",
+              padding: "20px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            {!sendPicking ? (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Send{" "}
+                  {sendRefs.length === 1
+                    ? "this verse"
+                    : sendRefs.length + " verses"}
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                  }}
+                >
+                  Start a new study from{" "}
+                  {sendRefs.length === 1 ? "it" : "them"}, or add to one you
+                  already have.
+                </div>
+                <button
+                  onClick={() => {
+                    const refs = sendRefs;
+                    setSendRefs(null);
+                    setSendPicking(false);
+                    onLinkStudy(refs);
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "16px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: ICON_ACCENT,
+                    color: "#fff",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Create a new study
+                </button>
+                <button
+                  onClick={() => setSendPicking(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Add to an existing study
+                </button>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "14px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setSendRefs(null);
+                      setSendPicking(false);
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Add to a study
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                  }}
+                >
+                  {sendRefs.length === 1 ? "1 verse" : sendRefs.length + " verses"}{" "}
+                  will be added to the study you pick.
+                </div>
+                {searchStudies.length === 0 ? (
+                  <div
+                    style={{
+                      marginTop: "16px",
+                      fontSize: "13.5px",
+                      color: "var(--muted)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    You don’t have any studies to add to yet. Create one instead.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      maxHeight: "320px",
+                      overflowY: "auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    {searchStudies.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          const refs = sendRefs;
+                          setSendRefs(null);
+                          setSendPicking(false);
+                          askConfirm({
+                            title: "Add to “" + (s.name || "this study") + "”?",
+                            body:
+                              (refs.length === 1
+                                ? "1 verse"
+                                : refs.length + " verses") +
+                              " will be added. This study currently lives in " +
+                              bookLabel(s.bookId) +
+                              ".",
+                            confirmLabel: "Add",
+                            onConfirm: () =>
+                              sendToExistingStudy(s, refs, false),
+                            secondaryLabel: "Add & move to a new session book",
+                            onSecondary: () =>
+                              sendToExistingStudy(s, refs, true),
+                          });
+                        }}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "11px 13px",
+                          borderRadius: "10px",
+                          border: "1px solid var(--border)",
+                          background: "var(--panel)",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 600,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {s.name || "Untitled study"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "var(--muted)",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {bookLabel(s.bookId)} ·{" "}
+                          {s.refs.length === 1
+                            ? "1 verse"
+                            : s.refs.length + " verses"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    justifyContent: "space-between",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    onClick={() => setSendPicking(false)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                  {searchStudies.length === 0 && (
+                    <button
+                      onClick={() => {
+                        const refs = sendRefs;
+                        setSendRefs(null);
+                        setSendPicking(false);
+                        onLinkStudy(refs);
+                      }}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: "10px",
+                        border: "none",
+                        background: ICON_ACCENT,
+                        color: "#fff",
+                        fontSize: "13.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Create a new study
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {moveTarget && (
         <div
           className="scribal-fade"
@@ -7754,6 +8071,12 @@ export default function App() {
                     studyTitle={study ? study.name : "Study"}
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
+                    onSendVerses={(refs) => {
+                      if (refs.length) {
+                        setSendRefs(refs);
+                        setSendPicking(false);
+                      }
+                    }}
                   />
                 </div>
               );
