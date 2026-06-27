@@ -91,6 +91,10 @@ interface VerseViewerProps {
   // Optional: enable "Send verses" mode (toolbar button + verse checkboxes).
   // Emits the chosen verse references; the parent runs the send/create-study UI.
   onSendVerses?: (refs: string[]) => void;
+  // Optional: enable "Remove verses" mode on a study panel (toolbar button +
+  // verse checkboxes). Emits the references to drop; the parent updates the
+  // study's verse list. The verses' marks stay in the book.
+  onRemoveVerses?: (refs: string[]) => void;
   // Optional: "Link scriptures" control shown in the panel header, next to Send
   // verses. Carries the chapter-link button's exact behavior up from the tab —
   // the parent supplies the same click handler, linked flag, group color, and
@@ -167,6 +171,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     jumpTarget,
     onJumpHandled,
     onSendVerses,
+    onRemoveVerses,
     linkScriptures,
     toolbarPos: pos,
     onToolbarPos: setPos,
@@ -211,6 +216,19 @@ export default function VerseViewer(props: VerseViewerProps) {
     setSendMode(false);
     setSendSel([]);
   }, [selectedVolume, selectedBook, selectedChapter]);
+
+  // "Remove verses": on a study panel, check off verses to drop from the study.
+  // The selection lives here; the parent removes them (marks stay in the book).
+  const [removeMode, setRemoveMode] = useState(false);
+  const [removeSel, setRemoveSel] = useState<string[]>([]);
+  const toggleRemove = (ref: string) =>
+    setRemoveSel((p) =>
+      p.includes(ref) ? p.filter((r) => r !== ref) : [...p, ref]
+    );
+  useEffect(() => {
+    setRemoveMode(false);
+    setRemoveSel([]);
+  }, [tabKey]);
 
   // Warm reading palette (matches the phone): paper-toned bg + ink text.
   const readBg = warm ? (dark ? "#1a1410" : "#f4ecd6") : "var(--panel)";
@@ -660,6 +678,20 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
           {g.refs.map((r) => {
             const info = verseByRef.get(r)!;
+            const marked = (
+              <MarkedVerse
+                reference={r}
+                verseNumber={info.verse}
+                text={info.text}
+                marks={marks}
+                onEraseMark={erasing && !removeMode ? onEraseMark : undefined}
+                showConditionals={showConditionals}
+                dark={dark}
+                tags={tags}
+                onTagTap={onTagTap}
+              />
+            );
+            const checked = removeSel.includes(r);
             return (
               <div
                 key={r}
@@ -672,17 +704,51 @@ export default function VerseViewer(props: VerseViewerProps) {
                   padding: "0 8px",
                 }}
               >
-                <MarkedVerse
-                  reference={r}
-                  verseNumber={info.verse}
-                  text={info.text}
-                  marks={marks}
-                  onEraseMark={erasing ? onEraseMark : undefined}
-                  showConditionals={showConditionals}
-                  dark={dark}
-                  tags={tags}
-                  onTagTap={onTagTap}
-                />
+                {removeMode ? (
+                  <div
+                    onClick={() => toggleRemove(r)}
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "flex-start",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "5px",
+                        border:
+                          "2px solid " +
+                          (checked ? "#ef4444" : "var(--border)"),
+                        background: checked ? "#ef4444" : "transparent",
+                        color: "#fff",
+                        flexShrink: 0,
+                        marginTop: "3px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {checked ? "✓" : ""}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        pointerEvents: "none",
+                        opacity: checked ? 0.5 : 1,
+                      }}
+                    >
+                      {marked}
+                    </div>
+                  </div>
+                ) : (
+                  marked
+                )}
               </div>
             );
           })}
@@ -1105,6 +1171,47 @@ export default function VerseViewer(props: VerseViewerProps) {
               Link scriptures
             </button>
           )}
+          {studyRefs && onRemoveVerses && !removeMode && (
+            <button
+              onClick={() => {
+                setRemoveMode(true);
+                setRemoveSel([]);
+              }}
+              title="Remove verses from this study"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border: "1px solid var(--border)",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18" />
+                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+              Remove verses
+            </button>
+          )}
           </div>
           <button
             onClick={toggleConditionals}
@@ -1261,6 +1368,105 @@ export default function VerseViewer(props: VerseViewerProps) {
               }}
             >
               Send{sendSel.length ? " (" + sendSel.length + ")" : ""}
+            </button>
+          </div>
+        )}
+
+        {removeMode && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              padding: "10px 12px",
+              marginBottom: "10px",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "13px",
+                color: "var(--muted)",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              {removeSel.length
+                ? removeSel.length +
+                  (removeSel.length === 1
+                    ? " verse selected"
+                    : " verses selected")
+                : "Tap verses to remove"}
+            </span>
+            <button
+              onClick={() => {
+                setRemoveSel(
+                  removeSel.length === allStudyRefs.length
+                    ? []
+                    : allStudyRefs.slice()
+                );
+              }}
+              style={{
+                padding: "5px 10px",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text)",
+                fontSize: "12px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              {removeSel.length > 0 && removeSel.length === allStudyRefs.length
+                ? "Clear all"
+                : "Select all"}
+            </button>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => {
+                setRemoveMode(false);
+                setRemoveSel([]);
+              }}
+              style={{
+                padding: "7px 12px",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text)",
+                fontSize: "13px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (!removeSel.length) return;
+                const refs = removeSel.slice();
+                setRemoveMode(false);
+                setRemoveSel([]);
+                onRemoveVerses && onRemoveVerses(refs);
+              }}
+              disabled={!removeSel.length}
+              style={{
+                padding: "7px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: removeSel.length ? "#ef4444" : "var(--border)",
+                color: removeSel.length ? "#fff" : "var(--muted)",
+                fontSize: "13px",
+                fontWeight: 700,
+                fontFamily: "system-ui, sans-serif",
+                cursor: removeSel.length ? "pointer" : "default",
+                transition: "all 0.15s",
+              }}
+            >
+              Remove{removeSel.length ? " (" + removeSel.length + ")" : ""}
             </button>
           </div>
         )}
