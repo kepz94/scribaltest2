@@ -1695,6 +1695,23 @@ export default function MobileApp() {
     if (cl) setLoc({ v: cl.v, b: cl.b, c: cl.c });
   };
 
+  // Keyword searches gathered into the current chapter's study — any search whose
+  // linkedScope points at this chapter or anywhere in its group. Each opens in its
+  // own tab and can be unlinked here, exactly like a linked chapter (mirrors the
+  // desktop chapter panel's "Linked searches" section).
+  const chapterLinkScopes = new Set<string>([title, ...groupMembers(title)]);
+  const chapterLinkedSearches = searchStudies.filter((s) => {
+    if (isSearchDeleted(s) || !s.linkedScope) return false;
+    return chapterLinkScopes.has(s.linkedScope);
+  });
+  const unlinkSearch = (id: string) => {
+    setSearchStudies((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, linkedScope: undefined, updatedAt: Date.now() } : s
+      )
+    );
+  };
+
   // ---- Search studies open as reading tabs. Opening routes to a study tab; the
   // active-tab effect drives the loose-verse screen + the study's book. ----
   const openStudy = (study: SearchStudy, _bookId?: string) => {
@@ -3892,6 +3909,136 @@ export default function MobileApp() {
                   })}
                 </div>
               </div>
+            )}
+
+            {chapterLinkedSearches.length > 0 && (
+              <>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: C.muted,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Linked searches
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  {chapterLinkedSearches.map((ks) => (
+                    <div
+                      key={ks.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          padding: "11px 13px",
+                          borderRadius: "10px",
+                          border: "1px solid " + C.border,
+                          background: C.soft,
+                          fontSize: "14px",
+                        }}
+                      >
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={anchorColor(title)}
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="M21 21l-4.3-4.3" />
+                        </svg>
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {ks.name || "Search"}
+                          <span style={{ fontSize: "11px", color: C.muted }}>
+                            {" "}
+                            · {ks.refs.length}{" "}
+                            {ks.refs.length === 1 ? "verse" : "verses"}
+                          </span>
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          openStudyTab(ks);
+                          setLinkOpen(false);
+                        }}
+                        style={{
+                          flexShrink: 0,
+                          padding: "9px 13px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: anchorColor(title),
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Open
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Unlink this search? It stays in Studies and can be linked again."
+                            )
+                          ) {
+                            unlinkSearch(ks.id);
+                            flash("Search unlinked");
+                          }
+                        }}
+                        style={{
+                          flexShrink: 0,
+                          padding: "9px 13px",
+                          borderRadius: "8px",
+                          border: "1px solid " + C.border,
+                          background: "transparent",
+                          color: C.muted,
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
 
             {nextTitle && (
