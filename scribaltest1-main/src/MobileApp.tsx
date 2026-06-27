@@ -3606,10 +3606,9 @@ export default function MobileApp() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "6px",
                   flexShrink: 0,
-                  background: ACCENT + "14",
-                  border: "1px solid " + ACCENT,
+                  background: "transparent",
+                  border: "1px solid " + C.border,
                   borderRadius: "999px",
                   padding: "5px 12px",
                   cursor: "pointer",
@@ -3617,22 +3616,8 @@ export default function MobileApp() {
                 }}
                 aria-label="Send verses to a study"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={ACCENT}
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M22 2 11 13" />
-                  <path d="M22 2 15 22l-4-9-9-4 20-7z" />
-                </svg>
                 <span
-                  style={{ fontSize: "12px", fontWeight: 700, color: ACCENT }}
+                  style={{ fontSize: "12px", fontWeight: 700, color: C.text }}
                 >
                   Send verses
                 </span>
@@ -3933,7 +3918,7 @@ export default function MobileApp() {
         </div>
       </div>
 
-      {sendMode && (
+      {sendMode && !openStudyId && (
         <div
           style={{
             position: "absolute",
@@ -7900,18 +7885,18 @@ export default function MobileApp() {
                     setCompileStudy(study);
                     setCompileOpen(true);
                   }}
-                  disabled={removeMode}
+                  disabled={removeMode || sendMode}
                   aria-label="Compile this study"
                   style={{
                     flexShrink: 0,
-                    background: removeMode ? C.soft : C.text,
-                    color: removeMode ? C.muted : C.bg,
+                    background: removeMode || sendMode ? C.soft : C.text,
+                    color: removeMode || sendMode ? C.muted : C.bg,
                     border: "none",
                     borderRadius: "999px",
                     padding: "8px 16px",
                     fontSize: "12.5px",
                     fontWeight: 700,
-                    cursor: removeMode ? "default" : "pointer",
+                    cursor: removeMode || sendMode ? "default" : "pointer",
                     fontFamily: "inherit",
                   }}
                 >
@@ -7945,17 +7930,37 @@ export default function MobileApp() {
                       {removeSel.size} selected
                     </span>
                   </>
-                ) : (
+                ) : sendMode ? (
                   <>
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        color: C.text,
+                      }}
+                    >
+                      Tap verses to send
+                    </span>
+                    <span style={{ fontSize: "12px", color: C.muted }}>
+                      {sendSel.size} selected
+                    </span>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <button
                       onClick={() => {
-                        setRemoveSel(new Set());
-                        setRemoveMode(true);
+                        setSendSel(new Set());
+                        setSendMode(true);
                       }}
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: "7px",
                         padding: "8px 14px",
                         borderRadius: "999px",
                         border: "1px solid " + C.border,
@@ -7967,22 +7972,27 @@ export default function MobileApp() {
                         cursor: "pointer",
                       }}
                     >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#ef4444"
-                        strokeWidth="2.1"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M3 6h18" />
-                        <path d="M8 6V4h8v2" />
-                        <path d="M19 6l-1 14H6L5 6" />
-                        <path d="M10 11v5M14 11v5" />
-                      </svg>
+                      Send verses
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRemoveSel(new Set());
+                        setRemoveMode(true);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontFamily: "inherit",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
                       Remove verses
                     </button>
                     <button
@@ -8008,7 +8018,7 @@ export default function MobileApp() {
                       />
                       {study.linkedScope ? "Linked" : "Link"}
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -8033,7 +8043,10 @@ export default function MobileApp() {
                   {studyRefs.map((ref) => {
                     const vi = VI.get(ref);
                     if (!vi) return null;
-                    const checked = removeSel.has(ref);
+                    const selecting = removeMode || sendMode;
+                    const selSet = removeMode ? removeSel : sendSel;
+                    const setSel = removeMode ? setRemoveSel : setSendSel;
+                    const checked = selSet.has(ref);
                     const verse = (
                       <MobileVerse
                         reference={ref}
@@ -8045,11 +8058,11 @@ export default function MobileApp() {
                         onRange={onRange}
                         onManage={onManage}
                         editMarkId={
-                          !removeMode && editMark && editMark.reference === ref
+                          !selecting && editMark && editMark.reference === ref
                             ? editMark.id
                             : null
                         }
-                        editingActive={!removeMode && !!editMark}
+                        editingActive={!selecting && !!editMark}
                         onEnterEdit={onEnterEdit}
                         onAdjust={onAdjust}
                         tags={wordTags}
@@ -8065,15 +8078,15 @@ export default function MobileApp() {
                             fontSize: "11px",
                             color: C.muted,
                             marginBottom: "3px",
-                            marginLeft: removeMode ? "34px" : 0,
+                            marginLeft: selecting ? "34px" : 0,
                           }}
                         >
                           {ref}
                         </div>
-                        {removeMode ? (
+                        {selecting ? (
                           <div
                             onClick={() =>
-                              setRemoveSel((prev) => {
+                              setSel((prev) => {
                                 const next = new Set(prev);
                                 if (next.has(ref)) next.delete(ref);
                                 else next.add(ref);
@@ -8185,8 +8198,74 @@ export default function MobileApp() {
                 </div>
               )}
 
+              {/* Send-verses bar (mirrors the reading-page send bar) */}
+              {sendMode && (
+                <div
+                  style={{
+                    padding:
+                      "12px 14px calc(14px + env(safe-area-inset-bottom))",
+                    borderTop: "1px solid " + C.border,
+                    background: C.panel,
+                    display: "flex",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setSendMode(false);
+                      setSendSel(new Set());
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      background: "transparent",
+                      color: C.muted,
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!sendSel.size) return;
+                      const refs = Array.from(sendSel).sort(
+                        (a, b) => orderOf(a) - orderOf(b)
+                      );
+                      setSendMode(false);
+                      setSendSel(new Set());
+                      setSendPicking(false);
+                      setSendRefs(refs);
+                    }}
+                    disabled={sendSel.size === 0}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: sendSel.size === 0 ? C.soft : ACCENT,
+                      color: sendSel.size === 0 ? C.muted : "#fff",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      cursor: sendSel.size === 0 ? "default" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {sendSel.size === 0
+                      ? "Send verses"
+                      : "Send " +
+                        sendSel.size +
+                        (sendSel.size === 1 ? " verse" : " verses")}
+                  </button>
+                </div>
+              )}
+
               {/* Compact pen bar */}
-              {!removeMode && (
+              {!removeMode && !sendMode && (
               <div
                 style={{
                   padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
