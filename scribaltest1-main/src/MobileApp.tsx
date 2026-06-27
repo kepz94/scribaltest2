@@ -386,9 +386,9 @@ interface Loc {
   c: number;
 }
 
-// A reading tab is just a location plus a stable id. The session (activeBookId)
-// stays global, so a tab never needs to carry it.
-type MTab = Loc & { id: string };
+// A reading tab is a location plus a stable id, OR a keyword-study tab carrying
+// its studyId (the location fields are placeholders for study tabs).
+type MTab = Loc & { id: string; studyId?: string };
 
 // A search study: a named, hand-picked set of verses pulled from search results.
 // Its marks live in the chosen book (master or a session); this is the saved
@@ -412,6 +412,9 @@ interface SearchStudy {
   // The compile view this keyword study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
   view?: "outline" | "distilled" | "covenants";
+  // When set, this keyword search is linked into a chapter study (that chapter's
+  // scope). It then shares the chapter's book/themes and folds into its compile.
+  linkedScope?: string;
 }
 
 // A recorded study (chapter or linked). Live: its marks are always the book's
@@ -558,21 +561,40 @@ const readLoc = (): Loc => {
 // single saved location into one tab; else a fresh first-chapter tab. Always
 // returns at least one valid tab, dropping any whose location no longer exists.
 const readTabs = (): MTab[] => {
+  let liveStudyIds = new Set<string>();
+  try {
+    const ss = JSON.parse(
+      localStorage.getItem("scribal_search_studies") || "[]"
+    );
+    if (Array.isArray(ss))
+      liveStudyIds = new Set(ss.map((s: any) => s && s.id).filter(Boolean));
+  } catch {}
   try {
     const raw = localStorage.getItem("scribal_mobile_tabs");
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
         const valid = arr
-          .filter(
-            (t: any) =>
-              t &&
-              typeof t.id === "string" &&
+          .filter((t: any) => {
+            if (!t || typeof t.id !== "string") return false;
+            if (t.studyId) return liveStudyIds.has(t.studyId);
+            return (
               vols[t.v] &&
               vols[t.v].books[t.b] &&
               vols[t.v].books[t.b].chapters[t.c]
-          )
-          .map((t: any) => ({ id: t.id, v: t.v, b: t.b, c: t.c }));
+            );
+          })
+          .map((t: any) =>
+            t.studyId
+              ? {
+                  id: t.id,
+                  v: t.v || 0,
+                  b: t.b || 0,
+                  c: t.c || 0,
+                  studyId: t.studyId,
+                }
+              : { id: t.id, v: t.v, b: t.b, c: t.c }
+          );
         if (valid.length) return valid.slice(0, MAX_TABS);
       }
     }
@@ -1240,6 +1262,31 @@ export default function MobileApp() {
       setActiveTabId(tabs[0].id);
   }, [tabs, activeTabId]);
 
+  // A study tab drives the existing loose-verse screen + the study's book; a
+  // chapter tab clears it and restores the book. Keyed on the active tab's
+  // studyId so it fires on tab switches, not on the add-verses sub-flow's
+  // manual openStudyId toggles.
+  useEffect(() => {
+    const sid = activeTab.studyId || null;
+    if (sid) {
+      const st = searchStudies.find((s) => s.id === sid);
+      if (st) {
+        if (prevBookForStudy.current == null)
+          prevBookForStudy.current = activeBookId;
+        if (st.bookId !== activeBookId) setActiveBook(st.bookId);
+        setOpenStudyId(sid);
+      }
+    } else {
+      if (prevBookForStudy.current != null) {
+        if (prevBookForStudy.current !== activeBookId)
+          setActiveBook(prevBookForStudy.current);
+        prevBookForStudy.current = null;
+      }
+      setOpenStudyId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.studyId]);
+
   // Persist scroll positions when the app is backgrounded or closed.
   useEffect(() => {
     const flush = () => {
@@ -1473,8 +1520,68 @@ export default function MobileApp() {
     setTabs([{ id: activeTab.id, v: loc.v, b: loc.b, c: loc.c }]);
     setActiveTabId(activeTab.id);
   };
-  // Per-card display: title, work name, plain-text preview, link-group color.
+  // Open a keyword study as a tab (switch to it if already open). Sets
+  // openStudyId explicitly so re-showing an already-active study works; the
+  // active-tab effect handles the book swap.
+  const openStudyTab = (study: SearchStudy) => {
+    const existing = tabs.find((t) => t.studyId === study.id);
+    if (existing) {
+      setActiveTabId(existing.id);
+      setOpenStudyId(study.id);
+      setScreensOpen(false);
+      return;
+    }
+    if (tabs.length >= MAX_TABS) {
+      flash("Close a tab to open another");
+      return;
+    }
+    const first = study.refs[0];
+    const cl = first ? chapterLoc.get(refScope(first)) : undefined;
+    setTabs([
+      ...tabs,
+      {
+        id: "studytab_" + study.id,
+        v: cl ? cl.v : loc.v,
+        b: cl ? cl.b : loc.b,
+        c: cl ? cl.c : loc.c,
+        studyId: study.id,
+      },
+    ]);
+    setActiveTabId("studytab_" + study.id);
+    setOpenStudyId(study.id);
+    setScreensOpen(false);
+  };
+  const openStudyTabById = (id: string) => {
+    const st = searchStudies.find((s) => s.id === id);
+    if (st) openStudyTab(st);
+  };
+  // Per-card display: title, sub-line, plain-text preview, link-group color.
   const tabInfo = (t: MTab) => {
+    if (t.studyId) {
+      const st = searchStudies.find((s) => s.id === t.studyId);
+      const bn = st
+        ? books.find((b) => b.id === st.bookId)?.name || "Master Book"
+        : "";
+      const idx = verseByRef();
+      const preview = st
+        ? st.refs
+            .slice(0, 3)
+            .map((r) => (idx.get(r) ? idx.get(r)!.text : ""))
+            .join(" ")
+        : "";
+      return {
+        study: true,
+        title: st ? st.name : "Study",
+        sub: st
+          ? st.refs.length +
+            (st.refs.length === 1 ? " verse · " : " verses · ") +
+            bn
+          : "",
+        preview:
+          preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
+        color: null as string | null,
+      };
+    }
     const bk = vols[t.v].books[t.b];
     const ch = bk.chapters[t.c];
     const scope = chapterScopeKey(bk, ch);
@@ -1484,8 +1591,9 @@ export default function MobileApp() {
       .map((vv: any) => vv.text)
       .join(" ");
     return {
+      study: false,
       title: bk.book + " " + ch.chapter,
-      work: vols[t.v].volume,
+      sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
       color: gid ? groupColor(gid) : null,
     };
@@ -1558,29 +1666,25 @@ export default function MobileApp() {
     if (cl) setLoc({ v: cl.v, b: cl.b, c: cl.c });
   };
 
-  // ---- Search studies: open/close switches the active book to the study's
-  // own (so marking, compile and save target it), restoring it on close. ----
-  const openStudy = (study: SearchStudy, bookId?: string) => {
-    const bid = bookId || study.bookId;
-    prevBookForStudy.current = activeBookId;
-    if (bid !== activeBookId) setActiveBook(bid);
-    setOpenStudyId(study.id);
+  // ---- Search studies open as reading tabs. Opening routes to a study tab; the
+  // active-tab effect drives the loose-verse screen + the study's book. ----
+  const openStudy = (study: SearchStudy, _bookId?: string) => {
     setHomeOpen(false);
     setSearchOpen(false);
     setMenuOpen(false);
     setStudiesOpen(false);
-  };
-  const closeStudy = () => {
-    setOpenStudyId(null);
-    const prev = prevBookForStudy.current;
-    if (prev && prev !== activeBookId) setActiveBook(prev);
-    prevBookForStudy.current = null;
+    openStudyTab(study);
   };
   const deleteSearchStudy = (id: string) => {
     setSearchStudies((prev) =>
       prev.map((s) => (s.id === id ? { ...s, deletedAt: Date.now() } : s))
     );
-    if (openStudyId === id) closeStudy();
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.studyId !== id);
+      return next.length
+        ? next
+        : [{ id: newTabId(), v: loc.v, b: loc.b, c: loc.c }];
+    });
   };
 
   // Move a study (with its marks, notes, theme names and relational pair) into a
@@ -1726,7 +1830,7 @@ export default function MobileApp() {
       Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
         seedScopeLabels(scope, scopedLabels[ch] || {})
       );
-      setOpenStudyId(copy.id);
+      openStudyTab(copy);
       flash("Study created");
     } else {
       setSearchStudies((prev) =>
@@ -1738,7 +1842,7 @@ export default function MobileApp() {
       Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
         seedScopeLabels(scope, scopedLabels[ch] || {})
       );
-      setOpenStudyId(id);
+      openStudyTab(study);
       flash("Verses updated");
     }
   };
@@ -4336,7 +4440,7 @@ export default function MobileApp() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 85,
+            zIndex: 260,
             backgroundColor: C.bg,
             color: C.text,
             display: "flex",
@@ -4427,6 +4531,37 @@ export default function MobileApp() {
                     }}
                   >
                     <div style={{ minWidth: 0 }}>
+                      {info.study && (
+                        <div
+                          style={{
+                            fontSize: "9.5px",
+                            fontWeight: 700,
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            color: "#0d9488",
+                            marginBottom: "2px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <svg
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#0d9488"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="M21 21l-4.3-4.3" />
+                          </svg>
+                          Keyword study
+                        </div>
+                      )}
                       <div
                         style={{
                           fontSize: "14px",
@@ -4462,7 +4597,7 @@ export default function MobileApp() {
                           marginTop: "2px",
                         }}
                       >
-                        {info.work}
+                        {info.sub}
                       </div>
                     </div>
                     {tabs.length > 1 && (
@@ -5692,7 +5827,7 @@ export default function MobileApp() {
                 if (addToStudyId) {
                   const id = addToStudyId;
                   setAddToStudyId(null);
-                  setOpenStudyId(id);
+                  openStudyTabById(id);
                 }
                 setAddVersesRecId(null);
               }}
@@ -6003,20 +6138,35 @@ export default function MobileApp() {
                 }}
               >
                 <button
-                  onClick={closeStudy}
-                  aria-label="Back"
+                  onClick={() => setScreensOpen(true)}
+                  aria-label="Screens"
                   style={{
                     width: "38px",
                     height: "38px",
                     background: "transparent",
                     border: "none",
                     color: C.text,
-                    fontSize: "22px",
                     cursor: "pointer",
                     flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  ‹
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={C.text}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="8" y="3" width="13" height="13" rx="2.5" />
+                    <path d="M16 19v.5A1.5 1.5 0 0 1 14.5 21h-9A1.5 1.5 0 0 1 4 19.5v-9A1.5 1.5 0 0 1 5.5 9H6" />
+                  </svg>
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
