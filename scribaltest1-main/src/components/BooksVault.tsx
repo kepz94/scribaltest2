@@ -20,10 +20,14 @@ interface Props {
   onClose: () => void;
 }
 
-const SECTIONS: { kind: StudyRow["kind"]; label: string }[] = [
-  { kind: "chapter", label: "Chapter studies" },
-  { kind: "linked", label: "Linked studies" },
-  { kind: "keyword", label: "Keyword studies" },
+const SECTIONS: {
+  kinds: StudyRow["kind"][];
+  label: string;
+  color: string;
+}[] = [
+  { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
+  { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
+  { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
 ];
 
 export default function BooksVault({
@@ -287,17 +291,19 @@ export default function BooksVault({
                       </div>
                     )}
                     {SECTIONS.map((sec) => {
-                      const items = b.rows.filter((r) => r.kind === sec.kind);
+                      const items = b.rows.filter((r) =>
+                        sec.kinds.includes(r.kind)
+                      );
                       if (items.length === 0) return null;
                       return (
-                        <div key={sec.kind} style={{ marginTop: "12px" }}>
+                        <div key={sec.label} style={{ marginTop: "12px" }}>
                           <div
                             style={{
                               fontSize: "10.5px",
                               fontWeight: 700,
                               letterSpacing: "0.05em",
                               textTransform: "uppercase",
-                              color: "var(--muted)",
+                              color: sec.color,
                               margin: "0 2px 6px",
                             }}
                           >
@@ -310,8 +316,9 @@ export default function BooksVault({
                                 display: "flex",
                                 alignItems: "flex-start",
                                 gap: "10px",
-                                padding: "9px 4px",
+                                padding: "9px 4px 9px 9px",
                                 borderTop: "1px solid var(--border)",
+                                borderLeft: "3px solid " + sec.color,
                               }}
                             >
                               <button
