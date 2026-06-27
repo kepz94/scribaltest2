@@ -1057,6 +1057,16 @@ export default function MobileApp() {
   // The search study whose screen is open (full-screen). prevBookForStudy holds
   // the book to restore on close, since the screen switches the active book.
   const [openStudyId, setOpenStudyId] = useState<string | null>(null);
+  // After gathering a keyword search into a chapter's existing linked search, the
+  // just-added verses show on top (so they can be marked). Clears when you leave
+  // that study, so reopening shows everything back in book order.
+  const [gatheredTop, setGatheredTop] = useState<{
+    id: string;
+    refs: string[];
+  } | null>(null);
+  useEffect(() => {
+    if (gatheredTop && openStudyId !== gatheredTop.id) setGatheredTop(null);
+  }, [openStudyId, gatheredTop]);
   const prevBookForStudy = useRef<string | null>(null);
   // When set, the search screen is open to ADD verses to this keyword study
   // (its current verses are pre-selected); confirming merges the selection back.
@@ -1867,19 +1877,53 @@ export default function MobileApp() {
   // folds into the chapter's study (mirrors desktop's linkSearchToChapterTab).
   const linkSearchToChapter = (refs: string[], scope: string, label?: string) => {
     if (!refs.length || !scope) return;
-    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const newOrdered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    // A chapter keeps ONE gathered search. If one already exists anywhere in this
+    // chapter's group, add the new verses to it (fresh ones on top to be marked,
+    // stored in book order) rather than spawning a second tab.
+    const groupScopes = groupMembers(scope).length
+      ? groupMembers(scope)
+      : [scope];
+    const existing = searchStudies.find(
+      (s) =>
+        !isSearchDeleted(s) &&
+        !!s.linkedScope &&
+        groupScopes.includes(s.linkedScope)
+    );
+    if (existing) {
+      const existingSet = new Set(existing.refs);
+      const fresh = newOrdered.filter((r) => !existingSet.has(r));
+      const mergedBookOrder = Array.from(
+        new Set([...existing.refs, ...newOrdered])
+      ).sort((a, b) => orderOf(a) - orderOf(b));
+      setSearchStudies((prev) =>
+        prev.map((s) =>
+          s.id === existing.id
+            ? { ...s, refs: mergedBookOrder, updatedAt: Date.now() }
+            : s
+        )
+      );
+      const esc = "searchstudy:" + existing.id;
+      Array.from(new Set(newOrdered.map((r) => scopeOf(r)))).forEach((ch) =>
+        seedScopeLabels(esc, scopedLabels[ch] || {})
+      );
+      if (fresh.length) setGatheredTop({ id: existing.id, refs: fresh });
+      openStudyTab(existing);
+      flash(fresh.length ? "Added to linked search" : "Already in this search");
+      return;
+    }
     const study: SearchStudy = {
       id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       name: (label || "").trim() || "Search",
       bookId: activeBookId,
-      refs: ordered,
+      refs: newOrdered,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       linkedScope: scope,
     };
     setSearchStudies((prev) => [study, ...prev]);
     const sscope = "searchstudy:" + study.id;
-    Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+    Array.from(new Set(newOrdered.map((r) => scopeOf(r)))).forEach((ch) =>
       seedScopeLabels(sscope, scopedLabels[ch] || {})
     );
     openStudyTab(study);
@@ -7103,6 +7147,13 @@ export default function MobileApp() {
           const VI = verseByRef();
           const bookName =
             books.find((b) => b.id === study.bookId)?.name || "Master Book";
+          const gTop =
+            gatheredTop && gatheredTop.id === study.id ? gatheredTop.refs : [];
+          const gTopSet = new Set(gTop);
+          const studyRefs = [
+            ...gTop,
+            ...study.refs.filter((r) => !gTopSet.has(r)),
+          ];
           return (
             <div
               style={{
@@ -7310,7 +7361,7 @@ export default function MobileApp() {
                     WebkitUserSelect: "none",
                   }}
                 >
-                  {study.refs.map((ref) => {
+                  {studyRefs.map((ref) => {
                     const vi = VI.get(ref);
                     if (!vi) return null;
                     return (
