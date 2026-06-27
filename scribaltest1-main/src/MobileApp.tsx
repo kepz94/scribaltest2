@@ -9961,6 +9961,7 @@ export default function MobileApp() {
 
           const section = (
             title: string,
+            color: string,
             rows: React.ReactNode
           ) => (
             <div style={{ marginBottom: "20px" }}>
@@ -9968,7 +9969,7 @@ export default function MobileApp() {
                 style={{
                   fontSize: "12px",
                   fontWeight: 700,
-                  color: C.muted,
+                  color: color,
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
                   marginBottom: "2px",
@@ -10175,6 +10176,33 @@ export default function MobileApp() {
                       (s) => s.type === "linked"
                     );
                     const searches = searchesInBook(selBook.id);
+                    // Same combined rule as the main hub: a chapter/group with a
+                    // linked search shows once under Combined, never also as a
+                    // chapter/linked row.
+                    const combinedScopesV = new Set(
+                      searches
+                        .filter((s) => s.linkedScope)
+                        .map((s) => resolveScope(s.linkedScope as string))
+                    );
+                    const chapV = chap.filter(
+                      (s) => !combinedScopesV.has(resolveScope(s.scopeRef))
+                    );
+                    const linkedV = linked.filter(
+                      (s) => !combinedScopesV.has("group:" + s.scopeRef)
+                    );
+                    const standaloneSearchesV = searches.filter(
+                      (s) => !s.linkedScope
+                    );
+                    const combinedMapV = new Map<string, SearchStudy[]>();
+                    searches
+                      .filter((s) => s.linkedScope)
+                      .forEach((s) => {
+                        const sc = resolveScope(s.linkedScope as string);
+                        const arr = combinedMapV.get(sc) || [];
+                        arr.push(s);
+                        combinedMapV.set(sc, arr);
+                      });
+                    const combinedGroupsV = Array.from(combinedMapV.entries());
                     const tot =
                       chap.length + linked.length + searches.length;
                     if (tot === 0)
@@ -10193,10 +10221,9 @@ export default function MobileApp() {
                       );
                     return (
                       <>
-                        {chap.length > 0 &&
-                          section(
-                            "Chapter studies",
-                            chap.map((s) =>
+                        {(chapV.length > 0 || linkedV.length > 0) &&
+                          section("Chapter studies", TYPE_RED, [
+                            ...chapV.map((s) =>
                               studyRow(
                                 s.id,
                                 s.name,
@@ -10207,12 +10234,8 @@ export default function MobileApp() {
                                 () =>
                                   openFromVault(() => openRecordedStudy(s))
                               )
-                            )
-                          )}
-                        {linked.length > 0 &&
-                          section(
-                            "Linked studies",
-                            linked.map((s) =>
+                            ),
+                            ...linkedV.map((s) =>
                               studyRow(
                                 s.id,
                                 s.name,
@@ -10224,12 +10247,50 @@ export default function MobileApp() {
                                   openFromVault(() => openRecordedStudy(s)),
                                 <IconLink color={TYPE_RED} />
                               )
-                            )
+                            ),
+                          ])}
+                        {combinedGroupsV.length > 0 &&
+                          section(
+                            "Combined studies",
+                            TYPE_PURPLE,
+                            combinedGroupsV.map(([sc, group]) => {
+                              const primary = group[0];
+                              const rec = [...chap, ...linked].find(
+                                (s) =>
+                                  (s.type === "chapter" &&
+                                    resolveScope(s.scopeRef) === sc) ||
+                                  (s.type === "linked" &&
+                                    "group:" + s.scopeRef === sc)
+                              );
+                              const terms = group
+                                .map((g) => '"' + g.name + '"')
+                                .join(", ");
+                              const allRefs = new Set(
+                                group.flatMap((g) => g.refs)
+                              );
+                              const title =
+                                (rec && rec.name) ||
+                                displayOf(primary.linkedScope as string) ||
+                                primary.name;
+                              return studyRow(
+                                "combined:" + sc,
+                                title,
+                                terms +
+                                  " · " +
+                                  allRefs.size +
+                                  " verse" +
+                                  (allRefs.size === 1 ? "" : "s"),
+                                TYPE_PURPLE,
+                                () => openFromVault(() => openStudy(primary)),
+                                <IconLink color={TYPE_PURPLE} />
+                              );
+                            })
                           )}
-                        {searches.length > 0 &&
+                        {standaloneSearchesV.length > 0 &&
                           section(
                             "Keyword studies",
-                            searches.map((ss) =>
+                            TYPE_BLUE,
+                            standaloneSearchesV.map((ss) =>
                               studyRow(
                                 ss.id,
                                 ss.name,
