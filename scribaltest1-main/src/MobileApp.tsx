@@ -505,6 +505,98 @@ const IconLink = ({ color, size = 16 }: { color: string; size?: number }) => (
   </svg>
 );
 
+// A link glyph that, when `flashing`, plays the merge splash in place — a red
+// link and a blue link fusing into one purple link — then settles back to the
+// static `color` icon. Used on the link buttons the moment a study turns
+// combined.
+const LinkGlyph = ({
+  color,
+  flashing,
+  size = 15,
+}: {
+  color: string;
+  flashing: boolean;
+  size?: number;
+}) => {
+  const path = (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+    </>
+  );
+  return (
+    <span
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        width: size,
+        height: size,
+        overflow: "visible",
+        flexShrink: 0,
+      }}
+    >
+      {flashing ? (
+        <span className="sg-fuse">
+          <span className="sg-ripple" />
+          <svg
+            className="sg-lk sg-red"
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={TYPE_RED}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {path}
+          </svg>
+          <svg
+            className="sg-lk sg-blue"
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={TYPE_BLUE}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {path}
+          </svg>
+          <svg
+            className="sg-lk sg-purple"
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={TYPE_PURPLE}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {path}
+          </svg>
+        </span>
+      ) : (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {path}
+        </svg>
+      )}
+    </span>
+  );
+};
+
 const IconBook = ({ color, size = 17 }: { color: string; size?: number }) => (
   <svg
     width={size}
@@ -1549,6 +1641,17 @@ export default function MobileApp() {
         resolveScope(s.linkedScope) === r
     );
   };
+  // Plays the red+blue→purple merge splash on the visible link button the moment
+  // a study turns combined. Bumped by the link actions; auto-clears.
+  const [mergeFlash, setMergeFlash] = useState(0);
+  const [linkFlash, setLinkFlash] = useState(false);
+  useEffect(() => {
+    if (!mergeFlash) return;
+    setLinkFlash(true);
+    const t = setTimeout(() => setLinkFlash(false), 760);
+    return () => clearTimeout(t);
+  }, [mergeFlash]);
+  const triggerMergeFlash = () => setMergeFlash((n) => n + 1);
   // Stable distinct color for each link group.
   const groupColor = (gid: string) => {
     const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
@@ -1984,6 +2087,7 @@ export default function MobileApp() {
     );
     openStudyTab(study);
     flash("Search linked");
+    triggerMergeFlash();
   };
 
   // Add verses to an existing keyword/imported study, or fork a new copy with the
@@ -2332,6 +2436,7 @@ export default function MobileApp() {
         "searchstudy:" + st.id,
         scopedLabels[targetScope] || {}
       );
+      triggerMergeFlash();
     }
     setKwLinkMode("menu");
     setPickV(-1);
@@ -3236,6 +3341,17 @@ export default function MobileApp() {
         @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes mob-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes mob-toast-in { 0% { opacity: 0; transform: translateX(-50%) translateY(16px) scale(0.9); } 55% { opacity: 1; } 100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+        /* Merge splash: a red link and a blue link fuse into a purple link. */
+        @keyframes sg-fromLeft { 0% { transform: translateX(-9px); opacity: 1; } 48% { transform: translateX(0); opacity: 1; } 60% { opacity: 0; } 100% { transform: translateX(0); opacity: 0; } }
+        @keyframes sg-fromRight { 0% { transform: translateX(9px); opacity: 1; } 48% { transform: translateX(0); opacity: 1; } 60% { opacity: 0; } 100% { transform: translateX(0); opacity: 0; } }
+        @keyframes sg-popIn { 0%, 46% { transform: scale(0); opacity: 0; } 58% { transform: scale(1.35); opacity: 1; } 72% { transform: scale(.9); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes sg-ripple { 0%, 46% { transform: scale(.3); opacity: 0; } 58% { opacity: .5; } 100% { transform: scale(2.2); opacity: 0; } }
+        .sg-fuse { position: absolute; inset: 0; pointer-events: none; }
+        .sg-lk { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; }
+        .sg-red { animation: sg-fromLeft .72s ease both; }
+        .sg-blue { animation: sg-fromRight .72s ease both; }
+        .sg-purple { animation: sg-popIn .72s ease both; }
+        .sg-ripple { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #8b5cf6; animation: sg-ripple .72s ease both; }
         /* Native-feel tap polish: no default grey flash on any tap, and every
            button gets a quick pressed state + smooth state transitions. */
         * { -webkit-tap-highlight-color: transparent; }
@@ -3602,20 +3718,11 @@ export default function MobileApp() {
             }}
             aria-label="Link this chapter into a study"
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-              <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-            </svg>
+            <LinkGlyph
+              color={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
+              flashing={linkFlash && chapterIsCombined(title)}
+              size={15}
+            />
             <span
               style={{
                 fontSize: "12px",
@@ -4809,24 +4916,15 @@ export default function MobileApp() {
                   fontWeight: 700,
                   letterSpacing: "0.05em",
                   textTransform: "uppercase",
-                  color: "#0d9488",
+                  color: ks.linkedScope ? TYPE_PURPLE : TYPE_BLUE,
                   marginBottom: "4px",
                 }}
               >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#0d9488"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                  <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                </svg>
+                <LinkGlyph
+                  color={ks.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
+                  flashing={linkFlash && !!ks.linkedScope}
+                  size={12}
+                />
                 Keyword study
               </div>
               <div
@@ -7925,20 +8023,11 @@ export default function MobileApp() {
                         cursor: "pointer",
                       }}
                     >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={study.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                        <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                      </svg>
+                      <LinkGlyph
+                        color={study.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
+                        flashing={linkFlash && !!study.linkedScope}
+                        size={15}
+                      />
                       {study.linkedScope ? "Linked" : "Link"}
                     </button>
                   </>
