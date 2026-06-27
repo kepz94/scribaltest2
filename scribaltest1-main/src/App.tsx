@@ -3747,17 +3747,34 @@ export default function App() {
     searchStudies.forEach((ss) => {
       const refSet = new Set(ss.refs);
       const refOk = (ref: string) => refSet.has(ref);
+      // A keyword search linked into a chapter reads as a combined study: its
+      // own category, titled by the chapter it's linked to.
+      const loc = ss.linkedScope ? chapterLoc.get(ss.linkedScope) : null;
+      const chapterName = loc
+        ? vols[loc.volume].books[loc.book].book +
+          " " +
+          vols[loc.volume].books[loc.book].chapters[loc.chapter].chapter
+        : null;
+      const isCombined = !!ss.linkedScope;
       rows.push({
         id: ss.id,
-        kind: "keyword",
+        kind: isCombined ? "combined" : "keyword",
         bookId: ss.bookId,
-        name: ss.name,
-        meta:
-          ss.refs.length +
-          " verses" +
-          withBook(bookLabel(ss.bookId)) +
-          " · " +
-          fmtDate(ss.createdAt),
+        name: isCombined ? chapterName || ss.name : ss.name,
+        meta: isCombined
+          ? '"' +
+            ss.name +
+            '" · ' +
+            ss.refs.length +
+            " verses" +
+            withBook(bookLabel(ss.bookId)) +
+            " · " +
+            fmtDate(ss.createdAt)
+          : ss.refs.length +
+            " verses" +
+            withBook(bookLabel(ss.bookId)) +
+            " · " +
+            fmtDate(ss.createdAt),
         themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
         onOpen: () => openStudyTab(ss),
         onAddVerses: () => {
@@ -4177,7 +4194,7 @@ export default function App() {
                     <circle cx="11" cy="11" r="7" />
                     <path d="M21 21l-4.3-4.3" />
                   </svg>
-                  Keyword study
+                  {ks.linkedScope ? "Combined study" : "Keyword study"}
                 </div>
                 <div style={{ fontSize: "17px", fontWeight: 700 }}>
                   {ks.name || "Search"}
