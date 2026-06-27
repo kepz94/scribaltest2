@@ -1067,6 +1067,14 @@ export default function MobileApp() {
   useEffect(() => {
     if (gatheredTop && openStudyId !== gatheredTop.id) setGatheredTop(null);
   }, [openStudyId, gatheredTop]);
+  // Remove-verses mode on the keyword study screen: tap verses to check them,
+  // then remove from the study. Resets whenever the open study changes.
+  const [removeMode, setRemoveMode] = useState(false);
+  const [removeSel, setRemoveSel] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setRemoveMode(false);
+    setRemoveSel(new Set());
+  }, [openStudyId]);
   const prevBookForStudy = useRef<string | null>(null);
   // When set, the search screen is open to ADD verses to this keyword study
   // (its current verses are pre-selected); confirming merges the selection back.
@@ -1725,6 +1733,26 @@ export default function MobileApp() {
         s.id === id ? { ...s, linkedScope: undefined, updatedAt: Date.now() } : s
       )
     );
+  };
+  // Remove the checked verses from a study (marks stay in the book). The study
+  // itself is only deleted from the Studies screen.
+  const removeSelectedVerses = (id: string) => {
+    if (!removeSel.size) return;
+    const n = removeSel.size;
+    setSearchStudies((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              refs: s.refs.filter((r) => !removeSel.has(r)),
+              updatedAt: Date.now(),
+            }
+          : s
+      )
+    );
+    setRemoveMode(false);
+    setRemoveSel(new Set());
+    flash(n === 1 ? "Verse removed" : n + " verses removed");
   };
 
   // ---- Search studies open as reading tabs. Opening routes to a study tab; the
@@ -7167,26 +7195,44 @@ export default function MobileApp() {
                 animation: "mob-fadein 0.18s ease",
               }}
             >
+              {/* Row 1 — home / screens / title / compile, like the reading screen */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "8px",
-                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px",
-                  borderBottom: "1px solid " + C.border,
+                  gap: "6px",
+                  padding: "calc(env(safe-area-inset-top) + 10px) 12px 0",
                 }}
               >
+                <button
+                  onClick={() => {
+                    setOpenStudyId(null);
+                    setHomeOpen(true);
+                  }}
+                  aria-label="Home"
+                  style={navBtn(C, false)}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={C.text}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 11.5 12 4l9 7.5" />
+                    <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
+                  </svg>
+                </button>
                 <button
                   onClick={() => setScreensOpen(true)}
                   aria-label="Screens"
                   style={{
-                    width: "38px",
-                    height: "38px",
-                    background: "transparent",
-                    border: "none",
-                    color: C.text,
-                    cursor: "pointer",
-                    flexShrink: 0,
+                    ...navBtn(C, false),
+                    position: "relative",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -7206,24 +7252,46 @@ export default function MobileApp() {
                     <rect x="8" y="3" width="13" height="13" rx="2.5" />
                     <path d="M16 19v.5A1.5 1.5 0 0 1 14.5 21h-9A1.5 1.5 0 0 1 4 19.5v-9A1.5 1.5 0 0 1 5.5 9H6" />
                   </svg>
+                  {tabs.length > 1 && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "4px",
+                        right: "3px",
+                        minWidth: "14px",
+                        height: "14px",
+                        padding: "0 3px",
+                        background: ACCENT,
+                        color: "#fff",
+                        borderRadius: "99px",
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {tabs.length}
+                    </span>
+                  )}
                 </button>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
                   <div
                     style={{
-                      display: "flex",
+                      display: "inline-flex",
                       alignItems: "center",
-                      gap: "5px",
-                      fontSize: "10.5px",
+                      gap: "4px",
+                      fontSize: "10px",
                       fontWeight: 700,
                       letterSpacing: "0.05em",
                       textTransform: "uppercase",
                       color: "#0d9488",
-                      marginBottom: "2px",
                     }}
                   >
                     <svg
-                      width="12"
-                      height="12"
+                      width="11"
+                      height="11"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="#0d9488"
@@ -7249,98 +7317,135 @@ export default function MobileApp() {
                     {study.name}
                   </div>
                   <div style={{ fontSize: "11px", color: C.muted }}>
-                    {study.refs.length} verses · {bookName}
+                    {study.refs.length}{" "}
+                    {study.refs.length === 1 ? "verse" : "verses"} · {bookName}
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Delete this study? Your marks stay in the book."
-                      )
-                    )
-                      deleteSearchStudy(study.id);
-                  }}
-                  aria-label="Delete study"
-                  style={{
-                    width: "38px",
-                    height: "38px",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                  }}
-                >
-                  <IconTrash color={C.muted} />
-                </button>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  padding: "10px 14px",
-                  borderBottom: "1px solid " + C.border,
-                }}
-              >
-                <button
-                  onClick={() => openKwLink(study)}
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "7px",
-                    padding: "10px",
-                    borderRadius: "999px",
-                    border: "1px solid " + C.border,
-                    background: "transparent",
-                    color: C.text,
-                    fontFamily: "inherit",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#0d9488"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                  </svg>
-                  Link
-                </button>
                 <button
                   onClick={() => {
                     setCompileStudy(study);
                     setCompileOpen(true);
                   }}
+                  disabled={removeMode}
+                  aria-label="Compile this study"
                   style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: "999px",
+                    flexShrink: 0,
+                    background: removeMode ? C.soft : C.text,
+                    color: removeMode ? C.muted : C.bg,
                     border: "none",
-                    background: C.text,
-                    color: C.bg,
-                    fontFamily: "inherit",
-                    fontSize: "13px",
+                    borderRadius: "999px",
+                    padding: "8px 16px",
+                    fontSize: "12.5px",
                     fontWeight: 700,
-                    cursor: "pointer",
+                    cursor: removeMode ? "default" : "pointer",
+                    fontFamily: "inherit",
                   }}
                 >
                   Compile
                 </button>
+              </div>
+
+              {/* Row 2 — remove verses / link, or the remove-mode status */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  padding: "9px 14px 10px",
+                  borderBottom: "1px solid " + C.border,
+                }}
+              >
+                {removeMode ? (
+                  <>
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        color: C.text,
+                      }}
+                    >
+                      Tap verses to remove
+                    </span>
+                    <span style={{ fontSize: "12px", color: C.muted }}>
+                      {removeSel.size} selected
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setRemoveSel(new Set());
+                        setRemoveMode(true);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "7px",
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontFamily: "inherit",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#ef4444"
+                        strokeWidth="2.1"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                        <path d="M10 11v5M14 11v5" />
+                      </svg>
+                      Remove verses
+                    </button>
+                    <button
+                      onClick={() => openKwLink(study)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "7px",
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid " + C.border,
+                        background: "transparent",
+                        color: C.text,
+                        fontFamily: "inherit",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#0d9488"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                        <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                      </svg>
+                      Link
+                    </button>
+                  </>
+                )}
               </div>
 
               <div
@@ -7364,6 +7469,29 @@ export default function MobileApp() {
                   {studyRefs.map((ref) => {
                     const vi = VI.get(ref);
                     if (!vi) return null;
+                    const checked = removeSel.has(ref);
+                    const verse = (
+                      <MobileVerse
+                        reference={ref}
+                        verseNumber={vi.verse}
+                        text={vi.text}
+                        marks={marks}
+                        selBg={selBg}
+                        onTap={onTap}
+                        onRange={onRange}
+                        onManage={onManage}
+                        editMarkId={
+                          !removeMode && editMark && editMark.reference === ref
+                            ? editMark.id
+                            : null
+                        }
+                        editingActive={!removeMode && !!editMark}
+                        onEnterEdit={onEnterEdit}
+                        onAdjust={onAdjust}
+                        tags={wordTags}
+                        onTagTap={openTagRef}
+                      />
+                    );
                     return (
                       <div key={ref} style={{ marginBottom: "16px" }}>
                         <div
@@ -7373,30 +7501,62 @@ export default function MobileApp() {
                             fontSize: "11px",
                             color: C.muted,
                             marginBottom: "3px",
+                            marginLeft: removeMode ? "34px" : 0,
                           }}
                         >
                           {ref}
                         </div>
-                        <MobileVerse
-                          reference={ref}
-                          verseNumber={vi.verse}
-                          text={vi.text}
-                          marks={marks}
-                          selBg={selBg}
-                          onTap={onTap}
-                          onRange={onRange}
-                          onManage={onManage}
-                          editMarkId={
-                            editMark && editMark.reference === ref
-                              ? editMark.id
-                              : null
-                          }
-                          editingActive={!!editMark}
-                          onEnterEdit={onEnterEdit}
-                          onAdjust={onAdjust}
-                          tags={wordTags}
-                          onTagTap={openTagRef}
-                        />
+                        {removeMode ? (
+                          <div
+                            onClick={() =>
+                              setRemoveSel((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(ref)) next.delete(ref);
+                                else next.add(ref);
+                                return next;
+                              })
+                            }
+                            style={{
+                              display: "flex",
+                              gap: "12px",
+                              alignItems: "flex-start",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "22px",
+                                height: "22px",
+                                borderRadius: "6px",
+                                border:
+                                  "2px solid " + (checked ? ACCENT : C.border),
+                                background: checked ? ACCENT : "transparent",
+                                color: "#fff",
+                                flexShrink: 0,
+                                marginTop: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "13px",
+                                fontWeight: 800,
+                              }}
+                            >
+                              {checked ? "✓" : ""}
+                            </span>
+                            <div
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                pointerEvents: "none",
+                                opacity: checked ? 0.55 : 1,
+                              }}
+                            >
+                              {verse}
+                            </div>
+                          </div>
+                        ) : (
+                          verse
+                        )}
                       </div>
                     );
                   })}
@@ -7404,7 +7564,65 @@ export default function MobileApp() {
                 <div style={{ height: "24px" }} />
               </div>
 
+              {/* Remove-verses bar (replaces the pen bar in remove mode) */}
+              {removeMode && (
+                <div
+                  style={{
+                    padding:
+                      "12px 14px calc(14px + env(safe-area-inset-bottom))",
+                    borderTop: "1px solid " + C.border,
+                    background: C.panel,
+                    display: "flex",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setRemoveMode(false);
+                      setRemoveSel(new Set());
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      background: "transparent",
+                      color: C.muted,
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => removeSelectedVerses(study.id)}
+                    disabled={removeSel.size === 0}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: removeSel.size === 0 ? C.soft : "#ef4444",
+                      color: removeSel.size === 0 ? C.muted : "#fff",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      cursor: removeSel.size === 0 ? "default" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {removeSel.size === 0
+                      ? "Remove verses"
+                      : "Remove " +
+                        removeSel.size +
+                        (removeSel.size === 1 ? " verse" : " verses")}
+                  </button>
+                </div>
+              )}
+
               {/* Compact pen bar */}
+              {!removeMode && (
               <div
                 style={{
                   padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
@@ -7552,6 +7770,7 @@ export default function MobileApp() {
                   </>
                 )}
               </div>
+              )}
             </div>
           );
         })()}
