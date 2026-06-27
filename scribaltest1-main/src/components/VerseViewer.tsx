@@ -1079,15 +1079,9 @@ export default function VerseViewer(props: VerseViewerProps) {
                 gap: "7px",
                 padding: "6px 12px",
                 borderRadius: "999px",
-                border:
-                  "1px solid " +
-                  (linkScriptures.linked
-                    ? linkScriptures.color
-                    : "var(--border)"),
-                backgroundColor: "var(--panel)",
-                color: linkScriptures.linked
-                  ? linkScriptures.color
-                  : "var(--muted)",
+                border: "1px solid " + linkScriptures.color,
+                backgroundColor: linkScriptures.color + "14",
+                color: linkScriptures.color,
                 fontSize: "12.5px",
                 fontWeight: 600,
                 fontFamily: "system-ui, sans-serif",
