@@ -2636,27 +2636,57 @@ export default function App() {
   // chapter it was linked from (mirrors linkSearchToChapterTab, adjacent open).
   const linkSearchBesideTab = (refs: string[], label: string, ct: Tab) => {
     const scope = chapterScopeOf(ct);
+    // Open (or insert beside the chapter) the tab for a study and focus it.
+    const focusTab = (st: SearchStudy) => {
+      const loc = st.refs.length
+        ? refLoc.get(st.refs[0])
+        : refs.length
+        ? refLoc.get(refs[0])
+        : undefined;
+      const tabId = "studytab_" + st.id;
+      setTabs((prev) => {
+        if (prev.some((t) => t.id === tabId)) return prev;
+        const tab: Tab = {
+          id: tabId,
+          volume: loc ? loc.volume : 0,
+          book: loc ? loc.book : 0,
+          chapter: loc ? loc.chapter : 0,
+          bookId: st.bookId,
+          studyId: st.id,
+        };
+        const i = prev.findIndex((t) => t.id === ct.id);
+        return i < 0
+          ? [...prev, tab]
+          : [...prev.slice(0, i + 1), tab, ...prev.slice(i + 1)];
+      });
+      setActiveTabId(tabId);
+      setCompileView("outline");
+    };
+    // A chapter keeps ONE gathered search. If one already exists anywhere in the
+    // chapter's group, add the new verses to it (deduped, book order) and focus
+    // it, instead of creating a second linked search.
+    const gid = chapterGroups[scope];
+    const groupScopes = gid
+      ? Object.keys(chapterGroups).filter((s) => chapterGroups[s] === gid)
+      : [scope];
+    const groupSet = new Set(groupScopes.map((s) => resolveScope(s)));
+    const existing = searchStudies.find(
+      (s) =>
+        !isSearchStudyDeleted(s) &&
+        !!s.linkedScope &&
+        groupSet.has(resolveScope(s.linkedScope))
+    );
+    if (existing) {
+      const merged = Array.from(new Set([...existing.refs, ...refs])).sort(
+        (a, b) => orderOfRef(a) - orderOfRef(b)
+      );
+      updateStudy(existing.id, { refs: merged });
+      focusTab(existing);
+      return;
+    }
     const study = addStudy(label.trim() || "Search", ct.bookId, refs);
     updateStudy(study.id, { linkedScope: scope });
-    const loc = refs.length ? refLoc.get(refs[0]) : undefined;
-    const tabId = "studytab_" + study.id;
-    setTabs((prev) => {
-      if (prev.some((t) => t.id === tabId)) return prev;
-      const tab: Tab = {
-        id: tabId,
-        volume: loc ? loc.volume : 0,
-        book: loc ? loc.book : 0,
-        chapter: loc ? loc.chapter : 0,
-        bookId: study.bookId,
-        studyId: study.id,
-      };
-      const i = prev.findIndex((t) => t.id === ct.id);
-      return i < 0
-        ? [...prev, tab]
-        : [...prev.slice(0, i + 1), tab, ...prev.slice(i + 1)];
-    });
-    setActiveTabId(tabId);
-    setCompileView("outline");
+    focusTab(study);
   };
 
   // Collision: move the whole study (this chapter, or its linked group) into a
