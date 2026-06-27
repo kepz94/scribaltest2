@@ -779,7 +779,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     !!splitLabels;
   const studyBody = doSplit ? (
     <>
-      {sectionHeader(splitLabels!.first, "#0d9488")}
+      {sectionHeader(splitLabels!.first, "#3b82f6")}
       {renderRefGroups(allStudyRefs.slice(0, splitAfter), "added:")}
       {sectionHeader(splitLabels!.second, "var(--muted)")}
       {renderRefGroups(allStudyRefs.slice(splitAfter), "study:")}
