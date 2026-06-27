@@ -769,7 +769,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                         padding: "6px 14px",
                         borderRadius: "999px",
                         border: "none",
-                        background: "#0d9488",
+                        background: "#3b82f6",
                         color: "#fff",
                         cursor: "pointer",
                         fontSize: "12.5px",
@@ -793,7 +793,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           padding: "6px 14px",
                           borderRadius: "999px",
                           border: "none",
-                          background: "#0d9488",
+                          background: "#3b82f6",
                           color: "#fff",
                           cursor: "pointer",
                           fontSize: "12.5px",
@@ -844,7 +844,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                             padding: "6px 14px",
                             borderRadius: "999px",
                             border: "none",
-                            background: "#0d9488",
+                            background: "#3b82f6",
                             color: "#fff",
                             cursor: "pointer",
                             fontSize: "12.5px",
@@ -934,7 +934,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           height: "15px",
                           cursor: "pointer",
                           flexShrink: 0,
-                          accentColor: "#0d9488",
+                          accentColor: "#3b82f6",
                         }}
                       />
                     )}
