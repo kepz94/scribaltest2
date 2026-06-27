@@ -52,13 +52,22 @@ import {
 
 // Everything this (mobile) shell backs up: the shared study data (CORE_KEYS)
 // plus this device's reading position.
-const BACKUP_KEYS = [...CORE_KEYS, "scribal_mobile_loc"];
+const BACKUP_KEYS = [
+  ...CORE_KEYS,
+  "scribal_mobile_loc",
+  "scribal_mobile_tabs",
+  "scribal_mobile_active",
+];
 
 // Reading position / scroll are device-local: a pulled backup must never move
 // you off your current chapter, and scroll never travels between devices.
 const MOBILE_APPLY_OPTS = {
   alwaysLocal: ["scribal_mobile_scroll"],
-  keepLocalIfPresent: ["scribal_mobile_loc"],
+  keepLocalIfPresent: [
+    "scribal_mobile_loc",
+    "scribal_mobile_tabs",
+    "scribal_mobile_active",
+  ],
 };
 
 // A fresh id for a new link group.
@@ -74,6 +83,14 @@ const LINK_COLORS = [
   "#ef4444",
   "#ec4899",
 ];
+
+// How many reading tabs ("Screens") can be open at once. One panel shows at a
+// time; the "+" hides at this cap.
+const MAX_TABS = 8;
+
+// A fresh id for a new reading tab.
+const newTabId = () =>
+  "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
 // A chapter's scope key = its verse-reference prefix (e.g. "D&C 93", "John 1").
 // Marks store this prefix, so deriving scope from references — instead of book
@@ -369,6 +386,10 @@ interface Loc {
   c: number;
 }
 
+// A reading tab is just a location plus a stable id. The session (activeBookId)
+// stays global, so a tab never needs to carry it.
+type MTab = Loc & { id: string };
+
 // A search study: a named, hand-picked set of verses pulled from search results.
 // Its marks live in the chosen book (master or a session); this is the saved
 // "lens" over them, persisted so it can be reopened and worked on later.
@@ -533,6 +554,33 @@ const readLoc = (): Loc => {
   return { v: 0, b: 0, c: 0 };
 };
 
+// Reading tabs (mobile "Screens"). Prefer the saved tabs array; else migrate the
+// single saved location into one tab; else a fresh first-chapter tab. Always
+// returns at least one valid tab, dropping any whose location no longer exists.
+const readTabs = (): MTab[] => {
+  try {
+    const raw = localStorage.getItem("scribal_mobile_tabs");
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const valid = arr
+          .filter(
+            (t: any) =>
+              t &&
+              typeof t.id === "string" &&
+              vols[t.v] &&
+              vols[t.v].books[t.b] &&
+              vols[t.v].books[t.b].chapters[t.c]
+          )
+          .map((t: any) => ({ id: t.id, v: t.v, b: t.b, c: t.c }));
+        if (valid.length) return valid.slice(0, MAX_TABS);
+      }
+    }
+  } catch {}
+  const l = readLoc();
+  return [{ id: newTabId(), v: l.v, b: l.b, c: l.c }];
+};
+
 const SCROLL_KEY = "scribal_mobile_scroll";
 const locKey = (l: Loc) => l.v + "." + l.b + "." + l.c;
 const readScrollMap = (): Record<string, number> => {
@@ -662,7 +710,29 @@ export default function MobileApp() {
   const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
   const verseSize = (19 * reading.fontScale).toFixed(1) + "px";
 
-  const [loc, setLoc] = useState<Loc>(readLoc);
+  // Reading tabs back the single `loc`: the active tab feeds `loc`, and writing
+  // `loc` writes the active tab. Everything downstream still reads `loc` exactly
+  // as before — no other reading/marking/scroll code changes.
+  const [tabs, setTabs] = useState<MTab[]>(readTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    try {
+      return localStorage.getItem("scribal_mobile_active") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [screensOpen, setScreensOpen] = useState(false);
+  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const loc = useMemo<Loc>(
+    () => ({ v: activeTab.v, b: activeTab.b, c: activeTab.c }),
+    [activeTab.v, activeTab.b, activeTab.c]
+  );
+  const setLoc = (nl: Loc) =>
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId ? { ...t, v: nl.v, b: nl.b, c: nl.c } : t
+      )
+    );
   const [pen, setPen] = useState(readPen);
   const [penOpen, setPenOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
@@ -1152,6 +1222,24 @@ export default function MobileApp() {
     setBarHidden(false);
   }, [loc]);
 
+  // Persist the tabs array + which one is active (device-local reading session).
+  useEffect(() => {
+    try {
+      localStorage.setItem("scribal_mobile_tabs", JSON.stringify(tabs));
+    } catch {}
+  }, [tabs]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("scribal_mobile_active", activeTabId);
+    } catch {}
+  }, [activeTabId]);
+  // If the active id ever points nowhere (first run, migration, bad restore),
+  // fall back to the first tab.
+  useEffect(() => {
+    if (tabs.length && !tabs.some((t) => t.id === activeTabId))
+      setActiveTabId(tabs[0].id);
+  }, [tabs, activeTabId]);
+
   // Persist scroll positions when the app is backgrounded or closed.
   useEffect(() => {
     const flush = () => {
@@ -1356,6 +1444,53 @@ export default function MobileApp() {
     const i = ids.indexOf(gid);
     return LINK_COLORS[(i < 0 ? 0 : i) % LINK_COLORS.length];
   };
+
+  // ---- Reading tabs ("Screens") -------------------------------------------
+  // Open a new tab. Optional target location; defaults to the current chapter.
+  // Phase 2 (link rework) will call openTab(targetLoc) for "open in new tab".
+  const openTab = (target?: Loc) => {
+    if (tabs.length >= MAX_TABS) return;
+    const l = target || loc;
+    const id = newTabId();
+    setTabs([...tabs, { id, v: l.v, b: l.b, c: l.c }]);
+    setActiveTabId(id);
+  };
+  const switchTab = (id: string) => {
+    setActiveTabId(id);
+    setScreensOpen(false);
+  };
+  const closeTab = (id: string) => {
+    if (tabs.length <= 1) return; // always keep one panel open
+    const idx = tabs.findIndex((t) => t.id === id);
+    const next = tabs.filter((t) => t.id !== id);
+    setTabs(next);
+    if (id === activeTabId) {
+      const fb = next[Math.min(idx, next.length - 1)];
+      if (fb) setActiveTabId(fb.id);
+    }
+  };
+  const closeAllTabs = () => {
+    setTabs([{ id: activeTab.id, v: loc.v, b: loc.b, c: loc.c }]);
+    setActiveTabId(activeTab.id);
+  };
+  // Per-card display: title, work name, plain-text preview, link-group color.
+  const tabInfo = (t: MTab) => {
+    const bk = vols[t.v].books[t.b];
+    const ch = bk.chapters[t.c];
+    const scope = chapterScopeKey(bk, ch);
+    const gid = chapterGroups[scope];
+    const preview = ch.verses
+      .slice(0, 2)
+      .map((vv: any) => vv.text)
+      .join(" ");
+    return {
+      title: bk.book + " " + ch.chapter,
+      work: vols[t.v].volume,
+      preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
+      color: gid ? groupColor(gid) : null,
+    };
+  };
+
   const chapterColorName = (scope: string, color: MarkColor): string => {
     const sl = scopedLabels[resolveScope(scope)];
     if (sl && color in sl) return (sl[color] || "").trim();
@@ -2815,6 +2950,56 @@ export default function MobileApp() {
             </svg>
           </button>
 
+          <button
+            onClick={() => setScreensOpen(true)}
+            style={{
+              ...navBtn(C, false),
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            aria-label="Screens"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={C.text}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="8" y="3" width="13" height="13" rx="2.5" />
+              <path d="M16 19v.5A1.5 1.5 0 0 1 14.5 21h-9A1.5 1.5 0 0 1 4 19.5v-9A1.5 1.5 0 0 1 5.5 9H6" />
+            </svg>
+            {tabs.length > 1 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "4px",
+                  right: "3px",
+                  minWidth: "14px",
+                  height: "14px",
+                  padding: "0 3px",
+                  background: ACCENT,
+                  color: "#fff",
+                  borderRadius: "99px",
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                }}
+              >
+                {tabs.length}
+              </span>
+            )}
+          </button>
+
           <div
             style={{
               flex: 1,
@@ -4146,6 +4331,266 @@ export default function MobileApp() {
         )}
 
       {/* Home (full-screen launcher) */}
+      {screensOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 85,
+            backgroundColor: C.bg,
+            color: C.text,
+            display: "flex",
+            flexDirection: "column",
+            animation: "mob-fadein 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "54px",
+              paddingTop: "env(safe-area-inset-top)",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ fontSize: "19px", fontWeight: 800 }}>Screens</div>
+            <button
+              onClick={() => setScreensOpen(false)}
+              aria-label="Back to reading"
+              style={{
+                position: "absolute",
+                right: "14px",
+                top: "calc(env(safe-area-inset-top) + 50%)",
+                transform: "translateY(-50%)",
+                width: "34px",
+                height: "34px",
+                borderRadius: "50%",
+                border: "1px solid " + C.border,
+                background: C.panel,
+                color: C.text,
+                fontSize: "18px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "inherit",
+              }}
+            >
+              {"\u2715"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "14px",
+              padding: "6px 14px calc(env(safe-area-inset-bottom) + 100px)",
+            }}
+          >
+            {tabs.map((t) => {
+              const info = tabInfo(t);
+              const isActive = t.id === activeTabId;
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => switchTab(t.id)}
+                  style={{
+                    background: C.panel,
+                    border: isActive
+                      ? "2px solid " + ACCENT
+                      : "1px solid " + C.border,
+                    borderRadius: "14px",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "200px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "10px 10px 8px 12px",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: "6px",
+                      borderBottom: "1px solid " + C.border,
+                      background: isActive
+                        ? "rgba(139,92,246,0.07)"
+                        : "transparent",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {info.color && (
+                          <span style={{ flexShrink: 0, display: "flex" }}>
+                            <IconLink color={info.color} size={14} />
+                          </span>
+                        )}
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {info.title}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: C.muted,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {info.work}
+                      </div>
+                    </div>
+                    {tabs.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTab(t.id);
+                        }}
+                        aria-label="Close tab"
+                        style={{
+                          flexShrink: 0,
+                          width: "24px",
+                          height: "24px",
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "transparent",
+                          color: C.muted,
+                          fontSize: "15px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {"\u2715"}
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      padding: "10px 11px",
+                      overflow: "hidden",
+                      position: "relative",
+                      flex: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: "Georgia, serif",
+                        fontSize: "12.5px",
+                        lineHeight: 1.45,
+                        color: C.text,
+                      }}
+                    >
+                      {info.preview}
+                    </div>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: "34px",
+                        background:
+                          "linear-gradient(transparent, " + C.panel + ")",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0 22px calc(env(safe-area-inset-bottom) + 18px)",
+              height: "84px",
+              pointerEvents: "none",
+            }}
+          >
+            <button
+              onClick={closeAllTabs}
+              style={{
+                pointerEvents: "auto",
+                fontFamily: "inherit",
+                fontSize: "15px",
+                fontWeight: 600,
+                color: C.text,
+                cursor: "pointer",
+                padding: "13px 26px",
+                borderRadius: "999px",
+                border: "1px solid " + C.border,
+                background: C.soft,
+              }}
+            >
+              Close All
+            </button>
+            {tabs.length < MAX_TABS && (
+              <button
+                onClick={() => {
+                  openTab();
+                  setScreensOpen(false);
+                  setJumpOpen(true);
+                }}
+                aria-label="New tab"
+                style={{
+                  pointerEvents: "auto",
+                  width: "58px",
+                  height: "58px",
+                  borderRadius: "50%",
+                  border: "none",
+                  background: ACCENT,
+                  color: "#fff",
+                  fontSize: "30px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                  boxShadow: "0 6px 16px rgba(139,92,246,0.4)",
+                  fontFamily: "inherit",
+                }}
+              >
+                +
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {homeOpen && (
         <div
           style={{
