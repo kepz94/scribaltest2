@@ -2886,6 +2886,16 @@ export default function App() {
       openStudyTab({ ...study, refs: merged });
     }
   };
+  // "Remove verses" on a study panel: drop the chosen references from the
+  // study's verse list. Their marks stay in the book; an open tab updates
+  // live. Emptying a study just leaves it with no verses.
+  const removeVersesFromStudy = (studyId: string, refs: string[]) => {
+    if (!refs.length) return;
+    const study = searchStudies.find((s) => s.id === studyId);
+    if (!study) return;
+    const drop = new Set(refs);
+    updateStudy(studyId, { refs: study.refs.filter((r) => !drop.has(r)) });
+  };
   // Display name for a study's book in the send picker.
   const bookLabel = (bookId: string) => {
     const b = books.find((x) => x.id === bookId);
@@ -8244,6 +8254,12 @@ export default function App() {
                               ? "Linked study — click to change which chapters it links, or unlink"
                               : "Link this chapter — choose which open tabs to link it with",
                           }
+                    }
+                    onRemoveVerses={
+                      t.studyId
+                        ? (refs) =>
+                            removeVersesFromStudy(t.studyId as string, refs)
+                        : undefined
                     }
                   />
                 </div>
