@@ -3659,9 +3659,18 @@ export default function App() {
     const withBook = (bl: string) => (bl ? " · " + bl : "");
     const rows: StudyRow[] = [];
 
+    // Chapters/groups that have a keyword search linked to them are combined
+    // studies — they show once under Combined, never also as a chapter/linked row.
+    const combinedScopes = new Set(
+      searchStudies
+        .filter((ss) => ss.linkedScope && !isSearchStudyDeleted(ss))
+        .map((ss) => resolveScope(ss.linkedScope as string))
+    );
+
     recordedStudies
       .filter((s) => s.type === "chapter")
       .forEach((s) => {
+        if (combinedScopes.has(resolveScope(s.scopeRef))) return;
         const refOk = (ref: string) => scopeOfRef(ref) === s.scopeRef;
         const n = bookMarksOf(s.bookId).filter((m) =>
           refOk(m.reference)
@@ -3703,6 +3712,7 @@ export default function App() {
     recordedStudies
       .filter((s) => s.type === "linked")
       .forEach((s) => {
+        if (combinedScopes.has("group:" + s.scopeRef)) return;
         const chs = Object.keys(chapterGroups).filter(
           (c) => chapterGroups[c] === s.scopeRef
         );
@@ -3744,60 +3754,107 @@ export default function App() {
         });
       });
 
-    searchStudies.forEach((ss) => {
-      const refSet = new Set(ss.refs);
-      const refOk = (ref: string) => refSet.has(ref);
-      // A keyword search linked into a chapter reads as a combined study: its
-      // own category, titled by the chapter it's linked to.
-      const loc = ss.linkedScope ? chapterLoc.get(ss.linkedScope) : null;
+    // Standalone keyword searches → their own Keyword rows.
+    searchStudies
+      .filter((ss) => !ss.linkedScope)
+      .forEach((ss) => {
+        const refSet = new Set(ss.refs);
+        const refOk = (ref: string) => refSet.has(ref);
+        rows.push({
+          id: ss.id,
+          kind: "keyword",
+          bookId: ss.bookId,
+          name: ss.name,
+          meta:
+            ss.refs.length +
+            " verses" +
+            withBook(bookLabel(ss.bookId)) +
+            " · " +
+            fmtDate(ss.createdAt),
+          themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
+          onOpen: () => openStudyTab(ss),
+          onAddVerses: () => {
+            setAddToStudyId(ss.id);
+            setShowSearch(true);
+          },
+          onMove: () =>
+            setMoveTarget({
+              id: ss.id,
+              kind: "keyword",
+              bookId: ss.bookId,
+              name: ss.name,
+              refs: ss.refs,
+              scope: "searchstudy:" + ss.id,
+            }),
+          onDelete: () =>
+            askConfirm({
+              title: "Delete this study?",
+              body:
+                'Delete "' +
+                ss.name +
+                "\" from your studies? This can't be undone.",
+              onConfirm: () => removeStudy(ss.id),
+            }),
+        });
+      });
+
+    // Combined studies: a chapter and the keyword search(es) linked to it collapse
+    // into ONE listing under Combined (never also a chapter/linked row). Name is
+    // the saved study name if it was compiled/saved, else a default of the chapter.
+    const combinedByScope = new Map<string, SearchStudy[]>();
+    searchStudies
+      .filter((ss) => ss.linkedScope && !isSearchStudyDeleted(ss))
+      .forEach((ss) => {
+        const sc = resolveScope(ss.linkedScope as string);
+        const arr = combinedByScope.get(sc) || [];
+        arr.push(ss);
+        combinedByScope.set(sc, arr);
+      });
+    combinedByScope.forEach((group, sc) => {
+      const primary = group[0];
+      const loc = chapterLoc.get(primary.linkedScope as string);
       const chapterName = loc
         ? vols[loc.volume].books[loc.book].book +
           " " +
           vols[loc.volume].books[loc.book].chapters[loc.chapter].chapter
         : null;
-      const isCombined = !!ss.linkedScope;
+      // A recorded chapter/linked study at this scope means it was compiled +
+      // named; use that name, otherwise fall back to the chapter name.
+      const rec = recordedStudies.find(
+        (s) =>
+          !isStudyDeleted(s) &&
+          ((s.type === "chapter" && resolveScope(s.scopeRef) === sc) ||
+            (s.type === "linked" && "group:" + s.scopeRef === sc))
+      );
+      const title = (rec && rec.name) || chapterName || primary.name;
+      const refSet = new Set(group.flatMap((g) => g.refs));
+      const refOk = (ref: string) => refSet.has(ref);
+      const terms = group.map((g) => '"' + g.name + '"').join(", ");
       rows.push({
-        id: ss.id,
-        kind: isCombined ? "combined" : "keyword",
-        bookId: ss.bookId,
-        name: isCombined ? chapterName || ss.name : ss.name,
-        meta: isCombined
-          ? '"' +
-            ss.name +
-            '" · ' +
-            ss.refs.length +
-            " verses" +
-            withBook(bookLabel(ss.bookId)) +
-            " · " +
-            fmtDate(ss.createdAt)
-          : ss.refs.length +
-            " verses" +
-            withBook(bookLabel(ss.bookId)) +
-            " · " +
-            fmtDate(ss.createdAt),
-        themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-        onOpen: () => openStudyTab(ss),
+        id: "combined:" + sc,
+        kind: "combined",
+        bookId: primary.bookId,
+        name: title,
+        meta:
+          terms +
+          " · " +
+          refSet.size +
+          " verses" +
+          withBook(bookLabel(primary.bookId)),
+        themes: themesFor(primary.bookId, "searchstudy:" + primary.id, refOk),
+        onOpen: () => openStudyTab(primary),
         onAddVerses: () => {
-          setAddToStudyId(ss.id);
+          setAddToStudyId(primary.id);
           setShowSearch(true);
         },
-        onMove: () =>
-          setMoveTarget({
-            id: ss.id,
-            kind: "keyword",
-            bookId: ss.bookId,
-            name: ss.name,
-            refs: ss.refs,
-            scope: "searchstudy:" + ss.id,
-          }),
         onDelete: () =>
           askConfirm({
-            title: "Delete this study?",
+            title: "Delete this combined study?",
             body:
-              'Delete "' +
-              ss.name +
-              "\" from your studies? This can't be undone.",
-            onConfirm: () => removeStudy(ss.id),
+              "Delete this combined study? The linked keyword " +
+              (group.length === 1 ? "search" : "searches") +
+              " will be removed. This can't be undone.",
+            onConfirm: () => group.forEach((g) => removeStudy(g.id)),
           }),
       });
     });
