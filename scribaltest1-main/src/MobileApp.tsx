@@ -4799,7 +4799,7 @@ export default function MobileApp() {
               style={{
                 width: "100%",
                 background: "transparent",
-                color: "#0d9488",
+                color: TYPE_BLUE,
                 border: "1px solid " + C.border,
                 borderRadius: "10px",
                 padding: "13px",
@@ -4818,7 +4818,7 @@ export default function MobileApp() {
                 height="16"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#0d9488"
+                stroke={TYPE_BLUE}
                 strokeWidth="2.3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -4860,7 +4860,7 @@ export default function MobileApp() {
                   kwSet.has(s.linkedScope)
               )
             : [];
-          const kwColor = linkScope ? anchorColor(linkScope) : "#0d9488";
+          const kwColor = linkScope ? TYPE_PURPLE : TYPE_BLUE;
           const eyebrowStyle: React.CSSProperties = {
             fontSize: "11px",
             fontWeight: 700,
@@ -5337,7 +5337,7 @@ export default function MobileApp() {
                     style={{
                       width: "100%",
                       background: "transparent",
-                      color: "#0d9488",
+                      color: TYPE_BLUE,
                       border: "1px solid " + C.border,
                       borderRadius: "10px",
                       padding: "13px",
@@ -5356,7 +5356,7 @@ export default function MobileApp() {
                       height="16"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke="#0d9488"
+                      stroke={TYPE_BLUE}
                       strokeWidth="2.3"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -5400,7 +5400,7 @@ export default function MobileApp() {
                         height="17"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#0d9488"
+                        stroke={TYPE_BLUE}
                         strokeWidth="2.2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -5449,7 +5449,7 @@ export default function MobileApp() {
                         height="17"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke={ACCENT}
+                        stroke={TYPE_RED}
                         strokeWidth="2.2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -5941,7 +5941,7 @@ export default function MobileApp() {
                             fontWeight: 700,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
-                            color: "#0d9488",
+                            color: TYPE_BLUE,
                             marginBottom: "2px",
                             display: "flex",
                             alignItems: "center",
@@ -5953,7 +5953,7 @@ export default function MobileApp() {
                             height="11"
                             viewBox="0 0 24 24"
                             fill="none"
-                            stroke="#0d9488"
+                            stroke={TYPE_BLUE}
                             strokeWidth="2.4"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -7198,7 +7198,7 @@ export default function MobileApp() {
                   height="15"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#0d9488"
+                  stroke={TYPE_BLUE}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -7860,7 +7860,7 @@ export default function MobileApp() {
                       fontWeight: 700,
                       letterSpacing: "0.05em",
                       textTransform: "uppercase",
-                      color: "#0d9488",
+                      color: TYPE_BLUE,
                     }}
                   >
                     <svg
@@ -7868,7 +7868,7 @@ export default function MobileApp() {
                       height="11"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke="#0d9488"
+                      stroke={TYPE_BLUE}
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -8699,7 +8699,7 @@ export default function MobileApp() {
                     {chapterRecs.length > 0 &&
                       section(
                         "Chapter studies",
-                        ACCENT,
+                        TYPE_RED,
                         chapterRecs.map((s) =>
                           row(
                             s.id,
@@ -8710,7 +8710,7 @@ export default function MobileApp() {
                               (bookLabel(s.bookId)
                                 ? " · " + bookLabel(s.bookId)
                                 : ""),
-                            ACCENT,
+                            TYPE_RED,
                             () => openRecordedStudy(s),
                             () => {
                               if (
@@ -8753,7 +8753,7 @@ export default function MobileApp() {
                     {linkedRecs.length > 0 &&
                       section(
                         "Linked studies",
-                        ACCENT,
+                        TYPE_RED,
                         linkedRecs.map((s) =>
                           row(
                             s.id,
@@ -8764,7 +8764,7 @@ export default function MobileApp() {
                               (bookLabel(s.bookId)
                                 ? " · " + bookLabel(s.bookId)
                                 : ""),
-                            ACCENT,
+                            TYPE_RED,
                             () => openRecordedStudy(s),
                             () => {
                               if (
@@ -8774,7 +8774,7 @@ export default function MobileApp() {
                               )
                                 deleteStudy(s.id);
                             },
-                            <IconLink color={ACCENT} />,
+                            <IconLink color={TYPE_RED} />,
                             detail(
                               Object.keys(chapterGroups)
                                 .filter((c) => chapterGroups[c] === s.scopeRef)
@@ -8818,7 +8818,7 @@ export default function MobileApp() {
                     {liveSearch.length > 0 &&
                       section(
                         "Keyword studies",
-                        "#0d9488",
+                        TYPE_BLUE,
                         liveSearch.map((ss) =>
                           row(
                             ss.id,
@@ -8833,7 +8833,7 @@ export default function MobileApp() {
                               (bookLabel(ss.bookId)
                                 ? " · " + bookLabel(ss.bookId)
                                 : ""),
-                            "#0d9488",
+                            TYPE_BLUE,
                             () => openKeywordCompile(ss),
                             () => {
                               if (
@@ -8843,7 +8843,7 @@ export default function MobileApp() {
                               )
                                 deleteSearchStudy(ss.id);
                             },
-                            <IconLink color="#0d9488" />,
+                            <IconLink color={TYPE_BLUE} />,
                             detail(
                               Array.from(
                                 new Set(ss.refs.map((r) => scopeOf(r)))
@@ -9169,7 +9169,7 @@ export default function MobileApp() {
                       fontWeight: 700,
                       letterSpacing: "0.06em",
                       textTransform: "uppercase",
-                      color: "#0d9488",
+                      color: TYPE_BLUE,
                       marginBottom: "8px",
                     }}
                   >
@@ -10041,7 +10041,7 @@ export default function MobileApp() {
                                 countChapter(s) +
                                   " mark" +
                                   (countChapter(s) === 1 ? "" : "s"),
-                                ACCENT,
+                                TYPE_RED,
                                 () =>
                                   openFromVault(() => openRecordedStudy(s))
                               )
@@ -10057,10 +10057,10 @@ export default function MobileApp() {
                                 countLinked(s) +
                                   " mark" +
                                   (countLinked(s) === 1 ? "" : "s"),
-                                ACCENT,
+                                TYPE_RED,
                                 () =>
                                   openFromVault(() => openRecordedStudy(s)),
-                                <IconLink color={ACCENT} />
+                                <IconLink color={TYPE_RED} />
                               )
                             )
                           )}
@@ -10078,9 +10078,9 @@ export default function MobileApp() {
                                   ss.refs.length +
                                   " verse" +
                                   (ss.refs.length === 1 ? "" : "s"),
-                                "#0d9488",
+                                TYPE_BLUE,
                                 () => openFromVault(() => openStudy(ss)),
-                                <IconLink color="#0d9488" />
+                                <IconLink color={TYPE_BLUE} />
                               )
                             )
                           )}
