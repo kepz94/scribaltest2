@@ -1075,6 +1075,17 @@ export default function MobileApp() {
     setRemoveMode(false);
     setRemoveSel(new Set());
   }, [openStudyId]);
+  // Send-verses mode on the chapter reading screen: tap verses to check them,
+  // then send to a new or existing study (mirrors desktop's "Send verses").
+  // Resets when the reading location or active tab changes.
+  const [sendMode, setSendMode] = useState(false);
+  const [sendSel, setSendSel] = useState<Set<string>>(new Set());
+  const [sendRefs, setSendRefs] = useState<string[] | null>(null);
+  const [sendPicking, setSendPicking] = useState(false);
+  useEffect(() => {
+    setSendMode(false);
+    setSendSel(new Set());
+  }, [activeTabId, loc.v, loc.b, loc.c]);
   const prevBookForStudy = useRef<string | null>(null);
   // When set, the search screen is open to ADD verses to this keyword study
   // (its current verses are pre-selected); confirming merges the selection back.
@@ -1999,6 +2010,25 @@ export default function MobileApp() {
       openStudyTab(study);
       flash("Verses updated");
     }
+  };
+  // "Send verses" → merge picked refs into an existing study (union, book
+  // order) and open it. Mirrors desktop's sendToExistingStudy.
+  const sendToExistingStudyMobile = (study: SearchStudy, refs: string[]) => {
+    if (!refs.length) return;
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOf(a) - orderOf(b)
+    );
+    setSearchStudies((prev) =>
+      prev.map((s) =>
+        s.id === study.id ? { ...s, refs: merged, updatedAt: Date.now() } : s
+      )
+    );
+    const sscope = "searchstudy:" + study.id;
+    Array.from(new Set(refs.map((r) => scopeOf(r)))).forEach((ch) =>
+      seedScopeLabels(sscope, scopedLabels[ch] || {})
+    );
+    openStudyTab(study);
+    flash("Verses added");
   };
   const cancelDraft = () => setLinkDraftRefs(null);
   const createStudyFromDraft = () => {
@@ -3380,6 +3410,7 @@ export default function MobileApp() {
           <button
             data-tour="m-compile"
             onClick={compileCurrentStudy}
+            disabled={sendMode}
             style={{
               flexShrink: 0,
               background: C.text,
@@ -3389,7 +3420,8 @@ export default function MobileApp() {
               padding: "8px 16px",
               fontSize: "12.5px",
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: sendMode ? "default" : "pointer",
+              opacity: sendMode ? 0.4 : 1,
               fontFamily: "inherit",
             }}
             aria-label="Compile this study"
@@ -3407,6 +3439,90 @@ export default function MobileApp() {
             padding: "0 10px 7px",
           }}
         >
+          {sendMode ? (
+            <>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: "12.5px",
+                  color: C.muted,
+                  fontFamily: "inherit",
+                }}
+              >
+                {sendSel.size
+                  ? sendSel.size +
+                    (sendSel.size === 1
+                      ? " verse selected"
+                      : " verses selected")
+                  : "Tap verses to select"}
+              </span>
+              <button
+                onClick={() => {
+                  const all = chapter.verses.map((v: any) => v.reference);
+                  setSendSel((prev) =>
+                    prev.size === all.length ? new Set() : new Set(all)
+                  );
+                }}
+                style={{
+                  flexShrink: 0,
+                  padding: "5px 11px",
+                  borderRadius: "8px",
+                  border: "1px solid " + C.border,
+                  background: "transparent",
+                  color: C.text,
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {sendSel.size > 0 && sendSel.size === chapter.verses.length
+                  ? "Clear all"
+                  : "Select all"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setSendMode(true);
+                  setSendSel(new Set());
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  flexShrink: 0,
+                  background: ACCENT + "14",
+                  border: "1px solid " + ACCENT,
+                  borderRadius: "999px",
+                  padding: "5px 12px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+                aria-label="Send verses to a study"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={ACCENT}
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M22 2 11 13" />
+                  <path d="M22 2 15 22l-4-9-9-4 20-7z" />
+                </svg>
+                <span
+                  style={{ fontSize: "12px", fontWeight: 700, color: ACCENT }}
+                >
+                  Send verses
+                </span>
+              </button>
           <button
             data-tour="m-menu"
             onClick={() => setSettingsOpen(true)}
@@ -3493,6 +3609,8 @@ export default function MobileApp() {
               {chapterGroups[title] ? "Linked" : "Link"}
             </span>
           </button>
+            </>
+          )}
         </div>
         {!cloudSignedIn && DRIVE_CONFIGURED && connected && needsReconnect && (
           <button
@@ -3627,31 +3745,162 @@ export default function MobileApp() {
             WebkitUserSelect: "none",
           }}
         >
-          {chapter.verses.map((vs: any) => (
-            <MobileVerse
-              key={vs.reference}
-              reference={vs.reference}
-              verseNumber={vs.verse}
-              text={vs.text}
-              marks={marks}
-              selBg={selBg}
-              onTap={onTap}
-              onRange={onRange}
-              onManage={onManage}
-              editMarkId={
-                editMark && editMark.reference === vs.reference ? editMark.id : null
-              }
-              editingActive={!!editMark}
-              onEnterEdit={onEnterEdit}
-              onAdjust={onAdjust}
-              showConditionals={showConditionals}
-              dark={dark}
-              tags={wordTags}
-              onTagTap={openTagRef}
-            />
-          ))}
+          {chapter.verses.map((vs: any) => {
+            const verse = (
+              <MobileVerse
+                key={vs.reference}
+                reference={vs.reference}
+                verseNumber={vs.verse}
+                text={vs.text}
+                marks={marks}
+                selBg={selBg}
+                onTap={onTap}
+                onRange={onRange}
+                onManage={onManage}
+                editMarkId={
+                  !sendMode && editMark && editMark.reference === vs.reference
+                    ? editMark.id
+                    : null
+                }
+                editingActive={!sendMode && !!editMark}
+                onEnterEdit={onEnterEdit}
+                onAdjust={onAdjust}
+                showConditionals={showConditionals}
+                dark={dark}
+                tags={wordTags}
+                onTagTap={openTagRef}
+              />
+            );
+            if (!sendMode) return verse;
+            const checked = sendSel.has(vs.reference);
+            return (
+              <div
+                key={vs.reference}
+                onClick={() =>
+                  setSendSel((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(vs.reference)) next.delete(vs.reference);
+                    else next.add(vs.reference);
+                    return next;
+                  })
+                }
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  alignItems: "flex-start",
+                  cursor: "pointer",
+                  marginBottom: "10px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "6px",
+                    border: "2px solid " + (checked ? ACCENT : C.border),
+                    background: checked ? ACCENT : "transparent",
+                    color: "#fff",
+                    flexShrink: 0,
+                    marginTop: "3px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "13px",
+                    fontWeight: 800,
+                  }}
+                >
+                  {checked ? "✓" : ""}
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    pointerEvents: "none",
+                    opacity: checked ? 0.55 : 1,
+                  }}
+                >
+                  {verse}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {sendMode && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 61,
+            padding: "0 14px calc(14px + env(safe-area-inset-bottom))",
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: "auto",
+              display: "flex",
+              gap: "10px",
+              padding: "12px 14px",
+              backgroundColor: C.bg,
+              border: "1px solid " + C.border,
+              borderRadius: "16px",
+              boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+            }}
+          >
+            <button
+              onClick={() => {
+                setSendMode(false);
+                setSendSel(new Set());
+              }}
+              style={{
+                flex: 1,
+                padding: "11px",
+                borderRadius: "10px",
+                border: "1px solid " + C.border,
+                background: "transparent",
+                color: C.text,
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (!sendSel.size) return;
+                const refs = Array.from(sendSel).sort(
+                  (a, b) => orderOf(a) - orderOf(b)
+                );
+                setSendMode(false);
+                setSendSel(new Set());
+                setSendPicking(false);
+                setSendRefs(refs);
+              }}
+              disabled={sendSel.size === 0}
+              style={{
+                flex: 1,
+                padding: "11px",
+                borderRadius: "10px",
+                border: "none",
+                background: sendSel.size === 0 ? C.soft : ACCENT,
+                color: sendSel.size === 0 ? C.muted : "#fff",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: sendSel.size === 0 ? "default" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {sendSel.size ? "Send (" + sendSel.size + ")" : "Send"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pen tray (collapsible, locked to bottom) */}
       <div
@@ -3661,6 +3910,7 @@ export default function MobileApp() {
           right: 0,
           bottom: 0,
           zIndex: 60,
+          display: sendMode ? "none" : undefined,
           padding: "0 14px calc(14px + env(safe-area-inset-bottom))",
           pointerEvents: "none",
         }}
@@ -6946,6 +7196,234 @@ export default function MobileApp() {
               }
               onAddVerses={handleAddVersesToRec}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Send verses → start a new study or add to an existing one */}
+      {sendRefs && (
+        <div
+          onClick={() => {
+            setSendRefs(null);
+            setSendPicking(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 470,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "380px",
+              background: C.bg,
+              color: C.text,
+              borderRadius: "16px",
+              border: "1px solid " + C.border,
+              padding: "18px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            {!sendPicking ? (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Send{" "}
+                  {sendRefs.length === 1
+                    ? "this verse"
+                    : sendRefs.length + " verses"}
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: C.muted,
+                    marginTop: "3px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Start a new study from{" "}
+                  {sendRefs.length === 1 ? "it" : "them"}, or add to one you
+                  already have.
+                </div>
+                <button
+                  onClick={() => {
+                    const refs = sendRefs;
+                    setSendRefs(null);
+                    setSendPicking(false);
+                    setLinkDraftRefs(refs);
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: ACCENT,
+                    color: "#fff",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Create a new study
+                </button>
+                <button
+                  onClick={() => setSendPicking(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.panel,
+                    color: C.text,
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Add to an existing study
+                </button>
+                <button
+                  onClick={() => {
+                    setSendRefs(null);
+                    setSendPicking(false);
+                  }}
+                  style={{
+                    display: "block",
+                    margin: "14px 0 0 auto",
+                    background: "transparent",
+                    border: "none",
+                    color: C.muted,
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    padding: "4px",
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Add to a study
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: C.muted,
+                    marginTop: "3px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {sendRefs.length === 1
+                    ? "1 verse"
+                    : sendRefs.length + " verses"}{" "}
+                  will be added to the study you pick.
+                </div>
+                {(() => {
+                  const opts = searchStudies.filter((s) => !isSearchDeleted(s));
+                  if (!opts.length)
+                    return (
+                      <div
+                        style={{
+                          marginTop: "14px",
+                          fontSize: "13.5px",
+                          color: C.muted,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        You don’t have any studies to add to yet. Create one
+                        instead.
+                      </div>
+                    );
+                  return (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        maxHeight: "300px",
+                        overflowY: "auto",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {opts.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => {
+                            const refs = sendRefs;
+                            setSendRefs(null);
+                            setSendPicking(false);
+                            sendToExistingStudyMobile(s, refs);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid " + C.border,
+                            background: C.panel,
+                            color: C.text,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {s.name || "Untitled study"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: C.muted,
+                              marginTop: "2px",
+                            }}
+                          >
+                            {s.refs.length === 1
+                              ? "1 verse"
+                              : s.refs.length + " verses"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <button
+                  onClick={() => setSendPicking(false)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: C.muted,
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    padding: "6px 2px",
+                    marginTop: "14px",
+                  }}
+                >
+                  ‹ Back
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
