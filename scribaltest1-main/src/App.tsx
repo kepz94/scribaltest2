@@ -366,6 +366,11 @@ type Mode = "read" | "compile" | "vault";
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
 // color (we wrap these in a purple span in the header).
 const ICON_ACCENT = ACCENT;
+// Link-icon colors by study type — one glance tells you the kind:
+//   red = chapter study · blue = keyword study · purple = combined (both).
+const TYPE_RED = "#ef4444";
+const TYPE_BLUE = "#3b82f6";
+const TYPE_PURPLE = ACCENT;
 const IconSearch = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -8328,7 +8333,9 @@ export default function App() {
                       height="15"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke={active ? "#fff" : ACCENT}
+                      stroke={
+                        active ? "#fff" : kwLinked ? TYPE_PURPLE : TYPE_BLUE
+                      }
                       strokeWidth={2.4}
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -8538,6 +8545,20 @@ export default function App() {
               const linkGid = !t.studyId
                 ? chapterGroups[chapterScopeOf(t)]
                 : undefined;
+              // A chapter reads as "combined" (purple) when a live keyword
+              // search is linked into it (or its group); otherwise it's a plain
+              // chapter study (red). Derived live — no stored flag to drift.
+              const chapterCombined =
+                !t.studyId &&
+                (() => {
+                  const r = resolveScope(chapterScopeOf(t));
+                  return searchStudies.some(
+                    (s) =>
+                      !isSearchStudyDeleted(s) &&
+                      !!s.linkedScope &&
+                      resolveScope(s.linkedScope) === r
+                  );
+                })();
               return (
                 <div
                   key={t.id}
@@ -8614,24 +8635,20 @@ export default function App() {
                             onClick: () =>
                               setLinkKwStudyId(t.studyId as string),
                             linked: !!kwStudy?.linkedScope,
-                            color:
-                              kwStudy?.linkedScope &&
-                              chapterGroups[kwStudy.linkedScope]
-                                ? groupColor(
-                                    chapterGroups[kwStudy.linkedScope]
-                                  )
-                                : ACCENT,
+                            color: kwStudy?.linkedScope
+                              ? TYPE_PURPLE
+                              : TYPE_BLUE,
                             title: kwStudy?.linkedScope
-                              ? "Linked to a chapter — manage or unlink"
+                              ? "Combined study — manage the link or unlink"
                               : "Link this search to a chapter so they compile together",
                           }
                         : {
                             onClick: () => openLinkPrompt(t),
-                            linked: !!linkGid,
-                            color: linkGid ? groupColor(linkGid) : ACCENT,
-                            title: linkGid
-                              ? "Linked study — click to change which chapters it links, or unlink"
-                              : "Link this chapter — choose which open tabs to link it with",
+                            linked: chapterCombined || !!linkGid,
+                            color: chapterCombined ? TYPE_PURPLE : TYPE_RED,
+                            title: chapterCombined
+                              ? "Combined study — a keyword search is linked here"
+                              : "Link this chapter — to other chapters or a keyword search",
                           }
                     }
                     onRemoveVerses={
