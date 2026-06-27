@@ -26,7 +26,7 @@ interface Props {
   onPickScripture: (ref: string) => void; // scripture results choose a book first
   // When provided, a "Link" button lets the user multi-select scripture results
   // and bundle them into one study; called with the chosen verse references.
-  onLinkConfirm?: (refs: string[]) => void;
+  onLinkConfirm?: (refs: string[], label?: string) => void;
   // Adding verses to an existing keyword study: start already in link mode with
   // the study's current verses pre-selected, and relabel the confirm button.
   initialPicked?: string[];
@@ -628,7 +628,7 @@ export default function MobileSearch({
             ) : (
               onLinkConfirm && (
                 <button
-                  onClick={() => picked.length && onLinkConfirm(picked)}
+                  onClick={() => picked.length && onLinkConfirm(picked, query)}
                   disabled={!picked.length}
                   style={{
                     flexShrink: 0,
