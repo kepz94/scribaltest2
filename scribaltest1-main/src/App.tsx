@@ -4160,7 +4160,7 @@ export default function App() {
                     fontWeight: 700,
                     letterSpacing: "0.05em",
                     textTransform: "uppercase",
-                    color: ICON_ACCENT,
+                    color: ks.linkedScope ? TYPE_PURPLE : TYPE_BLUE,
                     marginBottom: "5px",
                   }}
                 >
@@ -4373,7 +4373,7 @@ export default function App() {
                     height="15"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="currentColor"
+                    stroke={TYPE_BLUE}
                     strokeWidth={2.2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -4610,7 +4610,7 @@ export default function App() {
                           padding: "10px 18px",
                           borderRadius: "10px",
                           border: "none",
-                          background: "#0d9488",
+                          background: TYPE_BLUE,
                           color: "#fff",
                           cursor: "pointer",
                           fontSize: "13px",
@@ -8941,7 +8941,7 @@ export default function App() {
                 <span
                   style={{
                     fontSize: "13.5px",
-                    color: "#0d9488",
+                    color: TYPE_BLUE,
                     fontWeight: 600,
                   }}
                 >
