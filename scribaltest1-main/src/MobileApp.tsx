@@ -1284,7 +1284,6 @@ export default function MobileApp() {
       }
       setOpenStudyId(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.studyId]);
 
   // Persist scroll positions when the app is backgrounded or closed.
