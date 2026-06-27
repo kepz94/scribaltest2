@@ -1824,6 +1824,78 @@ export default function App() {
     setLinkPromptTabId(null);
   };
 
+  // ---- Keyword-study link modal: navigate to / link chapters ----
+  // Open (or focus) a chapter the study is linked to, in the study's book so
+  // its marks line up. Self-contained — unlike jumpLinkedTab it isn't tied to
+  // the chapter link prompt.
+  const kwOpenChapter = (study: SearchStudy, scope: string) => {
+    const loc = locOfScope(scope);
+    if (!loc) return;
+    const id = makeTabId(study.bookId, loc.v, loc.b, loc.c);
+    setTabs((prev) =>
+      prev.some((x) => x.id === id)
+        ? prev
+        : [
+            ...prev,
+            {
+              id,
+              volume: loc.v,
+              book: loc.b,
+              chapter: loc.c,
+              bookId: study.bookId,
+            },
+          ]
+    );
+    setActiveTabId(id);
+    setMode("read");
+    setLinkKwStudyId(null);
+  };
+  // Link a keyword study to a chapter. Standalone → just set linkedScope. Already
+  // linked → grow the linked chapter's group to include the new chapter, mirroring
+  // the chapter link modal's SAFE path (reuse an existing group id, absorb the new
+  // chapter's old group, seed theme names fill-blanks, dissolve any group left with
+  // a single chapter, and re-point dissolved studies).
+  const linkKwToChapter = (study: SearchStudy, scope: string) => {
+    const cur = study.linkedScope;
+    if (!cur) {
+      updateStudy(study.id, { linkedScope: scope });
+      setLinkKwStudyId(null);
+      return;
+    }
+    if (resolveScope(cur) === resolveScope(scope)) {
+      setLinkKwStudyId(null);
+      return;
+    }
+    const prev = chapterGroups;
+    const involved = Array.from(
+      new Set([prev[cur], prev[scope]].filter((g): g is string => !!g))
+    ).sort();
+    const gid = involved.length ? involved[0] : newGroupId();
+    const next = { ...prev };
+    Object.keys(next).forEach((s) => {
+      if (involved.includes(next[s])) next[s] = gid;
+    });
+    next[cur] = gid;
+    next[scope] = gid;
+    [cur, scope].forEach((s) => {
+      const eff = prev[s] ? "group:" + prev[s] : s;
+      seedScopeLabels("group:" + gid, scopedLabels[eff] || {});
+    });
+    const counts: Record<string, number> = {};
+    Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
+    const survivors: Record<string, string> = {};
+    Object.keys(next).forEach((s) => {
+      if (next[s] !== gid && counts[next[s]] < 2) survivors[next[s]] = s;
+    });
+    Object.keys(next).forEach((s) => {
+      if (next[s] !== gid && counts[next[s]] < 2) delete next[s];
+    });
+    stampGroupChanges(prev, next);
+    setChapterGroups(next);
+    convertDissolvedStudies(survivors);
+    setLinkKwStudyId(null);
+  };
+
   const activeChapterRefs = useMemo(() => {
     if (activeTab.studyId) {
       const st = searchStudies.find((s) => s.id === activeTab.studyId);
@@ -3989,11 +4061,60 @@ export default function App() {
       {linkKwStudyId &&
         (() => {
           const ks = searchStudies.find((s) => s.id === linkKwStudyId);
-          const chapterTabs = tabs.filter((x) => !x.studyId);
-          const setLink = (scope: string | undefined) => {
-            updateStudy(linkKwStudyId, { linkedScope: scope });
-            setLinkKwStudyId(null);
+          if (!ks) return null;
+          const linkScope = ks.linkedScope || null;
+          const gid = linkScope ? chapterGroups[linkScope] : undefined;
+          const members = linkScope
+            ? gid
+              ? Object.keys(chapterGroups)
+                  .filter((s) => chapterGroups[s] === gid)
+                  .sort()
+              : [linkScope]
+            : [];
+          const gColor = gid ? groupColor(gid) : ACCENT;
+          const scopeLabel = (sc: string) => {
+            const l = chapterLoc.get(sc);
+            if (!l) return sc;
+            const bk = vols[l.volume].books[l.book];
+            return bk.book + " " + bk.chapters[l.chapter].chapter;
           };
+          const eyebrow: React.CSSProperties = {
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            marginBottom: "8px",
+          };
+          const selStyle: React.CSSProperties = {
+            boxSizing: "border-box",
+            width: "100%",
+            padding: "11px 10px",
+            borderRadius: "10px",
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            fontSize: "14px",
+            fontFamily: "inherit",
+          };
+          const addSearch = () => {
+            setLinkKwStudyId(null);
+            setAddToStudyId(ks.id);
+            setShowSearch(true);
+          };
+          const pickRef =
+            pickV >= 0 && pickB >= 0 && pickC >= 0
+              ? vols[pickV].books[pickB].chapters[pickC].verses[0]
+                  ?.reference || ""
+              : "";
+          const pickedScope = pickRef ? scopeOfRef(pickRef) : "";
+          const pickedInStudy =
+            !!pickedScope &&
+            ((linkScope && resolveScope(pickedScope) === resolveScope(linkScope)) ||
+              members.some(
+                (m) => resolveScope(m) === resolveScope(pickedScope)
+              ));
+          const canAdd = !!pickedScope && !pickedInStudy;
           return (
             <div
               className="scribal-fade"
@@ -4001,11 +4122,11 @@ export default function App() {
               style={{
                 position: "fixed",
                 inset: 0,
-                zIndex: 380,
                 background: "rgba(0,0,0,0.5)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                zIndex: 1000,
                 padding: "20px",
               }}
             >
@@ -4013,129 +4134,373 @@ export default function App() {
                 className="scribal-rise"
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                  width: "100%",
-                  maxWidth: "420px",
-                  background: "var(--bg)",
+                  background: "var(--panel)",
                   color: "var(--text)",
-                  borderRadius: "16px",
                   border: "1px solid var(--border)",
-                  padding: "20px",
-                  boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
-                  maxHeight: "80vh",
-                  display: "flex",
-                  flexDirection: "column",
+                  borderRadius: "14px",
+                  padding: "22px",
+                  width: "100%",
+                  maxWidth: "440px",
+                  maxHeight: "82vh",
+                  overflowY: "auto",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
                 }}
               >
-                <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                  Link to a chapter
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: ICON_ACCENT,
+                    marginBottom: "5px",
+                  }}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.3-4.3" />
+                  </svg>
+                  Keyword study
+                </div>
+                <div style={{ fontSize: "17px", fontWeight: 700 }}>
+                  {ks.name || "Search"}
                 </div>
                 <div
                   style={{
                     fontSize: "12.5px",
                     color: "var(--muted)",
-                    marginTop: "3px",
-                    lineHeight: 1.5,
+                    marginTop: "2px",
+                    marginBottom: "18px",
                   }}
                 >
-                  {ks ? "\u201C" + ks.name + "\u201D" : "This search"} will compile
-                  together with the chapter you pick, and reopen alongside it.
+                  {ks.refs.length} {ks.refs.length === 1 ? "verse" : "verses"} ·{" "}
+                  {linkScope ? "linked into a study" : "not linked yet"}
                 </div>
-                {chapterTabs.length === 0 ? (
-                  <div
-                    style={{
-                      fontSize: "13.5px",
-                      color: "var(--muted)",
-                      padding: "18px 2px",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Open a chapter in a tab first, then link this search to it.
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      marginTop: "14px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      overflowY: "auto",
-                    }}
-                  >
-                    {chapterTabs.map((ct) => {
-                      const scope = chapterScopeOf(ct);
-                      const on = ks?.linkedScope === scope;
-                      return (
-                        <button
-                          key={ct.id}
-                          onClick={() => {
-                            if (on) {
-                              askConfirm({
-                                title: "Are you sure?",
-                                body:
-                                  "This can be linked again in Studies.",
-                                confirmLabel: "Yes",
-                                cancelLabel: "No",
-                                onConfirm: () => setLink(undefined),
-                              });
-                            } else {
-                              setLink(scope);
-                            }
-                          }}
+
+                {linkScope ? (
+                  <>
+                    <div style={eyebrow}>In this study</div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                        lineHeight: 1.5,
+                        marginBottom: "12px",
+                      }}
+                    >
+                      Chapters this search compiles with. Go to one, open it in a
+                      new tab, or unlink.
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {members.map((sc) => (
+                        <div
+                          key={sc}
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: "10px",
-                            textAlign: "left",
-                            padding: "11px 13px",
-                            borderRadius: "10px",
-                            border: on
-                              ? "2px solid " + ACCENT
-                              : "1px solid var(--border)",
-                            background: "var(--bg)",
-                            color: "var(--text)",
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            fontSize: "14px",
-                            fontWeight: 600,
+                            gap: "8px",
                           }}
                         >
-                          <span>{tabLabel(ct)}</span>
-                          {on && (
+                          <div
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              padding: "11px 13px",
+                              borderRadius: "10px",
+                              border: "1px solid var(--border)",
+                              background: "var(--bg)",
+                              fontSize: "14px",
+                            }}
+                          >
                             <span
                               style={{
-                                fontSize: "11.5px",
-                                fontWeight: 500,
-                                color: "var(--muted)",
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                background: gColor,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
                               }}
                             >
-                              Linked · tap to unlink
+                              {scopeLabel(sc)}
                             </span>
-                          )}
-                        </button>
-                      );
-                    })}
+                          </div>
+                          <button
+                            onClick={() => kwOpenChapter(ks, sc)}
+                            title="Open this chapter in a tab"
+                            style={{
+                              flexShrink: 0,
+                              padding: "9px 12px",
+                              borderRadius: "8px",
+                              border: "none",
+                              background: gColor,
+                              color: "#fff",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              fontFamily: "inherit",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Go to
+                          </button>
+                          <button
+                            onClick={() => kwOpenChapter(ks, sc)}
+                            title="Open this chapter in a new tab"
+                            style={{
+                              flexShrink: 0,
+                              padding: "9px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid var(--border)",
+                              background: "transparent",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              fontFamily: "inherit",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            New tab
+                          </button>
+                          <button
+                            onClick={() =>
+                              askConfirm({
+                                title: "Unlink this search?",
+                                body: "It can be linked again anytime.",
+                                confirmLabel: "Unlink",
+                                cancelLabel: "Cancel",
+                                onConfirm: () =>
+                                  updateStudy(ks.id, {
+                                    linkedScope: undefined,
+                                  }),
+                              })
+                            }
+                            title="Unlink this search from the study"
+                            style={{
+                              flexShrink: 0,
+                              padding: "9px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid var(--border)",
+                              background: "transparent",
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              fontFamily: "inherit",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Unlink
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      color: "var(--muted)",
+                      lineHeight: 1.55,
+                      marginBottom: "18px",
+                    }}
+                  >
+                    Link this search to a chapter so they compile together as one
+                    study and reopen side by side. You can also gather another
+                    search into it.
                   </div>
                 )}
+
+                <div style={{ ...eyebrow, marginTop: "18px" }}>
+                  Add to this study
+                </div>
+                <button
+                  onClick={addSearch}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    padding: "11px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.3-4.3" />
+                  </svg>
+                  Add a keyword search
+                </button>
+
+                <div style={{ ...eyebrow, marginTop: "18px" }}>
+                  {linkScope ? "Or link another chapter" : "Link a chapter"}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  <select
+                    value={pickV}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setPickV(v);
+                      const single = v >= 0 && vols[v].books.length === 1;
+                      setPickB(single ? 0 : -1);
+                      setPickC(-1);
+                    }}
+                    style={selStyle}
+                  >
+                    <option value={-1}>Choose a volume…</option>
+                    {vols.map((vol, v) => (
+                      <option key={v} value={v}>
+                        {vol.volume}
+                      </option>
+                    ))}
+                  </select>
+                  {pickV >= 0 && vols[pickV].books.length > 1 && (
+                    <select
+                      value={pickB}
+                      onChange={(e) => {
+                        setPickB(Number(e.target.value));
+                        setPickC(-1);
+                      }}
+                      style={selStyle}
+                    >
+                      <option value={-1}>Choose a book…</option>
+                      {vols[pickV].books.map((bk, b) => (
+                        <option key={b} value={b}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <select
+                    value={pickC}
+                    disabled={pickB < 0}
+                    onChange={(e) => setPickC(Number(e.target.value))}
+                    style={{ ...selStyle, opacity: pickB < 0 ? 0.5 : 1 }}
+                  >
+                    <option value={-1}>
+                      {pickV >= 0 && vols[pickV].books.length === 1
+                        ? "Choose a section…"
+                        : "Choose a chapter…"}
+                    </option>
+                    {(pickV >= 0 && pickB >= 0
+                      ? vols[pickV].books[pickB].chapters
+                      : []
+                    ).map((ch, c) => (
+                      <option key={c} value={c}>
+                        {ch.chapter}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {pickedInStudy && (
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      color: "var(--muted)",
+                      marginTop: "8px",
+                    }}
+                  >
+                    That chapter is already in this study — pick another.
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    if (canAdd) {
+                      linkKwToChapter(ks, pickedScope);
+                      setPickV(-1);
+                      setPickB(-1);
+                      setPickC(-1);
+                    }
+                  }}
+                  disabled={!canAdd}
+                  style={{
+                    marginTop: "10px",
+                    width: "100%",
+                    padding: "11px 14px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: canAdd ? ACCENT : "var(--border)",
+                    color: canAdd ? "#fff" : "var(--muted)",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: canAdd ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {linkScope ? "Add chapter" : "Link chapter"}
+                </button>
+
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "flex-end",
-                    marginTop: "16px",
+                    marginTop: "18px",
                   }}
                 >
                   <button
                     onClick={() => setLinkKwStudyId(null)}
                     style={{
-                      padding: "10px 16px",
-                      borderRadius: "10px",
-                      border: "1px solid var(--border)",
                       background: "transparent",
-                      color: "var(--text)",
-                      cursor: "pointer",
-                      fontSize: "13px",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "13.5px",
                       fontWeight: 600,
+                      cursor: "pointer",
                       fontFamily: "inherit",
+                      padding: "6px 4px",
                     }}
                   >
                     Done
@@ -8245,7 +8610,21 @@ export default function App() {
                     }}
                     linkScriptures={
                       t.studyId
-                        ? undefined
+                        ? {
+                            onClick: () =>
+                              setLinkKwStudyId(t.studyId as string),
+                            linked: !!kwStudy?.linkedScope,
+                            color:
+                              kwStudy?.linkedScope &&
+                              chapterGroups[kwStudy.linkedScope]
+                                ? groupColor(
+                                    chapterGroups[kwStudy.linkedScope]
+                                  )
+                                : ACCENT,
+                            title: kwStudy?.linkedScope
+                              ? "Linked to a chapter — manage or unlink"
+                              : "Link this search to a chapter so they compile together",
+                          }
                         : {
                             onClick: () => openLinkPrompt(t),
                             linked: !!linkGid,
