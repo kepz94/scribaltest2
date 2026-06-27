@@ -8634,11 +8634,11 @@ export default function App() {
                         ? {
                             onClick: () =>
                               setLinkKwStudyId(t.studyId as string),
-                            linked: !!kwStudy?.linkedScope,
-                            color: kwStudy?.linkedScope
+                            linked: !!study?.linkedScope,
+                            color: study?.linkedScope
                               ? TYPE_PURPLE
                               : TYPE_BLUE,
-                            title: kwStudy?.linkedScope
+                            title: study?.linkedScope
                               ? "Combined study — manage the link or unlink"
                               : "Link this search to a chapter so they compile together",
                           }
