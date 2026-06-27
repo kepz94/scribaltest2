@@ -22,14 +22,13 @@ interface Props {
 }
 
 const SECTIONS: {
-  kind: StudyRow["kind"];
+  kinds: StudyRow["kind"][];
   label: string;
   color: string;
 }[] = [
-  { kind: "chapter", label: "Chapter studies", color: "#ef4444" },
-  { kind: "linked", label: "Linked studies", color: "#ef4444" },
-  { kind: "combined", label: "Combined studies", color: "#8b5cf6" },
-  { kind: "keyword", label: "Keyword studies", color: "#3b82f6" },
+  { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
+  { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
+  { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
 ];
 
 export default function StudiesList({ rows, onClose, onImport }: Props) {
@@ -188,10 +187,10 @@ export default function StudiesList({ rows, onClose, onImport }: Props) {
           )}
 
           {SECTIONS.map((sec) => {
-            const items = rows.filter((r) => r.kind === sec.kind);
+            const items = rows.filter((r) => sec.kinds.includes(r.kind));
             if (items.length === 0) return null;
             return (
-              <div key={sec.kind} style={{ marginTop: "14px" }}>
+              <div key={sec.label} style={{ marginTop: "14px" }}>
                 <div
                   style={{
                     display: "flex",
