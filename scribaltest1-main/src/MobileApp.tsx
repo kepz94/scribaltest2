@@ -8431,6 +8431,31 @@ export default function MobileApp() {
           const liveSearch = searchStudies.filter((s) => !isSearchDeleted(s));
           const chapterRecs = liveStudies.filter((s) => s.type === "chapter");
           const linkedRecs = liveStudies.filter((s) => s.type === "linked");
+          // A chapter/group with a keyword search linked to it is a combined
+          // study: it shows once under Combined, never also as a chapter/linked
+          // row. Multiple searches on one chapter collapse into one entry.
+          const combinedScopes = new Set(
+            liveSearch
+              .filter((s) => s.linkedScope)
+              .map((s) => resolveScope(s.linkedScope as string))
+          );
+          const chapterStudyRecs = chapterRecs.filter(
+            (s) => !combinedScopes.has(resolveScope(s.scopeRef))
+          );
+          const linkedStudyRecs = linkedRecs.filter(
+            (s) => !combinedScopes.has("group:" + s.scopeRef)
+          );
+          const standaloneSearch = liveSearch.filter((s) => !s.linkedScope);
+          const combinedMap = new Map<string, SearchStudy[]>();
+          liveSearch
+            .filter((s) => s.linkedScope)
+            .forEach((s) => {
+              const sc = resolveScope(s.linkedScope as string);
+              const arr = combinedMap.get(sc) || [];
+              arr.push(s);
+              combinedMap.set(sc, arr);
+            });
+          const combinedGroups = Array.from(combinedMap.entries());
           const countChapter = (s: Study) =>
             bookMarksOf(s.bookId).filter(
               (m) => scopeOf(m.reference) === s.scopeRef
@@ -8775,11 +8800,10 @@ export default function MobileApp() {
                   </>
                 ) : (
                   <>
-                    {chapterRecs.length > 0 &&
-                      section(
-                        "Chapter studies",
-                        TYPE_RED,
-                        chapterRecs.map((s) =>
+                    {(chapterStudyRecs.length > 0 ||
+                      linkedStudyRecs.length > 0) &&
+                      section("Chapter studies", TYPE_RED, [
+                        ...chapterStudyRecs.map((s) =>
                           row(
                             s.id,
                             s.name,
@@ -8827,13 +8851,8 @@ export default function MobileApp() {
                                 scope: resolveScope(s.scopeRef),
                               })
                           )
-                        )
-                      )}
-                    {linkedRecs.length > 0 &&
-                      section(
-                        "Linked studies",
-                        TYPE_RED,
-                        linkedRecs.map((s) =>
+                        ),
+                        ...linkedStudyRecs.map((s) =>
                           row(
                             s.id,
                             s.name,
@@ -8892,13 +8911,77 @@ export default function MobileApp() {
                                 scope: "group:" + s.scopeRef,
                               })
                           )
-                        )
+                        ),
+                      ])}
+                    {combinedGroups.length > 0 &&
+                      section(
+                        "Combined studies",
+                        TYPE_PURPLE,
+                        combinedGroups.map(([sc, group]) => {
+                          const primary = group[0];
+                          const rec = liveStudies.find(
+                            (s) =>
+                              (s.type === "chapter" &&
+                                resolveScope(s.scopeRef) === sc) ||
+                              (s.type === "linked" &&
+                                "group:" + s.scopeRef === sc)
+                          );
+                          const terms = group
+                            .map((g) => '"' + g.name + '"')
+                            .join(", ");
+                          const allRefs = new Set(group.flatMap((g) => g.refs));
+                          const title =
+                            (rec && rec.name) ||
+                            displayOf(primary.linkedScope as string) ||
+                            primary.name;
+                          return row(
+                            "combined:" + sc,
+                            title,
+                            terms +
+                              " · " +
+                              allRefs.size +
+                              " verse" +
+                              (allRefs.size === 1 ? "" : "s"),
+                            TYPE_PURPLE,
+                            () => openKeywordCompile(primary),
+                            () => {
+                              if (
+                                window.confirm(
+                                  "Delete this combined study? The linked keyword " +
+                                    (group.length === 1
+                                      ? "search"
+                                      : "searches") +
+                                    " will be removed. Your marks stay in the book."
+                                )
+                              )
+                                group.forEach((g) => deleteSearchStudy(g.id));
+                            },
+                            <IconLink color={TYPE_PURPLE} />,
+                            detail(
+                              displayOf(primary.linkedScope as string) +
+                                "  +  " +
+                                terms,
+                              themesFor(
+                                primary.bookId,
+                                "searchstudy:" + primary.id,
+                                (r) => allRefs.has(r)
+                              )
+                            ),
+                            infoStudyId === "combined:" + sc,
+                            () =>
+                              setInfoStudyId(
+                                infoStudyId === "combined:" + sc
+                                  ? null
+                                  : "combined:" + sc
+                              )
+                          );
+                        })
                       )}
-                    {liveSearch.length > 0 &&
+                    {standaloneSearch.length > 0 &&
                       section(
                         "Keyword studies",
                         TYPE_BLUE,
-                        liveSearch.map((ss) =>
+                        standaloneSearch.map((ss) =>
                           row(
                             ss.id,
                             ss.name,
