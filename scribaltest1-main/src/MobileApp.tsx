@@ -92,6 +92,14 @@ const MAX_TABS = 8;
 const newTabId = () =>
   "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+// Stable hash of a scope string → a deterministic index into LINK_COLORS, so a
+// single chapter that anchors a study (no chapter-group) still gets a color.
+const hashScope = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
 // A chapter's scope key = its verse-reference prefix (e.g. "D&C 93", "John 1").
 // Marks store this prefix, so deriving scope from references — instead of book
 // name + chapter number — keeps D&C (whose refs say "D&C" while the book is
@@ -997,6 +1005,7 @@ export default function MobileApp() {
                     refs: rs.refs,
                     note: rs.note ?? local.note,
                     view: rs.view ?? local.view,
+                    linkedScope: rs.linkedScope,
                     updatedAt: rAt,
                   }
                 : { ...local };
@@ -1052,6 +1061,11 @@ export default function MobileApp() {
   // When set, the search screen is open to ADD verses to this keyword study
   // (its current verses are pre-selected); confirming merges the selection back.
   const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
+  // When set, the search overlay is in "link results to this chapter" mode: on
+  // confirm, the picked verses become a keyword study linked to this scope.
+  const [linkToChapterScope, setLinkToChapterScope] = useState<string | null>(
+    null
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -1490,6 +1504,14 @@ export default function MobileApp() {
     const i = ids.indexOf(gid);
     return LINK_COLORS[(i < 0 ? 0 : i) % LINK_COLORS.length];
   };
+  // The color of the study a chapter scope anchors: its group color if linked to
+  // other chapters, else a stable color derived from the scope (so a lone
+  // chapter that has a linked keyword search still reads as one colored study).
+  const anchorColor = (scope: string): string => {
+    const gid = chapterGroups[scope];
+    if (gid) return groupColor(gid);
+    return LINK_COLORS[hashScope(scope) % LINK_COLORS.length];
+  };
 
   // ---- Reading tabs ("Screens") -------------------------------------------
   // Open a new tab. Optional target location; defaults to the current chapter.
@@ -1578,7 +1600,9 @@ export default function MobileApp() {
           : "",
         preview:
           preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
-        color: null as string | null,
+        color: (st && st.linkedScope
+          ? anchorColor(st.linkedScope)
+          : null) as string | null,
       };
     }
     const bk = vols[t.v].books[t.b];
@@ -1594,7 +1618,13 @@ export default function MobileApp() {
       title: bk.book + " " + ch.chapter,
       sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
-      color: gid ? groupColor(gid) : null,
+      color: gid
+        ? groupColor(gid)
+        : searchStudies.some(
+            (s) => !isSearchDeleted(s) && s.linkedScope === scope
+          )
+        ? anchorColor(scope)
+        : null,
     };
   };
 
@@ -1792,8 +1822,15 @@ export default function MobileApp() {
     performMove(target, targetBookId);
   };
   // Search → "Next": stash the picked verses and open the source + name step.
-  const onLinkConfirm = (refs: string[]) => {
+  const onLinkConfirm = (refs: string[], label?: string) => {
     if (!refs.length) return;
+    if (linkToChapterScope) {
+      const scope = linkToChapterScope;
+      setLinkToChapterScope(null);
+      setSearchOpen(false);
+      linkSearchToChapter(refs, scope, label);
+      return;
+    }
     const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
     setLinkDraftRefs(ordered);
     setDraftName("");
@@ -1801,6 +1838,30 @@ export default function MobileApp() {
     setDraftSessionId("");
     setDraftNewName("");
     setSearchOpen(false);
+  };
+
+  // Make the picked verses a keyword study linked to a chapter: created in that
+  // chapter's book, linkedScope set, opened as a tab. No naming/book step — it
+  // folds into the chapter's study (mirrors desktop's linkSearchToChapterTab).
+  const linkSearchToChapter = (refs: string[], scope: string, label?: string) => {
+    if (!refs.length || !scope) return;
+    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const study: SearchStudy = {
+      id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      name: (label || "").trim() || "Search",
+      bookId: activeBookId,
+      refs: ordered,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      linkedScope: scope,
+    };
+    setSearchStudies((prev) => [study, ...prev]);
+    const sscope = "searchstudy:" + study.id;
+    Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+      seedScopeLabels(sscope, scopedLabels[ch] || {})
+    );
+    openStudyTab(study);
+    flash("Search linked");
   };
 
   // Add verses to an existing keyword/imported study, or fork a new copy with the
@@ -4070,6 +4131,58 @@ export default function MobileApp() {
                 ? "Add " + title + " to this study"
                 : "Link"}
             </button>
+
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: C.muted,
+                margin: "18px 0 8px",
+              }}
+            >
+              Or add a keyword search
+            </div>
+            <button
+              onClick={() => {
+                setLinkToChapterScope(title);
+                setLinkOpen(false);
+                setSearchOpen(true);
+              }}
+              style={{
+                width: "100%",
+                background: "transparent",
+                color: "#0d9488",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                padding: "13px",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#0d9488"
+                strokeWidth="2.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
+              Add a keyword search to this study
+            </button>
           </div>
         )}
 
@@ -5823,6 +5936,7 @@ export default function MobileApp() {
             <button
               onClick={() => {
                 setSearchOpen(false);
+                setLinkToChapterScope(null);
                 if (addToStudyId) {
                   const id = addToStudyId;
                   setAddToStudyId(null);
@@ -5871,7 +5985,9 @@ export default function MobileApp() {
                     []
                   : undefined
               }
-              startLinking={!!addToStudyId || !!addVersesRecId}
+              startLinking={
+                !!addToStudyId || !!addVersesRecId || !!linkToChapterScope
+              }
               addToStudyName={
                 addToStudyId
                   ? searchStudies.find((s) => s.id === addToStudyId)?.name
