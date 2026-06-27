@@ -1066,6 +1066,11 @@ export default function MobileApp() {
   const [linkToChapterScope, setLinkToChapterScope] = useState<string | null>(
     null
   );
+  // The keyword study whose link sheet is open (null = closed), plus the sheet's
+  // sub-view: "menu" = standalone two-options OR linked members+actions;
+  // "chapter" = the chapter picker for "Add a chapter to this study".
+  const [kwLinkStudy, setKwLinkStudy] = useState<SearchStudy | null>(null);
+  const [kwLinkMode, setKwLinkMode] = useState<"menu" | "chapter">("menu");
   const [menuOpen, setMenuOpen] = useState(false);
   const [gesturesOpen, setGesturesOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -2148,6 +2153,72 @@ export default function MobileApp() {
       setLoc({ v: pickV, b: pickB, c: pickC });
     }
     flash("Linked with " + targetScope);
+  };
+
+  // ---- Keyword-study link sheet ----
+  // Open the link sheet for a keyword study (always starts on the menu view).
+  const openKwLink = (st: SearchStudy) => {
+    setKwLinkStudy(st);
+    setKwLinkMode("menu");
+    setPickV(-1);
+    setPickB(-1);
+    setPickC(-1);
+  };
+  // "Go to" a chapter from the keyword sheet: surface it in a chapter tab (reuse
+  // an open one if there is one), which closes the study screen via the tab
+  // bridge. "New tab" always opens a fresh chapter tab.
+  const kwGoToChapter = (scope: string) => {
+    const cl = chapterLoc.get(scope);
+    if (!cl) return;
+    const existing = tabs.find(
+      (t) => !t.studyId && t.v === cl.v && t.b === cl.b && t.c === cl.c
+    );
+    if (existing) {
+      setActiveTabId(existing.id);
+    } else if (tabs.length >= MAX_TABS) {
+      flash("Close a tab to open another");
+      return;
+    } else {
+      openTab({ v: cl.v, b: cl.b, c: cl.c });
+    }
+    setKwLinkStudy(null);
+  };
+  const kwNewTabChapter = (scope: string) => {
+    const cl = chapterLoc.get(scope);
+    if (!cl) return;
+    if (tabs.length >= MAX_TABS) {
+      flash("Close a tab to open another");
+      return;
+    }
+    openTab({ v: cl.v, b: cl.b, c: cl.c });
+    setKwLinkStudy(null);
+  };
+  // Confirm "Add a chapter to this study" from the keyword sheet's picker. A
+  // standalone study links to the picked chapter (sets linkedScope); a study
+  // already linked pulls the picked chapter into its chapter group.
+  const kwAddChapter = () => {
+    if (!kwLinkStudy || !targetScope) return;
+    const st = searchStudies.find((s) => s.id === kwLinkStudy.id) || kwLinkStudy;
+    if (st.linkedScope) {
+      linkChapters(st.linkedScope, targetScope);
+    } else {
+      setSearchStudies((prev) =>
+        prev.map((s) =>
+          s.id === st.id
+            ? { ...s, linkedScope: targetScope, updatedAt: Date.now() }
+            : s
+        )
+      );
+      seedScopeLabels(
+        "searchstudy:" + st.id,
+        scopedLabels[targetScope] || {}
+      );
+    }
+    setKwLinkMode("menu");
+    setPickV(-1);
+    setPickB(-1);
+    setPickC(-1);
+    flash("Chapter added");
   };
 
   // "Add a chapter to this study" (from the Studies hub). A chapter study
@@ -4333,6 +4404,661 @@ export default function MobileApp() {
           </div>
         )}
 
+      {/* Keyword-study link sheet: same experience as the chapter link button,
+          minus "link with next chapter". Standalone = two options; linked =
+          members (chapters with Go to / New tab / Unlink, sibling searches with
+          Open / Unlink) plus Add a chapter / Add a keyword search. */}
+      {kwLinkStudy &&
+        (() => {
+          const base = kwLinkStudy;
+          if (!base) return null;
+          const ks =
+            searchStudies.find((s) => s.id === base.id) || base;
+          const linkScope = ks.linkedScope || null;
+          const grpMembers = linkScope
+            ? groupMembers(linkScope).length
+              ? groupMembers(linkScope)
+              : [linkScope]
+            : [];
+          const kwSet = new Set<string>(
+            linkScope ? [linkScope, ...groupMembers(linkScope)] : []
+          );
+          const siblingSearches = linkScope
+            ? searchStudies.filter(
+                (s) =>
+                  !isSearchDeleted(s) &&
+                  s.id !== ks.id &&
+                  !!s.linkedScope &&
+                  kwSet.has(s.linkedScope)
+              )
+            : [];
+          const kwColor = linkScope ? anchorColor(linkScope) : "#0d9488";
+          const eyebrowStyle: React.CSSProperties = {
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: C.muted,
+            marginBottom: "8px",
+          };
+          const goAddVerses = () => {
+            setKwLinkStudy(null);
+            setAddToStudyId(ks.id);
+            setOpenStudyId(null);
+            setSearchOpen(true);
+          };
+          const startAddChapter = () => {
+            setPickV(-1);
+            setPickB(-1);
+            setPickC(-1);
+            setKwLinkMode("chapter");
+          };
+          return sheet(
+            () => {
+              setKwLinkStudy(null);
+              setKwLinkMode("menu");
+            },
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  fontSize: "10.5px",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  color: "#0d9488",
+                  marginBottom: "4px",
+                }}
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#0d9488"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                  <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                </svg>
+                Keyword study
+              </div>
+              <div
+                style={{ fontSize: "18px", fontWeight: 700, marginBottom: "2px" }}
+              >
+                {ks.name || "Search"}
+              </div>
+              <div
+                style={{
+                  fontSize: "12.5px",
+                  color: C.muted,
+                  marginBottom: "16px",
+                }}
+              >
+                {ks.refs.length} {ks.refs.length === 1 ? "verse" : "verses"} ·{" "}
+                {linkScope ? "linked into a study" : "not linked yet"}
+              </div>
+
+              {kwLinkMode === "chapter" ? (
+                <>
+                  <div style={eyebrowStyle}>Chapter to add</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <select
+                      value={pickV}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setPickV(v);
+                        const single =
+                          v >= 0 && vols[v].books.length === 1;
+                        setPickB(single ? 0 : -1);
+                        setPickC(-1);
+                      }}
+                      style={{
+                        boxSizing: "border-box",
+                        width: "100%",
+                        padding: "11px 10px",
+                        borderRadius: "10px",
+                        border: "1px solid " + C.border,
+                        background: C.soft,
+                        color: C.text,
+                        fontSize: "16px",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <option value={-1}>Choose a volume…</option>
+                      {vols.map((vol, v) => (
+                        <option key={v} value={v}>
+                          {vol.volume}
+                        </option>
+                      ))}
+                    </select>
+                    {pickVol && pickVol.books.length > 1 && (
+                      <select
+                        value={pickB}
+                        onChange={(e) => {
+                          setPickB(Number(e.target.value));
+                          setPickC(-1);
+                        }}
+                        style={{
+                          boxSizing: "border-box",
+                          width: "100%",
+                          padding: "11px 10px",
+                          borderRadius: "10px",
+                          border: "1px solid " + C.border,
+                          background: C.soft,
+                          color: C.text,
+                          fontSize: "16px",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <option value={-1}>Choose a book…</option>
+                        {pickVol.books.map((bk, b) => (
+                          <option key={b} value={b}>
+                            {bk.book}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <select
+                      value={pickC}
+                      disabled={pickB < 0}
+                      onChange={(e) => setPickC(Number(e.target.value))}
+                      style={{
+                        boxSizing: "border-box",
+                        width: "100%",
+                        padding: "11px 10px",
+                        borderRadius: "10px",
+                        border: "1px solid " + C.border,
+                        background: C.soft,
+                        color: C.text,
+                        fontSize: "16px",
+                        fontFamily: "inherit",
+                        opacity: pickB < 0 ? 0.5 : 1,
+                      }}
+                    >
+                      <option value={-1}>
+                        {pickVol && pickVol.books.length === 1
+                          ? "Choose a section…"
+                          : "Choose a chapter…"}
+                      </option>
+                      {pickChapters.map((ch, c) => (
+                        <option key={c} value={c}>
+                          {ch.chapter}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {targetScope && grpMembers.includes(targetScope) && (
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: C.muted,
+                        marginBottom: "8px",
+                      }}
+                    >
+                      That chapter is already in this study — pick another.
+                    </div>
+                  )}
+
+                  <button
+                    onClick={kwAddChapter}
+                    disabled={
+                      !targetScope || grpMembers.includes(targetScope)
+                    }
+                    style={{
+                      width: "100%",
+                      background: ACCENT,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "13px",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor:
+                        !targetScope || grpMembers.includes(targetScope)
+                          ? "default"
+                          : "pointer",
+                      opacity:
+                        !targetScope || grpMembers.includes(targetScope)
+                          ? 0.5
+                          : 1,
+                      fontFamily: "inherit",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {targetScope && !grpMembers.includes(targetScope)
+                      ? "Add " + targetScope
+                      : "Add chapter"}
+                  </button>
+                  <button
+                    onClick={() => setKwLinkMode("menu")}
+                    style={{
+                      width: "100%",
+                      background: "transparent",
+                      color: C.muted,
+                      border: "1px solid " + C.border,
+                      borderRadius: "10px",
+                      padding: "11px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    ← Back
+                  </button>
+                </>
+              ) : linkScope ? (
+                <>
+                  <div style={eyebrowStyle}>In this study</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    {grpMembers.map((sc) => (
+                      <div
+                        key={sc}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid " + C.border,
+                            background: C.soft,
+                            fontSize: "14px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "12px",
+                              height: "12px",
+                              borderRadius: "50%",
+                              background: kwColor,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {displayOf(sc)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => kwGoToChapter(sc)}
+                          style={{
+                            flexShrink: 0,
+                            padding: "9px 12px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: kwColor,
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Go to
+                        </button>
+                        <button
+                          onClick={() => kwNewTabChapter(sc)}
+                          style={{
+                            flexShrink: 0,
+                            padding: "9px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid " + C.border,
+                            background: "transparent",
+                            color: C.text,
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          New tab
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (groupMembers(sc).length > 0) {
+                              unlink(sc);
+                              flash("Unlinked " + displayOf(sc));
+                            } else if (
+                              window.confirm(
+                                "Unlink this study from " +
+                                  displayOf(sc) +
+                                  "?"
+                              )
+                            ) {
+                              unlinkSearch(ks.id);
+                              setKwLinkStudy(null);
+                              flash("Search unlinked");
+                            }
+                          }}
+                          style={{
+                            flexShrink: 0,
+                            padding: "9px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid " + C.border,
+                            background: "transparent",
+                            color: C.muted,
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    ))}
+                    {siblingSearches.map((s) => (
+                      <div
+                        key={s.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid " + C.border,
+                            background: C.soft,
+                            fontSize: "14px",
+                          }}
+                        >
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke={kwColor}
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="M21 21l-4.3-4.3" />
+                          </svg>
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {s.name || "Search"}
+                            <span
+                              style={{ fontSize: "11px", color: C.muted }}
+                            >
+                              {" "}
+                              · {s.refs.length}{" "}
+                              {s.refs.length === 1 ? "verse" : "verses"}
+                            </span>
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            openStudyTab(s);
+                            setKwLinkStudy(null);
+                          }}
+                          style={{
+                            flexShrink: 0,
+                            padding: "9px 13px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: kwColor,
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Open
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                "Unlink this search? It stays in Studies and can be linked again."
+                              )
+                            ) {
+                              unlinkSearch(s.id);
+                              flash("Search unlinked");
+                            }
+                          }}
+                          style={{
+                            flexShrink: 0,
+                            padding: "9px 13px",
+                            borderRadius: "8px",
+                            border: "1px solid " + C.border,
+                            background: "transparent",
+                            color: C.muted,
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={eyebrowStyle}>Add to this study</div>
+                  <button
+                    onClick={startAddChapter}
+                    style={{
+                      width: "100%",
+                      background: ACCENT,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "13px",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Add a chapter to this study
+                  </button>
+                  <button
+                    onClick={goAddVerses}
+                    style={{
+                      width: "100%",
+                      background: "transparent",
+                      color: "#0d9488",
+                      border: "1px solid " + C.border,
+                      borderRadius: "10px",
+                      padding: "13px",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#0d9488"
+                      strokeWidth="2.3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="M21 21l-4.3-4.3" />
+                    </svg>
+                    Add a keyword search to this study
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={eyebrowStyle}>Add to this study</div>
+                  <button
+                    onClick={goAddVerses}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "14px",
+                      borderRadius: "12px",
+                      border: "1px solid " + C.border,
+                      background: C.soft,
+                      color: C.text,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      marginBottom: "9px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <svg
+                        width="17"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#0d9488"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M21 21l-4.3-4.3" />
+                      </svg>
+                      Add a keyword search to this study
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: C.muted,
+                        marginTop: "3px",
+                      }}
+                    >
+                      Find verses by keyword and add just those
+                    </div>
+                  </button>
+                  <button
+                    onClick={startAddChapter}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "14px",
+                      borderRadius: "12px",
+                      border: "1px solid " + C.border,
+                      background: C.soft,
+                      color: C.text,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <svg
+                        width="17"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={ACCENT}
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                      </svg>
+                      Add a chapter to this study
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: C.muted,
+                        marginTop: "3px",
+                      }}
+                    >
+                      Link a whole chapter in — it shares this study’s themes
+                    </div>
+                  </button>
+                </>
+              )}
+            </div>,
+            460
+          );
+        })()}
+
       {/* Add a chapter to a recorded (chapter/linked) study, from the Studies hub */}
       {addChapterStudy && (
         <div
@@ -6510,11 +7236,7 @@ export default function MobileApp() {
                 }}
               >
                 <button
-                  onClick={() => {
-                    setAddToStudyId(study.id);
-                    setOpenStudyId(null);
-                    setSearchOpen(true);
-                  }}
+                  onClick={() => openKwLink(study)}
                   style={{
                     flex: 1,
                     display: "flex",
@@ -6546,7 +7268,7 @@ export default function MobileApp() {
                     <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
                     <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
                   </svg>
-                  Add verses
+                  Link
                 </button>
                 <button
                   onClick={() => {
