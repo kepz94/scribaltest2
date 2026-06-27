@@ -483,6 +483,12 @@ const IconTrash = ({ color, size = 17 }: { color: string; size?: number }) => (
 );
 
 // Same chain glyph the reading screen uses for linking.
+// Link-icon colors by study type — one glance tells the kind:
+//   red = chapter study · blue = keyword study · purple = combined (both).
+const TYPE_RED = "#ef4444";
+const TYPE_BLUE = "#3b82f6";
+const TYPE_PURPLE = ACCENT;
+
 const IconLink = ({ color, size = 16 }: { color: string; size?: number }) => (
   <svg
     width={size}
@@ -1532,6 +1538,17 @@ export default function MobileApp() {
   // A chapter's label scope: its group's shared scope if linked, else its own.
   const resolveScope = (cs: string) =>
     chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+  // A chapter reads as "combined" when a live keyword search is linked into it
+  // (or its group). Derived live — no stored flag to drift out of sync.
+  const chapterIsCombined = (cs: string) => {
+    const r = resolveScope(cs);
+    return searchStudies.some(
+      (s) =>
+        !isSearchDeleted(s) &&
+        !!s.linkedScope &&
+        resolveScope(s.linkedScope) === r
+    );
+  };
   // Stable distinct color for each link group.
   const groupColor = (gid: string) => {
     const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
@@ -3590,7 +3607,7 @@ export default function MobileApp() {
               height="15"
               viewBox="0 0 24 24"
               fill="none"
-              stroke={ACCENT}
+              stroke={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -3603,10 +3620,12 @@ export default function MobileApp() {
               style={{
                 fontSize: "12px",
                 fontWeight: 700,
-                color: chapterGroups[title] ? ACCENT : C.text,
+                color: chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED,
               }}
             >
-              {chapterGroups[title] ? "Linked" : "Link"}
+              {chapterGroups[title] || chapterIsCombined(title)
+                ? "Linked"
+                : "Link"}
             </span>
           </button>
             </>
@@ -7899,7 +7918,7 @@ export default function MobileApp() {
                         borderRadius: "999px",
                         border: "1px solid " + C.border,
                         background: "transparent",
-                        color: C.text,
+                        color: study.linkedScope ? TYPE_PURPLE : TYPE_BLUE,
                         fontFamily: "inherit",
                         fontSize: "13px",
                         fontWeight: 700,
@@ -7911,7 +7930,7 @@ export default function MobileApp() {
                         height="15"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#0d9488"
+                        stroke={study.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -7920,7 +7939,7 @@ export default function MobileApp() {
                         <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
                         <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
                       </svg>
-                      Link
+                      {study.linkedScope ? "Linked" : "Link"}
                     </button>
                   </>
                 )}
