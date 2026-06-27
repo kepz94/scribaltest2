@@ -4,7 +4,7 @@ import { COLOR_MAP, MarkColor } from "../types";
 // and hands them over ready to render.
 export type StudyRow = {
   id: string;
-  kind: "chapter" | "linked" | "keyword";
+  kind: "chapter" | "linked" | "keyword" | "combined";
   bookId: string;
   name: string;
   meta: string;
@@ -28,6 +28,7 @@ const SECTIONS: {
 }[] = [
   { kind: "chapter", label: "Chapter studies", color: "#ef4444" },
   { kind: "linked", label: "Linked studies", color: "#ef4444" },
+  { kind: "combined", label: "Combined studies", color: "#8b5cf6" },
   { kind: "keyword", label: "Keyword studies", color: "#3b82f6" },
 ];
 
