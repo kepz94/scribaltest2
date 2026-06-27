@@ -505,95 +505,67 @@ const IconLink = ({ color, size = 16 }: { color: string; size?: number }) => (
   </svg>
 );
 
-// A link glyph that, when `flashing`, plays the merge splash in place — a red
-// link and a blue link fusing into one purple link — then settles back to the
-// static `color` icon. Used on the link buttons the moment a study turns
-// combined.
+// A static link glyph in the given type color. The merge animation lives in
+// the center-screen MergeMoment overlay, not here, so this stays a plain icon.
 const LinkGlyph = ({
   color,
-  flashing,
   size = 15,
 }: {
   color: string;
-  flashing: boolean;
   size?: number;
-}) => {
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+  </svg>
+);
+
+// The center-screen "Combined study" moment. Mounted briefly when a link turns
+// a study combined; the CSS plays once and then it unmounts.
+const MergeMoment = () => {
   const path = (
     <>
       <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
       <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
     </>
   );
-  return (
-    <span
-      style={{
-        position: "relative",
-        display: "inline-flex",
-        width: size,
-        height: size,
-        overflow: "visible",
-        flexShrink: 0,
-      }}
+  const lk = (cls: string, stroke: string) => (
+    <svg
+      className={"mo-lk " + cls}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={stroke}
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      {flashing ? (
-        <span className="sg-fuse">
-          <span className="sg-ripple" />
-          <svg
-            className="sg-lk sg-red"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={TYPE_RED}
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {path}
-          </svg>
-          <svg
-            className="sg-lk sg-blue"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={TYPE_BLUE}
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {path}
-          </svg>
-          <svg
-            className="sg-lk sg-purple"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={TYPE_PURPLE}
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {path}
-          </svg>
-        </span>
-      ) : (
-        <svg
-          width={size}
-          height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          {path}
-        </svg>
-      )}
-    </span>
+      {path}
+    </svg>
+  );
+  return (
+    <div className="mo-wrap">
+      <div className="mo-stage">
+        <span className="mo-glow" />
+        <span className="mo-ripple" />
+        {lk("mo-red", TYPE_RED)}
+        {lk("mo-blue", TYPE_BLUE)}
+        {lk("mo-purple", TYPE_PURPLE)}
+      </div>
+      <div className="mo-label">
+        <div className="mo-big">Combined study</div>
+        <div className="mo-small">Chapter + keyword linked</div>
+      </div>
+    </div>
   );
 };
 
@@ -1648,7 +1620,7 @@ export default function MobileApp() {
   useEffect(() => {
     if (!mergeFlash) return;
     setLinkFlash(true);
-    const t = setTimeout(() => setLinkFlash(false), 760);
+    const t = setTimeout(() => setLinkFlash(false), 1500);
     return () => clearTimeout(t);
   }, [mergeFlash]);
   const triggerMergeFlash = () => setMergeFlash((n) => n + 1);
@@ -3341,17 +3313,26 @@ export default function MobileApp() {
         @keyframes mob-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes mob-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes mob-toast-in { 0% { opacity: 0; transform: translateX(-50%) translateY(16px) scale(0.9); } 55% { opacity: 1; } 100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
-        /* Merge splash: a red link and a blue link fuse into a purple link. */
-        @keyframes sg-fromLeft { 0% { transform: translateX(-9px); opacity: 1; } 48% { transform: translateX(0); opacity: 1; } 60% { opacity: 0; } 100% { transform: translateX(0); opacity: 0; } }
-        @keyframes sg-fromRight { 0% { transform: translateX(9px); opacity: 1; } 48% { transform: translateX(0); opacity: 1; } 60% { opacity: 0; } 100% { transform: translateX(0); opacity: 0; } }
-        @keyframes sg-popIn { 0%, 46% { transform: scale(0); opacity: 0; } 58% { transform: scale(1.35); opacity: 1; } 72% { transform: scale(.9); } 100% { transform: scale(1); opacity: 1; } }
-        @keyframes sg-ripple { 0%, 46% { transform: scale(.3); opacity: 0; } 58% { opacity: .5; } 100% { transform: scale(2.2); opacity: 0; } }
-        .sg-fuse { position: absolute; inset: 0; pointer-events: none; }
-        .sg-lk { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; }
-        .sg-red { animation: sg-fromLeft .72s ease both; }
-        .sg-blue { animation: sg-fromRight .72s ease both; }
-        .sg-purple { animation: sg-popIn .72s ease both; }
-        .sg-ripple { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #8b5cf6; animation: sg-ripple .72s ease both; }
+        /* Combined-study moment: a center-screen red+blue→purple fuse with a
+           glow and label over a brief dim — announces a new combined study. */
+        @keyframes mo-dim { 0% { background: rgba(20,18,15,0); } 18% { background: rgba(20,18,15,.34); } 78% { background: rgba(20,18,15,.34); } 100% { background: rgba(20,18,15,0); } }
+        @keyframes mo-fromLeft { 0%,8% { transform: translateX(-30px); opacity: 0; } 16% { opacity: 1; } 34% { transform: translateX(0); opacity: 1; } 44%,100% { opacity: 0; } }
+        @keyframes mo-fromRight { 0%,8% { transform: translateX(30px); opacity: 0; } 16% { opacity: 1; } 34% { transform: translateX(0); opacity: 1; } 44%,100% { opacity: 0; } }
+        @keyframes mo-popIn { 0%,34% { transform: scale(0); opacity: 0; } 44% { transform: scale(1.35); opacity: 1; } 54% { transform: scale(.94); } 62% { transform: scale(1); } 78% { transform: scale(1); opacity: 1; } 100% { transform: scale(.7); opacity: 0; } }
+        @keyframes mo-ripple { 0%,34% { transform: scale(.3); opacity: 0; } 46% { opacity: .6; } 66% { transform: scale(2); opacity: 0; } 100% { opacity: 0; } }
+        @keyframes mo-glow { 0%,30% { opacity: 0; } 46% { opacity: 1; } 70% { opacity: .5; } 100% { opacity: 0; } }
+        @keyframes mo-label { 0%,40% { opacity: 0; transform: translateY(8px); } 52% { opacity: 1; transform: translateY(0); } 78% { opacity: 1; } 100% { opacity: 0; } }
+        .mo-wrap { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; pointer-events: none; z-index: 100000; animation: mo-dim 1.5s ease both; }
+        .mo-stage { position: relative; width: 120px; height: 120px; }
+        .mo-glow { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(139,92,246,.45), rgba(139,92,246,0) 70%); animation: mo-glow 1.5s ease both; }
+        .mo-ripple { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; width: 78px; height: 78px; border-radius: 50%; border: 3px solid #8b5cf6; opacity: 0; animation: mo-ripple 1.5s ease both; }
+        .mo-lk { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: auto; width: 60px; height: 60px; }
+        .mo-red { animation: mo-fromLeft 1.5s ease both; }
+        .mo-blue { animation: mo-fromRight 1.5s ease both; }
+        .mo-purple { animation: mo-popIn 1.5s ease both; }
+        .mo-label { text-align: center; opacity: 0; animation: mo-label 1.5s ease both; }
+        .mo-big { font-size: 19px; font-weight: 800; color: #fff; }
+        .mo-small { font-size: 12.5px; color: rgba(255,255,255,.82); margin-top: 3px; }
         /* Native-feel tap polish: no default grey flash on any tap, and every
            button gets a quick pressed state + smooth state transitions. */
         * { -webkit-tap-highlight-color: transparent; }
@@ -3720,7 +3701,6 @@ export default function MobileApp() {
           >
             <LinkGlyph
               color={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
-              flashing={linkFlash && chapterIsCombined(title)}
               size={15}
             />
             <span
@@ -4922,7 +4902,6 @@ export default function MobileApp() {
               >
                 <LinkGlyph
                   color={ks.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
-                  flashing={linkFlash && !!ks.linkedScope}
                   size={12}
                 />
                 Keyword study
@@ -8025,7 +8004,6 @@ export default function MobileApp() {
                     >
                       <LinkGlyph
                         color={study.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
-                        flashing={linkFlash && !!study.linkedScope}
                         size={15}
                       />
                       {study.linkedScope ? "Linked" : "Link"}
@@ -10279,6 +10257,9 @@ export default function MobileApp() {
           </div>
         </div>
       )}
+
+      {/* Center-screen moment when a study turns combined */}
+      {linkFlash && <MergeMoment key={mergeFlash} />}
 
       {/* Quiet feedback toast */}
       {toast && (
