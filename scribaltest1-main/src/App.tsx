@@ -543,6 +543,160 @@ const MergeSeam = ({
   </div>
 );
 
+// A single blue link icon for the "grow" pulse, centered on the panel
+// (left:50% rather than the seam's left:0).
+const GrowLink = ({ cls, w = 30 }: { cls: string; w?: number }) => (
+  <svg
+    className={cls}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={TYPE_BLUE}
+    strokeWidth={2.4}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      width: w,
+      height: w,
+    }}
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+  </svg>
+);
+
+// The keyword "grow" pulse. When verses are added to an existing search, this
+// plays centered in that search's OWN reading panel (no seam) - two blue links
+// converge and fuse. In a multi-panel row it is pinned (absolute) inside the
+// search panel's visible box so it stays put even if the panel is scrolled; in
+// single-pane reading the panel grows with the page, so it pins to the viewport
+// (fixed) instead.
+const GrowPulse = ({ fixed }: { fixed?: boolean }) => (
+  <div
+    style={{
+      position: fixed ? "fixed" : "absolute",
+      inset: 0,
+      pointerEvents: "none",
+      zIndex: 30,
+      overflow: "hidden",
+    }}
+  >
+    <style>{`
+      @keyframes scribal-grow-dim {
+        0% { opacity: 0; }
+        18% { opacity: 1; }
+        72% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-left {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(-70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(-30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-right {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-pop {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        54% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
+        66% { transform: translate(-50%,-50%) scale(.95); }
+        74% { transform: translate(-50%,-50%) scale(1.05); }
+        84% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-grow-glow {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        56% { opacity: .5; transform: translate(-50%,-50%) scale(1.5); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
+      }
+      @keyframes scribal-grow-ripple {
+        0%, 48% { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
+        56% { opacity: .7; }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-grow-label {
+        0%, 52% { opacity: 0; transform: translate(-50%,-50%) translateY(64px); }
+        66% { opacity: 1; transform: translate(-50%,-50%) translateY(56px); }
+        86% { opacity: 1; transform: translate(-50%,-50%) translateY(56px); }
+        100% { opacity: 0; transform: translate(-50%,-50%) translateY(56px); }
+      }
+      .scribal-grow-dim { animation: scribal-grow-dim 1.6s ease both; }
+      .scribal-grow-ripple { animation: scribal-grow-ripple 1.6s ease both; }
+      .scribal-grow-glow { animation: scribal-grow-glow 1.6s ease both; }
+      .scribal-grow-left { animation: scribal-grow-left 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-grow-right { animation: scribal-grow-right 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-grow-pop { animation: scribal-grow-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
+      .scribal-grow-label { animation: scribal-grow-label 1.6s ease both; }
+    `}</style>
+    <div
+      className="scribal-grow-dim"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 420,
+        height: 420,
+        transform: "translate(-50%,-50%)",
+        background:
+          "radial-gradient(circle, rgba(20,16,12,0.12), transparent 62%)",
+      }}
+    />
+    <div
+      className="scribal-grow-ripple"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 120,
+        height: 120,
+        borderRadius: "50%",
+        border: "2.5px solid " + TYPE_BLUE,
+      }}
+    />
+    <div
+      className="scribal-grow-glow"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 92,
+        height: 92,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, " + TYPE_BLUE + "b3, transparent 65%)",
+      }}
+    />
+    <GrowLink cls="scribal-grow-left" />
+    <GrowLink cls="scribal-grow-right" />
+    <GrowLink cls="scribal-grow-pop" w={34} />
+    <div
+      className="scribal-grow-label"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        whiteSpace: "nowrap",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "12px",
+        fontWeight: 800,
+        color: TYPE_BLUE,
+        letterSpacing: "0.02em",
+        textShadow: "0 1px 8px rgba(251,249,244,0.9)",
+      }}
+    >
+      Keywords added
+    </div>
+  </div>
+);
+
 const IconSearch = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -989,6 +1143,14 @@ export default function App() {
     key: number;
   } | null>(null);
   const mergeKeyRef = useRef(0);
+  // The keyword "grow" pulse: set to the study id whose verse list just grew, so
+  // the pulse plays centered in that search's own panel. Separate from the seam
+  // (a grow is not a link), so the two never interfere.
+  const [growMoment, setGrowMoment] = useState<{
+    studyId: string;
+    key: number;
+  } | null>(null);
+  const growKeyRef = useRef(0);
   // Central link-watcher: a render-to-render diff of the link data, so the seam
   // fires on ANY new link no matter which action made it. `ready` gates out the
   // brief startup window (and any data hydration / first sync) so loading saved
@@ -996,11 +1158,19 @@ export default function App() {
   const linkWatchReady = useRef(false);
   const prevKwLinks = useRef<Record<string, string>>({});
   const prevChapGroups = useRef<Record<string, string>>({});
+  // Per-study verse counts from the previous render, so the watcher can spot a
+  // study that GREW (verses added) versus one that is merely new or shrank.
+  const prevStudyRefs = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!mergeMoment) return;
     const id = window.setTimeout(() => setMergeMoment(null), 1700);
     return () => window.clearTimeout(id);
   }, [mergeMoment]);
+  useEffect(() => {
+    if (!growMoment) return;
+    const id = window.setTimeout(() => setGrowMoment(null), 1750);
+    return () => window.clearTimeout(id);
+  }, [growMoment]);
   useEffect(() => {
     const id = window.setTimeout(() => {
       linkWatchReady.current = true;
@@ -1017,10 +1187,16 @@ export default function App() {
         curKw[s.id] = s.linkedScope;
     });
     const curGroups = chapterGroups;
+    // Verse counts per live study, to detect a study that just gained verses.
+    const curStudyRefs: Record<string, number> = {};
+    searchStudies.forEach((s) => {
+      if (!isSearchStudyDeleted(s)) curStudyRefs[s.id] = s.refs.length;
+    });
 
     if (!linkWatchReady.current) {
       prevKwLinks.current = curKw;
       prevChapGroups.current = curGroups;
+      prevStudyRefs.current = curStudyRefs;
       return;
     }
 
@@ -1123,9 +1299,21 @@ export default function App() {
         break;
       }
     }
+    // 3) Independently of any link: a study that already existed gained verses
+    //    -> a "keywords added" pulse, centered in that search's own panel (no
+    //    seam). New studies (no prior count) and removals don't pulse.
+    for (const sid of Object.keys(curStudyRefs)) {
+      const before = prevStudyRefs.current[sid];
+      if (before === undefined) continue;
+      if (curStudyRefs[sid] <= before) continue;
+      growKeyRef.current += 1;
+      setGrowMoment({ studyId: sid, key: growKeyRef.current });
+      break;
+    }
 
     prevKwLinks.current = curKw;
     prevChapGroups.current = curGroups;
+    prevStudyRefs.current = curStudyRefs;
   }, [searchStudies, chapterGroups, tabs, activeTabId]);
   // When set, the "link this keyword search to a chapter" prompt is open for the
   // keyword study with this id.
@@ -9176,10 +9364,17 @@ export default function App() {
                     outline:
                       multi && isActive ? "2px solid " + ICON_ACCENT : "none",
                     outlineOffset: "-2px",
-                    overflowY: multi ? "auto" : "visible",
+                    position: "relative",
+                    overflow: multi ? "hidden" : "visible",
                     height: multi ? "calc(100vh - 150px)" : "auto",
                   }}
                 >
+                  <div
+                    style={{
+                      height: multi ? "100%" : "auto",
+                      overflowY: multi ? "auto" : "visible",
+                    }}
+                  >
                   {study && study.note && (
                     <div
                       style={{
@@ -9264,6 +9459,12 @@ export default function App() {
                         : undefined
                     }
                   />
+                  </div>
+                  {growMoment &&
+                    t.studyId &&
+                    growMoment.studyId === t.studyId && (
+                      <GrowPulse key={"grow_" + growMoment.key} fixed={!multi} />
+                    )}
                 </div>,
                 mergeMoment && mergeMoment.sourceTabId === t.id ? (
                   <MergeSeam
