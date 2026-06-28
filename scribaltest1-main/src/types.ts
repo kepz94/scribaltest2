@@ -134,6 +134,10 @@ export function markStyleCSS(style: MarkStyle, color: MarkColor): CSSProperties 
     css.textDecorationColor = COLOR_MAP[color];
     css.textDecorationThickness = "2.5px";
     css.textUnderlineOffset = "3px";
+    // Draw the line straight through descenders (p, g, y) and tagged words
+    // instead of letting the browser skip the ink — keeps the mark visible
+    // on the forefront of the word.
+    (css as any).textDecorationSkipInk = "none";
   }
   if (style === "dashed") {
     css.textDecorationLine = "underline";
@@ -141,6 +145,7 @@ export function markStyleCSS(style: MarkStyle, color: MarkColor): CSSProperties 
     css.textDecorationColor = COLOR_MAP[color];
     css.textDecorationThickness = "2.5px";
     css.textUnderlineOffset = "3px";
+    (css as any).textDecorationSkipInk = "none";
   }
   if (style === "squiggly") {
     css.textDecorationLine = "underline";
@@ -148,6 +153,7 @@ export function markStyleCSS(style: MarkStyle, color: MarkColor): CSSProperties 
     css.textDecorationColor = COLOR_MAP[color];
     css.textDecorationThickness = "2px";
     css.textUnderlineOffset = "3px";
+    (css as any).textDecorationSkipInk = "none";
   }
   if (style === "italic") {
     css.fontStyle = "italic";
