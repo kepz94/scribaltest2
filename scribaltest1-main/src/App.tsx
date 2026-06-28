@@ -8929,40 +8929,6 @@ export default function App() {
                 }}
               >
                 {tabLabel(t)}
-                {t.studyId && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLinkKwStudyId(t.studyId as string);
-                    }}
-                    title={
-                      kwLinked
-                        ? "Linked to a chapter — click to change or unlink"
-                        : "Link this search to an open chapter so they compile together"
-                    }
-                    style={{
-                      display: "inline-flex",
-                      lineHeight: 1,
-                      opacity: kwLinked ? 1 : 0.45,
-                    }}
-                  >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={
-                        active ? "#fff" : kwLinked ? TYPE_PURPLE : TYPE_BLUE
-                      }
-                      strokeWidth={2.4}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
-                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
-                    </svg>
-                  </span>
-                )}
                 {tabs.length > 1 && (
                   <span
                     onClick={(e) => {
