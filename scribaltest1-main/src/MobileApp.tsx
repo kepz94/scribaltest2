@@ -2906,6 +2906,7 @@ export default function MobileApp() {
   // recorded studies open from the Studies screen.
   const openKeywordCompile = (ss: SearchStudy) => {
     openStudy(ss);
+    if (ss.bookId !== activeBookId) setActiveBook(ss.bookId);
     setCompileRec(null);
     setCompileStudy(ss);
     // No marks → the compiled notes are empty; show the verse list instead.
@@ -9516,9 +9517,7 @@ export default function MobileApp() {
             cScopes = Array.from(new Set(cs.refs.map((r) => scopeOf(r)))).sort(
               byOrder
             );
-            cMarks = allMarks.filter(
-              (m) => m.bookId === cs.bookId && cs.refs.includes(m.reference)
-            );
+            cMarks = marks.filter((m) => cs.refs.includes(m.reference));
             cTags = wordTags.filter((t) => cs.refs.includes(t.reference));
             cScope = "searchstudy:" + cs.id;
             cTitle = cs.name;
@@ -9539,11 +9538,10 @@ export default function MobileApp() {
               .slice()
               .sort(byOrder);
             const crExtra = cr.extraRefs || [];
-            cMarks = allMarks.filter(
+            cMarks = marks.filter(
               (m) =>
-                m.bookId === cr.bookId &&
-                (cScopes.includes(scopeOf(m.reference)) ||
-                  crExtra.includes(m.reference))
+                cScopes.includes(scopeOf(m.reference)) ||
+                crExtra.includes(m.reference)
             );
             cTags = wordTags.filter(
               (t) =>
