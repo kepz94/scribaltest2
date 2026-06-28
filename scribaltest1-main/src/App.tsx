@@ -371,6 +371,125 @@ const ICON_ACCENT = ACCENT;
 const TYPE_RED = "#ef4444";
 const TYPE_BLUE = "#3b82f6";
 const TYPE_PURPLE = ACCENT;
+
+// One chain-link glyph, absolutely centered on its parent's (50%,50%) point.
+// Its transform/opacity are driven by a CSS class so the keyframes can slide
+// and fuse it; the class name decides which link this is (left/right/result).
+const MergeLink = ({
+  color,
+  cls,
+  w = 30,
+}: {
+  color: string;
+  cls: string;
+  w?: number;
+}) => (
+  <svg
+    className={cls}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={2.4}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ position: "absolute", top: "50%", left: 0, width: w, height: w }}
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+  </svg>
+);
+
+// The desktop "merge moment". When two tabs are linked, this 0-width flex item
+// is dropped into the reading row BETWEEN the two now-adjacent panels, so the
+// animation plays in the seam itself — no DOM measurement needed. A link in
+// each panel's color slides toward the seam and fuses into the result color;
+// for a combined study (chapter + keyword) the result is purple with a label.
+const MergeSeam = ({
+  leftColor,
+  rightColor,
+  resultColor,
+  combined,
+}: {
+  leftColor: string;
+  rightColor: string;
+  resultColor: string;
+  combined: boolean;
+}) => (
+  <div
+    style={{
+      flex: "0 0 0px",
+      width: 0,
+      alignSelf: "stretch",
+      position: "relative",
+      overflow: "visible",
+      pointerEvents: "none",
+      zIndex: 30,
+    }}
+  >
+    {/* soft localized dim, spilling into the two adjacent panels */}
+    <div
+      className="scribal-merge-dim"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: 0,
+        width: 560,
+        height: 560,
+        transform: "translate(-50%,-50%)",
+        background:
+          "radial-gradient(circle, rgba(20,16,12,0.16), transparent 62%)",
+      }}
+    />
+    <div
+      className="scribal-merge-ripple"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: 0,
+        width: 120,
+        height: 120,
+        borderRadius: "50%",
+        border: "2.5px solid " + resultColor,
+      }}
+    />
+    <div
+      className="scribal-merge-glow"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: 0,
+        width: 92,
+        height: 92,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, " + resultColor + "b3, transparent 65%)",
+      }}
+    />
+    <MergeLink color={leftColor} cls="scribal-merge-left" />
+    <MergeLink color={rightColor} cls="scribal-merge-right" />
+    <MergeLink color={resultColor} cls="scribal-merge-pop" w={34} />
+    {combined && (
+      <div
+        className="scribal-merge-label"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: 0,
+          whiteSpace: "nowrap",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "12px",
+          fontWeight: 800,
+          color: resultColor,
+          letterSpacing: "0.02em",
+          textShadow: "0 1px 8px rgba(251,249,244,0.9)",
+        }}
+      >
+        Combined study
+      </div>
+    )}
+  </div>
+);
+
 const IconSearch = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -805,6 +924,23 @@ export default function App() {
 
   // "Which open tabs do you want to link this one with?" prompt.
   const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
+  // The desktop merge moment: which source tab the seam animation plays after,
+  // the two converging colors, and the fused result. `key` remounts the seam so
+  // the animation replays on every link. Cleared by a short timer below.
+  const [mergeMoment, setMergeMoment] = useState<{
+    sourceTabId: string;
+    leftColor: string;
+    rightColor: string;
+    resultColor: string;
+    combined: boolean;
+    key: number;
+  } | null>(null);
+  const mergeKeyRef = useRef(0);
+  useEffect(() => {
+    if (!mergeMoment) return;
+    const id = window.setTimeout(() => setMergeMoment(null), 1700);
+    return () => window.clearTimeout(id);
+  }, [mergeMoment]);
   // When set, the "link this keyword search to a chapter" prompt is open for the
   // keyword study with this id.
   const [linkKwStudyId, setLinkKwStudyId] = useState<string | null>(null);
@@ -1860,10 +1996,63 @@ export default function App() {
   // the chapter link modal's SAFE path (reuse an existing group id, absorb the new
   // chapter's old group, seed theme names fill-blanks, dissolve any group left with
   // a single chapter, and re-point dissolved studies).
+  // Make the linked chapter open right next to the keyword study's tab (opening
+  // either if needed, or moving the chapter beside it if it's already open), put
+  // focus on the pair, then fire the seam animation that plays between their two
+  // reading panels. Combined = keyword (blue) + chapter (red) -> purple.
+  const triggerCombinedMerge = (study: SearchStudy, scope: string) => {
+    const loc = locOfScope(scope);
+    if (!loc) return;
+    const kwTabId = "studytab_" + study.id;
+    const chapId = makeTabId(study.bookId, loc.v, loc.b, loc.c);
+    if (kwTabId === chapId) return;
+    const chapTab = {
+      id: chapId,
+      volume: loc.v,
+      book: loc.b,
+      chapter: loc.c,
+      bookId: study.bookId,
+    };
+    setTabs((prev) => {
+      let arr = prev;
+      if (!arr.some((t) => t.id === kwTabId)) {
+        const kloc = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
+        arr = [
+          ...arr,
+          {
+            id: kwTabId,
+            volume: kloc ? kloc.volume : 0,
+            book: kloc ? kloc.book : 0,
+            chapter: kloc ? kloc.chapter : 0,
+            bookId: study.bookId,
+            studyId: study.id,
+          },
+        ];
+      }
+      const without = arr.filter((t) => t.id !== chapId);
+      const si = without.findIndex((t) => t.id === kwTabId);
+      const copy = [...without];
+      copy.splice(si < 0 ? copy.length : si + 1, 0, chapTab);
+      return copy;
+    });
+    setActiveTabId(kwTabId);
+    setMode("read");
+    mergeKeyRef.current += 1;
+    setMergeMoment({
+      sourceTabId: kwTabId,
+      leftColor: TYPE_BLUE,
+      rightColor: TYPE_RED,
+      resultColor: TYPE_PURPLE,
+      combined: true,
+      key: mergeKeyRef.current,
+    });
+  };
+
   const linkKwToChapter = (study: SearchStudy, scope: string) => {
     const cur = study.linkedScope;
     if (!cur) {
       updateStudy(study.id, { linkedScope: scope });
+      triggerCombinedMerge(study, scope);
       setLinkKwStudyId(null);
       return;
     }
@@ -1898,6 +2087,7 @@ export default function App() {
     stampGroupChanges(prev, next);
     setChapterGroups(next);
     convertDissolvedStudies(survivors);
+    triggerCombinedMerge(study, scope);
     setLinkKwStudyId(null);
   };
 
@@ -8633,7 +8823,7 @@ export default function App() {
                       resolveScope(s.linkedScope) === r
                   );
                 })();
-              return (
+              return [
                 <div
                   key={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
@@ -8732,8 +8922,17 @@ export default function App() {
                         : undefined
                     }
                   />
-                </div>
-              );
+                </div>,
+                mergeMoment && mergeMoment.sourceTabId === t.id ? (
+                  <MergeSeam
+                    key={"mergeseam_" + mergeMoment.key}
+                    leftColor={mergeMoment.leftColor}
+                    rightColor={mergeMoment.rightColor}
+                    resultColor={mergeMoment.resultColor}
+                    combined={mergeMoment.combined}
+                  />
+                ) : null,
+              ];
             })}
           </div>
 
@@ -9157,6 +9356,57 @@ export default function App() {
           </div>
 
           <style>{`
+            @keyframes scribal-merge-dim {
+              0% { opacity: 0; }
+              18% { opacity: 1; }
+              72% { opacity: 1; }
+              100% { opacity: 0; }
+            }
+            @keyframes scribal-merge-left {
+              0% { opacity: 0; transform: translate(-50%,-50%) translateX(-70px) scale(.85); }
+              22% { opacity: 1; transform: translate(-50%,-50%) translateX(-30px) scale(1); }
+              46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+              58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+              100% { opacity: 0; }
+            }
+            @keyframes scribal-merge-right {
+              0% { opacity: 0; transform: translate(-50%,-50%) translateX(70px) scale(.85); }
+              22% { opacity: 1; transform: translate(-50%,-50%) translateX(30px) scale(1); }
+              46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+              58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+              100% { opacity: 0; }
+            }
+            @keyframes scribal-merge-pop {
+              0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+              54% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
+              66% { transform: translate(-50%,-50%) scale(.95); }
+              74% { transform: translate(-50%,-50%) scale(1.05); }
+              84% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+              100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+            }
+            @keyframes scribal-merge-glow {
+              0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+              56% { opacity: .5; transform: translate(-50%,-50%) scale(1.5); }
+              100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
+            }
+            @keyframes scribal-merge-ripple {
+              0%, 48% { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
+              56% { opacity: .7; }
+              100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+            }
+            @keyframes scribal-merge-label {
+              0%, 52% { opacity: 0; transform: translate(-50%,0) translateY(64px); }
+              66% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
+              86% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
+              100% { opacity: 0; transform: translate(-50%,0) translateY(56px); }
+            }
+            .scribal-merge-dim { animation: scribal-merge-dim 1.6s ease both; }
+            .scribal-merge-ripple { animation: scribal-merge-ripple 1.6s ease both; }
+            .scribal-merge-glow { animation: scribal-merge-glow 1.6s ease both; }
+            .scribal-merge-left { animation: scribal-merge-left 1.6s cubic-bezier(.4,0,.2,1) both; }
+            .scribal-merge-right { animation: scribal-merge-right 1.6s cubic-bezier(.4,0,.2,1) both; }
+            .scribal-merge-pop { animation: scribal-merge-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
+            .scribal-merge-label { animation: scribal-merge-label 1.6s ease both; }
             @keyframes qf-flash {
               0% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
               18% { box-shadow: 0 0 0 3px rgba(217,164,65,.95); }
