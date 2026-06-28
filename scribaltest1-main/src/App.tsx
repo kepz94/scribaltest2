@@ -4479,6 +4479,20 @@ export default function App() {
             const bk = vols[l.volume].books[l.book];
             return bk.book + " " + bk.chapters[l.chapter].chapter;
           };
+          // Open chapter panels not already in this search's group. Offered as a
+          // one-tap combined link - the mirror of "Link an open search" on the
+          // chapter side, routed through the same linkKwToChapter path.
+          const memberScopeSet = new Set(members.map((m) => resolveScope(m)));
+          const openChapterLink: Tab[] = [];
+          const seenChLink = new Set<string>();
+          tabs.forEach((x) => {
+            if (x.studyId) return;
+            const sc = chapterScopeOf(x);
+            if (!sc || memberScopeSet.has(resolveScope(sc))) return;
+            if (seenChLink.has(sc)) return;
+            seenChLink.add(sc);
+            openChapterLink.push(x);
+          });
           const eyebrow: React.CSSProperties = {
             fontSize: "11px",
             fontWeight: 700,
@@ -4779,6 +4793,90 @@ export default function App() {
                   </svg>
                   Add a keyword search
                 </button>
+
+                {openChapterLink.length > 0 && (
+                  <>
+                    <div style={{ ...eyebrow, marginTop: "18px" }}>
+                      Link an open chapter
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {openChapterLink.map((x) => (
+                        <div
+                          key={x.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              padding: "11px 13px",
+                              borderRadius: "10px",
+                              border: "1px solid var(--border)",
+                              background: "var(--bg)",
+                              color: "var(--text)",
+                              fontSize: "14px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                background: TYPE_RED,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {scopeLabel(chapterScopeOf(x))}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() =>
+                              linkKwToChapter(ks, chapterScopeOf(x))
+                            }
+                            title="Combine this search with this chapter"
+                            style={{
+                              flexShrink: 0,
+                              padding: "9px 13px",
+                              borderRadius: "8px",
+                              border: "none",
+                              background: ACCENT,
+                              color: "#fff",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              fontFamily: "inherit",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Link
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 <div style={{ ...eyebrow, marginTop: "18px" }}>
                   {linkScope ? "Or link another chapter" : "Link a chapter"}
@@ -5184,7 +5282,7 @@ export default function App() {
               });
               const themes = Array.from(themeMap.values());
               const openRows = tabs
-                .filter((x) => x.id !== linkPromptTabId)
+                .filter((x) => x.id !== linkPromptTabId && !x.studyId)
                 .map((x) => ({
                   scope: chapterScopeOf(x),
                   label: tabLabel(x),
@@ -5251,6 +5349,20 @@ export default function App() {
                   ks.linkedScope &&
                   linkScopeSet.has(resolveScope(ks.linkedScope))
               );
+              // Open keyword-search panels not yet linked into this chapter's
+              // group. Offered as a real combined link (sets linkedScope) - the
+              // mirror of linking an open chapter from the keyword side.
+              const linkedHereIds = new Set(linkedSearches.map((k) => k.id));
+              const openKwLink: SearchStudy[] = [];
+              const seenKwLink = new Set<string>();
+              tabs.forEach((x) => {
+                if (x.id === linkPromptTabId || !x.studyId) return;
+                if (seenKwLink.has(x.studyId)) return;
+                seenKwLink.add(x.studyId);
+                const ks = searchStudies.find((s) => s.id === x.studyId);
+                if (ks && !isSearchStudyDeleted(ks) && !linkedHereIds.has(ks.id))
+                  openKwLink.push(ks);
+              });
               return (
                 <>
                   <div
@@ -5641,6 +5753,116 @@ export default function App() {
                               }}
                             >
                               Unlink
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {openKwLink.length > 0 && (
+                    <>
+                      <div style={{ ...eyebrow, marginTop: "18px" }}>
+                        Link an open search
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--muted)",
+                          lineHeight: 1.5,
+                          marginBottom: "12px",
+                        }}
+                      >
+                        Open keyword searches you can combine into this chapter.
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}
+                      >
+                        {openKwLink.map((ks) => (
+                          <div
+                            key={ks.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                                padding: "11px 13px",
+                                borderRadius: "10px",
+                                border: "1px solid var(--border)",
+                                background: "var(--bg)",
+                                color: "var(--text)",
+                                fontSize: "14px",
+                              }}
+                            >
+                              <svg
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke={TYPE_BLUE}
+                                strokeWidth={2.4}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                style={{ flexShrink: 0 }}
+                              >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="M21 21l-4.3-4.3" />
+                              </svg>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {ks.name || "Search"}
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  {" "}
+                                  · {ks.refs.length}{" "}
+                                  {ks.refs.length === 1 ? "verse" : "verses"}
+                                </span>
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                linkKwToChapter(ks, cs);
+                                setLinkPromptTabId(null);
+                              }}
+                              title="Combine this search into this chapter"
+                              style={{
+                                flexShrink: 0,
+                                padding: "9px 13px",
+                                borderRadius: "8px",
+                                border: "none",
+                                background: ACCENT,
+                                color: "#fff",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                fontFamily: "inherit",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Link
                             </button>
                           </div>
                         ))}
