@@ -994,7 +994,7 @@ export default function App() {
   // brief startup window (and any data hydration / first sync) so loading saved
   // data never plays the animation - only links made afterward do.
   const linkWatchReady = useRef(false);
-  const prevKwLinks = useRef<Map<string, string>>(new Map());
+  const prevKwLinks = useRef<Record<string, string>>({});
   const prevChapGroups = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!mergeMoment) return;
@@ -1011,10 +1011,10 @@ export default function App() {
     // Current links: keyword studies that point at a chapter (combined), and the
     // chapter-to-chapter grouping. Compared against the previous render to spot a
     // newly-created link.
-    const curKw = new Map<string, string>();
+    const curKw: Record<string, string> = {};
     searchStudies.forEach((s) => {
       if (!isSearchStudyDeleted(s) && s.linkedScope)
-        curKw.set(s.id, s.linkedScope);
+        curKw[s.id] = s.linkedScope;
     });
     const curGroups = chapterGroups;
 
@@ -1078,8 +1078,9 @@ export default function App() {
     // 1) A keyword newly gained (or changed) a linkedScope -> combined link
     //    (blue keyword + red chapter -> purple). Covers the keyword modal, the
     //    chapter prompt, gathered searches, and any re-link after an unlink.
-    for (const [sid, scope] of curKw) {
-      if (prevKwLinks.current.get(sid) === scope) continue;
+    for (const sid of Object.keys(curKw)) {
+      const scope = curKw[sid];
+      if (prevKwLinks.current[sid] === scope) continue;
       const study = searchStudies.find((s) => s.id === sid);
       const loc = chapterLoc.get(scope);
       if (study && loc) {
