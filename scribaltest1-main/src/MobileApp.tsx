@@ -1726,6 +1726,7 @@ export default function MobileApp() {
           : "",
         preview:
           preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
+        linked: !!(st && st.linkedScope),
         color: (st && st.linkedScope
           ? anchorColor(st.linkedScope)
           : null) as string | null,
@@ -1744,6 +1745,11 @@ export default function MobileApp() {
       title: bk.book + " " + ch.chapter,
       sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
+      linked:
+        !!gid ||
+        searchStudies.some(
+          (s) => !isSearchDeleted(s) && s.linkedScope === scope
+        ),
       color: gid
         ? groupColor(gid)
         : searchStudies.some(
@@ -5926,7 +5932,7 @@ export default function MobileApp() {
                             fontWeight: 700,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
-                            color: TYPE_BLUE,
+                            color: info.linked ? TYPE_PURPLE : TYPE_BLUE,
                             marginBottom: "2px",
                             display: "flex",
                             alignItems: "center",
@@ -5938,7 +5944,7 @@ export default function MobileApp() {
                             height="11"
                             viewBox="0 0 24 24"
                             fill="none"
-                            stroke={TYPE_BLUE}
+                            stroke={info.linked ? TYPE_PURPLE : TYPE_BLUE}
                             strokeWidth="2.4"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -7845,7 +7851,7 @@ export default function MobileApp() {
                       fontWeight: 700,
                       letterSpacing: "0.05em",
                       textTransform: "uppercase",
-                      color: TYPE_BLUE,
+                      color: study.linkedScope ? TYPE_PURPLE : TYPE_BLUE,
                     }}
                   >
                     <svg
@@ -7853,7 +7859,7 @@ export default function MobileApp() {
                       height="11"
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke={TYPE_BLUE}
+                      stroke={study.linkedScope ? TYPE_PURPLE : TYPE_BLUE}
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -7946,6 +7952,7 @@ export default function MobileApp() {
                     </span>
                   </>
                 ) : (
+                  <>
                   <div
                     style={{
                       display: "flex",
@@ -7995,12 +8002,14 @@ export default function MobileApp() {
                     >
                       Remove verses
                     </button>
+                  </div>
                     <button
                       onClick={() => openKwLink(study)}
                       style={{
                         display: "flex",
                         alignItems: "center",
                         gap: "7px",
+                        flexShrink: 0,
                         padding: "8px 14px",
                         borderRadius: "999px",
                         border: "1px solid " + C.border,
@@ -8018,7 +8027,7 @@ export default function MobileApp() {
                       />
                       {study.linkedScope ? "Linked" : "Link"}
                     </button>
-                  </div>
+                  </>
                 )}
               </div>
 
