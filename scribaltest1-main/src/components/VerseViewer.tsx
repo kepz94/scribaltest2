@@ -84,7 +84,7 @@ interface VerseViewerProps {
   splitAfter?: number;
   splitLabels?: { first: string; second: string };
   // When the screen already shows the study's name in its own header (the
-  // "mark added verses" screen), suppress VerseViewer's built-in 📑 caption.
+  // "mark added verses" screen), suppress VerseViewer's built-in study caption.
   hideStudyHeader?: boolean;
   jumpTarget: string | null;
   onJumpHandled: () => void;
@@ -1052,9 +1052,26 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontWeight: 700,
                 color: "var(--muted)",
                 fontFamily: "system-ui, sans-serif",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
               }}
             >
-              📑 {studyTitle || "Study"}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              {studyTitle || "Study"}
             </span>
           </div>
           )
