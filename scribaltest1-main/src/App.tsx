@@ -989,11 +989,143 @@ export default function App() {
     key: number;
   } | null>(null);
   const mergeKeyRef = useRef(0);
+  // Central link-watcher: a render-to-render diff of the link data, so the seam
+  // fires on ANY new link no matter which action made it. `ready` gates out the
+  // brief startup window (and any data hydration / first sync) so loading saved
+  // data never plays the animation - only links made afterward do.
+  const linkWatchReady = useRef(false);
+  const prevKwLinks = useRef<Map<string, string>>(new Map());
+  const prevChapGroups = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!mergeMoment) return;
     const id = window.setTimeout(() => setMergeMoment(null), 1700);
     return () => window.clearTimeout(id);
   }, [mergeMoment]);
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      linkWatchReady.current = true;
+    }, 1200);
+    return () => window.clearTimeout(id);
+  }, []);
+  useEffect(() => {
+    // Current links: keyword studies that point at a chapter (combined), and the
+    // chapter-to-chapter grouping. Compared against the previous render to spot a
+    // newly-created link.
+    const curKw = new Map<string, string>();
+    searchStudies.forEach((s) => {
+      if (!isSearchStudyDeleted(s) && s.linkedScope)
+        curKw.set(s.id, s.linkedScope);
+    });
+    const curGroups = chapterGroups;
+
+    if (!linkWatchReady.current) {
+      prevKwLinks.current = curKw;
+      prevChapGroups.current = curGroups;
+      return;
+    }
+
+    const sessionBookId =
+      (tabs.find((t) => t.id === activeTabId) || tabs[0])?.bookId || "";
+    // A tab for a chapter scope: reuse the open chapter tab if one shows it, else
+    // build one in the current session book.
+    const tabForScope = (scope: string): Tab | null => {
+      const open = tabs.find((t) => !t.studyId && chapterScopeOf(t) === scope);
+      if (open) return open;
+      const loc = chapterLoc.get(scope);
+      if (!loc) return null;
+      return {
+        id: makeTabId(sessionBookId, loc.volume, loc.book, loc.chapter),
+        volume: loc.volume,
+        book: loc.book,
+        chapter: loc.chapter,
+        bookId: sessionBookId,
+      };
+    };
+    // Make the two linked tabs adjacent (right after left), focus them, and play
+    // the seam between their panels.
+    const fireSeam = (
+      left: Tab,
+      right: Tab,
+      leftColor: string,
+      rightColor: string,
+      resultColor: string,
+      combined: boolean
+    ) => {
+      if (left.id === right.id) return;
+      setTabs((prev) => {
+        let arr = prev;
+        if (!arr.some((t) => t.id === left.id)) arr = [...arr, left];
+        const without = arr.filter((t) => t.id !== right.id);
+        const si = without.findIndex((t) => t.id === left.id);
+        const copy = [...without];
+        copy.splice(si < 0 ? copy.length : si + 1, 0, right);
+        return copy;
+      });
+      setActiveTabId(left.id);
+      setMode("read");
+      mergeKeyRef.current += 1;
+      setMergeMoment({
+        sourceTabId: left.id,
+        leftColor,
+        rightColor,
+        resultColor,
+        combined,
+        key: mergeKeyRef.current,
+      });
+    };
+
+    let fired = false;
+    // 1) A keyword newly gained (or changed) a linkedScope -> combined link
+    //    (blue keyword + red chapter -> purple). Covers the keyword modal, the
+    //    chapter prompt, gathered searches, and any re-link after an unlink.
+    for (const [sid, scope] of curKw) {
+      if (prevKwLinks.current.get(sid) === scope) continue;
+      const study = searchStudies.find((s) => s.id === sid);
+      const loc = chapterLoc.get(scope);
+      if (study && loc) {
+        const r = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
+        const kwTab: Tab = {
+          id: "studytab_" + study.id,
+          volume: r ? r.volume : 0,
+          book: r ? r.book : 0,
+          chapter: r ? r.chapter : 0,
+          bookId: study.bookId,
+          studyId: study.id,
+        };
+        const chTab: Tab = {
+          id: makeTabId(study.bookId, loc.volume, loc.book, loc.chapter),
+          volume: loc.volume,
+          book: loc.book,
+          chapter: loc.chapter,
+          bookId: study.bookId,
+        };
+        fireSeam(kwTab, chTab, TYPE_BLUE, TYPE_RED, TYPE_PURPLE, true);
+        fired = true;
+      }
+      break;
+    }
+    // 2) Else a chapter newly joined (or changed) a group -> chapter link
+    //    (red -> red). Covers the chapter prompt's chapter checkboxes.
+    if (!fired) {
+      for (const scope of Object.keys(curGroups)) {
+        const gid = curGroups[scope];
+        if (prevChapGroups.current[scope] === gid) continue;
+        const otherScope = Object.keys(curGroups).find(
+          (s) => s !== scope && curGroups[s] === gid
+        );
+        if (otherScope) {
+          const right = tabForScope(scope);
+          const left = tabForScope(otherScope);
+          if (left && right)
+            fireSeam(left, right, TYPE_RED, TYPE_RED, TYPE_RED, false);
+        }
+        break;
+      }
+    }
+
+    prevKwLinks.current = curKw;
+    prevChapGroups.current = curGroups;
+  }, [searchStudies, chapterGroups, tabs, activeTabId]);
   // When set, the "link this keyword search to a chapter" prompt is open for the
   // keyword study with this id.
   const [linkKwStudyId, setLinkKwStudyId] = useState<string | null>(null);
@@ -2049,63 +2181,10 @@ export default function App() {
   // the chapter link modal's SAFE path (reuse an existing group id, absorb the new
   // chapter's old group, seed theme names fill-blanks, dissolve any group left with
   // a single chapter, and re-point dissolved studies).
-  // Make the linked chapter open right next to the keyword study's tab (opening
-  // either if needed, or moving the chapter beside it if it's already open), put
-  // focus on the pair, then fire the seam animation that plays between their two
-  // reading panels. Combined = keyword (blue) + chapter (red) -> purple.
-  const triggerCombinedMerge = (study: SearchStudy, scope: string) => {
-    const loc = locOfScope(scope);
-    if (!loc) return;
-    const kwTabId = "studytab_" + study.id;
-    const chapId = makeTabId(study.bookId, loc.v, loc.b, loc.c);
-    if (kwTabId === chapId) return;
-    const chapTab = {
-      id: chapId,
-      volume: loc.v,
-      book: loc.b,
-      chapter: loc.c,
-      bookId: study.bookId,
-    };
-    setTabs((prev) => {
-      let arr = prev;
-      if (!arr.some((t) => t.id === kwTabId)) {
-        const kloc = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
-        arr = [
-          ...arr,
-          {
-            id: kwTabId,
-            volume: kloc ? kloc.volume : 0,
-            book: kloc ? kloc.book : 0,
-            chapter: kloc ? kloc.chapter : 0,
-            bookId: study.bookId,
-            studyId: study.id,
-          },
-        ];
-      }
-      const without = arr.filter((t) => t.id !== chapId);
-      const si = without.findIndex((t) => t.id === kwTabId);
-      const copy = [...without];
-      copy.splice(si < 0 ? copy.length : si + 1, 0, chapTab);
-      return copy;
-    });
-    setActiveTabId(kwTabId);
-    setMode("read");
-    mergeKeyRef.current += 1;
-    setMergeMoment({
-      sourceTabId: kwTabId,
-      leftColor: TYPE_BLUE,
-      rightColor: TYPE_RED,
-      resultColor: TYPE_PURPLE,
-      combined: true,
-      key: mergeKeyRef.current,
-    });
-  };
-
   const linkKwToChapter = (study: SearchStudy, scope: string) => {
     const cur = study.linkedScope;
     if (!cur) {
       updateStudy(study.id, { linkedScope: scope });
-      triggerCombinedMerge(study, scope);
       setLinkKwStudyId(null);
       return;
     }
@@ -2140,7 +2219,6 @@ export default function App() {
     stampGroupChanges(prev, next);
     setChapterGroups(next);
     convertDissolvedStudies(survivors);
-    triggerCombinedMerge(study, scope);
     setLinkKwStudyId(null);
   };
 
@@ -2901,45 +2979,6 @@ export default function App() {
   // Link a keyword search to a chapter at the moment of search — no naming or
   // book step. The search opens as its own tab in the chapter's book, linked so
   // it shares the chapter's themes and folds into the chapter's compile.
-  // Chapter-side merge: a new keyword search was just linked to chapter `ct`.
-  // Put the new study tab right beside the chapter and play the seam between
-  // them — here the chapter is the left (red) panel and the keyword the right
-  // (blue), fusing into purple.
-  const triggerCombinedMergeFromChapter = (
-    ct: Tab,
-    studyId: string,
-    refs: string[]
-  ) => {
-    const studyTabId = "studytab_" + studyId;
-    const loc = refs.length ? refLoc.get(refs[0]) : undefined;
-    const studyTab: Tab = {
-      id: studyTabId,
-      volume: loc ? loc.volume : 0,
-      book: loc ? loc.book : 0,
-      chapter: loc ? loc.chapter : 0,
-      bookId: ct.bookId,
-      studyId,
-    };
-    setTabs((prev) => {
-      const without = prev.filter((t) => t.id !== studyTabId);
-      const si = without.findIndex((t) => t.id === ct.id);
-      const copy = [...without];
-      copy.splice(si < 0 ? copy.length : si + 1, 0, studyTab);
-      return copy;
-    });
-    setActiveTabId(ct.id);
-    setMode("read");
-    mergeKeyRef.current += 1;
-    setMergeMoment({
-      sourceTabId: ct.id,
-      leftColor: TYPE_RED,
-      rightColor: TYPE_BLUE,
-      resultColor: TYPE_PURPLE,
-      combined: true,
-      key: mergeKeyRef.current,
-    });
-  };
-
   const linkSearchToChapterTab = (refs: string[], label: string, ct: Tab) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
@@ -2949,7 +2988,6 @@ export default function App() {
     setLinkSearchDraft(null);
     setShowSearch(false);
     openStudyTab(study);
-    triggerCombinedMergeFromChapter(ct, study.id, ordered);
   };
   const onLinkSearchToChapter = (refs: string[], label: string) => {
     if (!refs.length) return;
@@ -3047,7 +3085,6 @@ export default function App() {
     const study = addStudy(label.trim() || "Search", ct.bookId, refs);
     updateStudy(study.id, { linkedScope: scope });
     focusTab(study);
-    triggerCombinedMergeFromChapter(ct, study.id, refs);
   };
 
   // Collision: move the whole study (this chapter, or its linked group) into a
