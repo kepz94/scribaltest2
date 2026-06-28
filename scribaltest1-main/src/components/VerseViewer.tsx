@@ -206,6 +206,7 @@ export default function VerseViewer(props: VerseViewerProps) {
   // "Send verses": check off verses on this tab to send to a study (new or
   // existing). The selection lives here; the parent runs the send UI.
   const [sendMode, setSendMode] = useState(false);
+  const [showCondInfo, setShowCondInfo] = useState(false);
   const [sendSel, setSendSel] = useState<string[]>([]);
   const toggleSend = (ref: string) =>
     setSendSel((p) =>
@@ -692,6 +693,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               />
             );
             const checked = removeSel.includes(r);
+            const sendChecked = sendSel.includes(r);
             return (
               <div
                 key={r}
@@ -741,6 +743,56 @@ export default function VerseViewer(props: VerseViewerProps) {
                         minWidth: 0,
                         pointerEvents: "none",
                         opacity: checked ? 0.5 : 1,
+                      }}
+                    >
+                      {marked}
+                    </div>
+                  </div>
+                ) : sendMode ? (
+                  <div
+                    onClick={() => toggleSend(r)}
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "flex-start",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "5px",
+                        border:
+                          "2px solid " +
+                          (sendChecked
+                            ? dark
+                              ? "#a5b4fc"
+                              : "#4f46e5"
+                            : "var(--border)"),
+                        background: sendChecked
+                          ? dark
+                            ? "#a5b4fc"
+                            : "#4f46e5"
+                          : "transparent",
+                        color: dark ? "#1a1410" : "#fff",
+                        flexShrink: 0,
+                        marginTop: "3px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {sendChecked ? "\u2713" : ""}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        pointerEvents: "none",
+                        opacity: sendChecked ? 0.5 : 1,
                       }}
                     >
                       {marked}
@@ -1095,46 +1147,6 @@ export default function VerseViewer(props: VerseViewerProps) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {onSendVerses && !studyRefs ? (
-            <button
-              onClick={() => {
-                setSendMode((v) => !v);
-                setSendSel([]);
-              }}
-              title="Pick verses on this tab to send to a study"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "7px",
-                padding: "6px 12px",
-                borderRadius: "999px",
-                border:
-                  "1px solid " +
-                  (sendMode
-                    ? dark
-                      ? "#a5b4fc"
-                      : "#4f46e5"
-                    : "var(--border)"),
-                backgroundColor: sendMode
-                  ? dark
-                    ? "rgba(165,180,252,0.16)"
-                    : "rgba(79,70,229,0.10)"
-                  : "var(--panel)",
-                color: sendMode
-                  ? dark
-                    ? "#a5b4fc"
-                    : "#4f46e5"
-                  : "var(--muted)",
-                fontSize: "12.5px",
-                fontWeight: 600,
-                fontFamily: "system-ui, sans-serif",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              {sendMode ? "Selecting…" : "Send verses"}
-            </button>
-          ) : null}
           {linkScriptures && (
             <button
               onClick={linkScriptures.onClick}
@@ -1171,7 +1183,47 @@ export default function VerseViewer(props: VerseViewerProps) {
               Link scriptures
             </button>
           )}
-          {studyRefs && onRemoveVerses && !removeMode && (
+          {onSendVerses && !removeMode && (
+            <button
+              onClick={() => {
+                setSendMode((v) => !v);
+                setSendSel([]);
+              }}
+              title="Pick verses on this tab to send to a study"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border:
+                  "1px solid " +
+                  (sendMode
+                    ? dark
+                      ? "#a5b4fc"
+                      : "#4f46e5"
+                    : "var(--border)"),
+                backgroundColor: sendMode
+                  ? dark
+                    ? "rgba(165,180,252,0.16)"
+                    : "rgba(79,70,229,0.10)"
+                  : "var(--panel)",
+                color: sendMode
+                  ? dark
+                    ? "#a5b4fc"
+                    : "#4f46e5"
+                  : "var(--muted)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {sendMode ? "Selecting\u2026" : "Send verses"}
+            </button>
+          )}
+          {studyRefs && onRemoveVerses && !removeMode && !sendMode && (
             <button
               onClick={() => {
                 setRemoveMode(true);
@@ -1194,25 +1246,11 @@ export default function VerseViewer(props: VerseViewerProps) {
                 transition: "all 0.15s",
               }}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#ef4444"
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 6h18" />
-                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-              </svg>
               Remove verses
             </button>
           )}
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <button
             onClick={toggleConditionals}
             title={
@@ -1264,6 +1302,29 @@ export default function VerseViewer(props: VerseViewerProps) {
             </span>
             {showConditionals ? "Conditionals shown" : "Find conditionals"}
           </button>
+          <button
+            onClick={() => setShowCondInfo(true)}
+            title="What does this button do?"
+            style={{
+              width: "22px",
+              height: "22px",
+              borderRadius: "999px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              color: "var(--muted)",
+              fontSize: "13px",
+              fontWeight: 700,
+              fontStyle: "italic",
+              fontFamily: "Georgia, 'Times New Roman', serif",
+              cursor: "pointer",
+              flexShrink: 0,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            i
+          </button>
+          </div>
         </div>
 
         {sendMode && (
@@ -1296,8 +1357,9 @@ export default function VerseViewer(props: VerseViewerProps) {
             </span>
             <button
               onClick={() => {
-                const all =
-                  currentChapter?.verses.map((v) => v.reference) ?? [];
+                const all = studyRefs
+                  ? allStudyRefs
+                  : currentChapter?.verses.map((v) => v.reference) ?? [];
                 setSendSel(sendSel.length === all.length ? [] : all);
               }}
               style={{
@@ -1313,7 +1375,10 @@ export default function VerseViewer(props: VerseViewerProps) {
               }}
             >
               {sendSel.length > 0 &&
-              sendSel.length === (currentChapter?.verses.length ?? 0)
+              sendSel.length ===
+                (studyRefs
+                  ? allStudyRefs.length
+                  : currentChapter?.verses.length ?? 0)
                 ? "Clear all"
                 : "Select all"}
             </button>
@@ -1614,6 +1679,163 @@ export default function VerseViewer(props: VerseViewerProps) {
         >
           ›
         </button>
+      )}
+
+      {showCondInfo && (
+        <div
+          onClick={() => setShowCondInfo(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--panel)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "22px",
+              width: "100%",
+              maxWidth: "440px",
+              maxHeight: "82vh",
+              overflowY: "auto",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "9px",
+                marginBottom: "8px",
+              }}
+            >
+              <span
+                style={{
+                  fontStyle: "italic",
+                  fontFamily: '"Times New Roman", Times, serif',
+                  fontWeight: 700,
+                  fontSize: "19px",
+                  lineHeight: 1,
+                  borderBottom: "2px dashed " + (dark ? "#a5b4fc" : "#4f46e5"),
+                  color: dark ? "#a5b4fc" : "#4f46e5",
+                  paddingBottom: "1px",
+                }}
+              >
+                if
+              </span>
+              <span style={{ fontSize: "17px", fontWeight: 700 }}>
+                Find conditionals
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: "13.5px",
+                lineHeight: 1.6,
+                color: "var(--muted)",
+                margin: "0 0 16px",
+              }}
+            >
+              Scripture promises often turn on a hinge - a word that sets the
+              condition for the blessing. Turn this on and those conditional
+              words are underlined with a dashed line so they're easy to find:
+              words like <b>if</b>, <b>when</b>, and <b>whoso</b>. It only
+              highlights them for you to see - it never marks anything itself,
+              so you can mark them your own way.
+            </p>
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                marginBottom: "8px",
+              }}
+            >
+              How it looks
+            </div>
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "10px",
+                background: "var(--bg)",
+                padding: "14px 16px",
+                fontFamily: "Georgia, 'Times New Roman', serif",
+                fontSize: "16px",
+                lineHeight: 1.75,
+                marginBottom: "18px",
+              }}
+            >
+              <span style={{ color: "var(--muted)", marginRight: "8px" }}>
+                21
+              </span>
+              And it shall come to pass, that{" "}
+              <span
+                style={{
+                  fontStyle: "italic",
+                  fontWeight: 700,
+                  borderBottom: "2px dashed currentColor",
+                  paddingBottom: "1px",
+                }}
+              >
+                if
+              </span>{" "}
+              ye shall keep my commandments, ye shall prosper;{" "}
+              <span
+                style={{
+                  fontStyle: "italic",
+                  fontWeight: 700,
+                  borderBottom: "2px dashed currentColor",
+                  paddingBottom: "1px",
+                }}
+              >
+                when
+              </span>{" "}
+              ye are tried, and{" "}
+              <span
+                style={{
+                  fontStyle: "italic",
+                  fontWeight: 700,
+                  borderBottom: "2px dashed currentColor",
+                  paddingBottom: "1px",
+                }}
+              >
+                whoso
+              </span>{" "}
+              endureth to the end, the same shall be saved.
+            </div>
+            <div
+              style={{ display: "flex", justifyContent: "flex-end" }}
+            >
+              <button
+                onClick={() => setShowCondInfo(false)}
+                style={{
+                  padding: "9px 18px",
+                  borderRadius: "9px",
+                  border: "none",
+                  background: dark ? "#a5b4fc" : "#4f46e5",
+                  color: dark ? "#1a1410" : "#fff",
+                  fontSize: "13.5px",
+                  fontWeight: 700,
+                  fontFamily: "system-ui, sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
