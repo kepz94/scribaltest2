@@ -8905,8 +8905,30 @@ export default function App() {
               ? searchStudies.find((s) => s.id === t.studyId)
               : undefined;
             const kwLinked = !!kwStudy?.linkedScope;
-            const linked = (!t.studyId && !!gid) || kwLinked;
-            const linkColor = !t.studyId && gid ? groupColor(gid) : ACCENT;
+            // A chapter is part of a combined study when a live keyword search
+            // is linked into its scope. Every tab in a combined study - the
+            // search and the chapters it compiles with - shares the combined
+            // purple so they read as one study, matching the reading panels; a
+            // plain chapter-only group keeps its own palette color.
+            const chapterCombined =
+              !t.studyId &&
+              (() => {
+                const r = resolveScope(chapterScopeOf(t));
+                return searchStudies.some(
+                  (s) =>
+                    !isSearchStudyDeleted(s) &&
+                    !!s.linkedScope &&
+                    resolveScope(s.linkedScope) === r
+                );
+              })();
+            const linked =
+              (!t.studyId && !!gid) || kwLinked || chapterCombined;
+            const linkColor =
+              kwLinked || chapterCombined
+                ? TYPE_PURPLE
+                : gid
+                ? groupColor(gid)
+                : ACCENT;
             return (
               <div
                 key={t.id}
