@@ -2884,7 +2884,21 @@ export default function MobileApp() {
     jumpToScope(chapter);
     setStudiesOpen(false);
     setHomeOpen(false);
-    setCompileOpen(true);
+    // With no marks the compiled notes would be empty — land on the reading
+    // view instead so there's something to see.
+    const chs =
+      s.type === "linked"
+        ? Object.keys(chapterGroups).filter(
+            (c) => chapterGroups[c] === s.scopeRef
+          )
+        : [s.scopeRef];
+    const extra = s.extraRefs || [];
+    const hasMarks = allMarks.some(
+      (m) =>
+        m.bookId === s.bookId &&
+        (chs.includes(scopeOf(m.reference)) || extra.includes(m.reference))
+    );
+    setCompileOpen(hasMarks);
   };
   // Open a keyword study straight to its compiled notes (in its saved view),
   // with the study's verse list positioned underneath for when the notes are
@@ -2894,7 +2908,11 @@ export default function MobileApp() {
     openStudy(ss);
     setCompileRec(null);
     setCompileStudy(ss);
-    setCompileOpen(true);
+    // No marks → the compiled notes are empty; show the verse list instead.
+    const hasMarks = allMarks.some(
+      (m) => m.bookId === ss.bookId && ss.refs.includes(m.reference)
+    );
+    setCompileOpen(hasMarks);
   };
   const deleteStudy = (id: string) => {
     setStudies((prev) =>
@@ -9498,7 +9516,9 @@ export default function MobileApp() {
             cScopes = Array.from(new Set(cs.refs.map((r) => scopeOf(r)))).sort(
               byOrder
             );
-            cMarks = marks.filter((m) => cs.refs.includes(m.reference));
+            cMarks = allMarks.filter(
+              (m) => m.bookId === cs.bookId && cs.refs.includes(m.reference)
+            );
             cTags = wordTags.filter((t) => cs.refs.includes(t.reference));
             cScope = "searchstudy:" + cs.id;
             cTitle = cs.name;
@@ -9519,10 +9539,11 @@ export default function MobileApp() {
               .slice()
               .sort(byOrder);
             const crExtra = cr.extraRefs || [];
-            cMarks = marks.filter(
+            cMarks = allMarks.filter(
               (m) =>
-                cScopes.includes(scopeOf(m.reference)) ||
-                crExtra.includes(m.reference)
+                m.bookId === cr.bookId &&
+                (cScopes.includes(scopeOf(m.reference)) ||
+                  crExtra.includes(m.reference))
             );
             cTags = wordTags.filter(
               (t) =>
