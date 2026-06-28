@@ -352,6 +352,13 @@ const LINK_COLORS = [
   "#14b8a6",
 ];
 
+// Chapter-to-chapter group colors: the link palette minus purple (reserved for
+// combined studies) and red (reserved for chapter studies), so a plain chapter
+// group never wears a color that already means something else.
+const GROUP_COLORS = LINK_COLORS.filter(
+  (c) => c !== "#8b5cf6" && c !== "#ef4444"
+);
+
 const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
   charting: "Charting",
@@ -712,6 +719,127 @@ const IconSearch = ({ size = 18 }: { size?: number }) => (
     <path d="m21 21-4.35-4.35" />
   </svg>
 );
+const IconMoon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+  </svg>
+);
+const IconSun = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </svg>
+);
+const IconBulb = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 18h6" />
+    <path d="M10 22h4" />
+    <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2Z" />
+  </svg>
+);
+const IconKey = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M2 18v3a1 1 0 0 0 1 1h4v-3h3v-3h2l1.4-1.4a6 6 0 1 0-4-4Z" />
+    <circle cx="16.5" cy="7.5" r="0.6" fill="currentColor" />
+  </svg>
+);
+const IconBook = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+  </svg>
+);
+const IconDownload = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path d="M7 10l5 5 5-5" />
+    <path d="M12 15V3" />
+  </svg>
+);
+const IconUpload = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path d="M7 9l5-5 5 5" />
+    <path d="M12 4v12" />
+  </svg>
+);
+const IconCloud = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" />
+  </svg>
+);
 const IconStudies = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -1031,7 +1159,7 @@ export default function App() {
   const groupColor = (gid: string) => {
     const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
     const i = ids.indexOf(gid);
-    return LINK_COLORS[(i < 0 ? 0 : i) % LINK_COLORS.length];
+    return GROUP_COLORS[(i < 0 ? 0 : i) % GROUP_COLORS.length];
   };
 
   const [compileSelection, setCompileSelection] = useState<string[]>([]);
@@ -1769,8 +1897,7 @@ export default function App() {
   const tabLabel = useCallback(
     (t: Tab) =>
       t.studyId
-        ? "📑 " +
-          (searchStudies.find((s) => s.id === t.studyId)?.name || "Study")
+        ? searchStudies.find((s) => s.id === t.studyId)?.name || "Study"
         : vols[t.volume].books[t.book].book + " " + getChapter(t).chapter,
     [getChapter, searchStudies]
   );
@@ -2112,6 +2239,13 @@ export default function App() {
     const next = { ...prev };
     all.forEach((ms) => {
       next[ms] = gid;
+    });
+    // Unchecking a member must actually drop it: this group becomes EXACTLY
+    // {current chapter + checked chapters}. Any chapter still carrying this
+    // group's id that wasn't re-selected is removed here (the singleton sweep
+    // below then cleans up any other group this leaves with a lone chapter).
+    Object.keys(next).forEach((s) => {
+      if (next[s] === gid && all.indexOf(s) < 0) delete next[s];
     });
     const counts: Record<string, number> = {};
     Object.values(next).forEach((g) => (counts[g] = (counts[g] || 0) + 1));
@@ -3676,7 +3810,7 @@ export default function App() {
       return;
     }
     const first = compileStudy
-      ? "📑 " + compileStudy.name
+      ? compileStudy.name
       : effectiveCompileTabs[0]
       ? tabLabel(effectiveCompileTabs[0])
       : "";
@@ -8419,7 +8553,33 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      {dark ? "☀ Light mode" : "🌙 Dark mode"}
+                      {dark ? (
+                        <>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              verticalAlign: "-2px",
+                              marginRight: "6px",
+                            }}
+                          >
+                            <IconSun size={14} />
+                          </span>
+                          Light mode
+                        </>
+                      ) : (
+                        <>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              verticalAlign: "-2px",
+                              marginRight: "6px",
+                            }}
+                          >
+                            <IconMoon size={14} />
+                          </span>
+                          Dark mode
+                        </>
+                      )}
                     </div>
                     <div
                       onClick={() => {
@@ -8434,7 +8594,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ❑ Study books &amp; Vault
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconBook size={14} />
+                      </span>
+                      Study books &amp; Vault
                     </div>
                     <div
                       style={{
@@ -8472,7 +8641,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      💡 See how it works
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconBulb size={14} />
+                      </span>
+                      See how it works
                     </div>
                     <div
                       onClick={() => {
@@ -8506,7 +8684,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ⬇ Export my study (.json)
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconDownload size={14} />
+                      </span>
+                      Export my study (.json)
                     </div>
                     <div
                       onClick={() => {
@@ -8521,7 +8708,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ⬆ Restore from backup
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconUpload size={14} />
+                      </span>
+                      Restore from backup
                     </div>
                     <div
                       style={{
@@ -8571,7 +8767,16 @@ export default function App() {
                           color: "var(--text)",
                         }}
                       >
-                        🔑 Sign in with Google
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            verticalAlign: "-2px",
+                            marginRight: "6px",
+                          }}
+                        >
+                          <IconKey size={14} />
+                        </span>
+                        Sign in with Google
                       </div>
                     )}
                     {SHOW_LEGACY_DRIVE && (
@@ -8586,7 +8791,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      🔑 Sign in with Google
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconKey size={14} />
+                      </span>
+                      Sign in with Google
                     </div>
                     <div
                       onClick={saveToDrive}
@@ -8598,7 +8812,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ☁️ Save to Google Drive
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconCloud size={14} />
+                      </span>
+                      Save to Google Drive
                     </div>
                     <div
                       onClick={loadFromDrive}
@@ -8610,7 +8833,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ⬇ Load from Google Drive
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconDownload size={14} />
+                      </span>
+                      Load from Google Drive
                     </div>
                     <div
                       onClick={runDiag}
@@ -8622,7 +8854,16 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      🔍 Check sync
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <IconSearch size={14} />
+                      </span>
+                      Check sync
                     </div>
                       </>
                     )}
@@ -9130,14 +9371,25 @@ export default function App() {
                   cursor: "pointer",
                   fontSize: "13px",
                   fontWeight: active ? 600 : 400,
-                  backgroundColor: active ? ICON_ACCENT : "var(--panel)",
+                  backgroundColor: active
+                    ? linked
+                      ? linkColor
+                      : "#57534e"
+                    : "var(--panel)",
                   color: active ? "#fff" : "var(--text)",
                   border: linked
                     ? "2px solid " + linkColor
+                    : active
+                    ? "2px solid #57534e"
                     : "1px solid var(--border)",
                   transition: "all 0.15s",
                 }}
               >
+                {t.studyId && (
+                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                    <IconSearch size={14} />
+                  </span>
+                )}
                 {tabLabel(t)}
                 {tabs.length > 1 && (
                   <span
