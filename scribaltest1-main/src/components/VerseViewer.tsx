@@ -1742,15 +1742,38 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontSize: "13.5px",
                 lineHeight: 1.6,
                 color: "var(--muted)",
-                margin: "0 0 16px",
+                margin: "0 0 14px",
               }}
             >
               Scripture promises often turn on a hinge - a word that sets the
               condition for the blessing. Turn this on and those conditional
-              words are underlined with a dashed line so they're easy to find:
-              words like <b>if</b>, <b>when</b>, and <b>whoso</b>. It only
-              highlights them for you to see - it never marks anything itself,
-              so you can mark them your own way.
+              words get a dashed underline so they're easy to spot. It's only a
+              reading lens: it highlights them for you to see and never marks
+              anything itself, so you stay free to mark them your own way.
+            </p>
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                marginBottom: "7px",
+              }}
+            >
+              Words it catches
+            </div>
+            <p
+              style={{
+                fontSize: "13.5px",
+                lineHeight: 1.7,
+                color: dark ? "#a5b4fc" : "#4f46e5",
+                fontWeight: 600,
+                margin: "0 0 16px",
+              }}
+            >
+              if, when, unless, except, lest, whenever, whoso, whosoever,
+              whomsoever, inasmuch, inasmuch as, as many as
             </p>
             <div
               style={{
@@ -1769,50 +1792,21 @@ export default function VerseViewer(props: VerseViewerProps) {
                 border: "1px solid var(--border)",
                 borderRadius: "10px",
                 background: "var(--bg)",
-                padding: "14px 16px",
+                padding: "14px 16px 2px",
                 fontFamily: "Georgia, 'Times New Roman', serif",
                 fontSize: "16px",
                 lineHeight: 1.75,
                 marginBottom: "18px",
               }}
             >
-              <span style={{ color: "var(--muted)", marginRight: "8px" }}>
-                21
-              </span>
-              And it shall come to pass, that{" "}
-              <span
-                style={{
-                  fontStyle: "italic",
-                  fontWeight: 700,
-                  borderBottom: "2px dashed currentColor",
-                  paddingBottom: "1px",
-                }}
-              >
-                if
-              </span>{" "}
-              ye shall keep my commandments, ye shall prosper;{" "}
-              <span
-                style={{
-                  fontStyle: "italic",
-                  fontWeight: 700,
-                  borderBottom: "2px dashed currentColor",
-                  paddingBottom: "1px",
-                }}
-              >
-                when
-              </span>{" "}
-              ye are tried, and{" "}
-              <span
-                style={{
-                  fontStyle: "italic",
-                  fontWeight: 700,
-                  borderBottom: "2px dashed currentColor",
-                  paddingBottom: "1px",
-                }}
-              >
-                whoso
-              </span>{" "}
-              endureth to the end, the same shall be saved.
+              <MarkedVerse
+                reference="__cond_example__"
+                verseNumber={41}
+                text="And it shall come to pass, that if ye keep my commandments, and inasmuch as ye endure, whoso cometh unto me when he is tried, except he deny the faith, the same shall be saved."
+                marks={[]}
+                showConditionals
+                dark={dark}
+              />
             </div>
             <div
               style={{ display: "flex", justifyContent: "flex-end" }}
