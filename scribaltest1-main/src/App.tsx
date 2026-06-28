@@ -426,6 +426,59 @@ const MergeSeam = ({
       zIndex: 30,
     }}
   >
+    <style>{`
+      @keyframes scribal-merge-dim {
+        0% { opacity: 0; }
+        18% { opacity: 1; }
+        72% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-merge-left {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(-70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(-30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-merge-right {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-merge-pop {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        54% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
+        66% { transform: translate(-50%,-50%) scale(.95); }
+        74% { transform: translate(-50%,-50%) scale(1.05); }
+        84% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-merge-glow {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        56% { opacity: .5; transform: translate(-50%,-50%) scale(1.5); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
+      }
+      @keyframes scribal-merge-ripple {
+        0%, 48% { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
+        56% { opacity: .7; }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-merge-label {
+        0%, 52% { opacity: 0; transform: translate(-50%,0) translateY(64px); }
+        66% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
+        86% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
+        100% { opacity: 0; transform: translate(-50%,0) translateY(56px); }
+      }
+      .scribal-merge-dim { animation: scribal-merge-dim 1.6s ease both; }
+      .scribal-merge-ripple { animation: scribal-merge-ripple 1.6s ease both; }
+      .scribal-merge-glow { animation: scribal-merge-glow 1.6s ease both; }
+      .scribal-merge-left { animation: scribal-merge-left 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-merge-right { animation: scribal-merge-right 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-merge-pop { animation: scribal-merge-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
+      .scribal-merge-label { animation: scribal-merge-label 1.6s ease both; }
+    `}</style>
     {/* soft localized dim, spilling into the two adjacent panels */}
     <div
       className="scribal-merge-dim"
@@ -2848,6 +2901,45 @@ export default function App() {
   // Link a keyword search to a chapter at the moment of search — no naming or
   // book step. The search opens as its own tab in the chapter's book, linked so
   // it shares the chapter's themes and folds into the chapter's compile.
+  // Chapter-side merge: a new keyword search was just linked to chapter `ct`.
+  // Put the new study tab right beside the chapter and play the seam between
+  // them — here the chapter is the left (red) panel and the keyword the right
+  // (blue), fusing into purple.
+  const triggerCombinedMergeFromChapter = (
+    ct: Tab,
+    studyId: string,
+    refs: string[]
+  ) => {
+    const studyTabId = "studytab_" + studyId;
+    const loc = refs.length ? refLoc.get(refs[0]) : undefined;
+    const studyTab: Tab = {
+      id: studyTabId,
+      volume: loc ? loc.volume : 0,
+      book: loc ? loc.book : 0,
+      chapter: loc ? loc.chapter : 0,
+      bookId: ct.bookId,
+      studyId,
+    };
+    setTabs((prev) => {
+      const without = prev.filter((t) => t.id !== studyTabId);
+      const si = without.findIndex((t) => t.id === ct.id);
+      const copy = [...without];
+      copy.splice(si < 0 ? copy.length : si + 1, 0, studyTab);
+      return copy;
+    });
+    setActiveTabId(ct.id);
+    setMode("read");
+    mergeKeyRef.current += 1;
+    setMergeMoment({
+      sourceTabId: ct.id,
+      leftColor: TYPE_RED,
+      rightColor: TYPE_BLUE,
+      resultColor: TYPE_PURPLE,
+      combined: true,
+      key: mergeKeyRef.current,
+    });
+  };
+
   const linkSearchToChapterTab = (refs: string[], label: string, ct: Tab) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
@@ -2857,6 +2949,7 @@ export default function App() {
     setLinkSearchDraft(null);
     setShowSearch(false);
     openStudyTab(study);
+    triggerCombinedMergeFromChapter(ct, study.id, ordered);
   };
   const onLinkSearchToChapter = (refs: string[], label: string) => {
     if (!refs.length) return;
@@ -2954,6 +3047,7 @@ export default function App() {
     const study = addStudy(label.trim() || "Search", ct.bookId, refs);
     updateStudy(study.id, { linkedScope: scope });
     focusTab(study);
+    triggerCombinedMergeFromChapter(ct, study.id, refs);
   };
 
   // Collision: move the whole study (this chapter, or its linked group) into a
@@ -9356,57 +9450,6 @@ export default function App() {
           </div>
 
           <style>{`
-            @keyframes scribal-merge-dim {
-              0% { opacity: 0; }
-              18% { opacity: 1; }
-              72% { opacity: 1; }
-              100% { opacity: 0; }
-            }
-            @keyframes scribal-merge-left {
-              0% { opacity: 0; transform: translate(-50%,-50%) translateX(-70px) scale(.85); }
-              22% { opacity: 1; transform: translate(-50%,-50%) translateX(-30px) scale(1); }
-              46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
-              58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
-              100% { opacity: 0; }
-            }
-            @keyframes scribal-merge-right {
-              0% { opacity: 0; transform: translate(-50%,-50%) translateX(70px) scale(.85); }
-              22% { opacity: 1; transform: translate(-50%,-50%) translateX(30px) scale(1); }
-              46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
-              58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
-              100% { opacity: 0; }
-            }
-            @keyframes scribal-merge-pop {
-              0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
-              54% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
-              66% { transform: translate(-50%,-50%) scale(.95); }
-              74% { transform: translate(-50%,-50%) scale(1.05); }
-              84% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
-              100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
-            }
-            @keyframes scribal-merge-glow {
-              0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
-              56% { opacity: .5; transform: translate(-50%,-50%) scale(1.5); }
-              100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
-            }
-            @keyframes scribal-merge-ripple {
-              0%, 48% { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
-              56% { opacity: .7; }
-              100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
-            }
-            @keyframes scribal-merge-label {
-              0%, 52% { opacity: 0; transform: translate(-50%,0) translateY(64px); }
-              66% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
-              86% { opacity: 1; transform: translate(-50%,0) translateY(56px); }
-              100% { opacity: 0; transform: translate(-50%,0) translateY(56px); }
-            }
-            .scribal-merge-dim { animation: scribal-merge-dim 1.6s ease both; }
-            .scribal-merge-ripple { animation: scribal-merge-ripple 1.6s ease both; }
-            .scribal-merge-glow { animation: scribal-merge-glow 1.6s ease both; }
-            .scribal-merge-left { animation: scribal-merge-left 1.6s cubic-bezier(.4,0,.2,1) both; }
-            .scribal-merge-right { animation: scribal-merge-right 1.6s cubic-bezier(.4,0,.2,1) both; }
-            .scribal-merge-pop { animation: scribal-merge-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
-            .scribal-merge-label { animation: scribal-merge-label 1.6s ease both; }
             @keyframes qf-flash {
               0% { box-shadow: 0 0 0 0 rgba(217,164,65,0); }
               18% { box-shadow: 0 0 0 3px rgba(217,164,65,.95); }
