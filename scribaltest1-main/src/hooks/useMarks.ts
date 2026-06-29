@@ -30,6 +30,10 @@ interface StudyBook {
   >;
   createdAt: number;
   lastStudiedAt: number;
+  // Walkthrough-only book: kept out of localStorage and cloud sync entirely (see
+  // the persist effect), so the first-run tour's demo marks can never persist
+  // locally or travel to another device. Deleting the book removes them whole.
+  ephemeral?: boolean;
 }
 
 type State = {
@@ -79,7 +83,7 @@ type Action =
   | { type: "undo" }
   | { type: "redo" }
   | { type: "setActive"; id: string }
-  | { type: "createSession"; id: string; name: string }
+  | { type: "createSession"; id: string; name: string; ephemeral?: boolean }
   | { type: "rename"; id: string; name: string }
   | { type: "deleteBook"; id: string }
   | { type: "setLabel"; color: MarkColor; label: string }
@@ -520,6 +524,7 @@ function reducer(state: State, action: Action): State {
         notes: {},
         createdAt: Date.now(),
         lastStudiedAt: Date.now(),
+        ephemeral: action.ephemeral,
       };
       return {
         ...state,
@@ -1045,12 +1050,24 @@ export function useMarks() {
   const [state, dispatch] = useReducer(reducer, undefined, initState);
 
   useEffect(() => {
+    // Ephemeral books (the first-run walkthrough's throwaway demo) are never
+    // written to storage — and because the cloud push serializes this same blob,
+    // that also keeps them out of sync. So the tour's demo marks can't persist
+    // locally or reach another device. Everything else saves exactly as before.
+    const persistBooks: Record<string, StudyBook> = {};
+    Object.keys(state.books).forEach((id) => {
+      if (!state.books[id].ephemeral) persistBooks[id] = state.books[id];
+    });
+    const persistOrder = state.order.filter((id) => persistBooks[id]);
+    const persistActive = persistBooks[state.activeId]
+      ? state.activeId
+      : "master";
     safeSet(
       "scribal_books_v1",
       JSON.stringify({
-        books: state.books,
-        order: state.order,
-        activeId: state.activeId,
+        books: persistBooks,
+        order: persistOrder,
+        activeId: persistActive,
       })
     );
   }, [state.books, state.order, state.activeId]);
@@ -1169,9 +1186,9 @@ export function useMarks() {
     (id: string) => dispatch({ type: "setActive", id }),
     []
   );
-  const createSession = useCallback((name: string) => {
+  const createSession = useCallback((name: string, ephemeral = false) => {
     const id = "session_" + Date.now() + "_" + rand();
-    dispatch({ type: "createSession", id, name });
+    dispatch({ type: "createSession", id, name, ephemeral });
     return id;
   }, []);
 
