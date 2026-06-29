@@ -3991,6 +3991,7 @@ export default function MobileApp() {
         }}
       >
         <div
+          data-wt="wt-tray"
           style={{
             pointerEvents: "auto",
             backgroundColor: C.panel,
@@ -9576,6 +9577,13 @@ export default function MobileApp() {
               setNote={setNote}
               defaultName={cTitle}
               onSave={(nm, view) => {
+                // During the walkthrough, "Save" just closes the demo compile —
+                // nothing is persisted (the throwaway study is discarded on exit,
+                // and the walkthrough's own cleanup runs off compileOpen).
+                if (mtourOpen) {
+                  setCompileOpen(false);
+                  return;
+                }
                 const name = nm.trim();
                 if (cs) {
                   setSearchStudies((prev) =>
@@ -10423,6 +10431,9 @@ export default function MobileApp() {
           compileOpen={compileOpen}
           pen={pen}
           setPen={setPen}
+          defineOpen={defn !== null}
+          notes={notes}
+          setNote={setNote}
         />
       )}
 
