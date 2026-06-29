@@ -1551,7 +1551,15 @@ export default function MobileApp() {
   };
   // A chapter's label scope: its group's shared scope if linked, else its own.
   const resolveScope = (cs: string) =>
-    chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    // During the first-run walkthrough the open chapter IS the demo chapter, so
+    // keep it standalone — otherwise the throwaway study inherits whatever real
+    // link group this chapter belongs to, which would collapse its themes and
+    // mis-key (hide) their names.
+    mtourOpen && cs === title
+      ? cs
+      : chapterGroups[cs]
+      ? "group:" + chapterGroups[cs]
+      : cs;
   // A chapter reads as "combined" when a live keyword search is linked into it
   // (or its group). Derived live — no stored flag to drift out of sync.
   const chapterIsCombined = (cs: string) => {
@@ -2724,7 +2732,9 @@ export default function MobileApp() {
 
   // The chapters Compile gathers: the current chapter's whole study if it's
   // linked, otherwise just this chapter (sorted in canonical order).
-  const studyScopes = (chapterGroups[title] ? groupMembers(title) : [title])
+  const studyScopes = (
+    chapterGroups[title] && !mtourOpen ? groupMembers(title) : [title]
+  )
     .slice()
     .sort(
       (a, b) => (chapterLoc.get(a)?.order ?? 0) - (chapterLoc.get(b)?.order ?? 0)
@@ -10422,6 +10432,7 @@ export default function MobileApp() {
           setActiveBook={setActiveBook}
           addMark={addMark}
           setScopedLabel={setScopedLabel}
+          resolveScope={resolveScope}
           marks={marks}
           activeBookId={activeBookId}
           loc={loc}
