@@ -10442,7 +10442,6 @@ export default function MobileApp() {
           compileOpen={compileOpen}
           pen={pen}
           setPen={setPen}
-          defineOpen={defn !== null}
           notes={notes}
           setNote={setNote}
         />
