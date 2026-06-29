@@ -479,7 +479,7 @@ export default function MobileWalkthrough({
   });
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: Z, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: Z, pointerEvents: "none", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <style>{`@keyframes wt-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {/* four dim panels around the hole */}
       <div style={panel({ top: 0, left: 0, width: vw, height: hTop })} />
