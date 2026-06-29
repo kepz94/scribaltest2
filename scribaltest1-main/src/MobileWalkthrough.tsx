@@ -2,16 +2,18 @@ import { useState, useRef, useEffect, CSSProperties } from "react";
 import scriptures from "./data/scriptures.json";
 import { Mark, MarkColor, MarkStyle, Tool, COLOR_MAP } from "./types";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // The first-run walkthrough. It runs on the REAL screens — the reading page and
 // the real compile/notes screen — inside its own throwaway "ephemeral" study
-// book (see useMarks). Every beat waits for the actual action: a word marked, a
-// phrase slid, a definition shown, a mark erased, a study compiled, a note
-// written, the view switched, a card built. On exit it restores the book,
-// chapter, and pen you had, deletes the throwaway book whole, and reverts any
-// note the tour had you write — so nothing here persists, syncs, or touches a
-// thing of yours.
-// ─────────────────────────────────────────────────────────────────────────────
+// book (see useMarks). The reading half is hands-on and spotlighted: every beat
+// waits for the actual action (a word marked, a phrase slid, a pen chosen, a
+// word looked up, a mark erased, a study compiled). The notes half is coached,
+// not spotlighted: the real compiled study stays fully visible and live while a
+// floating card walks you through it — so the tour never rings a scrollable
+// board element (which is what made earlier builds jump). On exit it restores
+// the book, chapter, and pen you had, deletes the throwaway book whole, and
+// reverts any note the tour had you write — so nothing here persists or syncs.
+// ────────────────────────────────────────────────────────────────────────────
 
 interface Palette {
   bg: string;
@@ -40,7 +42,9 @@ interface Props {
     style: MarkStyle,
     color: MarkColor
   ) => void;
-  seedScopeLabels: (scope: string, labels: Record<number, string>) => void;
+  // The proven label-write path (the same one theme-rename uses); seeds the demo
+  // theme names so the compiled study reads "Faith" / "The Lord", not "Color 2".
+  setScopedLabel: (scope: string, color: MarkColor, label: string) => void;
   marks: Mark[];
   activeBookId: string;
   loc: Loc;
@@ -52,8 +56,8 @@ interface Props {
   setPen: (updater: Pen | ((p: Pen) => Pen)) => void;
   // True while a dictionary definition is on screen (defn != null in MobileApp).
   defineOpen: boolean;
-  // The per-verse / per-theme notes store + setter, watched to advance the note
-  // beats and used to revert anything the tour writes on exit.
+  // The per-verse / per-theme notes store + setter, watched to advance the
+  // meaning beat and used to revert anything the tour writes on exit.
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
 }
@@ -89,16 +93,22 @@ const DEMO = (() => {
   return null;
 })();
 
+// chapterScopeKey(1 Nephi 1) resolves to its first verse's scope, i.e. exactly
+// this string — confirmed against the reading screen's own scope logic — so the
+// labels we seed here and the keys we revert on exit match what the compile
+// reads.
 const DEMO_SCOPE = "1 Nephi 1";
 // Note keys the tour might create, so they can be reverted on exit.
 const VNOTE_PREFIX = "versenote:" + DEMO_SCOPE + ":";
 const SYNTH_PREFIX = "synthesis:" + DEMO_SCOPE + ":";
 const isDemoNoteKey = (k: string) =>
   k.indexOf(VNOTE_PREFIX) === 0 || k.indexOf(SYNTH_PREFIX) === 0;
-const pickNotesString = (notesObj: Record<string, string>, prefix: string) => {
+// A stable snapshot string of just the demo-scope notes (either kind), so the
+// meaning beat advances on any real note and exit can revert precisely.
+const pickDemoNotes = (notesObj: Record<string, string>) => {
   const o: Record<string, string> = {};
   Object.keys(notesObj || {}).forEach((k) => {
-    if (k.indexOf(prefix) === 0) o[k] = notesObj[k];
+    if (isDemoNoteKey(k)) o[k] = notesObj[k];
   });
   return JSON.stringify(o);
 };
@@ -120,8 +130,8 @@ function wordRange(
   return { start: words[s].start, end: words[e].end };
 }
 
-// Pre-marks so the compiled study has real content. Verse 0 is left clean —
-// that's the one the reader marks themselves in the Mark/Slide beats.
+// Pre-marks so the compiled study has real content in two themes. Verse 0 is
+// left clean — that's the one the reader marks themselves in Mark/Slide.
 type Seed = { verseIdx: number; startWord: number; wordCount: number; color: MarkColor; style: MarkStyle };
 const SEED_FAITH: MarkColor = 2;
 const SEED_LORD: MarkColor = 5;
@@ -131,7 +141,7 @@ const SEEDS: Seed[] = [
   { verseIdx: 3, startWord: 0, wordCount: 4, color: SEED_FAITH, style: "highlight" },
 ];
 
-type Mode = "welcome" | "spotlight" | "free" | "card";
+type Mode = "welcome" | "spotlight" | "free";
 type CoachPos = "near" | "top" | "bottom";
 type Ghost = "tap" | "swipe";
 interface Step {
@@ -145,10 +155,10 @@ interface Step {
   ghost?: Ghost;
 }
 
-// ── The 13 beats (index 0 is the welcome). Reading screen 1–6, notes screen
-// 7–13. "spotlight" dims + blocks around one control; "free" leaves the screen
-// live (so a tool can be armed AND used) with just a ring + coach; "card" is a
-// floating moment with no target.
+// ── The 10 beats (index 0 is the welcome). Reading screen 1–6 are "spotlight"
+// (dim + block around one control) or "free" (screen live, just a ring + coach,
+// so a tool can be armed AND used). Notes screen 7–10 are "free" with no ring
+// on board internals — the real study stays visible and the coach guides it.
 const STEPS: Step[] = [
   { id: "welcome", mode: "welcome", target: null, coachPos: "bottom", title: "", body: "" },
   {
@@ -175,7 +185,7 @@ const STEPS: Step[] = [
     target: '[data-wt="wt-tray"]',
     coachPos: "near",
     title: "Make it yours",
-    body: "Each color is a theme; each style is a way to mark. Pick a different color and a different style.",
+    body: "Each color is a theme; each style is a way to mark. Pick a different color, then a different style.",
   },
   {
     id: "dict",
@@ -203,36 +213,20 @@ const STEPS: Step[] = [
   },
   {
     id: "study",
-    mode: "card",
+    mode: "free",
     target: null,
     coachPos: "bottom",
     cta: "Next",
     title: "This is your study",
-    body: "Every mark you made, gathered into themes — most-marked first. Nothing interpreted, only organized.",
+    body: "Every mark you made, gathered into themes — most-marked first. Nothing was interpreted for you; it was only organized.",
   },
   {
-    id: "note",
-    mode: "free",
-    target: "[data-vref]",
-    coachPos: "bottom",
-    title: "Note a verse",
-    body: "Tap a verse card — it flips. Write what the verse means to you, then Save. (The ↗ jumps back to it in the text.)",
-  },
-  {
-    id: "focusfull",
+    id: "meaning",
     mode: "free",
     target: null,
     coachPos: "bottom",
-    title: "See it your way",
-    body: "Open “View options” and switch to Full verse — to read your marks inside the whole verse, in context.",
-  },
-  {
-    id: "conclusion",
-    mode: "free",
-    target: '[aria-label^="Add a thought"]',
-    coachPos: "bottom",
-    title: "Write your conclusion",
-    body: "At the top of a theme, say what these verses mean together — the one line Scribal will never write for you.",
+    title: "Add your meaning",
+    body: "At the top of a theme, answer what its verses say together — the one line Scribal will never write for you. (Or tap any verse to flip it and note what it means to you.)",
   },
   {
     id: "distilled",
@@ -240,28 +234,21 @@ const STEPS: Step[] = [
     target: '[data-tour="ex-formats"]',
     coachPos: "bottom",
     title: "See it as prose",
-    body: "Tap Distilled — your phrases reflow into flowing text. Your words, rearranged, never rewritten.",
+    body: "Tap Distilled — your marked phrases reflow into flowing text. Your words, rearranged, never rewritten.",
   },
   {
-    id: "share",
-    mode: "free",
-    target: null,
-    coachPos: "bottom",
-    title: "Share a card",
-    body: "Tap Share (top right), pick a verse or two, and Scribal builds a card you can send.",
-  },
-  {
-    id: "save",
+    id: "keep",
     mode: "free",
     target: null,
     coachPos: "bottom",
     cta: "Start studying",
     title: "Keep it",
-    body: "Save to Studies keeps it — find it anytime under Studies. That's the whole loop: mark by hand, compile, shape and keep. Relational and chapter-linking are waiting when you're ready.",
+    body: "Save to Studies keeps the whole thing — reopen it anytime. Share builds a card to send. That's the loop: mark by hand, compile, shape and keep. Relational and chapter-linking are waiting when you're ready.",
   },
 ];
-const LAST = STEPS.length - 1; // 13 — the Save beat
-const TEACH = LAST; // numbered beats 1..13
+const LAST = STEPS.length - 1; // 10 — the Keep beat
+const TEACH = LAST; // numbered beats 1..10
+const NOTES_FROM = 7; // beats >= this are on the compile/notes screen
 
 export default function MobileWalkthrough({
   C,
@@ -270,7 +257,7 @@ export default function MobileWalkthrough({
   deleteBook,
   setActiveBook,
   addMark,
-  seedScopeLabels,
+  setScopedLabel,
   marks,
   activeBookId,
   loc,
@@ -341,7 +328,8 @@ export default function MobileWalkthrough({
         sd.color
       );
     });
-    seedScopeLabels(DEMO_SCOPE, { [SEED_FAITH]: "Faith", [SEED_LORD]: "The Lord" });
+    setScopedLabel(DEMO_SCOPE, SEED_FAITH, "Faith");
+    setScopedLabel(DEMO_SCOPE, SEED_LORD, "The Lord");
     // eslint-disable-next-line
   }, []);
 
@@ -381,9 +369,7 @@ export default function MobileWalkthrough({
       baseTool.current = pen.tool;
     } else if (id === "erase") baseMarkCount.current = marks.length;
     else if (id === "dict") defWasOpen.current = false;
-    else if (id === "note") baseNotes.current = pickNotesString(notes, VNOTE_PREFIX);
-    else if (id === "conclusion")
-      baseNotes.current = pickNotesString(notes, SYNTH_PREFIX);
+    else if (id === "meaning") baseNotes.current = pickDemoNotes(notes);
     // eslint-disable-next-line
   }, [beat]);
 
@@ -391,15 +377,15 @@ export default function MobileWalkthrough({
   // mark removed (erase).
   useEffect(() => {
     const id = STEPS[beat]?.id;
-    if (id === "mark" && marks.some((m) => !baseIds.current.has(m.id))) setBeat((b) => (b < LAST ? b + 1 : b));
+    if (id === "mark" && marks.some((m) => !baseIds.current.has(m.id))) advance();
     else if (
       id === "slide" &&
       marks.some(
         (m) => !baseIds.current.has(m.id) && m.markedText.trim().includes(" ")
       )
     )
-      setBeat((b) => (b < LAST ? b + 1 : b));
-    else if (id === "erase" && marks.length < baseMarkCount.current) setBeat((b) => (b < LAST ? b + 1 : b));
+      advance();
+    else if (id === "erase" && marks.length < baseMarkCount.current) advance();
   }, [marks, beat]);
 
   // Advance the pen beat when a new color AND a new marking style are armed.
@@ -410,53 +396,49 @@ export default function MobileWalkthrough({
       pen.tool !== baseTool.current &&
       isMarkStyle(pen.tool)
     )
-      setBeat((b) => (b < LAST ? b + 1 : b));
+      advance();
   }, [pen, beat]);
 
   // Dictionary: advance once a definition has been shown AND dismissed.
   useEffect(() => {
     if (STEPS[beat]?.id !== "dict") return;
     if (defineOpen) defWasOpen.current = true;
-    else if (defWasOpen.current) setBeat((b) => (b < LAST ? b + 1 : b));
+    else if (defWasOpen.current) advance();
   }, [defineOpen, beat]);
 
   // Compile opening (compile beat); the notes screen closing wraps up the tour.
   useEffect(() => {
     const id = STEPS[beat]?.id;
-    if (id === "compile" && compileOpen) setBeat((b) => (b < LAST ? b + 1 : b));
-    else if (beat >= 7 && !compileOpen) finish();
+    if (id === "compile" && compileOpen) advance();
+    else if (beat >= NOTES_FROM && !compileOpen) finish();
     // eslint-disable-next-line
   }, [compileOpen, beat]);
 
-  // Notes: a verse note written (note), a theme conclusion written (conclusion).
+  // Meaning beat: advance when any demo-scope note (a theme conclusion OR a
+  // verse note) is written.
   useEffect(() => {
-    const id = STEPS[beat]?.id;
-    if (id === "note" && pickNotesString(notes, VNOTE_PREFIX) !== baseNotes.current)
-      setBeat((b) => (b < LAST ? b + 1 : b));
-    else if (
-      id === "conclusion" &&
-      pickNotesString(notes, SYNTH_PREFIX) !== baseNotes.current
+    if (
+      STEPS[beat]?.id === "meaning" &&
+      pickDemoNotes(notes) !== baseNotes.current
     )
-      setBeat((b) => (b < LAST ? b + 1 : b));
+      advance();
   }, [notes, beat]);
 
-  // Switches inside the real compile screen we can't see via props — caught by
-  // watching the actual tap on its labelled controls.
+  // The one notes-screen switch we can't read through props — the format tabs —
+  // caught by watching the actual tap on the Distilled control inside the
+  // compile's stable, compile-only [data-tour="ex-formats"] selector.
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const el = e.target as HTMLElement;
       const btn = el && el.closest ? el.closest("button") : null;
       if (!btn) return;
       const txt = (btn.textContent || "").trim();
-      const id = STEPS[beat]?.id;
-      if (id === "focusfull" && txt === "Full verse") setBeat((b) => (b < LAST ? b + 1 : b));
-      else if (
-        id === "distilled" &&
+      if (
+        STEPS[beat]?.id === "distilled" &&
         txt === "Distilled" &&
         btn.closest('[data-tour="ex-formats"]')
       )
-        setBeat((b) => (b < LAST ? b + 1 : b));
-      else if (id === "share" && txt === "Share") setBeat((b) => (b < LAST ? b + 1 : b));
+        advance();
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
@@ -597,7 +579,7 @@ export default function MobileWalkthrough({
       <div style={{ fontSize: "14.5px", lineHeight: 1.5, color: C.muted }}>{step.body}</div>
       {step.cta && (
         <button
-          onClick={step.id === "save" ? finish : advance}
+          onClick={step.id === "keep" ? finish : advance}
           style={{ marginTop: "13px", width: "100%", padding: "12px", border: "none", borderRadius: "999px", backgroundColor: C.text, color: C.bg, fontSize: "14.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
         >
           {step.cta}
@@ -633,23 +615,8 @@ export default function MobileWalkthrough({
       else if (r) s.top = Math.min(vh - 170, r.bottom + 12);
       else s.bottom = "calc(18px + env(safe-area-inset-bottom))";
     }
-    return (
-      <div style={s}>
-        {coachInner}
-      </div>
-    );
+    return <div style={s}>{coachInner}</div>;
   };
-
-  // ── "card" beats (study, save wrap-up) — a light, harmless scrim + coach ────
-  if (step.mode === "card") {
-    return (
-      <div style={{ position: "fixed", inset: 0, zIndex: Z, pointerEvents: "none", ...baseFont }}>
-        {styleTag}
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(18,16,12,0.34)", pointerEvents: "none" }} />
-        {coachWrap("bottom", null)}
-      </div>
-    );
-  }
 
   // ring around a measured target (used by spotlight + free)
   const ring = (r: DOMRect) => (
@@ -683,8 +650,9 @@ export default function MobileWalkthrough({
     />
   );
 
-  // ── "free" beats — screen stays live so a tool can be armed AND used; just a
-  // ring (if we have a target) + coach. No dim, so the notes screen stays clear.
+  // ── "free" beats — the screen stays live (so a tool can be armed AND used on
+  // the reading side, and the real study stays interactive on the notes side);
+  // just a ring (if we have a clean target) + the coach. No dim.
   if (step.mode === "free") {
     return (
       <div style={{ position: "fixed", inset: 0, zIndex: Z, pointerEvents: "none", ...baseFont }}>
