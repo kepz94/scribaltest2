@@ -191,10 +191,11 @@ const STEPS: Step[] = [
   {
     id: "meaning",
     mode: "free",
-    target: null,
+    target: '[aria-label^="Add a thought"]',
     coachPos: "bottom",
+    cta: "Next",
     title: "The meaning is yours",
-    body: "This is the heart of Scribal — the one line it won't write for you. At the top of a theme, tap the dotted box with the + and say what its verses mean together.",
+    body: "Each theme carries a name you can edit — Faith, The Lord — and a dotted + at its top. That + is where you write what its verses mean together: the one line Scribal won't write for you.",
   },
   {
     id: "done",
@@ -241,13 +242,6 @@ export default function MobileWalkthrough({
   const synthPrefix = "synthesis:" + demoScopeKey + ":"; // conclusions are scope-keyed
   const isDemoNoteKey = (k: string) =>
     k.indexOf(vnotePrefix) === 0 || k.indexOf(synthPrefix) === 0;
-  const pickDemoNotes = (notesObj: Record<string, string>) => {
-    const o: Record<string, string> = {};
-    Object.keys(notesObj || {}).forEach((k) => {
-      if (isDemoNoteKey(k)) o[k] = notesObj[k];
-    });
-    return JSON.stringify(o);
-  };
 
   // Restore targets, captured before anything is touched.
   const prevBook = useRef(activeBookId);
@@ -263,7 +257,6 @@ export default function MobileWalkthrough({
 
   // Per-beat baselines so "did it happen" reads true only on a real action.
   const baseIds = useRef<Set<string>>(new Set());
-  const baseNotes = useRef<string>("");
 
   // ── Setup: once, behind the welcome card. Arm a sensible pen, create the
   // throwaway book, drop in two demo marks + their theme names, open the demo
@@ -333,12 +326,11 @@ export default function MobileWalkthrough({
   const advance = () => setBeat((b) => (b < LAST ? b + 1 : b));
 
   // Set each beat's baseline the instant it opens. Mark/Phrase/Theme each snap
-  // the current mark ids; Meaning snaps the current demo notes.
+  // the current mark ids, so only a brand-new mark counts.
   useEffect(() => {
     const id = STEPS[beat]?.id;
     if (id === "mark" || id === "phrase" || id === "theme")
       baseIds.current = new Set(marks.map((m) => m.id));
-    else if (id === "meaning") baseNotes.current = pickDemoNotes(notes);
     // eslint-disable-next-line
   }, [beat]);
 
@@ -360,16 +352,6 @@ export default function MobileWalkthrough({
     else if (beat >= NOTES_FROM && !compileOpen) finish();
     // eslint-disable-next-line
   }, [compileOpen, beat]);
-
-  // Meaning beat: advance when the conclusion (or any note) is written.
-  useEffect(() => {
-    if (
-      STEPS[beat]?.id === "meaning" &&
-      pickDemoNotes(notes) !== baseNotes.current
-    )
-      advance();
-    // eslint-disable-next-line
-  }, [notes, beat]);
 
   // Measure the spotlight / ring target. Re-measures on beat change, on scroll
   // (capture, so inner scrolls count) and resize; rAF passes cover mount timing.
