@@ -232,7 +232,39 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
   );
 
   // ================= ENTRY illustrations (page 1) =================
-  const searchEntry = tileWrap(magnifier(PURP, 22), "Search", "Scripture & your marks");
+  const searchControls = (
+    <div style={box}>
+      <div style={{ width: "214px", display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "10px 11px",
+            borderRadius: "10px",
+            border: "1px solid " + C.border,
+            background: C.bg,
+          }}
+        >
+          {magnifier(C.muted, 14)}
+          <span style={{ fontFamily: SERIF, fontSize: "13px", color: C.muted }}>Search scripture…</span>
+        </div>
+        <div style={{ display: "flex", gap: "4px", background: C.soft, borderRadius: "9px", padding: "3px" }}>
+          <span style={{ flex: 1, textAlign: "center", padding: "6px 0", borderRadius: "7px", background: C.text, color: C.bg, fontSize: "11px", fontWeight: 600 }}>
+            Scripture
+          </span>
+          <span style={{ flex: 1, textAlign: "center", padding: "6px 0", fontSize: "11px", color: C.muted }}>My marks</span>
+        </div>
+        <div style={{ display: "flex", gap: "4px", background: C.soft, borderRadius: "9px", padding: "3px" }}>
+          <span style={{ flex: 1, textAlign: "center", padding: "6px 0", borderRadius: "7px", background: C.text, color: C.bg, fontSize: "10px", fontWeight: 600 }}>
+            All words
+          </span>
+          <span style={{ flex: 1, textAlign: "center", padding: "6px 0", fontSize: "10px", color: C.muted }}>Any word</span>
+          <span style={{ flex: 1, textAlign: "center", padding: "6px 0", fontSize: "10px", color: C.muted }}>Phrase</span>
+        </div>
+      </div>
+    </div>
+  );
   const studiesEntry = tileWrap(layers(PURP, 22), "Studies", "Every study you've done");
   const booksEntry = tileWrap(lock(PURP, 22), "Vault", "2 session books");
 
@@ -472,16 +504,24 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
 
   // ================= SCREEN illustrations (page 2) =================
   const searchLegend = (
-    <div style={box}>
-      <div style={{ width: "212px" }}>
-        <div style={seclbl}>Where it searches</div>
-        {legRow("Scripture", BLUE, <>the verse text — “faith” → Alma 32:21</>)}
-        {legRow("My marks", BLUE, <>your own highlights — back to a verse you marked</>)}
-        <div style={{ ...seclbl, marginTop: "6px" }}>How the words combine</div>
-        {legRow("All words", C.text, <>has <i>every</i> word — faith <b>+</b> hope</>)}
-        {legRow("Any word", C.text, <>has <i>any</i> word — faith <b>or</b> hope</>)}
-        {legRow("Phrase", C.text, <>the exact wording — “perfect knowledge”</>)}
-      </div>
+    <div
+      style={{
+        borderRadius: "14px",
+        border: "1px solid " + C.border,
+        background: C.panel,
+        padding: "13px 15px",
+        marginBottom: "18px",
+      }}
+    >
+      <div style={seclbl}>Where it searches</div>
+      {legRow("Scripture", BLUE, <>the verse text — <i>faith</i> finds Alma 32:21</>)}
+      {legRow("My marks", BLUE, <>your highlights — back to a verse you marked</>)}
+      <div style={{ ...seclbl, marginTop: "9px" }}>How the words combine</div>
+      {legRow("All words", C.text, <><i>faith hope</i> → only verses with <b>both</b></>)}
+      {legRow("Any word", C.text, <><i>faith hope</i> → verses with <b>either</b></>)}
+      {legRow("Phrase", C.text, <>the exact phrase — <i>“perfect knowledge”</i></>)}
+      <div style={{ ...seclbl, marginTop: "9px" }}>Wildcard *</div>
+      {legRow("baptiz*", C.text, <>→ baptize, baptism, baptized in one search</>)}
     </div>
   );
 
@@ -494,18 +534,20 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
           width: "100%",
           background: C.panel,
           borderRadius: "18px 18px 0 0",
-          padding: "14px 15px",
+          padding: "13px 15px",
         }}
       >
+        <div style={seclbl}>Combine into a study</div>
         <div
           style={{
-            background: PURP,
+            background: RED,
             color: "#fff",
             borderRadius: "10px",
             padding: "11px",
             textAlign: "center",
             fontSize: "12.5px",
             fontWeight: 700,
+            marginTop: "5px",
           }}
         >
           Link with next chapter (1 Nephi 2) →
@@ -515,14 +557,15 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "center",
             gap: "8px",
             border: "1px solid " + C.border,
             borderRadius: "9px",
-            padding: "8px 10px",
+            padding: "9px 10px",
           }}
         >
           {magnifier(BLUE, 13)}
-          <span style={{ fontSize: "11.5px", color: C.text }}>Search a word to link in…</span>
+          <span style={{ fontSize: "11.5px", fontWeight: 700, color: BLUE }}>Add a keyword search to this study</span>
         </div>
       </div>
     </div>
@@ -752,18 +795,17 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
       icon: magnifier(BLUE, 20),
       pages: [
         {
-          illo: searchEntry,
-          heading: "Open Search from home",
+          illo: searchControls,
+          heading: "Search two ways",
           lines: [
-            "Tap the Search tile on the home screen. Scribal searches the scripture text and your own marks — switch between them at the top.",
+            "Open Search from the home screen. Search the scripture text or your own marks — switch at the top — then choose how the words combine: all of them, any of them, or the exact phrase.",
           ],
         },
         {
           illo: searchLegend,
           heading: "What each option finds",
           lines: [
-            "Choose where to search and how the words combine. Use * as a wildcard — baptiz* matches baptize, baptism, and baptized in one search.",
-            "From Scripture results you can link the verses you want into a study.",
+            "From Scripture results, link the verses you want into a study to mark and compile together.",
           ],
         },
       ],
