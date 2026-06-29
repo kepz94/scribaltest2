@@ -10,10 +10,12 @@ const SERIF = '"Times New Roman", Georgia, "Hoefler Text", serif';
 const SANS = '-apple-system, "Segoe UI", Roboto, system-ui, sans-serif';
 
 // Card-local color tables (so cards can switch light/dark independently of app).
-const PEN_LIGHT = ["", "#d11a2a", "#e07b1a", "#c9a200", "#2f8f3e", "#2f6fb0", "#7b4fbf", "#1a1a1a"];
-const PEN_DARK = ["", "#ff7b72", "#f0a24b", "#e3c341", "#5fcf6b", "#7cb0e8", "#b794f6", "#f2efe8"];
-const HL_LIGHT = ["", "#ffd6d6", "#ffe2c2", "#fbedb0", "#d3f0d6", "#cfe2f7", "#e6d9f7", "#e0e0e0"];
-const HL_DARK = ["", "#5c2b2e", "#5c3f1f", "#5a4a1c", "#1f4d2a", "#243d56", "#3d2b5c", "#3f3e3a"];
+// These mirror the app's --penN / --hlN CSS variables (which the canvas can't
+// read) for all ten palette colors, light and dark.
+const PEN_LIGHT = ["", "#d11a2a", "#e07b1a", "#c9a200", "#2f8f3e", "#2f6fb0", "#7b4fbf", "#1a1a1a", "#d6448c", "#5fa515", "#0e9aab"];
+const PEN_DARK = ["", "#ff7b72", "#f0a24b", "#e3c341", "#5fcf6b", "#7cb0e8", "#b794f6", "#f2efe8", "#f48fb1", "#b4e052", "#4dd0e1"];
+const HL_LIGHT = ["", "#ffd6d6", "#ffe2c2", "#fbedb0", "#d3f0d6", "#cfe2f7", "#e6d9f7", "#e0e0e0", "#fcd9ea", "#e8f5c4", "#c9f0f5"];
+const HL_DARK = ["", "#5c2b2e", "#5c3f1f", "#5a4a1c", "#1f4d2a", "#243d56", "#3d2b5c", "#3f3e3a", "#5a2742", "#3a4a12", "#134048"];
 const penHex = (c: number, dark: boolean) => (dark ? PEN_DARK : PEN_LIGHT)[c] || "#888888";
 const hlHex = (c: number, dark: boolean) => (dark ? HL_DARK : HL_LIGHT)[c] || "#dddddd";
 
