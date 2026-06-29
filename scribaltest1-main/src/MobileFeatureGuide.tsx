@@ -224,10 +224,10 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     </div>
   );
 
-  const legRow = (tag: string, tagColor: string, txt: JSX.Element) => (
-    <div style={{ display: "flex", alignItems: "baseline", gap: "7px", padding: "4px 0" }}>
-      <span style={{ flexShrink: 0, width: "64px", fontSize: "10.5px", fontWeight: 700, color: tagColor }}>{tag}</span>
-      <span style={{ fontSize: "10px", color: C.muted, lineHeight: 1.35 }}>{txt}</span>
+  const legRow = (label: string, desc: string) => (
+    <div style={{ marginBottom: "7px", fontSize: "11.5px", lineHeight: 1.45 }}>
+      <span style={{ fontWeight: 700, color: C.text }}>{label}</span>
+      <span style={{ color: C.muted }}>{" — " + desc}</span>
     </div>
   );
 
@@ -508,20 +508,28 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
       style={{
         borderRadius: "14px",
         border: "1px solid " + C.border,
-        background: C.panel,
+        background: C.soft,
         padding: "13px 15px",
         marginBottom: "18px",
       }}
     >
-      <div style={seclbl}>Where it searches</div>
-      {legRow("Scripture", BLUE, <>the verse text — <i>faith</i> finds Alma 32:21</>)}
-      {legRow("My marks", BLUE, <>your highlights — back to a verse you marked</>)}
-      <div style={{ ...seclbl, marginTop: "9px" }}>How the words combine</div>
-      {legRow("All words", C.text, <><i>faith hope</i> → only verses with <b>both</b></>)}
-      {legRow("Any word", C.text, <><i>faith hope</i> → verses with <b>either</b></>)}
-      {legRow("Phrase", C.text, <>the exact phrase — <i>“perfect knowledge”</i></>)}
-      <div style={{ ...seclbl, marginTop: "9px" }}>Wildcard *</div>
-      {legRow("baptiz*", C.text, <>→ baptize, baptism, baptized in one search</>)}
+      <div
+        style={{
+          fontSize: "10px",
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          color: C.muted,
+          marginBottom: "9px",
+        }}
+      >
+        How search works
+      </div>
+      {legRow("All / Any / Phrase", "how plain words combine: every word, any word, or the exact phrase.")}
+      {legRow("faith & hope", "use & to require all the parts.")}
+      {legRow("mercy OR grace", "use OR to match either side.")}
+      {legRow("merc*", "a * after a stem matches mercy, merciful, mercies.")}
+      {legRow("Scripture / My marks", "the full text, or only what you've marked.")}
+      {legRow("Volume / Book", "limit results to a volume, or one book.")}
     </div>
   );
 
