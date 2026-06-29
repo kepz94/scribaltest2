@@ -6155,7 +6155,7 @@ export default function MobileApp() {
               A place to study scripture
             </div>
             <button
-              onClick={() => setExampleOpen(true)}
+              onClick={() => setGuideOpen(true)}
               style={{
                 marginTop: "14px",
                 background: "transparent",
@@ -6168,7 +6168,7 @@ export default function MobileApp() {
                 letterSpacing: "0.02em",
               }}
             >
-              See how Scribal works →
+              Advanced tutorial →
             </button>
           </div>
 
@@ -9672,6 +9672,7 @@ export default function MobileApp() {
           }}
         />
       )}
+
 
       {/* Manage a mark (long-press) */}
       {defn &&
