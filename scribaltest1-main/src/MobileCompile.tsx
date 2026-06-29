@@ -40,12 +40,6 @@ interface Props {
   onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
   relSavedLens?: string;
   onRelLens?: (lens: string) => void;
-  onSavePicksAsStudy?: (
-    refs: string[],
-    roles: Record<string, { a: number; b: number }>,
-    lens: string,
-    name: string
-  ) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -127,7 +121,6 @@ export default function MobileCompile({
   onRelRoles,
   relSavedLens,
   onRelLens,
-  onSavePicksAsStudy,
   defaultName,
   onClose,
   dark,
@@ -1189,7 +1182,6 @@ export default function MobileCompile({
             onRoles={onRelRoles}
             savedLens={relSavedLens}
             onLens={onRelLens}
-            onSavePicksAsStudy={onSavePicksAsStudy}
             shareSignal={covShareSignal}
           />
         )}
