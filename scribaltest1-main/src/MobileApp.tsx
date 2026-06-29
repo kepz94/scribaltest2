@@ -4037,6 +4037,13 @@ export default function MobileApp() {
               return (
                 <button
                   key={s.tool}
+                  data-wt={
+                    s.tool === "eraser"
+                      ? "wt-eraser"
+                      : s.tool === "define"
+                      ? "wt-define"
+                      : undefined
+                  }
                   onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
                   aria-label={s.label}
                   title={s.label}
@@ -10415,6 +10422,7 @@ export default function MobileApp() {
           setCompileOpen={setCompileOpen}
           compileOpen={compileOpen}
           pen={pen}
+          setPen={setPen}
         />
       )}
 
