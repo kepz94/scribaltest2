@@ -10,9 +10,14 @@ import { Mark, MarkColor, MarkStyle, Tool, COLOR_MAP } from "./types";
 // word looked up, a mark erased, a study compiled). The notes half is coached,
 // not spotlighted: the real compiled study stays fully visible and live while a
 // floating card walks you through it — so the tour never rings a scrollable
-// board element (which is what made earlier builds jump). On exit it restores
-// the book, chapter, and pen you had, deletes the throwaway book whole, and
-// reverts any note the tour had you write — so nothing here persists or syncs.
+// board element (which is what made earlier builds jump).
+//
+// Scope keys: the compile reads theme names and writes the theme-conclusion note
+// under resolveScope(chapter) — which is the chapter itself when unlinked, or a
+// "group:…" key when the chapter is linked. The tour therefore keys EVERYTHING
+// scope-based (the seeded theme names, the conclusion-note watch, the revert)
+// off resolveScope(demo chapter) too, so names actually render and nothing the
+// tour writes can land in — or leak into — a real linked group.
 // ────────────────────────────────────────────────────────────────────────────
 
 interface Palette {
@@ -42,9 +47,13 @@ interface Props {
     style: MarkStyle,
     color: MarkColor
   ) => void;
-  // The proven label-write path (the same one theme-rename uses); seeds the demo
-  // theme names so the compiled study reads "Faith" / "The Lord", not "Color 2".
+  // The proven label-write path (the same one theme-rename uses). Combined with
+  // resolveScope below, this seeds names under the exact key the compile reads.
   setScopedLabel: (scope: string, color: MarkColor, label: string) => void;
+  // Maps a chapter scope to the key the compile actually uses — identity when
+  // unlinked, "group:…" when linked. Drives label seeding, note watching, and
+  // the on-exit revert, so all three match the compile and stay leak-proof.
+  resolveScope: (cs: string) => string;
   marks: Mark[];
   activeBookId: string;
   loc: Loc;
@@ -93,25 +102,8 @@ const DEMO = (() => {
   return null;
 })();
 
-// chapterScopeKey(1 Nephi 1) resolves to its first verse's scope, i.e. exactly
-// this string — confirmed against the reading screen's own scope logic — so the
-// labels we seed here and the keys we revert on exit match what the compile
-// reads.
+// The demo chapter's own scope string (verse refs are "1 Nephi 1:N").
 const DEMO_SCOPE = "1 Nephi 1";
-// Note keys the tour might create, so they can be reverted on exit.
-const VNOTE_PREFIX = "versenote:" + DEMO_SCOPE + ":";
-const SYNTH_PREFIX = "synthesis:" + DEMO_SCOPE + ":";
-const isDemoNoteKey = (k: string) =>
-  k.indexOf(VNOTE_PREFIX) === 0 || k.indexOf(SYNTH_PREFIX) === 0;
-// A stable snapshot string of just the demo-scope notes (either kind), so the
-// meaning beat advances on any real note and exit can revert precisely.
-const pickDemoNotes = (notesObj: Record<string, string>) => {
-  const o: Record<string, string> = {};
-  Object.keys(notesObj || {}).forEach((k) => {
-    if (isDemoNoteKey(k)) o[k] = notesObj[k];
-  });
-  return JSON.stringify(o);
-};
 
 // A word-bounded character range inside a verse, so a seeded mark always lands
 // on whole words, whatever the verse text happens to be.
@@ -218,7 +210,7 @@ const STEPS: Step[] = [
     coachPos: "bottom",
     cta: "Next",
     title: "This is your study",
-    body: "Every mark you made, gathered into themes — most-marked first. Nothing was interpreted for you; it was only organized.",
+    body: "Every mark you made, gathered by color into themes — most-marked first. Nothing was interpreted for you; it was only organized.",
   },
   {
     id: "meaning",
@@ -226,7 +218,7 @@ const STEPS: Step[] = [
     target: null,
     coachPos: "bottom",
     title: "Add your meaning",
-    body: "At the top of a theme, answer what its verses say together — the one line Scribal will never write for you. (Or tap any verse to flip it and note what it means to you.)",
+    body: "In a theme, tap the dotted box with the + and write what its verses say together — the one line Scribal will never write for you.",
   },
   {
     id: "distilled",
@@ -258,6 +250,7 @@ export default function MobileWalkthrough({
   setActiveBook,
   addMark,
   setScopedLabel,
+  resolveScope,
   marks,
   activeBookId,
   loc,
@@ -274,6 +267,23 @@ export default function MobileWalkthrough({
   const [beat, setBeat] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
+  // The scope key the compile actually uses for this chapter — identity when
+  // unlinked, "group:…" when linked. Everything scope-based keys off this.
+  const demoScopeKey = resolveScope(DEMO_SCOPE);
+  // Verse notes are keyed by verse reference (always "1 Nephi 1:N"); theme
+  // conclusions are keyed by the resolved scope. Watch + revert both.
+  const vnotePrefix = "versenote:" + DEMO_SCOPE + ":";
+  const synthPrefix = "synthesis:" + demoScopeKey + ":";
+  const isDemoNoteKey = (k: string) =>
+    k.indexOf(vnotePrefix) === 0 || k.indexOf(synthPrefix) === 0;
+  const pickDemoNotes = (notesObj: Record<string, string>) => {
+    const o: Record<string, string> = {};
+    Object.keys(notesObj || {}).forEach((k) => {
+      if (isDemoNoteKey(k)) o[k] = notesObj[k];
+    });
+    return JSON.stringify(o);
+  };
+
   // Restore targets, captured before anything is touched.
   const prevBook = useRef(activeBookId);
   const prevLoc = useRef(loc);
@@ -283,6 +293,9 @@ export default function MobileWalkthrough({
   const noteSnapshot = useRef<Record<string, string>>({});
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  // Keep the latest key helpers reachable from the one-shot finish().
+  const isDemoNoteKeyRef = useRef(isDemoNoteKey);
+  isDemoNoteKeyRef.current = isDemoNoteKey;
 
   // Per-beat baselines so "did it happen" reads true only on a real action.
   const baseIds = useRef<Set<string>>(new Set());
@@ -328,8 +341,10 @@ export default function MobileWalkthrough({
         sd.color
       );
     });
-    setScopedLabel(DEMO_SCOPE, SEED_FAITH, "Faith");
-    setScopedLabel(DEMO_SCOPE, SEED_LORD, "The Lord");
+    // Seed under the key the compile reads, so the themes render as Faith /
+    // The Lord whether or not this chapter is linked in the real library.
+    setScopedLabel(demoScopeKey, SEED_FAITH, "Faith");
+    setScopedLabel(demoScopeKey, SEED_LORD, "The Lord");
     // eslint-disable-next-line
   }, []);
 
@@ -342,10 +357,11 @@ export default function MobileWalkthrough({
     }
     cleaned.current = true;
     // revert demo notes to their pre-tour values (delete ones the tour added)
+    const isKey = isDemoNoteKeyRef.current;
     const snap = noteSnapshot.current;
     const cur = notesRef.current || {};
     Object.keys(cur).forEach((k) => {
-      if (!isDemoNoteKey(k)) return;
+      if (!isKey(k)) return;
       const want = Object.prototype.hasOwnProperty.call(snap, k) ? snap[k] : "";
       if ((cur[k] || "") !== (want || "")) setNote(k, want);
     });
@@ -414,14 +430,15 @@ export default function MobileWalkthrough({
     // eslint-disable-next-line
   }, [compileOpen, beat]);
 
-  // Meaning beat: advance when any demo-scope note (a theme conclusion OR a
-  // verse note) is written.
+  // Meaning beat: advance when any demo note (a theme conclusion OR a verse
+  // note) is written — both keyed the way the compile keys them.
   useEffect(() => {
     if (
       STEPS[beat]?.id === "meaning" &&
       pickDemoNotes(notes) !== baseNotes.current
     )
       advance();
+    // eslint-disable-next-line
   }, [notes, beat]);
 
   // The one notes-screen switch we can't read through props — the format tabs —
@@ -602,6 +619,22 @@ export default function MobileWalkthrough({
       @keyframes wt-swipe{0%{opacity:0;transform:translateX(0) scale(.8)}15%{opacity:1}55%{opacity:1;transform:translateX(96px) scale(.9)}85%{opacity:1}100%{opacity:0;transform:translateX(116px) scale(.8)}}`}</style>
   );
 
+  // A soft base under a bottom coach so the live board content behind it fades
+  // into the page instead of peeking through as clutter.
+  const bottomScrim = (
+    <div
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: "26vh",
+        background: "linear-gradient(to top, " + C.bg + " 58%, rgba(0,0,0,0))",
+        pointerEvents: "none",
+      }}
+    />
+  );
+
   // coach wrapper positioned per the beat
   const coachWrap = (pos: CoachPos, r: DOMRect | null) => {
     const s: CSSProperties = { position: "fixed", left: 16, right: 16, zIndex: Z + 2, pointerEvents: "none" };
@@ -652,11 +685,13 @@ export default function MobileWalkthrough({
 
   // ── "free" beats — the screen stays live (so a tool can be armed AND used on
   // the reading side, and the real study stays interactive on the notes side);
-  // just a ring (if we have a clean target) + the coach. No dim.
+  // just a ring (if we have a clean target) + the coach. No dim. On the notes
+  // screen a soft scrim sits under the bottom coach to keep it clean.
   if (step.mode === "free") {
     return (
       <div style={{ position: "fixed", inset: 0, zIndex: Z, pointerEvents: "none", ...baseFont }}>
         {styleTag}
+        {step.coachPos === "bottom" && bottomScrim}
         {rect && ring(rect)}
         {coachWrap(step.coachPos, rect)}
       </div>
