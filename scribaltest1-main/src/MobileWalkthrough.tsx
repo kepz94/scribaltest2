@@ -4,8 +4,8 @@ import { Mark, MarkColor, MarkStyle, Tool, COLOR_MAP } from "./types";
 
 // The first-run walkthrough. It runs on the REAL reading screen — not a mockup —
 // inside its own throwaway "ephemeral" study book (see useMarks). On finish it
-// restores the book + chapter you were on and deletes that book whole, so the
-// demo's marks never persist, never sync, and never touch anything of yours.
+// restores the book, chapter, and pen you had and deletes that book whole, so
+// the demo's marks never persist, never sync, and never touch anything of yours.
 
 interface Palette {
   bg: string;
@@ -17,6 +17,7 @@ interface Palette {
 }
 
 type Loc = { v: number; b: number; c: number };
+type Pen = { color: MarkColor; tool: Tool };
 
 interface Props {
   C: Palette;
@@ -43,11 +44,18 @@ interface Props {
   setHomeOpen: (v: boolean) => void;
   setCompileOpen: (v: boolean) => void;
   compileOpen: boolean;
-  // armed pen (to detect taps that advance the tour)
-  pen: { color: MarkColor; tool: Tool };
+  // armed pen — watched to advance, and restored on exit
+  pen: Pen;
+  setPen: (updater: Pen | ((p: Pen) => Pen)) => void;
 }
 
 const ACCENT = "#8b5cf6";
+
+// A marking style is any tool that actually marks — i.e. not the eraser, the
+// dictionary, or the internal pointer. Used so the "pick a style" step can't be
+// satisfied by arming the eraser or dictionary (which live in the same row).
+const isMarkStyle = (t: Tool) =>
+  t !== "eraser" && t !== "define" && t !== "pointer";
 
 // ── Resolve the demo chapter (1 Nephi 1) once, from the same scripture data the
 // reading screen indexes, so the {v,b,c} we navigate to lines up exactly.
@@ -90,8 +98,8 @@ function wordRange(
   return { start: words[s].start, end: words[e].end };
 }
 
-// A few pre-marks so Compile has something real to gather. Verse 0 is left
-// clean — that's the one the reader marks themselves in the Slide step.
+// A few pre-marks so Compile has something real to gather. Verse 0 is left clean
+// — that's the one the reader marks themselves in the Tap and Slide steps.
 type Seed = { verseIdx: number; startWord: number; wordCount: number; color: MarkColor; style: MarkStyle };
 const SEED_FAITH: MarkColor = 2;
 const SEED_LORD: MarkColor = 5;
@@ -101,13 +109,10 @@ const SEEDS: Seed[] = [
   { verseIdx: 3, startWord: 0, wordCount: 4, color: SEED_FAITH, style: "highlight" },
 ];
 
-// Step plan. 0 = welcome (centered card). 1–4 spotlight a real element and
-// advance when you actually do the thing. 5 = a centered card over Compile.
-type StepDef = {
-  target: string | null; // data-wt selector, or null for a centered card
-  title: string;
-  body: string;
-};
+// Step plan. 0 = welcome (full card). 1–7 spotlight a real control/verse and
+// advance the moment you do that step's action. 8 = a non-blocking card over
+// Compile, so the compile screen underneath stays fully tappable.
+type StepDef = { target: string | null; title: string; body: string };
 const STEPS: StepDef[] = [
   { target: null, title: "", body: "" }, // 0 welcome
   {
@@ -118,12 +123,27 @@ const STEPS: StepDef[] = [
   {
     target: '[data-wt="wt-styles"]',
     title: "Pick a style",
-    body: "Highlight, underline, circle… Tap a style to set how you'll mark.",
+    body: "Highlight, underline, circle… tap a marking style to set how your pen marks.",
   },
   {
     target: '[data-wt="wt-verse"]',
-    title: "Mark a verse",
-    body: "Slide your finger across the words — don't press and hold, just slide.",
+    title: "Tap to mark a word",
+    body: "Tap any word in this verse — it marks that one word in your armed pen.",
+  },
+  {
+    target: '[data-wt="wt-verse"]',
+    title: "Slide to mark a phrase",
+    body: "Now slide your finger across several words to mark the whole phrase at once.",
+  },
+  {
+    target: '[data-wt="wt-define"]',
+    title: "Look a word up",
+    body: "The dictionary defines any word. Tap it to arm it — then a tap on a word shows its meaning.",
+  },
+  {
+    target: '[data-wt="wt-eraser"]',
+    title: "Erase a mark",
+    body: "Changed your mind? The eraser clears marks. Tap it to arm it — then tap a mark to remove it.",
   },
   {
     target: '[data-wt="wt-compile"]',
@@ -133,10 +153,11 @@ const STEPS: StepDef[] = [
   {
     target: null,
     title: "Make it yours",
-    body: "Here's your study. Tap any verse card to flip it over and write what it means to you. Scribal keeps it organized — the meaning stays yours.",
+    body: "Here's your study. Tap any verse card to flip it over and add a note. Scribal keeps it organized — the meaning stays yours.",
   },
 ];
 const LAST = STEPS.length - 1;
+const TEACH = LAST; // numbered steps are 1..TEACH (color … explore)
 
 export default function MobileWalkthrough({
   C,
@@ -154,6 +175,7 @@ export default function MobileWalkthrough({
   setCompileOpen,
   compileOpen,
   pen,
+  setPen,
 }: Props) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -161,17 +183,18 @@ export default function MobileWalkthrough({
   // What to restore on exit, captured before we touch anything.
   const prevBook = useRef(activeBookId);
   const prevLoc = useRef(loc);
+  const prevPen = useRef(pen);
   const tempId = useRef<string | null>(null);
   const cleaned = useRef(false);
 
-  // Per-step baselines so "did the value change" reads true only on a real tap.
+  // Per-step baselines so "did it change" reads true only on a real action.
   const baseColor = useRef<MarkColor>(pen.color);
   const baseTool = useRef<Tool>(pen.tool);
-  const baseMarks = useRef<number>(0);
+  const baseIds = useRef<Set<string>>(new Set());
 
   // ── Setup: runs once, hidden behind the welcome card. Create the throwaway
-  // book, drop in the demo marks + theme names, and open the demo chapter — so
-  // the moment you tap Begin, the real reading screen is already waiting.
+  // book, drop in demo marks + theme names, and open the demo chapter — so the
+  // moment you tap Begin, the real reading screen is already waiting.
   useEffect(() => {
     if (!DEMO) {
       onClose();
@@ -179,6 +202,7 @@ export default function MobileWalkthrough({
     }
     prevBook.current = activeBookId;
     prevLoc.current = loc;
+    prevPen.current = pen;
     setHomeOpen(false);
     setCompileOpen(false);
     const id = createSession("Walkthrough", true);
@@ -200,6 +224,7 @@ export default function MobileWalkthrough({
       );
     });
     seedScopeLabels(DEMO.scope, { [SEED_FAITH]: "Faith", [SEED_LORD]: "The Lord" });
+    // eslint-disable-next-line
   }, []);
 
   // Restore everything and remove the throwaway book. Guarded so it runs once.
@@ -213,14 +238,17 @@ export default function MobileWalkthrough({
     setActiveBook(prevBook.current);
     if (tempId.current) deleteBook(tempId.current);
     setLoc(prevLoc.current);
+    setPen(prevPen.current);
     onClose();
   };
 
   // Set each step's baseline the instant the step opens.
   useEffect(() => {
     if (step === 1) baseColor.current = pen.color;
-    if (step === 2) baseTool.current = pen.tool;
-    if (step === 3) baseMarks.current = marks.length;
+    else if (step === 2) baseTool.current = pen.tool;
+    else if (step === 3 || step === 4)
+      baseIds.current = new Set(marks.map((m) => m.id));
+    // eslint-disable-next-line
   }, [step]);
 
   // Advance when the reader actually does each step's action.
@@ -228,13 +256,29 @@ export default function MobileWalkthrough({
     if (step === 1 && pen.color !== baseColor.current) setStep(2);
   }, [pen.color, step]);
   useEffect(() => {
-    if (step === 2 && pen.tool !== baseTool.current) setStep(3);
+    if (step === 2 && pen.tool !== baseTool.current && isMarkStyle(pen.tool))
+      setStep(3);
   }, [pen.tool, step]);
   useEffect(() => {
-    if (step === 3 && marks.length > baseMarks.current) setStep(4);
-  }, [marks.length, step]);
+    if (step === 3 && marks.some((m) => !baseIds.current.has(m.id))) setStep(4);
+  }, [marks, step]);
   useEffect(() => {
-    if (step === 4 && compileOpen) setStep(5);
+    if (
+      step === 4 &&
+      marks.some(
+        (m) => !baseIds.current.has(m.id) && m.markedText.trim().includes(" ")
+      )
+    )
+      setStep(5);
+  }, [marks, step]);
+  useEffect(() => {
+    if (step === 5 && pen.tool === "define") setStep(6);
+  }, [pen.tool, step]);
+  useEffect(() => {
+    if (step === 6 && pen.tool === "eraser") setStep(7);
+  }, [pen.tool, step]);
+  useEffect(() => {
+    if (step === 7 && compileOpen) setStep(8);
   }, [compileOpen, step]);
 
   // Measure the spotlight target. Re-measures on step change, on scroll (capture,
@@ -277,17 +321,13 @@ export default function MobileWalkthrough({
   const dim = "rgba(18,16,12,0.66)";
   const Z = 600;
 
-  // ── Welcome (step 0) and the closing card (step 5) are centered panels over a
-  // full dim. The reading screen / compile screen sit live underneath.
-  const centered = step === 0 || step === LAST;
-
   const dots = (
-    <div style={{ display: "flex", gap: "6px", justifyContent: "center", marginTop: "14px" }}>
-      {[1, 2, 3, 4, 5].map((n) => (
+    <div style={{ display: "flex", gap: "5px", justifyContent: "center", marginTop: "14px", flexWrap: "wrap" }}>
+      {Array.from({ length: TEACH }, (_, i) => i + 1).map((n) => (
         <span
           key={n}
           style={{
-            width: n === step ? "18px" : "6px",
+            width: n === step ? "16px" : "6px",
             height: "6px",
             borderRadius: "999px",
             backgroundColor: n === step ? ACCENT : C.border,
@@ -298,6 +338,8 @@ export default function MobileWalkthrough({
     </div>
   );
 
+  // ── Welcome (step 0) — a full warm-paper card. The reading screen is set up
+  // behind it, so Begin reveals a page that's already marked and ready.
   if (step === 0) {
     return (
       <div
@@ -357,7 +399,7 @@ export default function MobileWalkthrough({
             Begin
           </button>
           <div style={{ fontSize: "12.5px", color: C.muted, marginTop: "14px" }}>
-            A one-minute walkthrough
+            A quick walkthrough
           </div>
           <button
             onClick={finish}
@@ -380,7 +422,7 @@ export default function MobileWalkthrough({
     );
   }
 
-  // Caption card content (shared by spotlight steps and the closing card).
+  // Caption card — shared by the spotlight steps and the closing card.
   const def = STEPS[step];
   const caption = (
     <div
@@ -397,7 +439,7 @@ export default function MobileWalkthrough({
       }}
     >
       <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: ACCENT, marginBottom: "6px" }}>
-        Step {step} of 5
+        Step {step} of {TEACH}
       </div>
       <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: "6px", color: C.text }}>
         {def.title}
@@ -429,30 +471,37 @@ export default function MobileWalkthrough({
     </div>
   );
 
-  if (centered) {
+  // ── Closing step (8) — non-blocking. The compile screen stays fully live
+  // underneath so the reader actually taps and flips a real verse card; only
+  // this floating card blocks. Got it tears the whole thing down.
+  if (step === LAST) {
     return (
       <div
         style={{
           position: "fixed",
           inset: 0,
           zIndex: Z,
-          backgroundColor: dim,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px",
+          pointerEvents: "none",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          animation: "wt-fade 0.25s ease",
         }}
       >
-        <style>{`@keyframes wt-fade{from{opacity:0}to{opacity:1}}
-          @keyframes wt-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
-        {caption}
+        <style>{`@keyframes wt-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+        <div
+          style={{
+            position: "fixed",
+            left: 16,
+            right: 16,
+            bottom: "calc(18px + env(safe-area-inset-bottom))",
+            pointerEvents: "none",
+          }}
+        >
+          {caption}
+        </div>
       </div>
     );
   }
 
-  // ── Spotlight steps (1–4). Four dim panels frame a clear hole over the target
+  // ── Spotlight steps (1–7). Four dim panels frame a clear hole over the target
   // so the real control beneath stays tappable; the caption sits clear of it.
   const pad = 8;
   const vw = typeof window !== "undefined" ? window.innerWidth : 0;
@@ -481,7 +530,7 @@ export default function MobileWalkthrough({
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: Z, pointerEvents: "none", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <style>{`@keyframes wt-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      {/* four dim panels around the hole */}
+      {/* four dim panels around the hole (these block; the hole passes taps) */}
       <div style={panel({ top: 0, left: 0, width: vw, height: hTop })} />
       <div style={panel({ top: hTop + hH, left: 0, width: vw, height: Math.max(0, vh - (hTop + hH)) })} />
       <div style={panel({ top: hTop, left: 0, width: hLeft, height: hH })} />
