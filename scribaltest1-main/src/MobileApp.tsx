@@ -23,7 +23,7 @@ import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
 import MobileFeatureGuide from "./MobileFeatureGuide";
-import SpotlightTour, { TourStep } from "./components/SpotlightTour";
+import MobileWalkthrough from "./MobileWalkthrough";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
@@ -121,56 +121,6 @@ const chapterWord = (bookName: string) =>
 function buildBackupString() {
   return syncBuildBackupString(BACKUP_KEYS);
 }
-
-// Live spotlight tour over the real mobile home screen (reuses the desktop
-// engine). It runs on the home screen, so it points at the home tiles.
-const M_TOUR: TourStep[] = [
-  {
-    title: "Welcome to Scribal",
-    body:
-      "Read scripture, mark what stands out, and gather your marks into notes. Here's a quick tour of your home screen.",
-  },
-  {
-    target: '[data-tour="m-continue"]',
-    title: "Pick up where you left off",
-    body:
-      "This card always reopens your last chapter — one tap and you're reading.",
-  },
-  {
-    target: '[data-tour="m-browse"]',
-    title: "Browse books",
-    body:
-      "Open any book or chapter. Tap a word to mark it, or swipe sideways across words to mark a whole phrase.",
-  },
-  {
-    target: '[data-tour="m-studies"]',
-    title: "Your studies",
-    body:
-      "Compile your marks into three views — Outline, Distilled, and Relational — and every study you save lands here.",
-  },
-  {
-    target: '[data-tour="m-search"]',
-    title: "Search",
-    body: "Search all of scripture, or just your own marks.",
-  },
-  {
-    target: '[data-tour="m-gestures"]',
-    title: "Gestures & marking",
-    body:
-      "New to marking? This walks you through every tap and swipe for marking and getting around.",
-  },
-  {
-    target: '[data-tour="m-settings"]',
-    title: "Settings",
-    body:
-      "Sign in to sync across your phone and desktop, and set your theme and reading comfort here.",
-  },
-  {
-    title: "That's the tour",
-    body:
-      "You can reopen this anytime from the menu — Show the tour again. Happy studying.",
-  },
-];
 
 function applyBackupString(text: string) {
   // Mobile historically never threw on a malformed backup — preserve that.
@@ -10439,17 +10389,7 @@ export default function MobileApp() {
         </div>
       )}
       {mtourOpen && (
-        <SpotlightTour
-          steps={M_TOUR}
-          label="Guided tour"
-          colors={{
-            panel: C.panel,
-            text: C.text,
-            border: C.border,
-            muted: C.muted,
-          }}
-          onClose={() => setMtourOpen(false)}
-        />
+        <MobileWalkthrough C={C} onClose={() => setMtourOpen(false)} />
       )}
 
       {guideOpen && (
