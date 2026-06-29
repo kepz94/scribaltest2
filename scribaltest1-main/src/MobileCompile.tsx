@@ -40,6 +40,12 @@ interface Props {
   onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
   relSavedLens?: string;
   onRelLens?: (lens: string) => void;
+  onSavePicksAsStudy?: (
+    refs: string[],
+    roles: Record<string, { a: number; b: number }>,
+    lens: string,
+    name: string
+  ) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -121,6 +127,7 @@ export default function MobileCompile({
   onRelRoles,
   relSavedLens,
   onRelLens,
+  onSavePicksAsStudy,
   defaultName,
   onClose,
   dark,
@@ -163,7 +170,7 @@ export default function MobileCompile({
   // text shows as a finished part of the card with an Edit button.
   const [editSynth, setEditSynth] = useState<string | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
   const [covShareSignal, setCovShareSignal] = useState(0);
   const [picked, setPicked] = useState<string[]>([]);
   // Hide the header + toggles while reading down through verses (and bring
@@ -193,9 +200,6 @@ export default function MobileCompile({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // Which theme cards are expanded in the share picker (collapsed by default,
-  // so themes are the headline and verses are a tap away).
-  const [pickOpen, setPickOpen] = useState<string[]>([]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
@@ -454,6 +458,7 @@ export default function MobileCompile({
     theme: string;
     color: number;
     phrases: { text: string; style: string }[];
+    marks: { startIndex: number; endIndex: number; style: string; color: number }[];
   };
   const shareableVerses: ShareableVerse[] = [];
   groups.forEach((g) => {
@@ -464,6 +469,12 @@ export default function MobileCompile({
         theme: g.name,
         color: g.color,
         phrases: ve.marks.map((m) => ({ text: m.markedText, style: m.style })),
+        marks: ve.marks.map((m) => ({
+          startIndex: m.startIndex,
+          endIndex: m.endIndex,
+          style: m.style,
+          color: m.color,
+        })),
       });
     });
   });
@@ -484,13 +495,20 @@ export default function MobileCompile({
       .filter((x): x is ShareableVerse => !!x);
     if (chosen.length === 0) return;
     setVersesPreview(
-      chosen.map((sv) => ({
-        reference: sv.reference,
-        theme: sv.theme,
-        color: sv.color,
-        phrases: sv.phrases,
-        note: (notes[verseNoteKey(sv.reference)] || "").trim() || undefined,
-      }))
+      chosen.map((sv) => {
+        const info = VI.get(sv.reference);
+        return {
+          reference: sv.reference,
+          theme: sv.theme,
+          color: sv.color,
+          phrases: sv.phrases,
+          note: (notes[verseNoteKey(sv.reference)] || "").trim() || undefined,
+          view,
+          fullText: info ? info.text : undefined,
+          verseNumber: info ? info.verse : undefined,
+          marks: sv.marks,
+        };
+      })
     );
     // One synthesis per distinct theme among the chosen verses (if written).
     const seen = new Set<number>();
@@ -502,7 +520,7 @@ export default function MobileCompile({
       if (text) synths.push({ theme: sv.theme, color: sv.color, text });
     });
     setVersesSyntheses(synths);
-    setPicking(false);
+    setSelectMode(false);
   };
 
   const toggle = (key: string) =>
@@ -645,6 +663,44 @@ export default function MobileCompile({
       >
         {/* notch strip — content never hides under the status bar */}
         <div style={{ height: "env(safe-area-inset-top)", backgroundColor: C.bg }} />
+        {selectMode && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "12px 14px",
+              borderBottom: "1px solid " + C.border,
+            }}
+          >
+            <button
+              onClick={() => setSelectMode(false)}
+              aria-label="Cancel selecting"
+              style={{
+                width: "36px",
+                height: "36px",
+                background: "transparent",
+                border: "none",
+                color: C.text,
+                fontSize: "22px",
+                cursor: "pointer",
+                flexShrink: 0,
+                marginLeft: "-6px",
+              }}
+            >
+              ‹
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "17px", fontWeight: 700 }}>
+                Choose verses to share
+              </div>
+              <div style={{ fontSize: "12px", color: C.muted }}>
+                {picked.length} of 4 selected
+              </div>
+            </div>
+          </div>
+        )}
+        {!selectMode && (
       <div
         style={{
           display: "flex",
@@ -741,7 +797,8 @@ export default function MobileCompile({
               <button
                 onClick={() => {
                   setPicked([]);
-                  setPicking(true);
+                  setFormat("outline");
+                  setSelectMode(true);
                 }}
                 style={{
                   flexShrink: 0,
@@ -799,8 +856,9 @@ export default function MobileCompile({
           </button>
         )}
       </div>
+        )}
       {/* view + sort toggles — part of the chrome, so they slide away too */}
-      {liveMarks.length !== 0 && (
+      {!selectMode && liveMarks.length !== 0 && (
           <div
             style={{
               padding: "12px 16px 4px",
@@ -1117,7 +1175,9 @@ export default function MobileCompile({
           paddingTop: headerH + 10,
           paddingLeft: 16,
           paddingRight: 16,
-          paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
+          paddingBottom: selectMode
+            ? "calc(112px + env(safe-area-inset-bottom))"
+            : "calc(40px + env(safe-area-inset-bottom))",
         }}
       >
         {format === "distilled" && <Distilled {...sharedViewProps} />}
@@ -1129,6 +1189,7 @@ export default function MobileCompile({
             onRoles={onRelRoles}
             savedLens={relSavedLens}
             onLens={onRelLens}
+            onSavePicksAsStudy={onSavePicksAsStudy}
             shareSignal={covShareSignal}
           />
         )}
@@ -1459,6 +1520,9 @@ export default function MobileCompile({
                           const noteVal = notes[noteKey] || "";
                           const hasNote = noteVal.trim().length > 0;
                           const isFlipped = flippedRef === ve.reference;
+                          const on = picked.includes(
+                            g.key + "|" + ve.reference
+                          );
                           const fullStyle: CSSProperties = {
                             fontFamily: '"Times New Roman", Times, serif',
                             fontSize: "16px",
@@ -1497,9 +1561,14 @@ export default function MobileCompile({
                                   minHeight: isFlipped ? "168px" : undefined,
                                 }}
                               >
-                                {/* FRONT — tap anywhere to flip to the note */}
+                                {/* FRONT — tap to flip to the note, or (in
+                                    select mode) tap to pick this verse to share */}
                                 <div
                                   onClick={() => {
+                                    if (selectMode) {
+                                      togglePick(g.key + "|" + ve.reference);
+                                      return;
+                                    }
                                     setFlippedRef(ve.reference);
                                     setEditNote(null);
                                   }}
@@ -1508,10 +1577,59 @@ export default function MobileCompile({
                                     borderLeft: ve.isNew
                                       ? "3px solid " + COLOR_MAP[c as MarkColor]
                                       : "1px solid " + C.border,
+                                    ...(selectMode && on
+                                      ? {
+                                          border:
+                                            "2px solid " +
+                                            COLOR_MAP[c as MarkColor],
+                                        }
+                                      : {}),
                                     cursor: "pointer",
                                   }}
                                 >
-                                  {/* verse header: reference + points + note flag */}
+                                  {selectMode && (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "9px",
+                                        marginBottom: "9px",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          width: "20px",
+                                          height: "20px",
+                                          borderRadius: "6px",
+                                          flexShrink: 0,
+                                          border:
+                                            "2px solid " +
+                                            (on
+                                              ? COLOR_MAP[c as MarkColor]
+                                              : C.muted),
+                                          background: on
+                                            ? COLOR_MAP[c as MarkColor]
+                                            : "transparent",
+                                          color: "#fff",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          fontSize: "13px",
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {on ? "\u2713" : ""}
+                                      </span>
+                                      <span
+                                        style={{
+                                          fontSize: "11px",
+                                          color: C.muted,
+                                        }}
+                                      >
+                                        {on ? "Selected" : "Tap to select"}
+                                      </span>
+                                    </div>
+                                  )}                                  {/* verse header: reference + points + note flag */}
                                   <div
                                     style={{
                                       display: "flex",
@@ -1639,17 +1757,19 @@ export default function MobileCompile({
                                       ))}
                                     </div>
                                   )}
-                                  <div
-                                    style={{
-                                      marginTop: "8px",
-                                      fontSize: "10.5px",
-                                      color: C.muted,
-                                    }}
-                                  >
-                                    {hasNote
-                                      ? "Tap to view note"
-                                      : "Tap to add a note"}
-                                  </div>
+                                  {!selectMode && (
+                                    <div
+                                      style={{
+                                        marginTop: "8px",
+                                        fontSize: "10.5px",
+                                        color: C.muted,
+                                      }}
+                                    >
+                                      {hasNote
+                                        ? "Tap to view note"
+                                        : "Tap to add a note"}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* BACK — the note editor */}
@@ -1879,298 +1999,59 @@ export default function MobileCompile({
         />
       )}
 
-      {picking && (
+      {selectMode && (
         <div
           style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 400,
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 6,
             backgroundColor: C.bg,
-            color: C.text,
+            borderTop: "1px solid " + C.border,
+            padding: "12px 14px calc(12px + env(safe-area-inset-bottom))",
             display: "flex",
-            flexDirection: "column",
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            animation: "mob-fadein 0.2s ease",
+            alignItems: "center",
+            gap: "10px",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "calc(12px + env(safe-area-inset-top)) 12px 12px",
-              borderBottom: "1px solid " + C.border,
-            }}
-          >
-            <button
-              onClick={() => setPicking(false)}
-              aria-label="Cancel"
-              style={{
-                width: "40px",
-                height: "40px",
-                background: "transparent",
-                border: "none",
-                color: C.text,
-                fontSize: "22px",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              ‹
-            </button>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "17px", fontWeight: 700 }}>
-                Choose verses to share
-              </div>
-              <div style={{ fontSize: "12px", color: C.muted }}>
-                {picked.length} of 4 selected
-              </div>
-            </div>
-            <button
-              onClick={startShareVerses}
-              disabled={picked.length === 0}
-              style={{
-                background: picked.length ? C.text : C.soft,
-                color: picked.length ? C.bg : C.muted,
-                border: "none",
-                borderRadius: "999px",
-                padding: "8px 16px",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: picked.length ? "pointer" : "default",
-                fontFamily: "inherit",
-              }}
-            >
-              Share{picked.length ? " " + picked.length : ""}
-            </button>
-          </div>
-
-          <div
+          <button
+            onClick={startShareVerses}
+            disabled={picked.length === 0}
             style={{
               flex: 1,
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              padding: "12px 16px calc(20px + env(safe-area-inset-bottom))",
+              background: picked.length ? C.text : C.soft,
+              color: picked.length ? C.bg : C.muted,
+              border: "none",
+              borderRadius: "999px",
+              padding: "13px",
+              fontSize: "14px",
+              fontWeight: 700,
+              cursor: picked.length ? "pointer" : "default",
+              fontFamily: "inherit",
             }}
           >
-            {groups.map((g) => {
-              const versesForTheme = verseEntriesFor(g.marks);
-              if (versesForTheme.length === 0) return null;
-              const open = pickOpen.includes(g.key);
-              const pickedInTheme = versesForTheme.filter((ve) =>
-                picked.includes(g.key + "|" + ve.reference)
-              ).length;
-              return (
-                <div
-                  key={g.key}
-                  style={{
-                    marginBottom: "12px",
-                    border: "1px solid " + C.border,
-                    borderRadius: "14px",
-                    backgroundColor: C.panel,
-                    overflow: "hidden",
-                  }}
-                >
-                  {/* theme header (tap to reveal verses) */}
-                  <button
-                    onClick={() =>
-                      setPickOpen((prev) =>
-                        prev.includes(g.key)
-                          ? prev.filter((k) => k !== g.key)
-                          : [...prev, g.key]
-                      )
-                    }
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      width: "100%",
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
-                      padding: "14px 14px",
-                      cursor: "pointer",
-                      color: C.text,
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: "15px",
-                        height: "15px",
-                        borderRadius: "50%",
-                        backgroundColor: COLOR_MAP[g.color as MarkColor],
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 700,
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {g.name}
-                    </span>
-                    {pickedInTheme > 0 && (
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          color: COLOR_MAP[g.color as MarkColor],
-                        }}
-                      >
-                        {pickedInTheme} picked
-                      </span>
-                    )}
-                    <span style={{ fontSize: "11.5px", color: C.muted }}>
-                      {versesForTheme.length}{" "}
-                      {versesForTheme.length === 1 ? "verse" : "verses"}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "12px",
-                        color: C.muted,
-                        transform: open ? "rotate(90deg)" : "none",
-                        transition: "transform 0.15s",
-                      }}
-                    >
-                      ›
-                    </span>
-                  </button>
-
-                  {open && (
-                    <div style={{ padding: "0 12px 8px" }}>
-                      {versesForTheme.map((ve) => {
-                        const key = g.key + "|" + ve.reference;
-                        const on = picked.includes(key);
-                        const atCap = !on && picked.length >= 4;
-                        const phrases = ve.marks.map((m) => ({
-                          text: m.markedText,
-                          style: m.style,
-                        }));
-                        const preview = phrases[0] ? phrases[0].text : "";
-                        return (
-                          <button
-                            key={key}
-                            onClick={() => togglePick(key)}
-                            style={{
-                              display: "flex",
-                              alignItems: "flex-start",
-                              gap: "10px",
-                              width: "100%",
-                              textAlign: "left",
-                              background: on ? C.soft : "transparent",
-                              border:
-                                "1px solid " +
-                                (on
-                                  ? COLOR_MAP[g.color as MarkColor]
-                                  : C.border),
-                              borderRadius: "10px",
-                              padding: "10px 11px",
-                              marginBottom: "8px",
-                              cursor: "pointer",
-                              color: C.text,
-                              fontFamily: "inherit",
-                              opacity: atCap ? 0.45 : 1,
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: "20px",
-                                height: "20px",
-                                borderRadius: "6px",
-                                border:
-                                  "2px solid " +
-                                  (on
-                                    ? COLOR_MAP[g.color as MarkColor]
-                                    : C.muted),
-                                background: on
-                                  ? COLOR_MAP[g.color as MarkColor]
-                                  : "transparent",
-                                color: "#fff",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "13px",
-                                flexShrink: 0,
-                                marginTop: "1px",
-                              }}
-                            >
-                              {on ? "✓" : ""}
-                            </span>
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                display: "flex",
-                                flexDirection: "column",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontSize: "12.5px",
-                                  fontWeight: 700,
-                                  marginBottom: "3px",
-                                }}
-                              >
-                                {ve.reference}
-                              </span>
-                              <span
-                                style={
-                                  {
-                                    fontFamily:
-                                      '"Times New Roman", Times, serif',
-                                    fontSize: "14px",
-                                    lineHeight: 1.5,
-                                    color: C.text,
-                                    overflow: "hidden",
-                                    display: "-webkit-box",
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: "vertical",
-                                  } as CSSProperties
-                                }
-                              >
-                                “{preview}”
-                                {phrases.length > 1
-                                  ? " +" + (phrases.length - 1) + " more"
-                                  : ""}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <button
-              onClick={() => {
-                setPicking(false);
-                shareStudy();
-              }}
-              style={{
-                marginTop: "6px",
-                background: "transparent",
-                border: "none",
-                color: C.muted,
-                fontSize: "12.5px",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                padding: "10px 0",
-                width: "100%",
-                textAlign: "center",
-              }}
-            >
-              Or share a study summary instead
-            </button>
-          </div>
+            {picked.length ? "Share " + picked.length : "Share"}
+          </button>
+          <button
+            onClick={() => {
+              setSelectMode(false);
+              shareStudy();
+            }}
+            style={{
+              background: "transparent",
+              color: C.muted,
+              border: "1px solid " + C.border,
+              borderRadius: "999px",
+              padding: "13px 14px",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Study summary
+          </button>
         </div>
       )}
 
