@@ -352,7 +352,6 @@ export default function MobileWalkthrough({
       window.clearTimeout(start);
       if (demoTimer.current) window.clearInterval(demoTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
   function runDemo() {
@@ -585,6 +584,7 @@ export default function MobileWalkthrough({
   return (
     <div
       ref={rootRef}
+      onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
       style={{
