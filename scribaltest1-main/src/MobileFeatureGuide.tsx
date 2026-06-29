@@ -21,19 +21,13 @@ const BLUE = "#3b82f6"; // keyword
 const TEAL = "#4ca5a0"; // screens
 const GOLD = "#e0a32e"; // dictionary
 const GREEN = "#3a9d4e"; // vault
-const HL = "rgba(139,92,246,0.30)";
 
 const SECTION_ORDER = ["Search & combine", "While you read", "Your library"];
 
 const KEYFRAMES = `
-@keyframes sfg-pulse {0%,100%{opacity:.45;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}}
-@keyframes sfg-jump {0%,100%{transform:translateX(-30px)}50%{transform:translateX(30px)}}
-@keyframes sfg-pop {0%{opacity:0;transform:scale(.3)}60%{transform:scale(1.2)}100%{opacity:1;transform:scale(1)}}
-@keyframes sfg-rise {0%{opacity:0;transform:translateY(10px) scale(.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes sfg-slide {0%{opacity:0;transform:translateX(18px)}100%{opacity:1;transform:translateX(0)}}
-@keyframes sfg-caret {0%,100%{opacity:0}50%{opacity:1}}
+@keyframes sfg-ring {0%,100%{opacity:.2;transform:scale(.96)}50%{opacity:.55;transform:scale(1.05)}}
 @keyframes sfg-glow {0%,100%{opacity:.4}50%{opacity:1}}
-@keyframes sfg-switch {0%,100%{transform:translateX(0)}33%{transform:translateX(64px)}66%{transform:translateX(128px)}}
+@keyframes sfg-rip {0%{opacity:.7;transform:scale(.5)}100%{opacity:0;transform:scale(1.25)}}
 `;
 
 export default function MobileFeatureGuide({ C, onClose }: Props) {
@@ -52,6 +46,8 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     overflow: "hidden",
     marginBottom: "18px",
   };
+  const sheetBox: CSSProperties = { ...box, alignItems: "flex-end", padding: 0 };
+  const flatBox: CSSProperties = { ...box, alignItems: "stretch", padding: 0 };
 
   const stroke = (color: string, size = 18, sw = 2) => ({
     width: size,
@@ -65,381 +61,683 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
   });
 
   // ---- icons ----
-  const chainIcon = (color: string, size = 18) => (
-    <svg {...stroke(color, size)}>
+  const chain = (color: string, size = 18, sw = 2) => (
+    <svg {...stroke(color, size, sw)}>
       <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
       <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
     </svg>
   );
-  const combinedIcon = (color: string, size = 18) => (
-    <svg {...stroke(color, size)}>
-      <circle cx="8.5" cy="12" r="5.5" />
-      <circle cx="15.5" cy="12" r="5.5" />
-    </svg>
-  );
-  const screensIcon = (color: string, size = 18) => (
-    <svg {...stroke(color, size)}>
-      <rect x="3" y="7" width="13" height="13" rx="2" />
-      <path d="M8 7V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
-    </svg>
-  );
-  const searchIcon = (color: string, size = 18) => (
+  const magnifier = (color: string, size = 18) => (
     <svg {...stroke(color, size)}>
       <circle cx="11" cy="11" r="7" />
-      <path d="m21 21-4.35-4.35" />
+      <path d="m20 20-3.5-3.5" />
     </svg>
   );
-  const bookIcon = (color: string, size = 18) => (
-    <svg {...stroke(color, size)}>
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    </svg>
-  );
-  const layersIcon = (color: string, size = 18) => (
+  const layers = (color: string, size = 18) => (
     <svg {...stroke(color, size)}>
       <path d="M12 3 3 8l9 5 9-5z" />
       <path d="M3 13l9 5 9-5" />
     </svg>
   );
-  const vaultIcon = (color: string, size = 18) => (
+  const lock = (color: string, size = 18) => (
     <svg {...stroke(color, size)}>
       <rect x="4" y="10" width="16" height="10" rx="2" />
       <path d="M8 10V7a4 4 0 0 1 8 0v3" />
     </svg>
   );
-
-  // ---- building blocks ----
-  const chapCard = (label: string) => (
-    <div
-      style={{
-        border: "1px solid " + C.border,
-        borderTop: "3px solid " + RED,
-        borderRadius: "9px",
-        background: C.soft,
-        padding: "12px 14px",
-        fontFamily: SERIF,
-        fontSize: "13px",
-        fontWeight: 700,
-        color: C.text,
-      }}
-    >
-      {label}
-    </div>
+  const bookGlyph = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+  const house = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
+    </svg>
+  );
+  const stacked = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <rect x="8" y="3" width="13" height="13" rx="2.5" />
+      <path d="M16 19v.5A1.5 1.5 0 0 1 14.5 21h-9A1.5 1.5 0 0 1 4 19.5v-9A1.5 1.5 0 0 1 5.5 9H6" />
+    </svg>
+  );
+  const twoCircles = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <circle cx="8.5" cy="12" r="5.5" />
+      <circle cx="15.5" cy="12" r="5.5" />
+    </svg>
+  );
+  const eraser = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+      <path d="M22 21H7" />
+    </svg>
+  );
+  const bookmark = (color: string, size = 18) => (
+    <svg {...stroke(color, size)}>
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+  const infoGlyph = (size = 15) => (
+    <svg {...stroke(C.muted, size)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+  const trash = (size = 15) => (
+    <svg {...stroke(C.muted, size)}>
+      <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
+    </svg>
   );
 
-  const kwCard = (label: string) => (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "6px",
-        border: "1px solid " + C.border,
-        borderTop: "3px solid " + BLUE,
-        borderRadius: "9px",
-        background: C.soft,
-        padding: "12px 14px",
-        fontSize: "13px",
-        fontWeight: 700,
-        color: C.text,
-      }}
-    >
-      {searchIcon(BLUE, 13)}
-      <span style={{ fontFamily: SERIF }}>{label}</span>
-    </div>
-  );
+  // ---- shared bits ----
+  const seclbl: CSSProperties = {
+    fontSize: "9px",
+    fontWeight: 700,
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    color: C.muted,
+    margin: "0 0 2px",
+  };
 
-  const listRow = (label: string, color: string, delay: number) => (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "9px",
-        padding: "9px 11px",
-        borderRadius: "9px",
-        border: "1px solid " + C.border,
-        background: C.soft,
-        animation: "sfg-slide .5s ease both",
-        animationDelay: delay + "s",
-      }}
-    >
-      <span style={{ display: "inline-flex", flexShrink: 0 }}>{chainIcon(color, 15)}</span>
-      <span style={{ fontSize: "12.5px", fontWeight: 600, color: C.text }}>{label}</span>
-      <span style={{ marginLeft: "auto", color: C.muted, fontSize: "15px" }}>›</span>
-    </div>
-  );
-
-  const bookSpine = (label: string, color: string, permanent: boolean) => (
-    <div
-      style={{
-        width: "44px",
-        height: "62px",
-        borderRadius: "6px",
-        border: "1px solid " + C.border,
-        borderLeft: "4px solid " + color,
-        background: C.soft,
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-        padding: "0 0 6px",
-        fontSize: "9.5px",
-        fontWeight: 700,
-        color: C.text,
-      }}
-    >
-      {label}
-      {permanent && <span style={{ marginLeft: "2px", color }}>★</span>}
-    </div>
-  );
-
-  const tabPill = (label: string, active: boolean) => (
-    <div
-      style={{
-        flex: 1,
-        padding: "7px 4px",
-        borderRadius: "8px",
-        border: "1px solid " + (active ? TEAL : C.border),
-        background: active ? C.soft : "transparent",
-        fontSize: "10.5px",
-        fontWeight: 700,
-        color: active ? C.text : C.muted,
-        textAlign: "center",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-    >
-      {label}
-    </div>
-  );
-
-  const skel = (w: string) => (
-    <span style={{ display: "block", height: "6px", width: w, borderRadius: "3px", background: C.border, marginBottom: "7px" }} />
-  );
-
-  // ---- illustrations ----
-  const searchIllo = (
+  const tileWrap = (icon: JSX.Element, title: string, sub: string) => (
     <div style={box}>
-      <div style={{ width: "184px", display: "flex", flexDirection: "column", gap: "8px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-            padding: "8px 10px",
-            borderRadius: "9px",
-            border: "1px solid " + C.border,
-            background: C.soft,
-          }}
-        >
-          {searchIcon(C.muted, 14)}
-          <span style={{ fontFamily: SERIF, fontSize: "13px", color: C.text }}>faith</span>
-          <span style={{ width: "2px", height: "14px", background: C.text, animation: "sfg-caret 1.1s step-end infinite" }} />
-        </div>
-        <div
-          style={{
-            padding: "8px 10px",
-            borderRadius: "8px",
-            border: "1px solid " + C.border,
-            background: C.soft,
-            fontSize: "11px",
-            color: C.muted,
-            animation: "sfg-glow 2.2s ease-in-out infinite",
-          }}
-        >
-          Alma 32 · scripture
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "8px 10px",
-            borderRadius: "8px",
-            border: "1px solid " + C.border,
-            background: C.soft,
-            animation: "sfg-glow 2.2s ease-in-out infinite",
-            animationDelay: ".4s",
-          }}
-        >
-          <span style={{ fontSize: "9px", fontWeight: 700, color: "#fff", background: PURP, borderRadius: "5px", padding: "1px 5px" }}>
-            YOUR MARK
-          </span>
-          <span style={{ fontSize: "11px", color: C.muted }}>Moroni 7:26</span>
-        </div>
+      <div
+        style={{
+          width: "128px",
+          height: "112px",
+          border: "1px solid " + C.border,
+          borderRadius: "14px",
+          background: C.panel,
+          padding: "14px 13px",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <span style={{ color: PURP, display: "inline-flex" }}>{icon}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: "15px", fontWeight: 700, marginBottom: "3px" }}>{title}</span>
+        <span style={{ fontSize: "11.5px", color: C.muted, lineHeight: 1.3 }}>{sub}</span>
       </div>
     </div>
   );
 
-  const linkIllo = (
-    <div style={box}>
-      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "46px" }}>
-        {chapCard("1 Ne 1")}
-        {chapCard("1 Ne 2")}
-        <span
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            marginLeft: "-11px",
-            marginTop: "-11px",
-            display: "inline-flex",
-            animation: "sfg-pulse 1.8s ease-in-out infinite",
-          }}
-        >
-          {chainIcon(RED, 22)}
-        </span>
-        <span
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "-4px",
-            marginLeft: "-5px",
-            width: "10px",
-            height: "10px",
-            borderRadius: "50%",
-            background: RED,
-            animation: "sfg-jump 2.4s ease-in-out infinite",
-          }}
-        />
-      </div>
+  const phead = (title: string) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        padding: "7px 8px",
+        borderBottom: "1px solid " + C.border,
+      }}
+    >
+      <span style={{ fontSize: "16px", color: C.text }}>‹</span>
+      <span style={{ fontSize: "13px", fontWeight: 700 }}>{title}</span>
     </div>
   );
 
-  const combinedIllo = (
+  const studyRow = (leading: JSX.Element, name: string, meta: string) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        borderTop: "1px solid " + C.border,
+        padding: "7px 0",
+      }}
+    >
+      <span style={{ flexShrink: 0, display: "inline-flex", marginLeft: "1px" }}>{leading}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: "12px", fontWeight: 600, color: C.text }}>{name}</span>
+        <span style={{ fontSize: "9.5px", color: C.muted }}>{meta}</span>
+      </span>
+      {infoGlyph(15)}
+      {trash(15)}
+    </div>
+  );
+
+  const dot = (color: string) => (
+    <span style={{ display: "block", width: "9px", height: "9px", borderRadius: "50%", background: color }} />
+  );
+
+  const bookRow = (iconColor: string, name: string, meta: string, withTrash: boolean) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        borderTop: "1px solid " + C.border,
+        padding: "7px 0",
+      }}
+    >
+      <span style={{ flexShrink: 0, display: "inline-flex", marginLeft: "1px" }}>{bookGlyph(iconColor, 16)}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: "12px", fontWeight: 600, color: C.text }}>{name}</span>
+        <span style={{ fontSize: "9.5px", color: C.muted }}>{meta}</span>
+      </span>
+      {withTrash && trash(15)}
+      <span style={{ color: C.muted, fontSize: "16px" }}>›</span>
+    </div>
+  );
+
+  const legRow = (tag: string, tagColor: string, txt: JSX.Element) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: "7px", padding: "4px 0" }}>
+      <span style={{ flexShrink: 0, width: "64px", fontSize: "10.5px", fontWeight: 700, color: tagColor }}>{tag}</span>
+      <span style={{ fontSize: "10px", color: C.muted, lineHeight: 1.35 }}>{txt}</span>
+    </div>
+  );
+
+  // ================= ENTRY illustrations (page 1) =================
+  const searchEntry = tileWrap(magnifier(PURP, 22), "Search", "Scripture & your marks");
+  const studiesEntry = tileWrap(layers(PURP, 22), "Studies", "Every study you've done");
+  const booksEntry = tileWrap(lock(PURP, 22), "Vault", "2 session books");
+
+  const linkEntry = (
     <div style={box}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          {chapCard("1 Ne 1")}
-          <span style={{ display: "inline-flex", animation: "sfg-pulse 1.8s ease-in-out infinite" }}>
-            {chainIcon(PURP, 20)}
-          </span>
-          {kwCard("Faith")}
-        </div>
+      <div style={{ width: "232px", display: "flex", alignItems: "center", gap: "8px" }}>
         <div
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
             border: "1px solid " + C.border,
-            borderLeft: "3px solid " + PURP,
-            borderRadius: "9px",
-            background: C.soft,
-            padding: "7px 12px",
-            fontSize: "11.5px",
+            borderRadius: "999px",
+            padding: "5px 11px",
+            fontSize: "12px",
             fontWeight: 700,
-            color: PURP,
-            animation: "sfg-rise .6s ease both",
-            animationDelay: ".5s",
+            flexShrink: 0,
+            color: C.text,
           }}
         >
-          {combinedIcon(PURP, 14)} Combined study
+          Send verses
         </div>
-      </div>
-    </div>
-  );
-
-  const screensIllo = (
-    <div style={box}>
-      <div style={{ width: "204px" }}>
-        <div style={{ position: "relative", display: "flex", gap: "5px", marginBottom: "9px" }}>
-          {tabPill("1 Ne 1", true)}
-          {tabPill("Alma 32", false)}
-          {tabPill("Faith", false)}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+          <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: C.muted, flexShrink: 0 }} />
+          <span
+            style={{
+              fontSize: "11px",
+              color: C.muted,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            Saved on this phone
+          </span>
+        </div>
+        <div style={{ position: "relative", flexShrink: 0 }}>
           <span
             style={{
               position: "absolute",
-              left: "0",
-              bottom: "-4px",
-              width: "60px",
-              height: "3px",
-              borderRadius: "2px",
-              background: TEAL,
-              animation: "sfg-switch 4s ease-in-out infinite",
+              inset: "-6px",
+              borderRadius: "999px",
+              border: "1.5px solid " + C.muted,
+              opacity: 0.4,
+              animation: "sfg-ring 1.9s ease-in-out infinite",
             }}
           />
-        </div>
-        <div style={{ border: "1px solid " + C.border, borderRadius: "9px", background: C.soft, padding: "12px 13px" }}>
-          {skel("100%")}
-          {skel("86%")}
-          {skel("64%")}
-        </div>
-      </div>
-    </div>
-  );
-
-  const dictIllo = (
-    <div style={box}>
-      <div style={{ width: "212px" }}>
-        <div style={{ fontFamily: SERIF, fontSize: "14px", color: C.text, marginBottom: "11px" }}>
-          made whole by thy{" "}
-          <span style={{ background: HL, borderRadius: "3px", padding: "0 3px", borderBottom: "2px dotted " + GOLD }}>
-            faith
-          </span>
-        </div>
-        <div
-          style={{
-            border: "1px solid " + C.border,
-            borderLeft: "3px solid " + GOLD,
-            borderRadius: "10px",
-            background: C.soft,
-            padding: "10px 12px",
-            animation: "sfg-rise .6s ease both",
-            animationDelay: ".3s",
-          }}
-        >
-          <span style={{ fontSize: "9px", fontWeight: 700, color: GOLD, letterSpacing: "0.06em" }}>WEBSTER 1828</span>
-          <div style={{ fontFamily: SERIF, fontSize: "12.5px", lineHeight: 1.4, color: C.text, marginTop: "4px" }}>
-            <strong>FAITH</strong>, n. Belief; the assent of the mind to the truth of what is declared by another.
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              border: "1px solid " + C.border,
+              borderRadius: "999px",
+              padding: "5px 11px",
+            }}
+          >
+            {chain(RED, 14)}
+            <span style={{ fontSize: "12px", fontWeight: 700, color: RED }}>Link</span>
           </div>
         </div>
       </div>
     </div>
   );
 
-  const findIllo = (
+  const combinedEntry = (
     <div style={box}>
-      <div style={{ width: "172px", display: "flex", flexDirection: "column", gap: "8px" }}>
-        {listRow("Faith", PURP, 0)}
-        {listRow("Covenants", TEAL, 0.15)}
-        {listRow("Alma 32 + 34", PURP, 0.3)}
+      <div style={{ width: "206px", display: "flex", flexDirection: "column", gap: "9px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "1px solid " + C.border,
+            borderTop: "3px solid " + RED,
+            borderRadius: "9px",
+            padding: "9px 11px",
+          }}
+        >
+          <span style={{ fontFamily: SERIF, fontSize: "12px", fontWeight: 700, color: C.text }}>1 Nephi 1</span>
+          <span style={{ marginLeft: "auto", fontSize: "9px", color: C.muted }}>chapter</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "1px solid " + C.border,
+            borderTop: "3px solid " + BLUE,
+            borderRadius: "9px",
+            padding: "9px 11px",
+          }}
+        >
+          {magnifier(BLUE, 13)}
+          <span style={{ fontFamily: SERIF, fontSize: "12px", fontWeight: 700, color: C.text }}>Faith</span>
+          <span style={{ marginLeft: "auto", fontSize: "9px", color: C.muted }}>keyword</span>
+        </div>
       </div>
     </div>
   );
 
-  const booksIllo = (
+  const navBtn: CSSProperties = {
+    width: "34px",
+    height: "34px",
+    borderRadius: "9px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    position: "relative",
+  };
+
+  const screensEntry = (
     <div style={box}>
+      <div style={{ width: "242px", display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={navBtn}>{house(C.text, 19)}</span>
+        <span style={{ ...navBtn, border: "1px solid " + TEAL }}>
+          <span
+            style={{
+              position: "absolute",
+              inset: "-5px",
+              borderRadius: "12px",
+              border: "1.5px solid " + TEAL,
+              opacity: 0.45,
+              animation: "sfg-ring 1.9s ease-in-out infinite",
+            }}
+          />
+          {stacked(C.text, 19)}
+          <span
+            style={{
+              position: "absolute",
+              top: "2px",
+              right: "1px",
+              minWidth: "13px",
+              height: "13px",
+              padding: "0 3px",
+              background: PURP,
+              color: "#fff",
+              borderRadius: "99px",
+              fontSize: "8px",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            2
+          </span>
+        </span>
+        <span style={{ color: C.muted, fontSize: "18px", padding: "0 2px" }}>‹</span>
+        <span
+          style={{
+            flex: 1,
+            textAlign: "center",
+            fontSize: "14px",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          1 Nephi 1
+        </span>
+        <span style={{ color: C.muted, fontSize: "18px", padding: "0 2px" }}>›</span>
+        <span
+          style={{
+            flexShrink: 0,
+            background: C.text,
+            color: C.bg,
+            borderRadius: "999px",
+            padding: "6px 13px",
+            fontSize: "11.5px",
+            fontWeight: 700,
+          }}
+        >
+          Compile
+        </span>
+      </div>
+    </div>
+  );
+
+  const tool: CSSProperties = {
+    flex: 1,
+    height: "28px",
+    borderRadius: "8px",
+    border: "1px solid " + C.border,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: C.text,
+  };
+  const toolOn: CSSProperties = { ...tool, background: C.text, border: "1px solid " + C.text, color: C.bg };
+
+  const dictEntry = (
+    <div style={box}>
+      <div style={{ width: "216px" }}>
+        <div style={{ display: "flex", gap: "8px", marginBottom: "9px" }}>
+          {["#ff7b72", "#f0a24b", "#7cb0e8", "#b794f6"].map((c, i) => (
+            <span
+              key={c}
+              style={{
+                width: "18px",
+                height: "18px",
+                borderRadius: "50%",
+                background: c,
+                flexShrink: 0,
+                border: i === 2 ? "2px solid " + C.text : "1px solid " + C.border,
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: "6px", marginBottom: "9px" }}>
+          <span style={tool}>
+            <b style={{ fontSize: "12px" }}>B</b>
+          </span>
+          <span style={{ ...tool, textDecoration: "underline", fontSize: "12px", fontWeight: 700 }}>U</span>
+          <span style={tool}>{eraser("currentColor", 14)}</span>
+          <span style={{ ...toolOn, position: "relative" }}>
+            <span
+              style={{
+                position: "absolute",
+                inset: "-4px",
+                borderRadius: "11px",
+                border: "1.5px solid " + GOLD,
+                opacity: 0.6,
+                animation: "sfg-ring 1.9s ease-in-out infinite",
+              }}
+            />
+            {magnifier("currentColor", 14)}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ flex: 1, fontSize: "11px", color: C.muted }}>Define · tap a word to look it up</span>
+          <span style={{ color: C.muted, fontSize: "12px" }}>▴</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ================= SCREEN illustrations (page 2) =================
+  const searchLegend = (
+    <div style={box}>
+      <div style={{ width: "212px" }}>
+        <div style={seclbl}>Where it searches</div>
+        {legRow("Scripture", BLUE, <>the verse text — “faith” → Alma 32:21</>)}
+        {legRow("My marks", BLUE, <>your own highlights — back to a verse you marked</>)}
+        <div style={{ ...seclbl, marginTop: "6px" }}>How the words combine</div>
+        {legRow("All words", C.text, <>has <i>every</i> word — faith <b>+</b> hope</>)}
+        {legRow("Any word", C.text, <>has <i>any</i> word — faith <b>or</b> hope</>)}
+        {legRow("Phrase", C.text, <>the exact wording — “perfect knowledge”</>)}
+      </div>
+    </div>
+  );
+
+  const linkSheet = (
+    <div style={sheetBox}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.28)" }} />
       <div
         style={{
           position: "relative",
-          display: "flex",
-          gap: "12px",
-          alignItems: "flex-end",
-          padding: "16px 20px 14px",
-          borderRadius: "12px",
-          border: "1px dashed " + C.border,
+          width: "100%",
+          background: C.panel,
+          borderRadius: "18px 18px 0 0",
+          padding: "14px 15px",
         }}
       >
-        <span
+        <div
           style={{
-            position: "absolute",
-            top: "-11px",
-            right: "-9px",
-            display: "inline-flex",
-            animation: "sfg-glow 2.4s ease-in-out infinite",
+            background: PURP,
+            color: "#fff",
+            borderRadius: "10px",
+            padding: "11px",
+            textAlign: "center",
+            fontSize: "12.5px",
+            fontWeight: 700,
           }}
         >
-          {vaultIcon(GREEN, 20)}
-        </span>
-        {bookSpine("Master", PURP, true)}
-        {bookSpine("Session", C.muted, false)}
+          Link with next chapter (1 Nephi 2) →
+        </div>
+        <div style={{ ...seclbl, margin: "11px 0 5px" }}>Or add a keyword search</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "1px solid " + C.border,
+            borderRadius: "9px",
+            padding: "8px 10px",
+          }}
+        >
+          {magnifier(BLUE, 13)}
+          <span style={{ fontSize: "11.5px", color: C.text }}>Search a word to link in…</span>
+        </div>
       </div>
     </div>
   );
 
-  // ---- the guide content ----
+  const combinedFuse = (
+    <div style={box}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+        <div style={{ position: "relative", width: "74px", height: "60px" }}>
+          <span
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "60px",
+              height: "60px",
+              margin: "-30px 0 0 -30px",
+              borderRadius: "50%",
+              background: "radial-gradient(circle,rgba(139,92,246,0.35),transparent 68%)",
+              animation: "sfg-glow 2s ease-in-out infinite",
+            }}
+          />
+          <span
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "54px",
+              height: "54px",
+              margin: "-27px 0 0 -27px",
+              borderRadius: "50%",
+              border: "2px solid " + PURP,
+              opacity: 0,
+              animation: "sfg-rip 2.6s ease-out infinite",
+            }}
+          />
+          <span style={{ position: "absolute", left: "14px", top: "18px", opacity: 0.85 }}>{chain(RED, 26, 2.2)}</span>
+          <span style={{ position: "absolute", left: "34px", top: "18px", opacity: 0.85 }}>{chain(BLUE, 26, 2.2)}</span>
+          <span style={{ position: "absolute", left: "24px", top: "18px" }}>{chain(PURP, 26, 2.4)}</span>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "14px", fontWeight: 800, color: C.text }}>Combined study</div>
+          <div style={{ fontSize: "11px", color: C.muted, marginTop: "2px" }}>Chapter + keyword linked</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const miniCard = (active: boolean, head: JSX.Element, preview: string) => (
+    <div
+      style={{
+        flex: 1,
+        border: (active ? "2px solid " + PURP : "1px solid " + C.border),
+        borderRadius: "11px",
+        overflow: "hidden",
+        background: C.panel,
+      }}
+    >
+      <div
+        style={{
+          padding: "7px 8px 6px",
+          borderBottom: "1px solid " + C.border,
+          background: active ? "rgba(139,92,246,0.08)" : "transparent",
+        }}
+      >
+        {head}
+      </div>
+      <div style={{ fontFamily: SERIF, padding: "6px 8px", fontSize: "8px", lineHeight: 1.4, color: C.muted }}>
+        {preview}
+      </div>
+    </div>
+  );
+
+  const screensGrid = (
+    <div style={box}>
+      <div style={{ width: "216px", display: "flex", flexDirection: "column", gap: "7px" }}>
+        <div style={{ fontSize: "11px", fontWeight: 800, textAlign: "center" }}>Screens</div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {miniCard(
+            true,
+            <>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: C.text }}>1 Nephi 1</div>
+              <div style={{ fontSize: "8.5px", color: C.muted }}>Book of Mormon</div>
+            </>,
+            "I, Nephi, having been born of goodly parents…"
+          )}
+          {miniCard(
+            false,
+            <>
+              <div
+                style={{
+                  fontSize: "8px",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  color: BLUE,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "3px",
+                }}
+              >
+                {magnifier(BLUE, 9)}Keyword study
+              </div>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: C.text }}>Faith</div>
+              <div style={{ fontSize: "8px", color: C.muted }}>12 verses · Master Book</div>
+            </>,
+            "faith is not to have a perfect…"
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span
+            style={{
+              border: "1px solid " + C.border,
+              borderRadius: "999px",
+              padding: "5px 12px",
+              fontSize: "10px",
+              fontWeight: 600,
+              background: C.soft,
+              color: C.text,
+            }}
+          >
+            Close All
+          </span>
+          <span
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "50%",
+              background: PURP,
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "19px",
+              boxShadow: "0 4px 12px rgba(139,92,246,0.45)",
+            }}
+          >
+            +
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const dictSheet = (
+    <div style={sheetBox}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.28)" }} />
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          background: C.panel,
+          borderRadius: "18px 18px 0 0",
+          padding: "16px",
+        }}
+      >
+        <div style={{ fontFamily: SERIF, fontSize: "17px", fontWeight: 700, color: C.text }}>faith</div>
+        <div style={{ fontFamily: SERIF, fontSize: "11.5px", lineHeight: 1.45, color: C.text, marginTop: "6px" }}>
+          Belief; the assent of the mind to the truth of what is declared by another, resting on his authority and
+          veracity.
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            marginTop: "11px",
+            border: "1px solid " + C.border,
+            borderRadius: "9px",
+            padding: "7px 12px",
+            fontSize: "11.5px",
+            fontWeight: 700,
+            color: C.text,
+          }}
+        >
+          {bookmark(GOLD, 13)}Tag this word
+        </div>
+      </div>
+    </div>
+  );
+
+  const studiesPage = (
+    <div style={flatBox}>
+      <div style={{ width: "100%", display: "flex", flexDirection: "column" }}>
+        {phead("Studies")}
+        <div style={{ padding: "6px 12px 0" }}>
+          <div style={{ ...seclbl, marginTop: "2px" }}>Chapter studies</div>
+          {studyRow(dot(RED), "1 Nephi 1", "8 marks")}
+          <div style={{ ...seclbl, marginTop: "5px" }}>Combined studies</div>
+          {studyRow(chain(PURP, 15), "Alma 32", "5 verses")}
+        </div>
+      </div>
+    </div>
+  );
+
+  const booksPage = (
+    <div style={flatBox}>
+      <div style={{ width: "100%", display: "flex", flexDirection: "column" }}>
+        {phead("Books")}
+        <div style={{ padding: "8px 12px 0" }}>
+          <div style={{ fontSize: "9px", color: C.muted, lineHeight: 1.4, marginBottom: "2px" }}>
+            Master is permanent. Deleting a session book also deletes its marks and studies.
+          </div>
+          {bookRow(C.text, "Master Book  ·  permanent", "12 studies · 84 marks", false)}
+          {bookRow(C.muted, "Sunday School", "3 studies · 12 marks", true)}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ================= the guide content =================
   const FEATURES: {
     id: string;
     section: string;
+    color: string;
     title: string;
     sub: string;
     icon: JSX.Element;
@@ -448,24 +746,24 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "search",
       section: "Search & combine",
+      color: BLUE,
       title: "Keyword search",
       sub: "Search scripture & your marks",
-      icon: searchIcon(BLUE, 20),
+      icon: magnifier(BLUE, 20),
       pages: [
         {
-          illo: searchIllo,
-          heading: "Search two ways",
+          illo: searchEntry,
+          heading: "Open Search from home",
           lines: [
-            "Scribal searches the scripture text and your own marks. Toggle between “Scripture” and “My marks” at the top, and choose how words combine — every word, any word, or the exact phrase.",
-            "Use * as a wildcard: baptiz* finds baptize, baptism, and baptized in one search.",
+            "Tap the Search tile on the home screen. Scribal searches the scripture text and your own marks — switch between them at the top.",
           ],
         },
         {
-          illo: searchIllo,
-          heading: "From results to a study",
+          illo: searchLegend,
+          heading: "What each option finds",
           lines: [
-            "Searching Scripture, you can pick the verses you want from the results and link them into a keyword study — marked and compiled together, like a chapter.",
-            "Searching “My marks” is the fast way back to something you highlighted weeks ago.",
+            "Choose where to search and how the words combine. Use * as a wildcard — baptiz* matches baptize, baptism, and baptized in one search.",
+            "From Scripture results you can link the verses you want into a study.",
           ],
         },
       ],
@@ -473,24 +771,24 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "linking",
       section: "Search & combine",
+      color: RED,
       title: "Link chapters",
       sub: "Join chapters & study them as one",
-      icon: chainIcon(RED, 20),
+      icon: chain(RED, 20),
       pages: [
         {
-          illo: linkIllo,
-          heading: "Link two chapters",
+          illo: linkEntry,
+          heading: "Tap Link in the top bar",
           lines: [
-            "Some chapters belong together — a prophecy and its fulfillment, a teaching echoed in another book. Linking joins them into one study.",
-            "Open a chapter, tap the Link button in the top bar, then “Link with next” or pick any chapter from the list.",
+            "Open a chapter and tap the Link button at the top right. Linking joins chapters that belong together — a prophecy and its fulfillment, a teaching echoed in another book.",
           ],
         },
         {
-          illo: linkIllo,
-          heading: "They compile as one",
+          illo: linkSheet,
+          heading: "Link the next, or any chapter",
           lines: [
-            "Compile a linked chapter and the marks from every chapter in the group gather together — a single outline across all of them.",
-            "Tap the Link button again to jump between linked chapters, or unlink any of them.",
+            "“Link with next chapter” joins the one after it, or pick any chapter from the list.",
+            "Compile a linked chapter and the marks from the whole group gather as one. Unlink any of them from the same sheet.",
           ],
         },
       ],
@@ -498,23 +796,23 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "combined",
       section: "Search & combine",
+      color: PURP,
       title: "Combined studies",
       sub: "A chapter + a keyword study, joined",
-      icon: combinedIcon(PURP, 20),
+      icon: twoCircles(PURP, 20),
       pages: [
         {
-          illo: combinedIllo,
-          heading: "Chapter + keyword, joined",
+          illo: combinedEntry,
+          heading: "Add a keyword search to a chapter",
           lines: [
-            "A chapter study (red) and a keyword study (blue) can be linked into one combined study (purple) — so a chapter and the verses you've gathered on its theme sit and compile side by side.",
+            "From the same link sheet, search a word and link those verses into the chapter. A chapter study (red) and a keyword study (blue) become one combined study (purple).",
           ],
         },
         {
-          illo: combinedIllo,
-          heading: "From either side",
+          illo: combinedFuse,
+          heading: "Chapter + keyword, as one",
           lines: [
-            "From a chapter, add a keyword search into it. Or from a keyword study, link a chapter in. Either way you land on the same combined study.",
-            "Mark and compile it as one — the chapter's marks and the gathered verses, together.",
+            "Scribal marks the moment with a quick fuse, then compiles the chapter's marks and the gathered verses side by side.",
           ],
         },
       ],
@@ -522,23 +820,23 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "screens",
       section: "While you read",
+      color: TEAL,
       title: "Screens",
       sub: "Several chapters or studies, at once",
-      icon: screensIcon(TEAL, 20),
+      icon: stacked(TEAL, 20),
       pages: [
         {
-          illo: screensIllo,
-          heading: "Keep your place in several texts",
+          illo: screensEntry,
+          heading: "Tap the stacked icon",
           lines: [
-            "A Screen is an open chapter or study. Keep several going at once — the chapter you're reading, a study you're building, a passage you're comparing — and switch between them with a tap.",
+            "The stacked icon in the reading top bar opens your Screens — the badge shows how many you have open. A Screen is just an open chapter or study.",
           ],
         },
         {
-          illo: screensIllo,
-          heading: "Open and close",
+          illo: screensGrid,
+          heading: "Switch, open, or close",
           lines: [
-            "Tap the Screens button to see them all, open a new one, or jump between them.",
-            "You can hold up to eight at a time; close one to make room for another.",
+            "Tap a screen to jump to it, “+” to open a new one, or close one to make room. You can keep up to eight at a time.",
           ],
         },
       ],
@@ -546,23 +844,24 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "dictionary",
       section: "While you read",
+      color: GOLD,
       title: "The dictionary",
       sub: "Webster's 1828, and tagging words",
-      icon: bookIcon(GOLD, 20),
+      icon: bookGlyph(GOLD, 20),
       pages: [
         {
-          illo: dictIllo,
-          heading: "A word's 1828 meaning",
+          illo: dictEntry,
+          heading: "Arm the Define tool",
           lines: [
-            "Arm the dictionary, then tap any word to see how it was defined in Webster's 1828 — often closer to what the text meant than today's usage.",
+            "In the marking palette, tap the magnifier (Define). The bar reads “Define · tap a word to look it up.”",
           ],
         },
         {
-          illo: dictIllo,
-          heading: "Tag a word to keep it",
+          illo: dictSheet,
+          heading: "Webster's 1828 — and tagging",
           lines: [
-            "Tap “Tag this word” in the definition to bookmark it; a small marker appears by the word so you can reopen the meaning any time.",
-            "Close the card by tapping the dimmed area above it.",
+            "Tap any word for its 1828 meaning, often closer to what the text meant than today's usage.",
+            "“Tag this word” bookmarks it; a small marker by the word reopens the meaning any time.",
           ],
         },
       ],
@@ -570,22 +869,21 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "studies",
       section: "Your library",
+      color: C.text,
       title: "Studies",
       sub: "Where every study is filed",
-      icon: layersIcon(C.text, 20),
+      icon: layers(C.text, 20),
       pages: [
         {
-          illo: findIllo,
-          heading: "All your studies in one place",
-          lines: [
-            "Tap “Studies” on the home screen. Everything you've compiled lives here in three groups: Chapter studies, Combined studies, and Keyword studies.",
-          ],
+          illo: studiesEntry,
+          heading: "Open Studies from home",
+          lines: ["Tap the Studies tile on the home screen. Everything you've compiled is filed here."],
         },
         {
-          illo: findIllo,
-          heading: "Open or peek",
+          illo: studiesPage,
+          heading: "Filed by type",
           lines: [
-            "Tap a study to jump straight to its compiled notes, or tap the ⓘ to peek at what it covers and its themes without leaving the list.",
+            "Three groups: Chapter, Combined, and Keyword studies. Tap one to open its compiled notes, or the ⓘ to peek at its themes.",
           ],
         },
       ],
@@ -593,23 +891,21 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
     {
       id: "books",
       section: "Your library",
+      color: GREEN,
       title: "Master & Sessions",
       sub: "Your books, kept in the Vault",
-      icon: vaultIcon(GREEN, 20),
+      icon: lock(GREEN, 20),
       pages: [
         {
-          illo: booksIllo,
-          heading: "Master & session books",
-          lines: [
-            "Your Master book holds your main, ongoing study. Open a session book any time you want a separate layer — a class, a topic, a fresh pass — without touching the Master.",
-          ],
+          illo: booksEntry,
+          heading: "Open the Vault from home",
+          lines: ["Tap the Vault tile. It holds every book you've made."],
         },
         {
-          illo: booksIllo,
-          heading: "Kept in the Vault",
+          illo: booksPage,
+          heading: "Master & session books",
           lines: [
-            "Every book lives in the Vault. Open it from home to switch books or peek at the studies inside each one.",
-            "The Master is permanent; session books can be deleted when you're done with them.",
+            "Your Master book is permanent and holds your main study. Session books are separate layers — a class, a topic — and can be deleted when you're done.",
           ],
         },
       ],
@@ -665,7 +961,7 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
 
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 28px" }}>
           <div style={{ fontSize: "13.5px", color: C.muted, lineHeight: 1.5, marginBottom: "18px" }}>
-            Pick a feature to learn it in depth, with a quick animated walkthrough.
+            Pick a feature to learn it in depth — where to find it, then how it works.
           </div>
           {SECTION_ORDER.map((secName) => (
             <div key={secName}>
@@ -800,7 +1096,7 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 24px" }}>
-        <div style={{ fontSize: "12px", fontWeight: 700, color: PURP, marginBottom: "4px" }}>
+        <div style={{ fontSize: "12px", fontWeight: 700, color: active.color, marginBottom: "4px" }}>
           {active.title.toUpperCase()}
         </div>
         <div style={{ fontSize: "21px", fontWeight: 800, marginBottom: "16px" }}>{pg.heading}</div>
@@ -821,7 +1117,7 @@ export default function MobileFeatureGuide({ C, onClose }: Props) {
                 width: i === Math.min(page, last) ? "20px" : "7px",
                 height: "7px",
                 borderRadius: "4px",
-                background: i === Math.min(page, last) ? PURP : C.border,
+                background: i === Math.min(page, last) ? active.color : C.border,
                 transition: "width .2s",
               }}
             />
