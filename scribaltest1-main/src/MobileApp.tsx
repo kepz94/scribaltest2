@@ -2753,6 +2753,7 @@ export default function MobileApp() {
     rename: boolean = true,
     view?: "outline" | "charting" | "distilled" | "covenants"
   ) => {
+    if (mtourOpen) return;
     const bookId = activeBookId;
     setStudies((prev) => {
       const now = Date.now();
@@ -3498,6 +3499,7 @@ export default function MobileApp() {
 
           <button
             data-tour="m-compile"
+            data-wt="wt-compile"
             onClick={compileCurrentStudy}
             disabled={sendMode}
             style={{
@@ -3811,7 +3813,7 @@ export default function MobileApp() {
             WebkitUserSelect: "none",
           }}
         >
-          {chapter.verses.map((vs: any) => {
+          {chapter.verses.map((vs: any, vi: number) => {
             const verse = (
               <MobileVerse
                 key={vs.reference}
@@ -3837,7 +3839,14 @@ export default function MobileApp() {
                 onTagTap={openTagRef}
               />
             );
-            if (!sendMode) return verse;
+            if (!sendMode)
+              return mtourOpen && vi === 0 ? (
+                <div data-wt="wt-verse" key={vs.reference}>
+                  {verse}
+                </div>
+              ) : (
+                verse
+              );
             const checked = sendSel.has(vs.reference);
             return (
               <div
@@ -3992,7 +4001,7 @@ export default function MobileApp() {
           }}
         >
           {/* Colors — always visible */}
-          <div style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
+          <div data-wt="wt-colors" style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
             {COLORS.map((c) => (
               <button
                 key={c}
@@ -4016,6 +4025,7 @@ export default function MobileApp() {
 
           {/* Styles — always visible (single letters keep the bar short) */}
           <div
+            data-wt="wt-styles"
             style={{
               padding: "8px 14px 0",
               display: "flex",
@@ -10389,7 +10399,23 @@ export default function MobileApp() {
         </div>
       )}
       {mtourOpen && (
-        <MobileWalkthrough C={C} onClose={() => setMtourOpen(false)} />
+        <MobileWalkthrough
+          C={C}
+          onClose={() => setMtourOpen(false)}
+          createSession={createSession}
+          deleteBook={deleteBook}
+          setActiveBook={setActiveBook}
+          addMark={addMark}
+          seedScopeLabels={seedScopeLabels}
+          marks={marks}
+          activeBookId={activeBookId}
+          loc={loc}
+          setLoc={setLoc}
+          setHomeOpen={setHomeOpen}
+          setCompileOpen={setCompileOpen}
+          compileOpen={compileOpen}
+          pen={pen}
+        />
       )}
 
       {guideOpen && (
