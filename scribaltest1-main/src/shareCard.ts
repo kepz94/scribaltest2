@@ -315,6 +315,13 @@ export interface VersesCardEntry {
   color: number;
   phrases: { text: string; style: string }[];
   note?: string;
+  // When the verse is shown in "full" mode, the card redraws the entire verse
+  // with its marks layered on (exactly like the reading view) instead of only
+  // the marked snippets. These carry that view; absent => focused snippets.
+  view?: "focused" | "full";
+  fullText?: string;
+  verseNumber?: number;
+  marks?: { startIndex: number; endIndex: number; style: string; color: number }[];
 }
 export interface VersesSynthesis {
   theme: string;
@@ -368,6 +375,88 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     return ital + weight + " " + size + "px " + SERIF;
   };
   const proseFont = (sz: number) => "italic 500 " + sz + "px " + SERIF;
+  const lineMul = 1.4; // full-verse line height multiple
+
+  // ---- full-verse layout: split the verse at mark boundaries (exactly like
+  // the reading view), then lay the pieces out word-by-word with per-mark
+  // styling so every one of the eight mark styles is honored on the card. ----
+  type Mk = { startIndex: number; endIndex: number; style: string; color: number };
+  type Tk = { text: string; ws: boolean; marks: Mk[] };
+
+  const verseTokens = (text: string, marks: Mk[]): Tk[] => {
+    const len = text.length;
+    const bset = new Set<number>([0, len]);
+    marks.forEach((m) => {
+      bset.add(Math.max(0, Math.min(m.startIndex, len)));
+      bset.add(Math.max(0, Math.min(m.endIndex, len)));
+    });
+    const pts = Array.from(bset).sort((a, b) => a - b);
+    const toks: Tk[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (b <= a) continue;
+      const ms = marks.filter((m) => m.startIndex <= a && m.endIndex >= b);
+      text
+        .slice(a, b)
+        .split(/(\s+)/)
+        .forEach((piece) => {
+          if (piece === "") return;
+          toks.push({ text: piece, ws: /^\s+$/.test(piece), marks: ms });
+        });
+    }
+    return toks;
+  };
+  const tokFontV = (t: Tk, sz: number) => {
+    const bold = t.marks.some((m) => m.style === "bold");
+    const ital = t.marks.some((m) => m.style === "italic");
+    return (ital ? "italic " : "") + (bold ? "700" : "500") + " " + sz + "px " + SERIF;
+  };
+  const wrapTokens = (toks: Tk[], sz: number): Tk[][] => {
+    const lines: Tk[][] = [];
+    let line: Tk[] = [];
+    let w = 0;
+    const flush = () => {
+      while (line.length && line[line.length - 1].ws) line.pop();
+      if (line.length) lines.push(line);
+      line = [];
+      w = 0;
+    };
+    toks.forEach((t) => {
+      ctx.font = tokFontV(t, sz);
+      const tw = ctx.measureText(t.text).width;
+      if (!t.ws && line.length && w + tw > maxW) {
+        flush();
+        line = [t];
+        w = tw;
+      } else {
+        if (t.ws && line.length === 0) return;
+        line.push(t);
+        w += tw;
+      }
+    });
+    flush();
+    return lines;
+  };
+  const wavy = (x0: number, x1: number, yy: number, sz: number, stroke: string) => {
+    const amp = Math.max(1.5, sz * 0.05);
+    const wl = Math.max(5, sz * 0.34);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x0, yy);
+    let up = true;
+    for (let x = x0; x < x1; x += wl / 2) {
+      const nx = Math.min(x + wl / 2, x1);
+      ctx.quadraticCurveTo((x + nx) / 2, up ? yy - amp : yy + amp, nx, yy);
+      up = !up;
+    }
+    ctx.stroke();
+  };
+  const catMark = (t: Tk, styles: string[]): Mk | undefined =>
+    t.marks.find((m) => styles.indexOf(m.style) >= 0);
+  const isFull = (v: VersesCardEntry) =>
+    v.view === "full" && v.fullText != null && v.marks != null;
 
   // Measure the whole stack at a candidate phrase font size.
   const measure = (size: number) => {
@@ -376,16 +465,28 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     const synthLabelSize = 18;
 
     const blocks = verses.map((v) => {
-      const phraseLines = v.phrases.map((ph) => {
-        ctx.font = fontFor(ph.style, size);
-        return {
-          style: ph.style,
-          lines: wrap(ctx, "\u201C" + ph.text + "\u201D", maxW),
-        };
-      });
-      const phrasesH =
-        phraseLines.reduce((s, pl) => s + pl.lines.length * size * 1.34, 0) +
-        Math.max(0, phraseLines.length - 1) * phraseGap;
+      const full = isFull(v);
+      let phraseLines: { style: string; lines: string[] }[] = [];
+      let verseLines: Tk[][] = [];
+      let bodyH = 0;
+      if (full) {
+        verseLines = wrapTokens(
+          verseTokens(v.fullText as string, v.marks as Mk[]),
+          size
+        );
+        bodyH = verseLines.length * size * lineMul;
+      } else {
+        phraseLines = v.phrases.map((ph) => {
+          ctx.font = fontFor(ph.style, size);
+          return {
+            style: ph.style,
+            lines: wrap(ctx, "\u201C" + ph.text + "\u201D", maxW),
+          };
+        });
+        bodyH =
+          phraseLines.reduce((s, pl) => s + pl.lines.length * size * 1.34, 0) +
+          Math.max(0, phraseLines.length - 1) * phraseGap;
+      }
       const headerH = (v.theme.trim() ? themeSize + 9 : 0) + refSize + headerGap;
       let noteLines: string[] = [];
       if (showNotes && v.note && v.note.trim()) {
@@ -397,10 +498,12 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
         : 0;
       return {
         v,
+        full,
         phraseLines,
+        verseLines,
         noteLines,
         noteSize,
-        height: headerH + phrasesH + noteH,
+        height: headerH + bodyH + noteH,
       };
     });
 
@@ -489,52 +592,153 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     ctx.fillText(b.v.reference, contentX, y + refSize);
     y += refSize + headerGap;
 
-    b.phraseLines.forEach((pl) => {
-      ctx.font = fontFor(pl.style, size);
-      pl.lines.forEach((ln) => {
+    if (b.full) {
+      // ---- full verse, faithful to the reading view ----
+      b.verseLines.forEach((ln, li) => {
         const lineBase = y + size;
-        const tw = ctx.measureText(ln).width;
-        if (pl.style === "highlight") {
-          ctx.fillStyle = highlight;
-          roundRect(
-            ctx,
-            contentX - 8,
-            lineBase - size + size * 0.2,
-            tw + 16,
-            size * 1.1,
-            7
-          );
-          ctx.fill();
+        const pos: { x: number; w: number }[] = [];
+        let cx = contentX;
+        if (li === 0 && b.v.verseNumber != null) {
+          ctx.font = "600 " + Math.round(size * 0.7) + "px " + SANS;
+          ctx.fillStyle = p.muted;
+          ctx.textAlign = "left";
+          ctx.fillText(String(b.v.verseNumber), cx, lineBase - size * 0.04);
+          cx += ctx.measureText(String(b.v.verseNumber)).width + size * 0.34;
         }
-        ctx.fillStyle =
-          pl.style === "bold" || pl.style === "italic" ? accent : p.text;
-        ctx.textAlign = "left";
-        ctx.fillText(ln, contentX, lineBase);
-        if (pl.style === "underline") {
-          ctx.strokeStyle = accent;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(contentX, lineBase + 9);
-          ctx.lineTo(contentX + tw, lineBase + 9);
-          ctx.stroke();
-        } else if (pl.style === "circle") {
-          ctx.strokeStyle = accent;
-          ctx.lineWidth = 2.5;
-          roundRect(
-            ctx,
-            contentX - 6,
-            lineBase - size * 0.86,
-            tw + 12,
-            size * 1.12,
-            size * 0.55
-          );
-          ctx.stroke();
+        ln.forEach((t) => {
+          ctx.font = tokFontV(t, size);
+          pos.push({ x: cx, w: ctx.measureText(t.text).width });
+          cx += ctx.measureText(t.text).width;
+        });
+        // highlight backgrounds (one rounded fill per contiguous run)
+        let i = 0;
+        while (i < ln.length) {
+          const m = catMark(ln[i], ["highlight"]);
+          if (m) {
+            let j = i;
+            while (j + 1 < ln.length && catMark(ln[j + 1], ["highlight"]) === m) j++;
+            const x0 = pos[i].x;
+            const x1 = pos[j].x + pos[j].w;
+            ctx.fillStyle = hlHex(m.color, o.dark);
+            roundRect(ctx, x0 - 3, lineBase - size * 0.82, x1 - x0 + 6, size * 1.04, 5);
+            ctx.fill();
+            i = j + 1;
+          } else i++;
         }
-        y += size * 1.34;
+        // circle / box enclosures (one shape per contiguous run)
+        i = 0;
+        while (i < ln.length) {
+          const m = catMark(ln[i], ["circle", "box"]);
+          if (m) {
+            let j = i;
+            while (j + 1 < ln.length && catMark(ln[j + 1], ["circle", "box"]) === m) j++;
+            const x0 = pos[i].x;
+            const x1 = pos[j].x + pos[j].w;
+            ctx.strokeStyle = penHex(m.color, o.dark);
+            ctx.lineWidth = 2.5;
+            roundRect(
+              ctx,
+              x0 - 5,
+              lineBase - size * 0.86,
+              x1 - x0 + 10,
+              size * 1.12,
+              m.style === "circle" ? size * 0.55 : 4
+            );
+            ctx.stroke();
+            i = j + 1;
+          } else i++;
+        }
+        // words (bold/italic take the pen color; otherwise body text)
+        ln.forEach((t, k) => {
+          const bold = t.marks.some((m) => m.style === "bold");
+          const ital = t.marks.some((m) => m.style === "italic");
+          ctx.font = tokFontV(t, size);
+          ctx.fillStyle = bold || ital ? accent : p.text;
+          ctx.textAlign = "left";
+          ctx.fillText(t.text, pos[k].x, lineBase);
+        });
+        // underline / dashed / squiggly (one stroke per contiguous run)
+        const decos = ["underline", "dashed", "squiggly"];
+        i = 0;
+        while (i < ln.length) {
+          const m = catMark(ln[i], decos);
+          if (m) {
+            let j = i;
+            while (j + 1 < ln.length && catMark(ln[j + 1], decos) === m) j++;
+            const x0 = pos[i].x;
+            const x1 = pos[j].x + pos[j].w;
+            const uy = lineBase + Math.round(size * 0.16);
+            if (m.style === "squiggly") {
+              wavy(x0, x1, uy, size, penHex(m.color, o.dark));
+            } else {
+              ctx.strokeStyle = penHex(m.color, o.dark);
+              ctx.lineWidth = 2.5;
+              ctx.setLineDash(m.style === "dashed" ? [6, 4] : []);
+              ctx.beginPath();
+              ctx.moveTo(x0, uy);
+              ctx.lineTo(x1, uy);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            i = j + 1;
+          } else i++;
+        }
+        y += size * lineMul;
       });
-      y += phraseGap;
-    });
-    y -= phraseGap; // remove trailing gap after the last phrase
+    } else {
+      // ---- focused snippets (each marked phrase on its own line) ----
+      b.phraseLines.forEach((pl) => {
+        ctx.font = fontFor(pl.style, size);
+        pl.lines.forEach((ln) => {
+          const lineBase = y + size;
+          const tw = ctx.measureText(ln).width;
+          if (pl.style === "highlight") {
+            ctx.fillStyle = highlight;
+            roundRect(
+              ctx,
+              contentX - 8,
+              lineBase - size + size * 0.2,
+              tw + 16,
+              size * 1.1,
+              7
+            );
+            ctx.fill();
+          }
+          if (pl.style === "circle" || pl.style === "box") {
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 2.5;
+            roundRect(
+              ctx,
+              contentX - 6,
+              lineBase - size * 0.86,
+              tw + 12,
+              size * 1.12,
+              pl.style === "circle" ? size * 0.55 : 4
+            );
+            ctx.stroke();
+          }
+          ctx.fillStyle =
+            pl.style === "bold" || pl.style === "italic" ? accent : p.text;
+          ctx.textAlign = "left";
+          ctx.fillText(ln, contentX, lineBase);
+          if (pl.style === "underline" || pl.style === "dashed") {
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 3;
+            ctx.setLineDash(pl.style === "dashed" ? [6, 4] : []);
+            ctx.beginPath();
+            ctx.moveTo(contentX, lineBase + 9);
+            ctx.lineTo(contentX + tw, lineBase + 9);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else if (pl.style === "squiggly") {
+            wavy(contentX, contentX + tw, lineBase + 9, size, accent);
+          }
+          y += size * 1.34;
+        });
+        y += phraseGap;
+      });
+      y -= phraseGap; // remove trailing gap after the last phrase
+    }
 
     // per-verse note (muted italic, beneath the phrases)
     if (b.noteLines.length) {
