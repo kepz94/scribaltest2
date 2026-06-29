@@ -10421,7 +10421,7 @@ export default function MobileApp() {
           deleteBook={deleteBook}
           setActiveBook={setActiveBook}
           addMark={addMark}
-          seedScopeLabels={seedScopeLabels}
+          setScopedLabel={setScopedLabel}
           marks={marks}
           activeBookId={activeBookId}
           loc={loc}
