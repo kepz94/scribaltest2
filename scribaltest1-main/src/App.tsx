@@ -9617,14 +9617,14 @@ export default function App() {
                       multi && isActive ? "2px solid " + ICON_ACCENT : "none",
                     outlineOffset: "-2px",
                     position: "relative",
-                    overflow: multi ? "hidden" : "visible",
-                    height: multi ? "calc(100vh - 150px)" : "auto",
+                    overflow: "hidden",
+                    height: "calc(100vh - 150px)",
                   }}
                 >
                   <div
                     style={{
-                      height: multi ? "100%" : "auto",
-                      overflowY: multi ? "auto" : "visible",
+                      height: "100%",
+                      overflowY: "auto",
                     }}
                   >
                   {study && study.note && (
@@ -9665,6 +9665,12 @@ export default function App() {
                     toolbarOrient={toolbarOrient}
                     onToolbarOrient={setToolbarOrient}
                     panelMode={multi}
+                    controlsStickyTop={
+                      // The reader column is its own fixed-height scroller in
+                      // both single and multi pane, so the pinned header sits at
+                      // the top of that scroller (0) in every case.
+                      0
+                    }
                     fontScale={reading.fontScale}
                     lineScale={reading.lineScale}
                     warm={reading.warm}
