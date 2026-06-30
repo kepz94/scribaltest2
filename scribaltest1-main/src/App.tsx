@@ -1081,6 +1081,23 @@ export default function App() {
       makeTabId("master", 0, 0, 0)
   );
 
+  // Drag-to-reorder reading panels. dragTabRef holds the panel being dragged;
+  // dragOverTab is the panel currently under the cursor (for the drop hint).
+  const dragTabRef = useRef<string | null>(null);
+  const [dragOverTab, setDragOverTab] = useState<string | null>(null);
+  const reorderTabs = (fromId: string | null, toId: string) => {
+    if (!fromId || fromId === toId) return;
+    setTabs((prev) => {
+      const fromIdx = prev.findIndex((t) => t.id === fromId);
+      const toIdx = prev.findIndex((t) => t.id === toId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
   // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
   // the same group are one study — they compile together and share one set of
   // theme names. Different groups are fully independent (no theme bleed).
@@ -2690,7 +2707,7 @@ export default function App() {
     return out;
   };
 
-  const runCompile = (tabIds: string[]) => {
+  const runCompile = (tabIds: string[], animate = true) => {
     setCompileVirtualTabs(null);
     setCompileStudyId(null);
     const ids = tabIds.length ? tabIds : tabs.map((t) => t.id);
@@ -2715,6 +2732,12 @@ export default function App() {
       if (ex) defName = ex.name;
     }
     setCompileName(defName);
+    // Opening an existing study jumps straight to its notes; only the Compile
+    // button plays the gather animation.
+    if (!animate) {
+      setMode("compile");
+      return;
+    }
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -3338,7 +3361,18 @@ export default function App() {
     // Reopen on the view this study was saved in (Relational, Distilled, …)
     // instead of whatever view happened to be on screen.
     setCompileView(s.view ?? "outline");
-    runCompile(tabIds);
+    // Jump straight to the notes (no gather animation). If the study has no
+    // marks yet, there are no notes to show, so just open its chapters in the
+    // reading panel so the user can start marking.
+    const scopeSet = scopesFromTabIds(tabIds);
+    const hasMarks = getBook(s.bookId).marks.some((m) =>
+      scopeSet.has(scopeOfRef(m.reference))
+    );
+    if (hasMarks) {
+      runCompile(tabIds, false);
+    } else {
+      setMode("read");
+    }
   };
 
   // ---- keyword (search) studies ----
@@ -9740,18 +9774,86 @@ export default function App() {
                   key={t.id}
                   data-compile-tab={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
+                  onDragOver={(e) => {
+                    if (dragTabRef.current && dragTabRef.current !== t.id) {
+                      e.preventDefault();
+                      if (dragOverTab !== t.id) setDragOverTab(t.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverTab === t.id) setDragOverTab(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    reorderTabs(dragTabRef.current, t.id);
+                    dragTabRef.current = null;
+                    setDragOverTab(null);
+                  }}
                   style={{
-                    flex: multi ? "1 0 360px" : 1,
+                    flex: multi ? "1 0 540px" : 1,
                     minWidth: 0,
                     borderRight: multi ? "1px solid var(--border)" : "none",
                     outline:
                       multi && isActive ? "2px solid " + ICON_ACCENT : "none",
                     outlineOffset: "-2px",
+                    boxShadow:
+                      dragOverTab === t.id
+                        ? "inset 4px 0 0 " + ICON_ACCENT
+                        : "none",
                     position: "relative",
                     overflow: "hidden",
                     height: "calc(100vh - 164px)",
                   }}
                 >
+                  {multi && (
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        dragTabRef.current = t.id;
+                        e.dataTransfer.effectAllowed = "move";
+                        try {
+                          e.dataTransfer.setData("text/plain", t.id);
+                        } catch (err) {
+                          /* some browsers require a payload; ignore if it throws */
+                        }
+                      }}
+                      onDragEnd={() => {
+                        dragTabRef.current = null;
+                        setDragOverTab(null);
+                      }}
+                      title="Drag to reorder this panel"
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        left: 6,
+                        zIndex: 6,
+                        width: 24,
+                        height: 18,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "grab",
+                        borderRadius: 5,
+                        color: "var(--muted)",
+                        background: "var(--panel)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <svg
+                        width="11"
+                        height="13"
+                        viewBox="0 0 11 13"
+                        fill="currentColor"
+                      >
+                        <circle cx="3" cy="2.5" r="1.15" />
+                        <circle cx="8" cy="2.5" r="1.15" />
+                        <circle cx="3" cy="6.5" r="1.15" />
+                        <circle cx="8" cy="6.5" r="1.15" />
+                        <circle cx="3" cy="10.5" r="1.15" />
+                        <circle cx="8" cy="10.5" r="1.15" />
+                      </svg>
+                    </div>
+                  )}
                   <div
                     style={{
                       height: "100%",
