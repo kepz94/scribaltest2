@@ -19,10 +19,9 @@ import { NEUTRAL, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
 import SplashScreen from "./components/SplashScreen";
 import StyleGlyph from "./components/StyleGlyph";
-import MobileCompileAnimation, {
+import MobileCompileBook, {
   CompileFlyer,
-  CompileBucket,
-} from "./components/MobileCompileAnimation";
+} from "./components/MobileCompileBook";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
@@ -1332,8 +1331,8 @@ export default function MobileApp() {
     show: boolean;
     duration: number;
     flyers: CompileFlyer[];
-    buckets: CompileBucket[];
-  }>({ show: false, duration: 1000, flyers: [], buckets: [] });
+    colors: number[];
+  }>({ show: false, duration: 1000, flyers: [], colors: [] });
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -3013,7 +3012,14 @@ export default function MobileApp() {
   );
 
   // ---- Compile (gathering animation, then full-screen view) ----
-  const startCompile = () => {
+  // Source marks default to the current chapter's; pass a study's marks for
+  // keyword / linked / combined compiles. useScreen pulls the on-screen marks
+  // off the page (reading-view compile); off-screen studies pass useScreen=false
+  // so the book fills from the study's own mark colors instead.
+  const startCompile = (
+    sourceMarks: { color: number }[] = studyMarks,
+    useScreen: boolean = true
+  ) => {
     const lastCount = Number(
       localStorage.getItem("scribal_mobile_compile_count") || "0"
     );
@@ -3026,44 +3032,34 @@ export default function MobileApp() {
     // matter how large the study is. The viewport filter naturally excludes any
     // off-screen or hidden reader.
     const flyers: CompileFlyer[] = [];
-    try {
-      const vh = window.innerHeight;
-      document
-        .querySelectorAll<HTMLElement>("[data-mc]")
-        .forEach((el) => {
-          const r = el.getBoundingClientRect();
-          if (r.height > 0 && r.top < vh - 4 && r.bottom > 4) {
-            flyers.push({
-              x: r.left,
-              y: r.top,
-              w: r.width,
-              h: r.height,
-              color: Number(el.getAttribute("data-mc")) || 1,
-              text: (el.textContent || "").trim(),
-            });
-          }
-        });
-    } catch (e) {
-      /* DOM not ready — fall back to a count-only animation */
+    if (useScreen) {
+      try {
+        const vh = window.innerHeight;
+        document
+          .querySelectorAll<HTMLElement>("[data-mc]")
+          .forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.height > 0 && r.top < vh - 4 && r.bottom > 4) {
+              flyers.push({
+                x: r.left,
+                y: r.top,
+                w: r.width,
+                h: r.height,
+                color: Number(el.getAttribute("data-mc")) || 1,
+                text: (el.textContent || "").trim(),
+              });
+            }
+          });
+      } catch (e) {
+        /* DOM not ready — fall back to the color-only (synth) animation */
+      }
     }
     const capped = flyers.slice(0, 28);
 
-    // True totals: every compiled mark grouped by color. A few words fly; these
-    // counts carry the real scale (on-screen and off).
-    const totals = new Map<number, number>();
-    studyMarks.forEach((m) =>
-      totals.set(m.color, (totals.get(m.color) || 0) + 1)
-    );
-    const buckets: CompileBucket[] = Array.from(totals.entries())
-      .map(([color, count]) => ({
-        color,
-        count,
-        name: scopeLabels[color] || "Color " + color,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
+    // Colors that drop into the book when there are no on-screen marks to pull.
+    const colors = sourceMarks.map((m) => m.color).slice(0, 24);
 
-    setCompileAnim({ show: true, duration, flyers: capped, buckets });
+    setCompileAnim({ show: true, duration, flyers: capped, colors });
   };
 
   // Record the current chapter (or its linked group) as a study, then compile.
@@ -3166,12 +3162,13 @@ export default function MobileApp() {
           )
         : [s.scopeRef];
     const extra = s.extraRefs || [];
-    const hasMarks = allMarks.some(
+    const recMarks = allMarks.filter(
       (m) =>
         m.bookId === s.bookId &&
         (chs.includes(scopeOf(m.reference)) || extra.includes(m.reference))
     );
-    setCompileOpen(hasMarks);
+    if (recMarks.length > 0) startCompile(recMarks, false);
+    else setCompileOpen(false);
   };
   // Open a keyword study straight to its compiled notes (in its saved view),
   // with the study's verse list positioned underneath for when the notes are
@@ -3183,10 +3180,11 @@ export default function MobileApp() {
     setCompileRec(null);
     setCompileStudy(ss);
     // No marks → the compiled notes are empty; show the verse list instead.
-    const hasMarks = allMarks.some(
+    const kwMarks = allMarks.filter(
       (m) => m.bookId === ss.bookId && ss.refs.includes(m.reference)
     );
-    setCompileOpen(hasMarks);
+    if (kwMarks.length > 0) startCompile(kwMarks, false);
+    else setCompileOpen(false);
   };
   const deleteStudy = (id: string) => {
     setStudies((prev) =>
@@ -8198,7 +8196,14 @@ export default function MobileApp() {
                 <button
                   onClick={() => {
                     setCompileStudy(study);
-                    setCompileOpen(true);
+                    setCompileRec(null);
+                    const kwMarks = allMarks.filter(
+                      (m) =>
+                        m.bookId === study.bookId &&
+                        study.refs.includes(m.reference)
+                    );
+                    if (kwMarks.length > 0) startCompile(kwMarks, false);
+                    else setCompileOpen(true);
                   }}
                   disabled={removeMode || sendMode}
                   aria-label="Compile this study"
@@ -9513,9 +9518,9 @@ export default function MobileApp() {
 
       {/* Compile: gathering animation, then the full-screen view */}
       {compileAnim.show && (
-        <MobileCompileAnimation
+        <MobileCompileBook
           flyers={compileAnim.flyers}
-          buckets={compileAnim.buckets}
+          colors={compileAnim.colors}
           duration={compileAnim.duration}
           onDone={() => {
             setCompileAnim((a) => ({ ...a, show: false }));
@@ -9560,7 +9565,13 @@ export default function MobileApp() {
           const goCompile = () => {
             setCompileStudy(null);
             setCompileRec(rec);
-            setCompileOpen(true);
+            const recMarks = marks.filter(
+              (m) =>
+                recScopes.includes(scopeOf(m.reference)) ||
+                extras.includes(m.reference)
+            );
+            if (recMarks.length > 0) startCompile(recMarks, false);
+            else setCompileOpen(true);
             setMarkRec(null);
           };
           return (
