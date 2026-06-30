@@ -6918,7 +6918,7 @@ export default function App() {
           flyers={compileAnim.flyers}
           colors={compileAnim.colors}
           scale={1.55}
-          cap={20}
+          cap={30}
           duration={compileAnim.duration}
           onDone={finishCompileAnim}
         />
