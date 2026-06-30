@@ -19,7 +19,10 @@ import { NEUTRAL, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
 import SplashScreen from "./components/SplashScreen";
 import StyleGlyph from "./components/StyleGlyph";
-import CompileAnimation from "./components/CompileAnimation";
+import MobileCompileAnimation, {
+  CompileFlyer,
+  CompileBucket,
+} from "./components/MobileCompileAnimation";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
@@ -1328,7 +1331,9 @@ export default function MobileApp() {
   const [compileAnim, setCompileAnim] = useState<{
     show: boolean;
     duration: number;
-  }>({ show: false, duration: 1000 });
+    flyers: CompileFlyer[];
+    buckets: CompileBucket[];
+  }>({ show: false, duration: 1000, flyers: [], buckets: [] });
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -3015,7 +3020,50 @@ export default function MobileApp() {
     const delta = Math.max(0, marks.length - lastCount);
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_mobile_compile_count", String(marks.length));
-    setCompileAnim({ show: true, duration });
+
+    // Capture only the marks currently on screen (their position, color, and
+    // text) so the animation flies a legible handful — never hundreds — no
+    // matter how large the study is. The viewport filter naturally excludes any
+    // off-screen or hidden reader.
+    const flyers: CompileFlyer[] = [];
+    try {
+      const vh = window.innerHeight;
+      document
+        .querySelectorAll<HTMLElement>("[data-mc]")
+        .forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.height > 0 && r.top < vh - 4 && r.bottom > 4) {
+            flyers.push({
+              x: r.left,
+              y: r.top,
+              w: r.width,
+              h: r.height,
+              color: Number(el.getAttribute("data-mc")) || 1,
+              text: (el.textContent || "").trim(),
+            });
+          }
+        });
+    } catch (e) {
+      /* DOM not ready — fall back to a count-only animation */
+    }
+    const capped = flyers.slice(0, 28);
+
+    // True totals: every compiled mark grouped by color. A few words fly; these
+    // counts carry the real scale (on-screen and off).
+    const totals = new Map<number, number>();
+    studyMarks.forEach((m) =>
+      totals.set(m.color, (totals.get(m.color) || 0) + 1)
+    );
+    const buckets: CompileBucket[] = Array.from(totals.entries())
+      .map(([color, count]) => ({
+        color,
+        count,
+        name: scopeLabels[color] || "Color " + color,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+
+    setCompileAnim({ show: true, duration, flyers: capped, buckets });
   };
 
   // Record the current chapter (or its linked group) as a study, then compile.
@@ -9465,7 +9513,9 @@ export default function MobileApp() {
 
       {/* Compile: gathering animation, then the full-screen view */}
       {compileAnim.show && (
-        <CompileAnimation
+        <MobileCompileAnimation
+          flyers={compileAnim.flyers}
+          buckets={compileAnim.buckets}
           duration={compileAnim.duration}
           onDone={() => {
             setCompileAnim((a) => ({ ...a, show: false }));
