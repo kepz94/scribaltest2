@@ -35,7 +35,7 @@ import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
 
 import Shortcuts from "./components/Shortcuts";
-import CompileAnimation from "./components/CompileAnimation";
+import CompileBook, { CompileFlyer } from "./components/CompileBook";
 import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
 import scriptures from "./data/scriptures.json";
@@ -1249,7 +1249,9 @@ export default function App() {
   const [compileAnim, setCompileAnim] = useState<{
     show: boolean;
     duration: number;
-  }>({ show: false, duration: 1000 });
+    flyers: CompileFlyer[];
+    colors: number[];
+  }>({ show: false, duration: 1000, flyers: [], colors: [] });
 
   // When more than one separate thing is open, compile asks what to combine
   // instead of silently merging everything.
@@ -2603,6 +2605,45 @@ export default function App() {
     return units;
   };
 
+  // Capture the marked words on screen for a compile, scoped to the panels
+  // actually being compiled (data-compile-tab in tabIds). Marks in any other
+  // open panel are ignored, and only what's in the viewport is taken — so the
+  // animation flies a legible handful, never hundreds.
+  const captureCompileFlyers = (tabIds: string[]): CompileFlyer[] => {
+    const set = new Set(tabIds);
+    const out: CompileFlyer[] = [];
+    try {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      document.querySelectorAll<HTMLElement>("[data-mc]").forEach((el) => {
+        const panel = el.closest("[data-compile-tab]");
+        if (!panel) return;
+        const tid = panel.getAttribute("data-compile-tab");
+        if (!tid || !set.has(tid)) return;
+        const r = el.getBoundingClientRect();
+        if (
+          r.height <= 0 ||
+          r.top >= vh - 4 ||
+          r.bottom <= 4 ||
+          r.left >= vw ||
+          r.right <= 0
+        )
+          return;
+        out.push({
+          x: r.left,
+          y: r.top,
+          w: r.width,
+          h: r.height,
+          color: Number(el.getAttribute("data-mc")) || 1,
+          text: (el.textContent || "").trim(),
+        });
+      });
+    } catch (e) {
+      /* DOM not ready — fall back to the color-only (synth) animation */
+    }
+    return out.slice(0, 28);
+  };
+
   const runCompile = (tabIds: string[]) => {
     setCompileVirtualTabs(null);
     setCompileStudyId(null);
@@ -2635,7 +2676,13 @@ export default function App() {
     const delta = Math.max(0, currentCount - lastCount);
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
-    setCompileAnim({ show: true, duration });
+    const flyers = captureCompileFlyers(ids);
+    const scopeSet = new Set(unitTabs.map((t) => chapterScopeOf(t)));
+    const colors = marks
+      .filter((m) => scopeSet.has(scopeOfRef(m.reference)))
+      .map((m) => m.color)
+      .slice(0, 24);
+    setCompileAnim({ show: true, duration, flyers, colors });
   };
 
   const startStudyCompile = (study: SearchStudy) => {
@@ -2649,7 +2696,15 @@ export default function App() {
     const delta = Math.max(0, currentCount - lastCount);
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
-    setCompileAnim({ show: true, duration });
+    const studyTabIds = tabs
+      .filter((t) => t.studyId === study.id)
+      .map((t) => t.id);
+    const flyers = captureCompileFlyers(studyTabIds);
+    const colors = getBook(study.bookId)
+      .marks.filter((m) => study.refs.includes(m.reference))
+      .map((m) => m.color)
+      .slice(0, 24);
+    setCompileAnim({ show: true, duration, flyers, colors });
   };
 
   // Compile a linked keyword search together with its chapter: compile the
@@ -6815,7 +6870,10 @@ export default function App() {
         </div>
       )}
       {compileAnim.show && (
-        <CompileAnimation
+        <CompileBook
+          flyers={compileAnim.flyers}
+          colors={compileAnim.colors}
+          scale={1.55}
           duration={compileAnim.duration}
           onDone={finishCompileAnim}
         />
@@ -9635,6 +9693,7 @@ export default function App() {
               return [
                 <div
                   key={t.id}
+                  data-compile-tab={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
                   style={{
                     flex: multi ? "1 0 360px" : 1,
