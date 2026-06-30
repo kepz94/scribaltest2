@@ -37,10 +37,13 @@ interface Props {
   duration: number;
   // Enlarges the book + orbit for wide (desktop) viewports. 1 = mobile size.
   scale?: number;
+  // Max flying tiles. Defaults to 12 (mobile). Desktop passes more so each of
+  // several panels contributes a visible share.
+  cap?: number;
   onDone: () => void;
 }
 
-const CAP = 12; // marks that fly / drop in (the count is carried by the real view)
+const CAP_DEFAULT = 12; // marks that fly / drop in (the count is carried by the real view)
 const TILE = "#FBF7EC";
 const INK = "#2B2620";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -52,8 +55,9 @@ const RY = 46; // orbit vertical radius (perspective ellipse)
 
 type Dot = { key: string; color: number; text: string; x: number; y: number; w: number; h: number };
 
-export default function CompileBook({ flyers, colors, duration, scale, onDone }: Props) {
+export default function CompileBook({ flyers, colors, duration, scale, cap, onDone }: Props) {
   const S = scale || 1;
+  const CAP = cap ?? CAP_DEFAULT;
   const reduced =
     typeof window !== "undefined" &&
     window.matchMedia &&
