@@ -531,7 +531,11 @@ export default function MobileVerse({
       </span>
       {groups.map((g, gi) =>
         g.mark ? (
-          <span key={"g" + gi} style={markStyleCSS(g.mark.style, g.mark.color)}>
+          <span
+            key={"g" + gi}
+            data-mc={g.mark.color}
+            style={markStyleCSS(g.mark.style, g.mark.color)}
+          >
             {g.idxs.map(renderTok)}
           </span>
         ) : (
