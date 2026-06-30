@@ -254,6 +254,16 @@ export default function CompileBook({ flyers, colors, duration, scale, cap, onDo
   const rightItems: { d: Dot; i: number }[] = [];
   src.forEach((d, i) => (i % 2 === 0 ? leftItems : rightItems).push({ d, i }));
 
+  // Keep the inked rows inside the fixed-height pages no matter how many marks
+  // there are. Usable page height is ~52px (66px page minus padding). Shrink the
+  // slot height, line thickness, and gap to fit when there are many rows; at the
+  // mobile count (~6 rows) this resolves to the original 3px / 2.5px / 5px look.
+  const rowsPerPage = Math.max(leftItems.length, rightItems.length, 1);
+  const pitch = 52 / rowsPerPage;
+  const slotH = Math.max(1.5, Math.min(3, pitch * 0.55));
+  const lineH = Math.max(1, Math.min(2.5, slotH - 0.5));
+  const rowGap = Math.max(1, Math.min(5, pitch - slotH));
+
   const C = center.current;
 
   return (
@@ -349,29 +359,29 @@ export default function CompileBook({ flyers, colors, duration, scale, cap, onDo
           {/* the center book */}
           <div className="mcb-bk" style={{ transform: "scale(" + (coverOpen ? 1.5 : 1) + ")", transition: "transform 0.5s cubic-bezier(0.34,1.2,0.5,1)" }}>
             <div className="mcb-spread" style={{ transform: "scaleX(" + (coverOpen ? 1 : 0.12) + ")" }}>
-              <div className="mcb-page mcb-left">
+              <div className="mcb-page mcb-left" style={{ gap: rowGap + "px" }}>
                 {leftItems.map(({ d, i }) => {
                   const isLanded = !!landed[i];
                   const w = 52 + ((i * 29) % 40);
                   return (
-                    <span key={d.key} className="mcb-slot" ref={(el) => (rowRefs.current[d.key] = el)}>
+                    <span key={d.key} className="mcb-slot" style={{ height: slotH + "px" }} ref={(el) => (rowRefs.current[d.key] = el)}>
                       <span
                         className="mcb-fill"
-                        style={{ width: w + "%", background: penVar(d.color), transform: isLanded ? "scaleX(1)" : "scaleX(0)", opacity: isLanded ? 1 : 0 }}
+                        style={{ width: w + "%", height: lineH + "px", background: penVar(d.color), transform: isLanded ? "scaleX(1)" : "scaleX(0)", opacity: isLanded ? 1 : 0 }}
                       />
                     </span>
                   );
                 })}
               </div>
-              <div className="mcb-page mcb-right">
+              <div className="mcb-page mcb-right" style={{ gap: rowGap + "px" }}>
                 {rightItems.map(({ d, i }) => {
                   const isLanded = !!landed[i];
                   const w = 52 + ((i * 29) % 40);
                   return (
-                    <span key={d.key} className="mcb-slot" ref={(el) => (rowRefs.current[d.key] = el)}>
+                    <span key={d.key} className="mcb-slot" style={{ height: slotH + "px" }} ref={(el) => (rowRefs.current[d.key] = el)}>
                       <span
                         className="mcb-fill"
-                        style={{ width: w + "%", background: penVar(d.color), transform: isLanded ? "scaleX(1)" : "scaleX(0)", opacity: isLanded ? 1 : 0 }}
+                        style={{ width: w + "%", height: lineH + "px", background: penVar(d.color), transform: isLanded ? "scaleX(1)" : "scaleX(0)", opacity: isLanded ? 1 : 0 }}
                       />
                     </span>
                   );
