@@ -3013,13 +3013,11 @@ export default function MobileApp() {
 
   // ---- Compile (gathering animation, then full-screen view) ----
   // Source marks default to the current chapter's; pass a study's marks for
-  // keyword / linked / combined compiles. useScreen pulls the on-screen marks
-  // off the page (reading-view compile); off-screen studies pass useScreen=false
-  // so the book fills from the study's own mark colors instead.
-  const startCompile = (
-    sourceMarks: { color: number }[] = studyMarks,
-    useScreen: boolean = true
-  ) => {
+  // keyword / linked / combined compiles. The animation always pulls whatever
+  // marked words are actually visible on screen (it's a visual effect, not the
+  // canonical marks); when nothing visible is found it falls back to a gather
+  // built from the study's mark colors.
+  const startCompile = (sourceMarks: { color: number }[] = studyMarks) => {
     const lastCount = Number(
       localStorage.getItem("scribal_mobile_compile_count") || "0"
     );
@@ -3032,27 +3030,33 @@ export default function MobileApp() {
     // matter how large the study is. The viewport filter naturally excludes any
     // off-screen or hidden reader.
     const flyers: CompileFlyer[] = [];
-    if (useScreen) {
-      try {
-        const vh = window.innerHeight;
-        document
-          .querySelectorAll<HTMLElement>("[data-mc]")
-          .forEach((el) => {
-            const r = el.getBoundingClientRect();
-            if (r.height > 0 && r.top < vh - 4 && r.bottom > 4) {
-              flyers.push({
-                x: r.left,
-                y: r.top,
-                w: r.width,
-                h: r.height,
-                color: Number(el.getAttribute("data-mc")) || 1,
-                text: (el.textContent || "").trim(),
-              });
-            }
+    try {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      document
+        .querySelectorAll<HTMLElement>("[data-mc]")
+        .forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.height <= 0 || r.top >= vh - 4 || r.bottom <= 4) return;
+          // Only lift it if it's the topmost thing at its center — anything
+          // sitting behind an overlay (e.g. the studies list covering the
+          // reader) is skipped, so that compile falls back to the color gather.
+          const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
+          const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
+          const top = document.elementFromPoint(cx, cy);
+          if (!top || !(el === top || el.contains(top) || top.contains(el)))
+            return;
+          flyers.push({
+            x: r.left,
+            y: r.top,
+            w: r.width,
+            h: r.height,
+            color: Number(el.getAttribute("data-mc")) || 1,
+            text: (el.textContent || "").trim(),
           });
-      } catch (e) {
-        /* DOM not ready — fall back to the color-only (synth) animation */
-      }
+        });
+    } catch (e) {
+      /* DOM not ready — fall back to the color-only (synth) animation */
     }
     const capped = flyers.slice(0, 28);
 
@@ -3167,7 +3171,7 @@ export default function MobileApp() {
         m.bookId === s.bookId &&
         (chs.includes(scopeOf(m.reference)) || extra.includes(m.reference))
     );
-    if (recMarks.length > 0) startCompile(recMarks, false);
+    if (recMarks.length > 0) startCompile(recMarks);
     else setCompileOpen(false);
   };
   // Open a keyword study straight to its compiled notes (in its saved view),
@@ -3183,7 +3187,7 @@ export default function MobileApp() {
     const kwMarks = allMarks.filter(
       (m) => m.bookId === ss.bookId && ss.refs.includes(m.reference)
     );
-    if (kwMarks.length > 0) startCompile(kwMarks, false);
+    if (kwMarks.length > 0) startCompile(kwMarks);
     else setCompileOpen(false);
   };
   const deleteStudy = (id: string) => {
@@ -8202,7 +8206,7 @@ export default function MobileApp() {
                         m.bookId === study.bookId &&
                         study.refs.includes(m.reference)
                     );
-                    if (kwMarks.length > 0) startCompile(kwMarks, false);
+                    if (kwMarks.length > 0) startCompile(kwMarks);
                     else setCompileOpen(true);
                   }}
                   disabled={removeMode || sendMode}
@@ -9570,7 +9574,7 @@ export default function MobileApp() {
                 recScopes.includes(scopeOf(m.reference)) ||
                 extras.includes(m.reference)
             );
-            if (recMarks.length > 0) startCompile(recMarks, false);
+            if (recMarks.length > 0) startCompile(recMarks);
             else setCompileOpen(true);
             setMarkRec(null);
           };
