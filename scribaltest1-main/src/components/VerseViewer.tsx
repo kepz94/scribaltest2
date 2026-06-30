@@ -3,6 +3,7 @@ import scriptures from "../data/scriptures.json";
 import MarkedVerse from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
+import { isSermonsVolume, sermonLabel } from "../sermons";
 
 // Tools that actually paint with the selected color. Everything else — eraser,
 // pointer, define — ignores color, so picking a color while one of them is
@@ -326,6 +327,13 @@ export default function VerseViewer(props: VerseViewerProps) {
 
   const chapterWord =
     currentVolume.volume === "Doctrine and Covenants" ? "Section" : "Chapter";
+
+  // The Joseph Smith sermons volume labels each "chapter" by the date it was
+  // given instead of a meaningless sequence number; every other volume keeps the
+  // usual "Chapter N" / "Section N".
+  const sermonsVol = isSermonsVolume(currentVolume.volume);
+  const chapterLabel = (ch: { chapter: number; title?: string }) =>
+    sermonsVol ? sermonLabel(ch.title, ch.chapter) : chapterWord + " " + ch.chapter;
 
   // Hide the book dropdown for single-book volumes (e.g. D&C)
   const showBook = currentVolume.books.length > 1;
@@ -1130,7 +1138,7 @@ export default function VerseViewer(props: VerseViewerProps) {
 
           {/* Chapter / Section */}
           <div style={{ position: "relative" }}>
-            {pillButton(chapterWord + " " + currentChapter.chapter, () => {
+            {pillButton(chapterLabel(currentChapter), () => {
               setChapMenuOpen((o) => !o);
               setVolMenuOpen(false);
               setBookMenuOpen(false);
@@ -1139,7 +1147,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               dropdownPanel(
                 currentBook.chapters.map((ch, idx) =>
                   menuItem(
-                    chapterWord + " " + ch.chapter,
+                    chapterLabel(ch),
                     idx === selectedChapter,
                     () => {
                       onChange(selectedVolume, selectedBook, idx);
@@ -1148,7 +1156,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                   )
                 ),
                 () => setChapMenuOpen(false),
-                160
+                sermonsVol ? 220 : 160
               )}
           </div>
         </div>
