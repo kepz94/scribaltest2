@@ -106,6 +106,12 @@ interface VerseViewerProps {
     color: string;
     title: string;
   };
+  // How far from the top of the scroll area the function-button row (Link
+  // scriptures / Send verses / Find conditionals) pins while reading. Defaults to
+  // 0, which is right when the row's own scroll container starts at the panel
+  // top; the main single-pane reading view passes the fixed header + legend
+  // height so the pinned row clears them.
+  controlsStickyTop?: number;
 }
 
 type Orientation = "vertical" | "horizontal";
@@ -178,6 +184,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     onToolbarPos: setPos,
     toolbarOrient: orientation,
     onToolbarOrient: setOrientation,
+    controlsStickyTop = 0,
   } = props;
 
   const currentVolume = vols[selectedVolume];
@@ -1051,6 +1058,20 @@ export default function VerseViewer(props: VerseViewerProps) {
           margin: "0 auto",
         }}
       >
+        {/* Reading chrome that stays put while the verses scroll: the
+            volume/book/chapter header, the function-button row, and the
+            send/remove mode bars all pin together above the text. */}
+        <div
+          style={{
+            position: "sticky",
+            top: controlsStickyTop,
+            zIndex: 20,
+            backgroundColor: "var(--bg)",
+            paddingTop: "6px",
+            marginBottom: "10px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
         {studyRefs ? (
           hideStudyHeader ? null : (
           <div style={{ marginBottom: "18px", textAlign: "center" }}>
@@ -1572,6 +1593,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             Eraser active — click any marked text to remove that mark.
           </p>
         )}
+        </div>
 
         <div
           ref={bodyRef}
