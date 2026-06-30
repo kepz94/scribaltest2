@@ -2622,13 +2622,13 @@ export default function App() {
     return set;
   };
 
-  // Capture the marked words on screen for a compile. A mark is taken only if
-  // it sits in a reading panel (data-compile-tab) AND its verse is part of the
-  // compile (inScope) AND it's in the viewport. So words lift from EVERY panel
-  // being compiled — matched by chapter, not by tab id — and panels showing
-  // anything else are ignored.
+  // Capture the marked words on screen for a compile. A mark is taken if it
+  // sits in a reading panel (data-compile-tab) and it's in the viewport. When
+  // an inScope filter is given (keyword studies) the mark's verse must also be
+  // part of the compile; for chapter/linked compiles no filter is passed, so
+  // words lift from every open reading panel on screen.
   const captureCompileFlyers = (
-    inScope: (ref: string) => boolean
+    inScope?: (ref: string) => boolean
   ): CompileFlyer[] => {
     const out: CompileFlyer[] = [];
     try {
@@ -2636,10 +2636,11 @@ export default function App() {
       const vh = window.innerHeight;
       document.querySelectorAll<HTMLElement>("[data-mc]").forEach((el) => {
         if (!el.closest("[data-compile-tab]")) return;
-        const verse = el.closest("[data-verse-ref]");
-        if (!verse) return;
-        const ref = verse.getAttribute("data-verse-ref") || "";
-        if (!inScope(ref)) return;
+        if (inScope) {
+          const verse = el.closest("[data-verse-ref]");
+          const ref = verse ? verse.getAttribute("data-verse-ref") || "" : "";
+          if (!inScope(ref)) return;
+        }
         const r = el.getBoundingClientRect();
         if (
           r.height <= 0 ||
@@ -2697,7 +2698,7 @@ export default function App() {
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
     const scopeSet = scopesFromTabIds(ids);
-    const flyers = captureCompileFlyers((ref) => scopeSet.has(scopeOfRef(ref)));
+    const flyers = captureCompileFlyers();
     const colors = marks
       .filter((m) => scopeSet.has(scopeOfRef(m.reference)))
       .map((m) => m.color)
