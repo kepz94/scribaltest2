@@ -2631,16 +2631,31 @@ export default function App() {
     inScope?: (ref: string) => boolean
   ): CompileFlyer[] => {
     const out: CompileFlyer[] = [];
+    // --- TEMP COMPILE PROBE (remove after diagnosing) ---
+    const probe = {
+      dataMcTotal: 0,
+      insidePanels: 0,
+      passedScope: 0,
+      captured: 0,
+      perPanel: {} as Record<string, number>,
+      skipped: [] as string[],
+    };
+    // ---
     try {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       document.querySelectorAll<HTMLElement>("[data-mc]").forEach((el) => {
-        if (!el.closest("[data-compile-tab]")) return;
+        probe.dataMcTotal++;
+        const panel = el.closest("[data-compile-tab]");
+        if (!panel) return;
+        probe.insidePanels++;
         if (inScope) {
           const verse = el.closest("[data-verse-ref]");
           const ref = verse ? verse.getAttribute("data-verse-ref") || "" : "";
           if (!inScope(ref)) return;
         }
+        probe.passedScope++;
+        const tid = panel.getAttribute("data-compile-tab") || "?";
         const r = el.getBoundingClientRect();
         if (
           r.height <= 0 ||
@@ -2648,8 +2663,23 @@ export default function App() {
           r.bottom <= 4 ||
           r.left >= vw ||
           r.right <= 0
-        )
+        ) {
+          if (probe.skipped.length < 8)
+            probe.skipped.push(
+              tid +
+                " L" +
+                Math.round(r.left) +
+                " T" +
+                Math.round(r.top) +
+                " W" +
+                Math.round(r.width) +
+                " H" +
+                Math.round(r.height)
+            );
           return;
+        }
+        probe.captured++;
+        probe.perPanel[tid] = (probe.perPanel[tid] || 0) + 1;
         out.push({
           x: r.left,
           y: r.top,
@@ -2662,6 +2692,32 @@ export default function App() {
     } catch (e) {
       /* DOM not ready — fall back to the color-only (synth) animation */
     }
+    // --- TEMP COMPILE PROBE ---
+    try {
+      (window as any).__scribalCompileProbe = probe;
+      // eslint-disable-next-line
+      console.log(
+        "SCRIBAL COMPILE PROBE | vw" +
+          window.innerWidth +
+          " vh" +
+          window.innerHeight +
+          " || data-mc on page=" +
+          probe.dataMcTotal +
+          " | inside reading panels=" +
+          probe.insidePanels +
+          " | passed scope=" +
+          probe.passedScope +
+          " | CAPTURED=" +
+          probe.captured +
+          " | per-panel=" +
+          JSON.stringify(probe.perPanel) +
+          " | skipped(offscreen)=" +
+          JSON.stringify(probe.skipped)
+      );
+    } catch (e) {
+      /* ignore */
+    }
+    // ---
     return out.slice(0, 28);
   };
 
