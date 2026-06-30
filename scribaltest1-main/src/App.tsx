@@ -2605,21 +2605,41 @@ export default function App() {
     return units;
   };
 
-  // Capture the marked words on screen for a compile, scoped to the panels
-  // actually being compiled (data-compile-tab in tabIds). Marks in any other
-  // open panel are ignored, and only what's in the viewport is taken — so the
-  // animation flies a legible handful, never hundreds.
-  const captureCompileFlyers = (tabIds: string[]): CompileFlyer[] => {
-    const set = new Set(tabIds);
+  // Resolve compile tab ids (real OR the synthetic ones a linked-study compile
+  // builds) to the chapter scopes they cover. Tab ids encode volume/book/chapter
+  // as their last three segments, so this works even when the ids don't match
+  // any open tab.
+  const scopesFromTabIds = (tabIds: string[]): Set<string> => {
+    const set = new Set<string>();
+    tabIds.forEach((id) => {
+      const p = id.split("_");
+      const chapter = Number(p[p.length - 1]);
+      const book = Number(p[p.length - 2]);
+      const volume = Number(p[p.length - 3]);
+      const sc = chapterScopeOf({ volume, book, chapter });
+      if (sc) set.add(sc);
+    });
+    return set;
+  };
+
+  // Capture the marked words on screen for a compile. A mark is taken only if
+  // it sits in a reading panel (data-compile-tab) AND its verse is part of the
+  // compile (inScope) AND it's in the viewport. So words lift from EVERY panel
+  // being compiled — matched by chapter, not by tab id — and panels showing
+  // anything else are ignored.
+  const captureCompileFlyers = (
+    inScope: (ref: string) => boolean
+  ): CompileFlyer[] => {
     const out: CompileFlyer[] = [];
     try {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       document.querySelectorAll<HTMLElement>("[data-mc]").forEach((el) => {
-        const panel = el.closest("[data-compile-tab]");
-        if (!panel) return;
-        const tid = panel.getAttribute("data-compile-tab");
-        if (!tid || !set.has(tid)) return;
+        if (!el.closest("[data-compile-tab]")) return;
+        const verse = el.closest("[data-verse-ref]");
+        if (!verse) return;
+        const ref = verse.getAttribute("data-verse-ref") || "";
+        if (!inScope(ref)) return;
         const r = el.getBoundingClientRect();
         if (
           r.height <= 0 ||
@@ -2676,8 +2696,8 @@ export default function App() {
     const delta = Math.max(0, currentCount - lastCount);
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
-    const flyers = captureCompileFlyers(ids);
-    const scopeSet = new Set(unitTabs.map((t) => chapterScopeOf(t)));
+    const scopeSet = scopesFromTabIds(ids);
+    const flyers = captureCompileFlyers((ref) => scopeSet.has(scopeOfRef(ref)));
     const colors = marks
       .filter((m) => scopeSet.has(scopeOfRef(m.reference)))
       .map((m) => m.color)
@@ -2696,12 +2716,10 @@ export default function App() {
     const delta = Math.max(0, currentCount - lastCount);
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
-    const studyTabIds = tabs
-      .filter((t) => t.studyId === study.id)
-      .map((t) => t.id);
-    const flyers = captureCompileFlyers(studyTabIds);
+    const refSet = new Set(study.refs);
+    const flyers = captureCompileFlyers((ref) => refSet.has(ref));
     const colors = getBook(study.bookId)
-      .marks.filter((m) => study.refs.includes(m.reference))
+      .marks.filter((m) => refSet.has(m.reference))
       .map((m) => m.color)
       .slice(0, 24);
     setCompileAnim({ show: true, duration, flyers, colors });
