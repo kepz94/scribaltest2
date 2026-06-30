@@ -11,6 +11,7 @@ import {
   HIGHLIGHT_MAP,
 } from "./types";
 import MobileVerse from "./MobileVerse";
+import { isSermonsVolume, sermonLabel } from "./sermons";
 import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
@@ -1519,7 +1520,11 @@ export default function MobileApp() {
 
   const chapter = vols[loc.v].books[loc.b].chapters[loc.c];
   const bookName = vols[loc.v].books[loc.b].book;
-  const displayTitle = bookName + " " + chapter.chapter;
+  // The Joseph Smith sermons volume titles each entry by the date it was given
+  // rather than a sequence number; every other volume keeps "<Book> <chapter>".
+  const displayTitle = isSermonsVolume(vols[loc.v].volume)
+    ? sermonLabel((chapter as { title?: string }).title, chapter.chapter)
+    : bookName + " " + chapter.chapter;
 
   // Gentle progress: a quiet reflection of the study so far — distinct chapters
   // and books marked, plus total marks across every book. No streaks, no goals.
