@@ -145,6 +145,7 @@ export default function MarkedVerse({
 
             body = (
               <span
+                data-mc={hasMark ? pickMark.color : undefined}
                 style={style}
                 title={
                   onEraseMark && hasMark
