@@ -520,6 +520,201 @@ const MergeMoment = () => {
   );
 };
 
+// The center-screen "Chapters linked" moment — the same motion as the combined
+// splash but in the red chapter-study color (two reds fusing into one), shown
+// when two chapters are linked into one study. Reuses the mo-* animation
+// classes; only the colors are overridden inline.
+const ChapterLinkMoment = () => {
+  const lk = (cls: string) => (
+    <svg
+      className={"mo-lk " + cls}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={TYPE_RED}
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+    </svg>
+  );
+  return (
+    <div className="mo-wrap">
+      <div className="mo-stage">
+        <span
+          className="mo-glow"
+          style={{
+            background:
+              "radial-gradient(circle, " +
+              TYPE_RED +
+              "73, " +
+              TYPE_RED +
+              "00 70%)",
+          }}
+        />
+        <span className="mo-ripple" style={{ borderColor: TYPE_RED }} />
+        {lk("mo-red")}
+        {lk("mo-blue")}
+        {lk("mo-purple")}
+      </div>
+      <div className="mo-label">
+        <div className="mo-big">Chapters linked</div>
+        <div className="mo-small">Linked into one study</div>
+      </div>
+    </div>
+  );
+};
+
+// Copied from the desktop shell: the lighter "Keywords added" pulse that plays
+// when a study you already have gains verses (distinct from a link). On a phone
+// there is one panel, so it always renders fixed / viewport-centered.
+const GrowLink = ({ cls, w = 30 }: { cls: string; w?: number }) => (
+  <svg
+    className={cls}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={TYPE_BLUE}
+    strokeWidth={2.4}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      width: w,
+      height: w,
+    }}
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+  </svg>
+);
+
+const GrowPulse = ({ fixed }: { fixed?: boolean }) => (
+  <div
+    style={{
+      position: fixed ? "fixed" : "absolute",
+      inset: 0,
+      pointerEvents: "none",
+      zIndex: 30,
+      overflow: "hidden",
+    }}
+  >
+    <style>{`
+      @keyframes scribal-grow-dim {
+        0% { opacity: 0; }
+        18% { opacity: 1; }
+        72% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-left {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(-70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(-30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-right {
+        0% { opacity: 0; transform: translate(-50%,-50%) translateX(70px) scale(.85); }
+        22% { opacity: 1; transform: translate(-50%,-50%) translateX(30px) scale(1); }
+        46% { opacity: 1; transform: translate(-50%,-50%) translateX(0) scale(1); }
+        58% { opacity: 0; transform: translate(-50%,-50%) translateX(0) scale(.9); }
+        100% { opacity: 0; }
+      }
+      @keyframes scribal-grow-pop {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        54% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
+        66% { transform: translate(-50%,-50%) scale(.95); }
+        74% { transform: translate(-50%,-50%) scale(1.05); }
+        84% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-grow-glow {
+        0%, 42% { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+        56% { opacity: .5; transform: translate(-50%,-50%) scale(1.5); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
+      }
+      @keyframes scribal-grow-ripple {
+        0%, 48% { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
+        56% { opacity: .7; }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+      }
+      @keyframes scribal-grow-label {
+        0%, 52% { opacity: 0; transform: translate(-50%,-50%) translateY(64px); }
+        66% { opacity: 1; transform: translate(-50%,-50%) translateY(56px); }
+        86% { opacity: 1; transform: translate(-50%,-50%) translateY(56px); }
+        100% { opacity: 0; transform: translate(-50%,-50%) translateY(56px); }
+      }
+      .scribal-grow-dim { animation: scribal-grow-dim 1.6s ease both; }
+      .scribal-grow-ripple { animation: scribal-grow-ripple 1.6s ease both; }
+      .scribal-grow-glow { animation: scribal-grow-glow 1.6s ease both; }
+      .scribal-grow-left { animation: scribal-grow-left 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-grow-right { animation: scribal-grow-right 1.6s cubic-bezier(.4,0,.2,1) both; }
+      .scribal-grow-pop { animation: scribal-grow-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
+      .scribal-grow-label { animation: scribal-grow-label 1.6s ease both; }
+    `}</style>
+    <div
+      className="scribal-grow-dim"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 420,
+        height: 420,
+        transform: "translate(-50%,-50%)",
+        background:
+          "radial-gradient(circle, rgba(20,16,12,0.12), transparent 62%)",
+      }}
+    />
+    <div
+      className="scribal-grow-ripple"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 120,
+        height: 120,
+        borderRadius: "50%",
+        border: "2.5px solid " + TYPE_BLUE,
+      }}
+    />
+    <div
+      className="scribal-grow-glow"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: 92,
+        height: 92,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, " + TYPE_BLUE + "b3, transparent 65%)",
+      }}
+    />
+    <GrowLink cls="scribal-grow-left" />
+    <GrowLink cls="scribal-grow-right" />
+    <GrowLink cls="scribal-grow-pop" w={34} />
+    <div
+      className="scribal-grow-label"
+      style={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        whiteSpace: "nowrap",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "12px",
+        fontWeight: 800,
+        color: TYPE_BLUE,
+        letterSpacing: "0.02em",
+        textShadow: "0 1px 8px rgba(251,249,244,0.9)",
+      }}
+    >
+      Keywords added
+    </div>
+  </div>
+);
+
 const IconBook = ({ color, size = 17 }: { color: string; size?: number }) => (
   <svg
     width={size}
@@ -1587,6 +1782,70 @@ export default function MobileApp() {
     return () => clearTimeout(t);
   }, [mergeFlash]);
   const triggerMergeFlash = () => setMergeFlash((n) => n + 1);
+
+  // Chapter-link moment + grow pulse, mirroring the desktop link-watcher. A
+  // render-to-render diff of the chapter groups and each study's verse count
+  // fires the right animation no matter which action made the change; the
+  // combined splash above keeps its own trigger. A short ready-gate keeps
+  // loading saved data or a sync from playing anything on startup.
+  const [chapterLinkFlash, setChapterLinkFlash] = useState(0);
+  const [chapterLinkOn, setChapterLinkOn] = useState(false);
+  useEffect(() => {
+    if (!chapterLinkFlash) return;
+    setChapterLinkOn(true);
+    const t = setTimeout(() => setChapterLinkOn(false), 1650);
+    return () => clearTimeout(t);
+  }, [chapterLinkFlash]);
+  const [growFlash, setGrowFlash] = useState(0);
+  const [growOn, setGrowOn] = useState(false);
+  useEffect(() => {
+    if (!growFlash) return;
+    setGrowOn(true);
+    const t = setTimeout(() => setGrowOn(false), 1700);
+    return () => clearTimeout(t);
+  }, [growFlash]);
+  const linkWatchReady = useRef(false);
+  const prevChapGroups = useRef<Record<string, string>>({});
+  const prevStudyRefs = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      linkWatchReady.current = true;
+    }, 1200);
+    return () => window.clearTimeout(id);
+  }, []);
+  useEffect(() => {
+    const curGroups = chapterGroups;
+    const curStudyRefs: Record<string, number> = {};
+    searchStudies.forEach((s) => {
+      if (!isSearchDeleted(s)) curStudyRefs[s.id] = s.refs.length;
+    });
+    if (!linkWatchReady.current) {
+      prevChapGroups.current = curGroups;
+      prevStudyRefs.current = curStudyRefs;
+      return;
+    }
+    // A chapter newly joined (or changed) a group -> chapter-link moment.
+    for (const scope of Object.keys(curGroups)) {
+      if (prevChapGroups.current[scope] === curGroups[scope]) continue;
+      const gid = curGroups[scope];
+      const other = Object.keys(curGroups).find(
+        (s) => s !== scope && curGroups[s] === gid
+      );
+      if (other) setChapterLinkFlash((n) => n + 1);
+      break;
+    }
+    // An existing study that gained verses -> grow pulse (new studies and
+    // removals don't pulse).
+    for (const sid of Object.keys(curStudyRefs)) {
+      const before = prevStudyRefs.current[sid];
+      if (before === undefined) continue;
+      if (curStudyRefs[sid] <= before) continue;
+      setGrowFlash((n) => n + 1);
+      break;
+    }
+    prevChapGroups.current = curGroups;
+    prevStudyRefs.current = curStudyRefs;
+  }, [chapterGroups, searchStudies]);
   // Stable distinct color for each link group.
   const groupColor = (gid: string) => {
     const ids = Array.from(new Set(Object.values(chapterGroups))).sort();
@@ -10512,6 +10771,12 @@ export default function MobileApp() {
 
       {/* Center-screen moment when a study turns combined */}
       {linkFlash && <MergeMoment key={mergeFlash} />}
+
+      {/* Center-screen moment when two chapters are linked */}
+      {chapterLinkOn && <ChapterLinkMoment key={chapterLinkFlash} />}
+
+      {/* Lighter pulse when a study you already have gains verses */}
+      {growOn && <GrowPulse key={growFlash} fixed />}
 
       {/* Quiet feedback toast */}
       {toast && (
