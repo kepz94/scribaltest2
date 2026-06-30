@@ -19,9 +19,9 @@ import { NEUTRAL, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
 import SplashScreen from "./components/SplashScreen";
 import StyleGlyph from "./components/StyleGlyph";
-import MobileCompileBook, {
+import CompileBook, {
   CompileFlyer,
-} from "./components/MobileCompileBook";
+} from "./components/CompileBook";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
@@ -9522,7 +9522,7 @@ export default function MobileApp() {
 
       {/* Compile: gathering animation, then the full-screen view */}
       {compileAnim.show && (
-        <MobileCompileBook
+        <CompileBook
           flyers={compileAnim.flyers}
           colors={compileAnim.colors}
           duration={compileAnim.duration}
