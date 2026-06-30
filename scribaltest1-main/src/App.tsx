@@ -9358,50 +9358,77 @@ export default function App() {
                 : gid
                 ? groupColor(gid)
                 : ACCENT;
+            const tabBook = books.find((b) => b.id === (t.bookId || "master"));
+            const tabBookLabel =
+              !tabBook || tabBook.isMaster ? "Master" : tabBook.name;
             return (
               <div
                 key={t.id}
-                onClick={() => setActiveTabId(t.id)}
                 style={{
                   display: "flex",
+                  flexDirection: "column",
                   alignItems: "center",
-                  gap: "8px",
-                  padding: "7px 14px",
-                  borderRadius: "999px",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: active ? 600 : 400,
-                  backgroundColor: active
-                    ? linked
-                      ? linkColor
-                      : "#57534e"
-                    : "var(--panel)",
-                  color: active ? "#fff" : "var(--text)",
-                  border: linked
-                    ? "2px solid " + linkColor
-                    : active
-                    ? "2px solid #57534e"
-                    : "1px solid var(--border)",
-                  transition: "all 0.15s",
+                  gap: "3px",
                 }}
               >
-                {t.studyId && (
-                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
-                    <IconSearch size={14} />
-                  </span>
-                )}
-                {tabLabel(t)}
-                {tabs.length > 1 && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(t.id);
-                    }}
-                    style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
-                  >
-                    ✕
-                  </span>
-                )}
+                <span
+                  title={tabBookLabel}
+                  style={{
+                    fontSize: "10px",
+                    lineHeight: 1,
+                    color: "var(--muted)",
+                    fontFamily: "system-ui, sans-serif",
+                    maxWidth: "170px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {tabBookLabel}
+                </span>
+                <div
+                  onClick={() => setActiveTabId(t.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: active ? 600 : 400,
+                    backgroundColor: active
+                      ? linked
+                        ? linkColor
+                        : "#57534e"
+                      : "var(--panel)",
+                    color: active ? "#fff" : "var(--text)",
+                    border: linked
+                      ? "2px solid " + linkColor
+                      : active
+                      ? "2px solid #57534e"
+                      : "1px solid var(--border)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {t.studyId && (
+                    <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                      <IconSearch size={14} />
+                    </span>
+                  )}
+                  {tabLabel(t)}
+                  {tabs.length > 1 && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(t.id);
+                      }}
+                      style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                    >
+                      ✕
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -9443,7 +9470,7 @@ export default function App() {
             backgroundColor: "var(--bg)",
             borderBottom: "1px solid var(--border)",
             position: "sticky",
-            top: "113px",
+            top: "127px",
             zIndex: 24,
             fontSize: "11.5px",
           }}
@@ -9618,7 +9645,7 @@ export default function App() {
                     outlineOffset: "-2px",
                     position: "relative",
                     overflow: "hidden",
-                    height: "calc(100vh - 150px)",
+                    height: "calc(100vh - 164px)",
                   }}
                 >
                   <div
