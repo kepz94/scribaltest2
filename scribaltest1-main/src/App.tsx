@@ -2625,37 +2625,26 @@ export default function App() {
   // Capture the marked words on screen for a compile. A mark is taken if it
   // sits in a reading panel (data-compile-tab) and it's in the viewport. When
   // an inScope filter is given (keyword studies) the mark's verse must also be
-  // part of the compile; for chapter/linked compiles no filter is passed, so
-  // words lift from every open reading panel on screen.
+  // part of the compile. Marks are grouped per panel and then interleaved
+  // round-robin, so the flying tiles are pulled EVENLY from every open panel
+  // instead of all coming from whichever panel is first in the DOM (which,
+  // with the flyer cap, used to starve the other panels of any tiles).
   const captureCompileFlyers = (
     inScope?: (ref: string) => boolean
   ): CompileFlyer[] => {
-    const out: CompileFlyer[] = [];
-    // --- TEMP COMPILE PROBE (remove after diagnosing) ---
-    const probe = {
-      dataMcTotal: 0,
-      insidePanels: 0,
-      passedScope: 0,
-      captured: 0,
-      perPanel: {} as Record<string, number>,
-      skipped: [] as string[],
-    };
-    // ---
+    const byPanel: CompileFlyer[][] = [];
+    const panelIndex = new Map<string, number>();
     try {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       document.querySelectorAll<HTMLElement>("[data-mc]").forEach((el) => {
-        probe.dataMcTotal++;
         const panel = el.closest("[data-compile-tab]");
         if (!panel) return;
-        probe.insidePanels++;
         if (inScope) {
           const verse = el.closest("[data-verse-ref]");
           const ref = verse ? verse.getAttribute("data-verse-ref") || "" : "";
           if (!inScope(ref)) return;
         }
-        probe.passedScope++;
-        const tid = panel.getAttribute("data-compile-tab") || "?";
         const r = el.getBoundingClientRect();
         if (
           r.height <= 0 ||
@@ -2663,24 +2652,16 @@ export default function App() {
           r.bottom <= 4 ||
           r.left >= vw ||
           r.right <= 0
-        ) {
-          if (probe.skipped.length < 8)
-            probe.skipped.push(
-              tid +
-                " L" +
-                Math.round(r.left) +
-                " T" +
-                Math.round(r.top) +
-                " W" +
-                Math.round(r.width) +
-                " H" +
-                Math.round(r.height)
-            );
+        )
           return;
+        const tid = panel.getAttribute("data-compile-tab") || "?";
+        let pi = panelIndex.get(tid);
+        if (pi === undefined) {
+          pi = byPanel.length;
+          panelIndex.set(tid, pi);
+          byPanel.push([]);
         }
-        probe.captured++;
-        probe.perPanel[tid] = (probe.perPanel[tid] || 0) + 1;
-        out.push({
+        byPanel[pi].push({
           x: r.left,
           y: r.top,
           w: r.width,
@@ -2692,33 +2673,21 @@ export default function App() {
     } catch (e) {
       /* DOM not ready — fall back to the color-only (synth) animation */
     }
-    // --- TEMP COMPILE PROBE ---
-    try {
-      (window as any).__scribalCompileProbe = probe;
-      // eslint-disable-next-line
-      console.log(
-        "SCRIBAL COMPILE PROBE | vw" +
-          window.innerWidth +
-          " vh" +
-          window.innerHeight +
-          " || data-mc on page=" +
-          probe.dataMcTotal +
-          " | inside reading panels=" +
-          probe.insidePanels +
-          " | passed scope=" +
-          probe.passedScope +
-          " | CAPTURED=" +
-          probe.captured +
-          " | per-panel=" +
-          JSON.stringify(probe.perPanel) +
-          " | skipped(offscreen)=" +
-          JSON.stringify(probe.skipped)
-      );
-    } catch (e) {
-      /* ignore */
+    // Interleave: take the 1st mark of each panel, then the 2nd of each, etc.
+    const out: CompileFlyer[] = [];
+    let col = 0;
+    let any = true;
+    while (any && out.length < 40) {
+      any = false;
+      for (let p = 0; p < byPanel.length; p++) {
+        if (col < byPanel[p].length) {
+          out.push(byPanel[p][col]);
+          any = true;
+        }
+      }
+      col++;
     }
-    // ---
-    return out.slice(0, 28);
+    return out;
   };
 
   const runCompile = (tabIds: string[]) => {
@@ -2754,7 +2723,7 @@ export default function App() {
     const duration = delta > 8 ? 2500 : 1000;
     localStorage.setItem("scribal_last_compile_count", String(currentCount));
     const scopeSet = scopesFromTabIds(ids);
-    const flyers = captureCompileFlyers();
+    const flyers = captureCompileFlyers((ref) => scopeSet.has(scopeOfRef(ref)));
     const colors = marks
       .filter((m) => scopeSet.has(scopeOfRef(m.reference)))
       .map((m) => m.color)
@@ -6949,6 +6918,7 @@ export default function App() {
           flyers={compileAnim.flyers}
           colors={compileAnim.colors}
           scale={1.55}
+          cap={20}
           duration={compileAnim.duration}
           onDone={finishCompileAnim}
         />
