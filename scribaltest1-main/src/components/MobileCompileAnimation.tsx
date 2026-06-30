@@ -120,7 +120,7 @@ export default function MobileCompileAnimation({
       clearTimeout(done);
     };
     // run once for this compile
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line
   }, []);
 
   return (
