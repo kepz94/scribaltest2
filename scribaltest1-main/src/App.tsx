@@ -2009,7 +2009,7 @@ export default function App() {
   }, [showTutorial, gateOpen]);
 
   const addNewTab = () => {
-    if (tabs.length >= 5) return; // up to 5 panels
+    if (tabs.length >= 7) return; // up to 7 panels
     const openIds = new Set(tabs.map((t) => t.id));
     for (let v = 0; v < vols.length; v++) {
       for (let b = 0; b < vols[v].books.length; b++) {
@@ -3305,9 +3305,12 @@ export default function App() {
     ? establishedThemes.map((t) => t.color)
     : usedColors;
 
-  // Reopen a recorded chapter/linked study: open its chapter tab(s) AND any
-  // keyword searches linked to it (each as its own loose-verse tab), in its
-  // book, then compile them fresh (live, from current marks).
+  // Reopen a recorded chapter/linked study. Opening it must NOT disturb the
+  // tabs already on screen and must NOT flood the workspace: a linked study of
+  // many chapters contributes a SINGLE representative chapter tab (the first in
+  // scripture order), appended to whatever is already open (capped at 7). The
+  // notes still compile the study's FULL scope via synthetic compile tabs, so
+  // nothing is lost by leaving the other chapters closed.
   const openRecordedStudy = (s: Study) => {
     setStudiesOpen(false);
     const scopes =
@@ -3316,17 +3319,19 @@ export default function App() {
             (c) => chapterGroups[c] === s.scopeRef
           )
         : [s.scopeRef];
-    const locs = scopes
-      .map((sc) => chapterLoc.get(sc))
-      .filter(Boolean) as {
-      volume: number;
-      book: number;
-      chapter: number;
-    }[];
+    const locs = (
+      scopes.map((sc) => chapterLoc.get(sc)).filter(Boolean) as {
+        volume: number;
+        book: number;
+        chapter: number;
+      }[]
+    ).sort(
+      (a, b) => a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
+    );
     if (!locs.length) return;
     if (s.bookId !== activeBookId) setActiveBook(s.bookId);
-    // Keyword searches linked to any of this study's chapters reopen alongside
-    // it as their own tabs (their verses also fold into the compile below).
+    // Keyword searches linked into this study's scope (a combined study) reopen
+    // alongside as their own tab (their verses fold into the compile by scope).
     const scopeKeys = new Set(scopes.map((sc) => resolveScope(sc)));
     const linkedKw = searchStudies.filter(
       (ks) =>
@@ -3334,28 +3339,29 @@ export default function App() {
         ks.linkedScope &&
         scopeKeys.has(resolveScope(ks.linkedScope))
     );
-    // Compute the tab ids synchronously, up front — these drive the compile
-    // selection below. Collecting them INSIDE the setTabs updater (which React
-    // runs later, during render) left runCompile receiving an empty array, so
-    // it fell back to "all open tabs" and the notes showed whatever was already
-    // on screen instead of this study.
-    const tabIds = locs.map((loc) =>
-      makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
+    // Just ONE chapter represents the study in the reading panels; append it
+    // (and any linked keyword panels) to the existing tabs without replacing.
+    const firstLoc = locs[0];
+    const repId = makeTabId(
+      s.bookId,
+      firstLoc.volume,
+      firstLoc.book,
+      firstLoc.chapter
     );
-    setTabs(() => {
-      const next: Tab[] = [];
+    const roomForRep = tabs.some((t) => t.id === repId) || tabs.length < 7;
+    setTabs((prev) => {
+      let next = prev;
       const add = (tab: Tab) => {
-        if (!next.some((t) => t.id === tab.id)) next.push(tab);
+        if (!next.some((t) => t.id === tab.id) && next.length < 7)
+          next = [...next, tab];
       };
-      locs.forEach((loc) =>
-        add({
-          id: makeTabId(s.bookId, loc.volume, loc.book, loc.chapter),
-          volume: loc.volume,
-          book: loc.book,
-          chapter: loc.chapter,
-          bookId: s.bookId,
-        })
-      );
+      add({
+        id: repId,
+        volume: firstLoc.volume,
+        book: firstLoc.book,
+        chapter: firstLoc.chapter,
+        bookId: s.bookId,
+      });
       linkedKw.forEach((ks) => {
         const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
         add({
@@ -3369,12 +3375,23 @@ export default function App() {
       });
       return next;
     });
-    if (tabIds[0]) setActiveTabId(tabIds[0]);
+    if (roomForRep) setActiveTabId(repId);
     // Reopen on the view this study was saved in (Relational, Distilled, …)
     // instead of whatever view happened to be on screen.
     setCompileView(s.view ?? "outline");
+    // The compile covers every chapter in the study, even the ones we didn't
+    // open as tabs — build synthetic compile tabs (scripture order) exactly the
+    // way a linked/keyword compile does, so the notes stay complete.
+    const virtualTabs: Tab[] = locs.map((loc) => ({
+      id: makeTabId(s.bookId, loc.volume, loc.book, loc.chapter),
+      volume: loc.volume,
+      book: loc.book,
+      chapter: loc.chapter,
+      bookId: s.bookId,
+    }));
+    const tabIds = virtualTabs.map((t) => t.id);
     // Jump straight to the notes (no gather animation). If the study has no
-    // marks yet, there are no notes to show, so just open its chapters in the
+    // marks yet, there are no notes to show, so just leave the chapter in the
     // reading panel so the user can start marking.
     const scopeSet = scopesFromTabIds(tabIds);
     const hasMarks = getBook(s.bookId).marks.some((m) =>
@@ -3382,6 +3399,12 @@ export default function App() {
     );
     if (hasMarks) {
       runCompile(tabIds, false);
+      // Title the notes with the study's own name. runCompile derives a name
+      // from the OPEN tabs, but only one chapter is open here, so set it directly.
+      setCompileName(s.name);
+      // Only a linked group needs virtual tabs (its other chapters aren't open);
+      // a single chapter is already the one open tab.
+      if (locs.length > 1) setCompileVirtualTabs(virtualTabs);
     } else {
       setMode("read");
     }
@@ -3389,7 +3412,10 @@ export default function App() {
 
   // ---- keyword (search) studies ----
   // Open a study as its own tab — desktop is tab-based, not a full-screen screen.
-  const openStudyTab = (study: SearchStudy, replace = false) => {
+  // Appends to whatever is already open (never replaces), capped at 7 tabs. Pass
+  // landInReading to jump to the reading panel (opening one from the Studies
+  // list); other callers keep whatever view they were in.
+  const openStudyTab = (study: SearchStudy, landInReading = false) => {
     setStudiesOpen(false);
     const loc = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
     const tabId = "studytab_" + study.id;
@@ -3401,20 +3427,21 @@ export default function App() {
       bookId: study.bookId,
       studyId: study.id,
     };
+    const room = tabs.some((t) => t.id === tabId) || tabs.length < 7;
     setTabs((prev) =>
-      replace
-        ? [tab]
-        : prev.some((t) => t.id === tabId)
+      prev.some((t) => t.id === tabId)
         ? prev
-        : [...prev, tab]
+        : prev.length < 7
+        ? [...prev, tab]
+        : prev
     );
-    setActiveTabId(tabId);
+    if (room) setActiveTabId(tabId);
     // Reopen on the view this study was saved in, so a relational keyword study
     // lands on Relational instead of whatever view was last on screen.
     setCompileView(study.view ?? "outline");
-    // A plain keyword study has no notes to compile — it just opens its verses
-    // in the reading panel. (Combined studies come through openRecordedStudy.)
-    if (replace) setMode("read");
+    // Opened from the Studies list: show its verses in the reading panel (its
+    // notes are one Compile away).
+    if (landInReading) setMode("read");
   };
   // "Open as a study": open the selected verses as their own working study tab
   // right away — no naming or book step. Nothing is saved here; the study is
