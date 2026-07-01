@@ -300,7 +300,7 @@ export default function StudyTableColumn({
   }
 
   // ---------- per-kind editors ----------
-  function Editor({ card }: { card: TableCard }) {
+  const renderCard = (card: TableCard) => {
     const focus = card.id === focusId;
 
     if (card.kind === "heading") {
@@ -313,17 +313,17 @@ export default function StudyTableColumn({
             onChange={(e) => patch(card.id, { text: e.target.value })}
             style={{
               fontFamily: SANS,
-              fontSize: 11.5,
+              fontSize: 15,
               fontWeight: 700,
-              letterSpacing: ".15em",
+              letterSpacing: ".12em",
               textTransform: "uppercase",
               color: "var(--text)",
               background: "transparent",
               border: 0,
               borderBottom: "1.5px dashed var(--border)",
               outline: 0,
-              padding: "5px 2px",
-              flex: "0 1 250px",
+              padding: "6px 2px",
+              flex: "0 1 340px",
               minWidth: 0,
             }}
           />
@@ -828,7 +828,7 @@ export default function StudyTableColumn({
                 }}
               />
               <div style={{ gridColumn: 2, minWidth: 0, padding: "8px 0 8px 4px" }}>
-                <Editor card={card} />
+                {renderCard(card)}
                 <Controls id={card.id} />
               </div>
             </div>
