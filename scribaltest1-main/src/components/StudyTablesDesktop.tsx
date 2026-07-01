@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ACCENT } from "../theme";
-import { Mark } from "../types";
+import { Mark, MarkColor } from "../types";
 import {
   useStudyTables,
   StudyTable,
@@ -8,11 +8,14 @@ import {
   TableCard,
   newCardId,
 } from "../hooks/useStudyTables";
+import type { Study } from "../hooks/useStudies";
+import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
+import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
-import { getVerse } from "../data/verseIndex";
+import { getVerse, sortRefs } from "../data/verseIndex";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
 // one open table (its name, purpose, and the column surface). This owns the
@@ -30,11 +33,21 @@ interface Props {
   headerOffset?: number;
   // Multi-book marks, passed from the shell (single source of truth):
   //  - allMarks: every mark across every book (theme preview + "My marks").
-  //  - getBook: a specific book's full marks, to render the chosen book's marking.
+  //  - getBook: a specific book's full marks + theme labels, to render the chosen
+  //    book's marking and resolve a study's theme names.
   //  - books: the book list, for the "Marks from" selector.
   allMarks: ThemeMark[];
-  getBook: (id: string) => { marks: Mark[] };
+  getBook: (id: string) => {
+    marks: Mark[];
+    colorLabels?: Record<number, string>;
+    scopedLabels?: Record<string, Record<number, string>>;
+  };
   books: { id: string; name: string; isMaster: boolean; markCount: number }[];
+  // The user's studies (recorded chapter/linked + keyword) and the chapter-link
+  // groups, so the verse panel can group a study's verses under its themes.
+  recordedStudies: Study[];
+  searchStudies: SearchStudy[];
+  chapterGroups: Record<string, string>;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -73,6 +86,9 @@ export default function StudyTablesDesktop({
   allMarks,
   getBook,
   books,
+  recordedStudies,
+  searchStudies,
+  chapterGroups,
 }: Props) {
   const { tables, createTable, updateTable, renameTable, deleteTable } =
     useStudyTables();
@@ -141,6 +157,97 @@ export default function StudyTablesDesktop({
     setPanelOpen(false);
     setPendingIndex(null);
   };
+
+  // ---- "From a study": the study list + per-study theme grouping ----
+
+  // The flat study list the panel shows (recorded chapter/linked + keyword).
+  const studyMetas: StudyMeta[] = [
+    ...recordedStudies.map((s) => ({
+      id: s.id,
+      name: s.name,
+      bookId: s.bookId,
+      kind: s.type,
+    })),
+    ...searchStudies.map((s) => ({
+      id: s.id,
+      name: s.name,
+      bookId: s.bookId,
+      kind: "keyword" as const,
+    })),
+  ];
+
+  // Group a study's marked verses under its theme names. Scope + label
+  // resolution mirror the reader exactly:
+  //   scope:  chapter → its chapter; linked → the group's chapters; keyword → its
+  //           refs. Loose extraRefs fold in for recorded studies.
+  //   name:   scopedLabels[resolveScope(scopeOfRef(ref))][color], falling back to
+  //           the book-level color name (same precedence the reader uses).
+  const studyThemes = useCallback(
+    (studyId: string): StudyTheme[] => {
+      const rec = recordedStudies.find((s) => s.id === studyId);
+      const kw = searchStudies.find((s) => s.id === studyId);
+      const study = rec || kw;
+      if (!study) return [];
+      const bookId = study.bookId;
+
+      const scopeOfRef = (ref: string) => {
+        const i = ref.indexOf(":");
+        return i < 0 ? ref : ref.slice(0, i);
+      };
+      const resolveScope = (cs: string) =>
+        chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+
+      // Which references belong to this study.
+      let inScope: (ref: string) => boolean;
+      if (kw) {
+        const set = new Set(kw.refs);
+        inScope = (r) => set.has(r);
+      } else if (rec && rec.type === "linked") {
+        const chapters = new Set(
+          Object.keys(chapterGroups).filter(
+            (cs) => chapterGroups[cs] === rec.scopeRef
+          )
+        );
+        const extra = new Set(rec.extraRefs || []);
+        inScope = (r) => chapters.has(scopeOfRef(r)) || extra.has(r);
+      } else {
+        const extra = new Set((rec && rec.extraRefs) || []);
+        inScope = (r) => scopeOfRef(r) === (rec ? rec.scopeRef : "") || extra.has(r);
+      }
+
+      // Marked references in scope, grouped by color.
+      const byColor = new Map<number, Set<string>>();
+      for (const m of allMarks) {
+        if (m.bookId !== bookId) continue;
+        if (!inScope(m.reference)) continue;
+        let s = byColor.get(m.color);
+        if (!s) {
+          s = new Set();
+          byColor.set(m.color, s);
+        }
+        s.add(m.reference);
+      }
+
+      const bk = getBook(bookId);
+      const nameFor = (ref: string, color: number): string => {
+        const scoped = bk.scopedLabels?.[resolveScope(scopeOfRef(ref))]?.[color];
+        const book = bk.colorLabels?.[color];
+        return ((scoped || book || "") as string).trim();
+      };
+
+      return Array.from(byColor.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([color, refset]) => {
+          const refs = sortRefs(Array.from(refset));
+          return {
+            color: color as MarkColor,
+            label: refs.length ? nameFor(refs[0], color) : "",
+            refs,
+          };
+        });
+    },
+    [recordedStudies, searchStudies, chapterGroups, allMarks, getBook]
+  );
 
   const iconBtn: React.CSSProperties = {
     width: 32,
@@ -309,6 +416,8 @@ export default function StudyTablesDesktop({
               renderVerse={renderVerse}
               allMarks={allMarks}
               books={books}
+              studies={studyMetas}
+              studyThemes={studyThemes}
               onClose={closePanel}
               accent={accent}
               headerOffset={headerOffset}
