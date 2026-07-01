@@ -18,6 +18,7 @@ import {
   endRoom,
   joinUrl,
   themesKey,
+  redactTableForRoom,
 } from "../presentRoom";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
@@ -893,7 +894,7 @@ export default function StudyTablesDesktop({
                 });
                 const code = newRoomCode();
                 await createRoom(code, {
-                  tableJson: JSON.stringify(open),
+                  tableJson: JSON.stringify(redactTableForRoom(open)),
                   marksJson: JSON.stringify(marks),
                   themesJson: JSON.stringify(themes),
                 });
