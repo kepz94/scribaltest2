@@ -107,6 +107,15 @@ type Action =
   | { type: "setLabel"; color: MarkColor; label: string }
   | { type: "setScopedLabel"; scope: string; color: MarkColor; label: string }
   | {
+      // Book-targeted theme naming (the Study Table marking panel names themes
+      // in whichever book each verse's marks live in, not the active book).
+      type: "setScopedLabelIn";
+      bookId: string;
+      scope: string;
+      color: MarkColor;
+      label: string;
+    }
+  | {
       type: "seedScopeLabels";
       scope: string;
       labels: Record<number, string>;
@@ -1061,6 +1070,27 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "setScopedLabelIn": {
+      const bk = state.books[action.bookId];
+      if (!bk) return state;
+      const cur = bk.scopedLabels || {};
+      const curScope = cur[action.scope] || {};
+      if ((curScope[action.color] || "") === action.label) return state;
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.bookId]: {
+            ...bk,
+            scopedLabels: {
+              ...cur,
+              [action.scope]: { ...curScope, [action.color]: action.label },
+            },
+          },
+        },
+      };
+    }
+
     case "seedScopeLabels": {
       const cur = active.scopedLabels || {};
       const curScope = cur[action.scope] || {};
@@ -1228,6 +1258,11 @@ export function useMarks() {
       dispatch({ type: "deleteMarkIn", bookId, id }),
     []
   );
+  const setScopedLabelInBook = useCallback(
+    (bookId: string, scope: string, color: MarkColor, label: string) =>
+      dispatch({ type: "setScopedLabelIn", bookId, scope, color, label }),
+    []
+  );
   const recolorMark = useCallback(
     (id: string, color: MarkColor) =>
       dispatch({ type: "recolorMark", id, color }),
@@ -1380,6 +1415,7 @@ export function useMarks() {
     deleteMarks,
     addMarksToBook,
     deleteMarkInBook,
+    setScopedLabelInBook,
     recolorMark,
     updateMarkRange,
     deleteMarkGroup,
