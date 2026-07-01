@@ -30,6 +30,10 @@ import MobileWalkthrough from "./MobileWalkthrough";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
+import { useStudyTables } from "./hooks/useStudyTables";
+import StudyTablePresent from "./components/StudyTablePresent";
+import MarkedVerse from "./components/MarkedVerse";
+import { getVerse } from "./data/verseIndex";
 import * as drive from "./googleDrive";
 import {
   CORE_KEYS,
@@ -891,6 +895,15 @@ export default function MobileApp() {
     setNote,
   } = useMarks();
 
+  // Study tables: built on desktop, synced here, performable from the phone.
+  // Mobile v1 is present-only (the editor stays desktop for now).
+  const {
+    tables: studyTables,
+    deleteTable: deleteStudyTable,
+    mergeRemote: tablesMergeRemote,
+  } = useStudyTables();
+  const [presentTableId, setPresentTableId] = useState<string | null>(null);
+
   const {
     entries: vaultEntries,
     mergeRemote: vaultMergeRemote,
@@ -1110,6 +1123,9 @@ export default function MobileApp() {
       data["scribal_wordtags"],
       data["scribal_wordtags_tomb"]
     );
+    // Study tables (built on desktop): the hook does a field-level
+    // last-write-wins merge with tombstones, same rules as the desktop shell.
+    tablesMergeRemote(data["scribal_tables_v1"]);
     try {
       const r = JSON.parse(data["scribal_studies_v1"] || "[]");
       const remote: Study[] = Array.isArray(r) ? r : [];
@@ -8881,7 +8897,10 @@ export default function MobileApp() {
             </div>
           );
           const total =
-            chapterRecs.length + linkedRecs.length + liveSearch.length;
+            chapterRecs.length +
+            linkedRecs.length +
+            liveSearch.length +
+            studyTables.length;
 
           const row = (
             key: string,
@@ -9360,10 +9379,68 @@ export default function MobileApp() {
                           )
                         )
                       )}
+                    {studyTables.length > 0 &&
+                      section(
+                        "Study tables",
+                        "#16a34a",
+                        studyTables.map((t) =>
+                          row(
+                            "table:" + t.id,
+                            t.name || "Untitled table",
+                            (t.cards.length === 1
+                              ? "1 card"
+                              : t.cards.length + " cards") +
+                              ((t.shelf || []).length
+                                ? " · " +
+                                  (t.shelf || []).length +
+                                  " set aside"
+                                : "") +
+                              " · tap to present",
+                            "#16a34a",
+                            () => {
+                              setStudiesOpen(false);
+                              setPresentTableId(t.id);
+                            },
+                            () => {
+                              if (
+                                window.confirm(
+                                  "Delete this study table? This can't be undone."
+                                )
+                              )
+                                deleteStudyTable(t.id);
+                            }
+                          )
+                        )
+                      )}
                   </>
                 )}
               </div>
             </div>
+          );
+        })()}
+
+      {/* Present a study table (built on desktop, performed here) */}
+      {presentTableId &&
+        (() => {
+          const t = studyTables.find((x) => x.id === presentTableId);
+          if (!t) return null;
+          return (
+            <StudyTablePresent
+              table={t}
+              renderVerse={(reference, bookId) => {
+                const rec = getVerse(reference);
+                if (!rec) return <span>{reference}</span>;
+                return (
+                  <MarkedVerse
+                    reference={reference}
+                    verseNumber={rec.verse}
+                    text={rec.text}
+                    marks={bookId ? getBook(bookId).marks : []}
+                  />
+                );
+              }}
+              onClose={() => setPresentTableId(null)}
+            />
           );
         })()}
 
