@@ -10489,6 +10489,7 @@ export default function App() {
           updateTable={updateStudyTable}
           renameTable={renameStudyTable}
           deleteTable={deleteStudyTable}
+          createSession={createSession}
           openTableId={openTableId}
           onConsumeOpenTable={() => setOpenTableId(null)}
           onMarkVerses={openTableMarkPanel}
