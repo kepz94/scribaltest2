@@ -125,6 +125,11 @@ export default function StudyTablesDesktop({
   const [panelOpen, setPanelOpen] = useState(false);
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
+  // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
+  const [panelTab, setPanelTab] =
+    useState<"study" | "search" | "shelf">("search");
+  // New-table flow: choose between a blank table and importing a study.
+  const [creating, setCreating] = useState<null | "choose" | "import">(null);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
@@ -224,11 +229,42 @@ export default function StudyTablesDesktop({
   // Open the verse panel to add a scripture card at a given gap.
   const openPanelAt = (index: number) => {
     setPendingIndex(index);
+    setPanelTab("search");
     setPanelOpen(true);
   };
   const closePanel = () => {
     setPanelOpen(false);
     setPendingIndex(null);
+  };
+
+  // ---- New table: blank, or seeded from a study ----
+  const startScratch = () => {
+    setCreating(null);
+    const id = createTable();
+    setOpenId(id);
+  };
+  // Import a study: gather every marked verse in the study (across its themes)
+  // and set them aside on the new table's shelf, then open it on the shelf tab
+  // so they're waiting in "Selected".
+  const importStudy = (meta: StudyMeta) => {
+    setCreating(null);
+    const refs = sortRefs(
+      Array.from(new Set(studyThemes(meta.id).flatMap((t) => t.refs)))
+    );
+    const id = createTable(meta.name?.trim() || "Untitled");
+    if (refs.length) {
+      const cards: TableCard[] = refs.map((r) => ({
+        id: newCardId(),
+        kind: "scripture" as const,
+        refs: [r],
+        bookId: meta.bookId,
+      }));
+      updateTable(id, { shelf: cards });
+    }
+    setOpenId(id);
+    setPendingIndex(0);
+    setPanelTab("shelf");
+    setPanelOpen(true);
   };
 
   // ---- "From a study": the study list + per-study theme grouping ----
@@ -499,6 +535,7 @@ export default function StudyTablesDesktop({
               onClose={closePanel}
               accent={accent}
               headerOffset={headerOffset}
+              initialTab={panelTab}
             />
           )}
         </div>
@@ -543,10 +580,7 @@ export default function StudyTablesDesktop({
           </div>
         </div>
         <button
-          onClick={() => {
-            const id = createTable();
-            setOpenId(id);
-          }}
+          onClick={() => setCreating("choose")}
           style={{
             fontFamily: SANS,
             fontSize: 13.5,
@@ -606,6 +640,255 @@ export default function StudyTablesDesktop({
           }}
           accent={accent}
         />
+      )}
+
+      {creating && (
+        <div
+          onClick={() => setCreating(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 500,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              maxHeight: "84vh",
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: 16,
+              border: "1px solid var(--border)",
+              padding: 22,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            {creating === "choose" ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  New study table
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 18,
+                  }}
+                >
+                  Begin from a study you’ve already gathered, or from a blank
+                  table.
+                </div>
+                {[
+                  {
+                    on: () => setCreating("import"),
+                    d: "M12 3v12 M7 10l5 5 5-5 M5 20h14",
+                    title: "Import a study",
+                    sub: "Its marked verses arrive in Selected, ready to place",
+                    strong: true,
+                  },
+                  {
+                    on: startScratch,
+                    d: "M12 5v14 M5 12h14",
+                    title: "Start from scratch",
+                    sub: "A blank table — add cards in any order",
+                    strong: false,
+                  },
+                ].map((o) => (
+                  <button
+                    key={o.title}
+                    onClick={o.on}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 13,
+                      width: "100%",
+                      textAlign: "left",
+                      marginBottom: 10,
+                      padding: "14px 15px",
+                      borderRadius: 12,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      background: o.strong ? softAccent : "var(--panel)",
+                      border:
+                        "1px solid " +
+                        (o.strong ? softAccentBorder : "var(--border)"),
+                      color: "var(--text)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        flex: "0 0 auto",
+                        display: "grid",
+                        placeItems: "center",
+                        background: o.strong ? accent : "var(--soft)",
+                        color: o.strong ? "#fff" : accent,
+                      }}
+                    >
+                      <Ico d={o.d} size={18} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 14.5,
+                          fontWeight: 650,
+                        }}
+                      >
+                        {o.title}
+                      </span>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 12,
+                          color: "var(--muted)",
+                          marginTop: 2,
+                        }}
+                      >
+                        {o.sub}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                  <button
+                    onClick={() => setCreating(null)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  Import a study
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 16,
+                  }}
+                >
+                  Its marked verses will be set aside in the new table’s Selected
+                  tab.
+                </div>
+                {studyMetas.length === 0 ? (
+                  <div
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      color: "var(--muted)",
+                      lineHeight: 1.5,
+                      padding: "8px 2px 16px",
+                    }}
+                  >
+                    You don’t have any studies yet. Start from scratch instead.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      overflowY: "auto",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {studyMetas.map((m) => {
+                      const count = new Set(
+                        studyThemes(m.id).flatMap((t) => t.refs)
+                      ).size;
+                      const kindLabel =
+                        m.kind === "linked"
+                          ? "Linked study"
+                          : m.kind === "keyword"
+                          ? "Keyword study"
+                          : "Chapter study";
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => importStudy(m)}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: 10,
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: SANS,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 600,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {m.name || "Untitled study"}
+                          </div>
+                          <div
+                            style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}
+                          >
+                            {kindLabel} ·{" "}
+                            {count === 1 ? "1 verse" : count + " verses"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 12 }}>
+                  <button
+                    onClick={() => setCreating("choose")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
