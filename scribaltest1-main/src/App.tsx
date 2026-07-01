@@ -924,6 +924,7 @@ export default function App() {
     addMarks,
     addMarksToBook,
     deleteMarkInBook,
+    setScopedLabelInBook,
     deleteMarkGroup,
     clearMarks,
     undo,
@@ -10513,6 +10514,41 @@ export default function App() {
           });
           const fallbackBook = books[0] || "master";
           const loc = refLoc.get(markPanel.refs[0]);
+          // Theme legend: every (book, resolved scope) pair the panel's verses
+          // live in. Naming a color writes the scoped label to ALL pairs, which
+          // is exactly where the cards and Present resolve names from.
+          const labelPairs: { book: string; scope: string }[] = [];
+          {
+            const seen = new Set<string>();
+            markPanel.refs.forEach((r) => {
+              const book = markPanel.refBook[r] || fallbackBook;
+              const scope = resolveScope(scopeOfRef(r));
+              const k = book + "||" + scope;
+              if (!seen.has(k)) {
+                seen.add(k);
+                labelPairs.push({ book, scope });
+              }
+            });
+          }
+          const legendColors = Array.from(
+            new Set<number>([...unionMarks.map((m) => m.color), selectedColor])
+          ).sort((a, b) => a - b) as MarkColor[];
+          const legendValue = (color: MarkColor): string => {
+            for (const p of labelPairs) {
+              const bk = getBook(p.book);
+              const v = bk.scopedLabels?.[p.scope]?.[color];
+              if (v && v.trim()) return v;
+            }
+            for (const p of labelPairs) {
+              const v = getBook(p.book).colorLabels?.[color];
+              if (v && v.trim()) return v;
+            }
+            return "";
+          };
+          const setLegendValue = (color: MarkColor, label: string) =>
+            labelPairs.forEach((p) =>
+              setScopedLabelInBook(p.book, p.scope, color, label)
+            );
           const routeMany = (
             items: {
               reference: string;
@@ -10609,6 +10645,84 @@ export default function App() {
                 >
                   Done
                 </button>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "9px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  overflowX: "auto",
+                  flex: "0 0 auto",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  Themes
+                </span>
+                {legendColors.map((color) => (
+                  <span
+                    key={color}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "7px",
+                      flex: "0 0 auto",
+                      border:
+                        "1px solid " +
+                        (color === selectedColor
+                          ? COLOR_MAP[color]
+                          : "var(--border)"),
+                      borderRadius: "999px",
+                      padding: "4px 10px 4px 7px",
+                      background: "var(--bg)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "12px",
+                        height: "12px",
+                        borderRadius: "50%",
+                        background: COLOR_MAP[color],
+                        flexShrink: 0,
+                      }}
+                    />
+                    <input
+                      value={legendValue(color)}
+                      placeholder={"Name theme " + color + "…"}
+                      onChange={(e) => setLegendValue(color, e.target.value)}
+                      style={{
+                        border: 0,
+                        outline: 0,
+                        background: "transparent",
+                        color: "var(--text)",
+                        fontSize: "12.5px",
+                        fontWeight: 600,
+                        fontFamily: "inherit",
+                        width: "120px",
+                      }}
+                    />
+                  </span>
+                ))}
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  Names appear on the cards and in Present
+                </span>
               </div>
               <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
                 <VerseViewer
