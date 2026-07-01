@@ -9441,7 +9441,8 @@ export default function MobileApp() {
               }}
               themesFor={(refs, bookId) => {
                 // Same resolution the desktop card uses: scoped label for the
-                // verse's chapter/group, falling back to the book color name.
+                // verse's chapter/group only (no book-level fallback, which
+                // leaked unrelated old names).
                 const bk = getBook(bookId || "master");
                 const refset = new Set(refs);
                 const seen = new Map<number, string>();
@@ -9451,9 +9452,7 @@ export default function MobileApp() {
                     bk.scopedLabels?.[resolveScope(scopeOf(m.reference))]?.[
                       m.color
                     ];
-                  const label = (
-                    (scoped || bk.colorLabels?.[m.color] || "") as string
-                  ).trim();
+                  const label = ((scoped || "") as string).trim();
                   seen.set(m.color, label);
                 });
                 return Array.from(seen.entries())
