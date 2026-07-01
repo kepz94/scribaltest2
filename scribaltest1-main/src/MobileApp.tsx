@@ -32,6 +32,7 @@ import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
 import { useStudyTables } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
+import StudyTablesMobile from "./components/StudyTablesMobile";
 import MarkedVerse from "./components/MarkedVerse";
 import { getVerse } from "./data/verseIndex";
 import {
@@ -907,10 +908,15 @@ export default function MobileApp() {
   // Mobile v1 is present-only (the editor stays desktop for now).
   const {
     tables: studyTables,
+    createTable: createStudyTable,
+    updateTable: updateStudyTable,
+    renameTable: renameStudyTable,
     deleteTable: deleteStudyTable,
     mergeRemote: tablesMergeRemote,
   } = useStudyTables();
   const [presentTableId, setPresentTableId] = useState<string | null>(null);
+  // The mobile table editor: which table is open for editing.
+  const [editTableId, setEditTableId] = useState<string | null>(null);
 
   const {
     entries: vaultEntries,
@@ -9387,38 +9393,66 @@ export default function MobileApp() {
                           )
                         )
                       )}
-                    {studyTables.length > 0 &&
-                      section(
+                    {section(
                         "Study tables",
                         "#16a34a",
-                        studyTables.map((t) =>
-                          row(
-                            "table:" + t.id,
-                            t.name || "Untitled table",
-                            (t.cards.length === 1
-                              ? "1 card"
-                              : t.cards.length + " cards") +
-                              ((t.shelf || []).length
-                                ? " · " +
-                                  (t.shelf || []).length +
-                                  " set aside"
-                                : "") +
-                              " · tap to present",
-                            "#16a34a",
-                            () => {
-                              setStudiesOpen(false);
-                              setPresentTableId(t.id);
-                            },
-                            () => {
-                              if (
-                                window.confirm(
-                                  "Delete this study table? This can't be undone."
+                        <>
+                          {studyTables.map((t) =>
+                            row(
+                              "table:" + t.id,
+                              t.name || "Untitled table",
+                              (t.cards.length === 1
+                                ? "1 card"
+                                : t.cards.length + " cards") +
+                                ((t.shelf || []).length
+                                  ? " · " +
+                                    (t.shelf || []).length +
+                                    " set aside"
+                                  : "") +
+                                " · tap to open",
+                              "#16a34a",
+                              () => {
+                                setStudiesOpen(false);
+                                setEditTableId(t.id);
+                              },
+                              () => {
+                                if (
+                                  window.confirm(
+                                    "Delete this study table? This can't be undone."
+                                  )
                                 )
-                              )
-                                deleteStudyTable(t.id);
-                            }
-                          )
-                        )
+                                  deleteStudyTable(t.id);
+                              }
+                            )
+                          )}
+                          <button
+                            onClick={() => {
+                              const id = createStudyTable(
+                                "Untitled",
+                                undefined,
+                                "master"
+                              );
+                              setStudiesOpen(false);
+                              setEditTableId(id);
+                            }}
+                            style={{
+                              width: "100%",
+                              marginTop: "8px",
+                              padding: "11px 12px",
+                              borderRadius: "10px",
+                              border: "1.5px dashed " + C.border,
+                              background: "transparent",
+                              color: "#16a34a",
+                              fontSize: "13.5px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              textAlign: "center",
+                            }}
+                          >
+                            + New study table
+                          </button>
+                        </>
                       )}
                   </>
                 )}
@@ -9427,7 +9461,39 @@ export default function MobileApp() {
           );
         })()}
 
-      {/* Present a study table (built on desktop, performed here) */}
+      {/* Edit a study table on the phone */}
+      {editTableId &&
+        (() => {
+          const t = studyTables.find((x) => x.id === editTableId);
+          if (!t) return null;
+          return (
+            <StudyTablesMobile
+              table={t}
+              onClose={() => setEditTableId(null)}
+              onPresent={() => setPresentTableId(t.id)}
+              updateTable={updateStudyTable}
+              renameTable={renameStudyTable}
+              onDelete={() => {
+                if (
+                  window.confirm(
+                    "Delete this study table? This can't be undone."
+                  )
+                ) {
+                  deleteStudyTable(t.id);
+                  setEditTableId(null);
+                }
+              }}
+              allMarks={allMarks}
+              getBook={getBook}
+              books={books}
+              recordedStudies={studies}
+              searchStudies={searchStudies}
+              chapterGroups={chapterGroups}
+            />
+          );
+        })()}
+
+      {/* Present a study table (built anywhere, performed here) */}
       {presentTableId &&
         (() => {
           const t = studyTables.find((x) => x.id === presentTableId);
