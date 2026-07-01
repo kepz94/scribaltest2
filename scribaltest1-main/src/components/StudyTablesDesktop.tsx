@@ -62,6 +62,13 @@ interface Props {
   // the callback clears it once consumed.
   openTableId?: string | null;
   onConsumeOpenTable?: () => void;
+  // Open the shell's marking panel for a set of verses (each carried with the
+  // book it should be marked in). Used by "Mark verses" and per-card marking.
+  onMarkVerses?: (
+    refs: string[],
+    refBook: Record<string, string>,
+    title?: string
+  ) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -110,6 +117,7 @@ export default function StudyTablesDesktop({
   deleteTable,
   openTableId,
   onConsumeOpenTable,
+  onMarkVerses,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -236,6 +244,43 @@ export default function StudyTablesDesktop({
     setPanelOpen(false);
     setPendingIndex(null);
   };
+
+  // Gather every scripture verse in this table (placed + shelved) with the book
+  // each belongs to, so they can all be marked together in one panel.
+  const collectMarkTargets = (
+    cardsList: TableCard[]
+  ): { refs: string[]; refBook: Record<string, string> } => {
+    const refBook: Record<string, string> = {};
+    const refs: string[] = [];
+    cardsList.forEach((c) => {
+      if (c.kind === "scripture" && c.refs) {
+        c.refs.forEach((r) => {
+          if (!(r in refBook)) {
+            refBook[r] = c.bookId || "master";
+            refs.push(r);
+          }
+        });
+      }
+    });
+    return { refs: sortRefs(refs), refBook };
+  };
+  const markAllVerses = () => {
+    if (!open || !onMarkVerses) return;
+    const { refs, refBook } = collectMarkTargets([
+      ...open.cards,
+      ...(open.shelf || []),
+    ]);
+    onMarkVerses(refs, refBook, "Mark verses · " + (open.name || "table"));
+  };
+  const markCardVerses = (card: TableCard) => {
+    if (!onMarkVerses || card.kind !== "scripture" || !(card.refs || []).length)
+      return;
+    const { refs, refBook } = collectMarkTargets([card]);
+    onMarkVerses(refs, refBook, "Mark verse");
+  };
+  const markTargetCount = open
+    ? collectMarkTargets([...open.cards, ...(open.shelf || [])]).refs.length
+    : 0;
 
   // ---- New table: blank, or seeded from a study ----
   const startScratch = () => {
@@ -423,6 +468,40 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          {onMarkVerses && (
+            <button
+              onClick={markAllVerses}
+              disabled={markTargetCount === 0}
+              title={
+                markTargetCount === 0
+                  ? "Add scripture cards first"
+                  : "Mark all this table’s verses in one panel"
+              }
+              style={{
+                fontFamily: SANS,
+                fontSize: 13,
+                fontWeight: 650,
+                color: markTargetCount === 0 ? "var(--muted)" : accent,
+                background: "transparent",
+                border:
+                  "1px solid " +
+                  (markTargetCount === 0 ? "var(--border)" : accent),
+                borderRadius: 999,
+                padding: "9px 15px",
+                opacity: markTargetCount === 0 ? 0.5 : 1,
+                cursor: markTargetCount === 0 ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <Ico
+                d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+                size={13}
+              />{" "}
+              Mark verses
+            </button>
+          )}
           <button
             disabled
             title="Present mode arrives in a later step"
@@ -517,6 +596,7 @@ export default function StudyTablesDesktop({
               accent={accent}
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
+              onMarkCard={onMarkVerses ? markCardVerses : undefined}
             />
           </div>
           {panelOpen && (
