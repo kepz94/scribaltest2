@@ -1,8 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ACCENT } from "../theme";
 import { Mark, MarkColor } from "../types";
 import {
-  useStudyTables,
   StudyTable,
   TablePurpose,
   TableCard,
@@ -48,6 +47,21 @@ interface Props {
   recordedStudies: Study[];
   searchStudies: SearchStudy[];
   chapterGroups: Record<string, string>;
+  // Tables + their persistence ops live in the shell now (single source of
+  // truth), so the shell can also drop verses onto a table's shelf from the
+  // reading panels and list tables in the Studies hub.
+  tables: StudyTable[];
+  createTable: (name?: string, purpose?: TablePurpose) => string;
+  updateTable: (
+    id: string,
+    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
+  ) => void;
+  renameTable: (id: string, name: string) => void;
+  deleteTable: (id: string) => void;
+  // When set, open straight into this table (deep-link from the Studies hub);
+  // the callback clears it once consumed.
+  openTableId?: string | null;
+  onConsumeOpenTable?: () => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -89,10 +103,24 @@ export default function StudyTablesDesktop({
   recordedStudies,
   searchStudies,
   chapterGroups,
+  tables,
+  createTable,
+  updateTable,
+  renameTable,
+  deleteTable,
+  openTableId,
+  onConsumeOpenTable,
 }: Props) {
-  const { tables, createTable, updateTable, renameTable, deleteTable } =
-    useStudyTables();
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Deep-link: when the shell asks for a specific table (e.g. tapped in the
+  // Studies hub), open it and clear the request.
+  useEffect(() => {
+    if (openTableId) {
+      setOpenId(openTableId);
+      onConsumeOpenTable?.();
+    }
+  }, [openTableId]);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   // Where the verse panel will drop cards: the chooser gap that opened it.
