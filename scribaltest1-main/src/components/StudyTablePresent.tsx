@@ -370,6 +370,21 @@ export default function StudyTablePresent({
 
     const c = beat.card;
 
+    // Followers never see a private note — not its veil, not its reveal. The
+    // beat still exists (indexes must match the presenter's), so it renders as
+    // a quiet placeholder. The note's text was also redacted from the room
+    // payload, so it isn't even present on this device.
+    if (following && c.kind === "note") {
+      return (
+        <div style={{ textAlign: "center", padding: "40px 0" }}>
+          <div style={{ ...kicker, color: P.faint }}>
+            The presenter is checking a note
+          </div>
+          <Ornament color={accent} />
+        </div>
+      );
+    }
+
     if (isVeiled) {
       // The veil: the presenter sees WHAT is waiting (a question / a note) but
       // not its content — one tap lifts it, the next advances. Rendered as
@@ -388,7 +403,7 @@ export default function StudyTablePresent({
               marginTop: 22,
             }}
           >
-            Tap to reveal
+            {following ? "Waiting for the presenter" : "Tap to reveal"}
           </div>
         </div>
       );
