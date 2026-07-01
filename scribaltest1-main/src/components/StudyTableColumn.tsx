@@ -869,6 +869,7 @@ export default function StudyTableColumn({
               {openAt === i && <Chooser index={i} />}
             </div>
             <div
+              data-card-id={card.id}
               style={{
                 position: "relative",
                 display: "grid",
