@@ -9,6 +9,7 @@ import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult }
 import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import ScribalWordmark from "./components/ScribalWordmark";
+import StudyTablesDesktop from "./components/StudyTablesDesktop";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
@@ -368,7 +369,7 @@ const VIEW_NAMES: Record<string, string> = {
 
 type CompileView = "outline" | "charting" | "distilled" | "covenants";
 
-type Mode = "read" | "compile" | "vault";
+type Mode = "read" | "compile" | "vault" | "table";
 
 // Mobile-style line icons. Stroke is "currentColor" so the parent sets the
 // color (we wrap these in a purple span in the header).
@@ -8785,6 +8786,41 @@ export default function App() {
                     <div
                       onClick={() => {
                         setBackupOpen(false);
+                        setMode("table");
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "var(--text)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          verticalAlign: "-2px",
+                          marginRight: "6px",
+                        }}
+                      >
+                        <svg
+                          width={14}
+                          height={14}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M4 5h16M4 12h16M4 19h10" />
+                        </svg>
+                      </span>
+                      Study tables
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
                         setMode("vault");
                       }}
                       style={{
@@ -10206,6 +10242,10 @@ export default function App() {
             </div>
           )}
         </div>
+      )}
+
+      {mode === "table" && (
+        <StudyTablesDesktop onClose={() => setMode("read")} />
       )}
 
       {mode === "compile" && (
