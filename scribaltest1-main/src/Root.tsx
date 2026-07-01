@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import App from "./App";
 import MobileApp from "./MobileApp";
 import InstallGate from "./components/InstallGate";
+import RoomViewer from "./components/RoomViewer";
 import {
   useIsNarrow,
   useIsStandalone,
@@ -15,6 +16,10 @@ export default function Root() {
   const standalone = useIsStandalone();
   const [updateReady, setUpdateReady] = useState(false);
 
+  // A scanned present-room QR (?room=CODE) opens the follower page directly —
+  // on ANY device, browser tab or not, with no install gate in the way.
+  const roomCode = new URLSearchParams(window.location.search).get("room");
+
   // Phones only: a touch device on a narrow screen.
   const isPhone = narrow && coarse;
 
@@ -25,6 +30,8 @@ export default function Root() {
     if (isPhone) registerServiceWorker(() => setUpdateReady(true));
     else unregisterServiceWorker();
   }, [isPhone]);
+
+  if (roomCode) return <RoomViewer code={roomCode.toUpperCase()} />;
 
   // In a browser tab → gate to install. Installed (standalone) → mobile app.
   const gated = isPhone && !standalone;
