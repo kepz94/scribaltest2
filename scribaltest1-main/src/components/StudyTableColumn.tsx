@@ -256,7 +256,6 @@ function ClipPreview({
       } catch {}
       playerRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
   // While the player is live, track the current time (for the readout) and stop
