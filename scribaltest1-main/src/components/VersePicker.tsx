@@ -70,6 +70,8 @@ interface Props {
   // The table's marks home: the "Marks from" selector starts here (falling back
   // to master), so picked verses carry the book the user chose at creation.
   defaultBookId?: string;
+  // Mobile: render as a full-screen overlay instead of the docked side panel.
+  fullScreen?: boolean;
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -122,6 +124,7 @@ export default function VersePicker({
   headerOffset = 76,
   initialTab,
   defaultBookId,
+  fullScreen = false,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
     initialTab || "search"
@@ -347,20 +350,33 @@ export default function VersePicker({
 
   return (
     <div
-      style={{
-        width: 384,
-        flex: "0 0 auto",
-        position: "sticky",
-        top: headerOffset + 14,
-        alignSelf: "flex-start",
-        maxHeight: "calc(100vh - " + (headerOffset + 34) + "px)",
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 14,
-        overflow: "hidden",
-      }}
+      style={
+        fullScreen
+          ? {
+              position: "fixed",
+              inset: 0,
+              zIndex: 320,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+            }
+          : {
+              width: 384,
+              flex: "0 0 auto",
+              position: "sticky",
+              top: headerOffset + 14,
+              alignSelf: "flex-start",
+              maxHeight: "calc(100vh - " + (headerOffset + 34) + "px)",
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 14,
+              overflow: "hidden",
+            }
+      }
     >
       {/* header + tabs */}
       <div style={{ padding: "12px 12px 0", flex: "0 0 auto" }}>
