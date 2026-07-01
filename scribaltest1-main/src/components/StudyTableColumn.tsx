@@ -23,6 +23,9 @@ interface StudyTableColumnProps {
   onChange: (cards: TableCard[]) => void;
   // Accent for active/primary bits; defaults to the app accent.
   accent?: string;
+  // Render one verse (its text + the reader's live marks) for a scripture card.
+  // Supplied by the parent, which owns the marks; absent in preview contexts.
+  renderVerse?: (reference: string) => React.ReactNode;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -157,6 +160,7 @@ export default function StudyTableColumn({
   cards,
   onChange,
   accent = ACCENT,
+  renderVerse,
 }: StudyTableColumnProps) {
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
@@ -578,9 +582,27 @@ export default function StudyTableColumn({
               Show as one passage
             </label>
           )}
-          <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
-            The verse text and your marks appear here once linked.
-          </div>
+          {refs.length > 0 && renderVerse ? (
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid var(--border)",
+                fontFamily: SERIF,
+                fontSize: 15.5,
+                lineHeight: 1.7,
+                color: "var(--text)",
+              }}
+            >
+              {refs.map((r) => (
+                <Fragment key={r}>{renderVerse(r)}</Fragment>
+              ))}
+            </div>
+          ) : (
+            <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+              The verse text and your marks appear here once linked.
+            </div>
+          )}
         </div>
       );
     }
