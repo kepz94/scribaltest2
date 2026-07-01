@@ -707,16 +707,16 @@ export default function StudyTableColumn({
             background: "var(--panel)",
             color: accent,
             cursor: "pointer",
-            display: "grid",
-            placeItems: "center",
-            lineHeight: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             opacity: show ? 1 : 0,
             pointerEvents: show ? "auto" : "none",
             transition: "opacity .12s ease",
-            boxShadow: "0 1px 4px rgba(60,50,30,.12)",
+            boxShadow: "0 0 3px rgba(60,50,30,.14)",
           }}
         >
-          <Icon d="M12 5v14 M5 12h14" size={13} />
+          <Icon d="M12 5v14 M5 12h14" size={14} />
         </button>
       </div>
     );
