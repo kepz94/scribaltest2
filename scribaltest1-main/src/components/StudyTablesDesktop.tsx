@@ -11,6 +11,7 @@ import {
 import StudyTableColumn from "./StudyTableColumn";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
+import type { ThemeMark } from "./SearchPanel";
 import { getVerse } from "../data/verseIndex";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
@@ -27,10 +28,13 @@ interface Props {
   accent?: string;
   // Height of the app's sticky header, so the outline rail sticks just below it.
   headerOffset?: number;
-  // The reader's live marks, so scripture cards + the verse panel show the exact
-  // same marking the reader has. Passed from the shell (single source of truth)
-  // rather than re-reading marks here.
-  marks: Mark[];
+  // Multi-book marks, passed from the shell (single source of truth):
+  //  - allMarks: every mark across every book (theme preview + "My marks").
+  //  - getBook: a specific book's full marks, to render the chosen book's marking.
+  //  - books: the book list, for the "Marks from" selector.
+  allMarks: ThemeMark[];
+  getBook: (id: string) => { marks: Mark[] };
+  books: { id: string; name: string; isMaster: boolean; markCount: number }[];
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -66,7 +70,9 @@ export default function StudyTablesDesktop({
   onClose,
   accent = ACCENT,
   headerOffset = 76,
-  marks,
+  allMarks,
+  getBook,
+  books,
 }: Props) {
   const { tables, createTable, updateTable, renameTable, deleteTable } =
     useStudyTables();
@@ -86,10 +92,10 @@ export default function StudyTablesDesktop({
       (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  // Render one verse's text + the reader's live marks. Same MarkedVerse the
-  // reader uses + the same marks array, so a card can never show different
-  // marking than the reader. Missing verses (bad ref) degrade gracefully.
-  const renderVerse = (reference: string): React.ReactNode => {
+  // Render one verse's text + the marks from a specific book (undefined = an
+  // empty, unmarked verse). Same MarkedVerse the reader uses + that book's real
+  // marks, so a card shows exactly the marking that book has on the verse.
+  const renderVerse = (reference: string, bookId?: string): React.ReactNode => {
     const rec = getVerse(reference);
     if (!rec)
       return (
@@ -97,22 +103,25 @@ export default function StudyTablesDesktop({
           {reference} — not found
         </span>
       );
+    const bookMarks = bookId ? getBook(bookId).marks : [];
     return (
       <MarkedVerse
         reference={reference}
         verseNumber={rec.verse}
         text={rec.text}
-        marks={marks}
+        marks={bookMarks}
       />
     );
   };
 
   // Insert the picked verses as scripture cards, appended to the open table.
-  const addVerses = (refs: string[], asPassage: boolean) => {
+  // Each card remembers which book its marks come from (bookId), so it keeps
+  // rendering that book's marking even as the reader works elsewhere.
+  const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
     const newCards: TableCard[] = asPassage
-      ? [{ id: newCardId(), kind: "scripture", refs, passage: true }]
-      : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r] }));
+      ? [{ id: newCardId(), kind: "scripture", refs, passage: true, bookId }]
+      : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r], bookId }));
     updateTable(open.id, { cards: [...open.cards, ...newCards] });
   };
 
@@ -301,6 +310,8 @@ export default function StudyTablesDesktop({
             <VersePicker
               onAdd={addVerses}
               renderVerse={renderVerse}
+              allMarks={allMarks}
+              books={books}
               onClose={() => setPanelOpen(false)}
               accent={accent}
               headerOffset={headerOffset}
