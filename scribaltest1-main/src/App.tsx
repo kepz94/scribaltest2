@@ -10,6 +10,7 @@ import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import ScribalWordmark from "./components/ScribalWordmark";
 import StudyTablesDesktop from "./components/StudyTablesDesktop";
+import { useStudyTables, newCardId, TableCard } from "./hooks/useStudyTables";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
 import Charting from "./components/Charting";
@@ -955,6 +956,18 @@ export default function App() {
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
+  // Study tables live in the shell (single source of truth) so the reading
+  // panels can drop verses onto a table's shelf and the Studies hub can list
+  // them. StudyTablesDesktop receives these as props.
+  const {
+    tables: studyTables,
+    createTable: createStudyTable,
+    updateTable: updateStudyTable,
+    renameTable: renameStudyTable,
+    deleteTable: deleteStudyTable,
+  } = useStudyTables();
+  const [openTableId, setOpenTableId] = useState<string | null>(null);
+
   const {
     studies: searchStudies,
     addStudy,
@@ -1600,6 +1613,8 @@ export default function App() {
   // study) versus the first step (new study vs. existing study).
   const [sendRefs, setSendRefs] = useState<string[] | null>(null);
   const [sendPicking, setSendPicking] = useState(false);
+  // Third send destination: picking which study table to set the verses aside in.
+  const [sendTablesPicking, setSendTablesPicking] = useState(false);
   const [moveTarget, setMoveTarget] = useState<{
     id: string;
     kind: "chapter" | "linked" | "keyword";
@@ -3776,6 +3791,40 @@ export default function App() {
   // When `migrate` is true the study is given its own brand-new session book and
   // its marks/notes/theme-names travel there (same path as "move to a new book"),
   // otherwise the study stays in its current book.
+  // ---- Send verses to a study table's shelf ("stored verses") ----
+  // Verses arrive as scripture cards carrying the currently active book, so the
+  // shelf shows them with the same marks the reader sees. They land in the
+  // table's "Selected" tab, ready to be placed into a column later.
+  const tableShelfCards = (refs: string[]): TableCard[] =>
+    refs.map((r) => ({
+      id: newCardId(),
+      kind: "scripture" as const,
+      refs: [r],
+      bookId: activeBookId,
+    }));
+  const sendVersesToTableShelf = (tableId: string, refs: string[]) => {
+    const t = studyTables.find((x) => x.id === tableId);
+    if (!t || refs.length === 0) return;
+    updateStudyTable(tableId, {
+      shelf: [...(t.shelf || []), ...tableShelfCards(refs)],
+    });
+    setShareMsg(
+      (refs.length === 1 ? "Verse" : refs.length + " verses") +
+        " set aside in \u201C" +
+        (t.name || "table") +
+        "\u201D"
+    );
+    setTimeout(() => setShareMsg(null), 2200);
+  };
+  // "New study table" from the send sheet: create it with these verses already
+  // on its shelf, then open it so they can be placed.
+  const sendVersesToNewTable = (refs: string[]) => {
+    const id = createStudyTable("Untitled");
+    if (refs.length) updateStudyTable(id, { shelf: tableShelfCards(refs) });
+    setOpenTableId(id);
+    setMode("table");
+  };
+
   const sendToExistingStudy = (
     study: SearchStudy,
     refs: string[],
@@ -4696,6 +4745,34 @@ export default function App() {
               (group.length === 1 ? "search" : "searches") +
               " will be removed. This can't be undone.",
             onConfirm: () => group.forEach((g) => removeStudy(g.id)),
+          }),
+      });
+    });
+
+    // Study tables — their own green category in the hub. Tapping one opens it
+    // straight in the table editor.
+    studyTables.forEach((t) => {
+      const n = t.cards.length;
+      const shelfN = (t.shelf || []).length;
+      rows.push({
+        id: t.id,
+        kind: "table",
+        bookId: "",
+        name: t.name || "Untitled table",
+        meta:
+          (n === 1 ? "1 card" : n + " cards") +
+          (shelfN ? " \u00b7 " + shelfN + " set aside" : ""),
+        themes: [],
+        onOpen: () => {
+          setStudiesOpen(false);
+          setOpenTableId(t.id);
+          setMode("table");
+        },
+        onDelete: () =>
+          askConfirm({
+            title: "Delete \u201C" + (t.name || "this table") + "\u201D?",
+            body: "This study table will be deleted. This can\u2019t be undone.",
+            onConfirm: () => deleteStudyTable(t.id),
           }),
       });
     });
@@ -7758,6 +7835,7 @@ export default function App() {
           onClick={() => {
             setSendRefs(null);
             setSendPicking(false);
+            setSendTablesPicking(false);
           }}
           style={{
             position: "fixed",
@@ -7784,7 +7862,132 @@ export default function App() {
               boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
             }}
           >
-            {!sendPicking ? (
+            {sendTablesPicking ? (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Add to a study table
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                  }}
+                >
+                  {sendRefs.length === 1
+                    ? "1 verse"
+                    : sendRefs.length + " verses"}{" "}
+                  will be set aside in the table’s stored verses.
+                </div>
+                {studyTables.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      maxHeight: "300px",
+                      overflowY: "auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    {studyTables.map((t) => {
+                      const n = t.cards.length;
+                      const shelfN = (t.shelf || []).length;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            const refs = sendRefs;
+                            setSendRefs(null);
+                            setSendTablesPicking(false);
+                            sendVersesToTableShelf(t.id, refs);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {t.name || "Untitled table"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "var(--muted)",
+                              marginTop: "2px",
+                            }}
+                          >
+                            {n === 1 ? "1 card" : n + " cards"}
+                            {shelfN ? " · " + shelfN + " set aside" : ""}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    const refs = sendRefs;
+                    setSendRefs(null);
+                    setSendTablesPicking(false);
+                    sendVersesToNewTable(refs);
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px dashed var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  + New study table
+                </button>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-start",
+                    marginTop: "14px",
+                  }}
+                >
+                  <button
+                    onClick={() => setSendTablesPicking(false)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            ) : !sendPicking ? (
               <>
                 <div style={{ fontSize: "16px", fontWeight: 700 }}>
                   Send{" "}
@@ -7843,6 +8046,41 @@ export default function App() {
                   }}
                 >
                   Add to an existing study
+                </button>
+                <button
+                  onClick={() => setSendTablesPicking(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #16a34a",
+                    background: "transparent",
+                    color: "#16a34a",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M3 9h18M9 20V9" />
+                  </svg>
+                  Set aside in a study table
                 </button>
                 <div
                   style={{
@@ -9958,6 +10196,7 @@ export default function App() {
                       if (refs.length) {
                         setSendRefs(refs);
                         setSendPicking(false);
+                        setSendTablesPicking(false);
                       }
                     }}
                     linkScriptures={
@@ -10221,6 +10460,13 @@ export default function App() {
           recordedStudies={recordedStudies}
           searchStudies={searchStudies}
           chapterGroups={chapterGroups}
+          tables={studyTables}
+          createTable={createStudyTable}
+          updateTable={updateStudyTable}
+          renameTable={renameStudyTable}
+          deleteTable={deleteStudyTable}
+          openTableId={openTableId}
+          onConsumeOpenTable={() => setOpenTableId(null)}
         />
       )}
 
