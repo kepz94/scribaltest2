@@ -30,7 +30,7 @@ import MobileWalkthrough from "./MobileWalkthrough";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
-import { useStudyTables } from "./hooks/useStudyTables";
+import { useStudyTables, StudyTable, newCardId } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
 import StudyTablesMobile from "./components/StudyTablesMobile";
 import MarkedVerse from "./components/MarkedVerse";
@@ -917,6 +917,91 @@ export default function MobileApp() {
   const [presentTableId, setPresentTableId] = useState<string | null>(null);
   // The mobile table editor: which table is open for editing.
   const [editTableId, setEditTableId] = useState<string | null>(null);
+  // The Study tables home screen (menu entry), with the how-it-works intro.
+  const [tablesHomeOpen, setTablesHomeOpen] = useState(false);
+  const [tablesIntroSeen, setTablesIntroSeen] = useState(
+    () => localStorage.getItem("scribal_tables_intro_seen") === "1"
+  );
+  // The example table is EPHEMERAL: in-memory only, never persisted or synced,
+  // gone on close. Edits route here instead of the real store.
+  const [exampleTable, setExampleTable] = useState<StudyTable | null>(null);
+  const tableUpdate: typeof updateStudyTable = (id, changes) => {
+    if (exampleTable && id === exampleTable.id) {
+      setExampleTable((p) =>
+        p ? { ...p, ...changes, updatedAt: Date.now() } : p
+      );
+      return;
+    }
+    updateStudyTable(id, changes);
+  };
+  const tableRename: typeof renameStudyTable = (id, name) => {
+    if (exampleTable && id === exampleTable.id) {
+      setExampleTable((p) => (p ? { ...p, name } : p));
+      return;
+    }
+    renameStudyTable(id, name);
+  };
+  const openExampleTable = () => {
+    const now = Date.now();
+    setExampleTable({
+      id: "example",
+      name: "Example · Faith as a Seed",
+      purpose: "lesson",
+      bookId: "master",
+      createdAt: now,
+      updatedAt: now,
+      cards: [
+        { id: newCardId(), kind: "heading", text: "An experiment on the word" },
+        {
+          id: newCardId(),
+          kind: "text",
+          role: "thought",
+          text: "Alma is talking to people who feel like outsiders — thrown out of their own synagogues. He doesn't start with an argument. He starts with an invitation to try something small.",
+        },
+        { id: newCardId(), kind: "scripture", refs: ["Alma 32:21"], bookId: "master" },
+        {
+          id: newCardId(),
+          kind: "question",
+          qtype: "analysis",
+          text: "Why would Alma define faith by what it is NOT?",
+        },
+        {
+          id: newCardId(),
+          kind: "note",
+          text: "Pause here. Let two or three people answer before moving on — the silence is doing work.",
+        },
+        { id: newCardId(), kind: "heading", text: "Plant the seed" },
+        {
+          id: newCardId(),
+          kind: "scripture",
+          refs: ["Alma 32:27", "Alma 32:28"],
+          passage: true,
+          bookId: "master",
+        },
+        {
+          id: newCardId(),
+          kind: "quote",
+          text: "Faith is a principle of action and of power.",
+          attribution: "True to the Faith",
+        },
+        {
+          id: newCardId(),
+          kind: "clip",
+          url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+          startSec: 0,
+          endSec: 12,
+          clipSaved: true,
+        },
+        {
+          id: newCardId(),
+          kind: "question",
+          qtype: "application",
+          text: "What is one place in your life where you could give the word a place to be planted this week?",
+        },
+      ],
+    });
+    setEditTableId("example");
+  };
 
   const {
     entries: vaultEntries,
@@ -6650,6 +6735,27 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
+              "Study tables",
+              "Build & present lessons",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="4" y="3" width="16" height="18" rx="2" />
+                <path d="M8 8h8 M8 12h8 M8 16h5" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setTablesHomeOpen(true);
+              }
+            )}
+            {homeTile(
               "Vault",
               (() => {
                 const n = books.filter((b) => !b.isMaster).length;
@@ -9461,19 +9567,317 @@ export default function MobileApp() {
           );
         })()}
 
+      {/* Study tables home: the menu entry — learn it, open the example,
+          open or create a table */}
+      {tablesHomeOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 250,
+            background: C.bg,
+            color: C.text,
+            display: "flex",
+            flexDirection: "column",
+            paddingTop: "env(safe-area-inset-top)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "12px 14px",
+              borderBottom: "1px solid " + C.border,
+              flex: "0 0 auto",
+            }}
+          >
+            <button
+              onClick={() => setTablesHomeOpen(false)}
+              aria-label="Back"
+              style={{
+                width: "34px",
+                height: "34px",
+                borderRadius: "9px",
+                border: "1px solid " + C.border,
+                background: C.panel,
+                color: C.muted,
+                cursor: "pointer",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+                flex: "0 0 auto",
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+            <div style={{ fontSize: "17px", fontWeight: 700 }}>
+              Study tables
+            </div>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              padding:
+                "14px 14px calc(24px + env(safe-area-inset-bottom))",
+            }}
+          >
+            {!tablesIntroSeen && (
+              <div
+                style={{
+                  border: "1px solid " + C.border,
+                  background: C.panel,
+                  borderRadius: "14px",
+                  padding: "14px 15px",
+                  marginBottom: "14px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <div style={{ flex: 1, fontSize: "15px", fontWeight: 700 }}>
+                    How a study table works
+                  </div>
+                  <button
+                    onClick={() => {
+                      setTablesIntroSeen(true);
+                      try {
+                        localStorage.setItem("scribal_tables_intro_seen", "1");
+                      } catch {}
+                    }}
+                    style={{
+                      border: 0,
+                      background: "transparent",
+                      color: C.muted,
+                      fontSize: "12.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    lineHeight: 1.65,
+                    color: C.text,
+                  }}
+                >
+                  <b>1 · Gather</b> — pull verses in from your studies or
+                  search. <b>2 · Arrange</b> — stack cards in order: scripture,
+                  your words, questions, quotes, a clip; the column becomes the
+                  lesson. <b>3 · Mark</b> — mark the verses in the reader and
+                  name your themes; they appear on the cards. <b>4 · Present</b>{" "}
+                  — perform it beat by beat, and share a QR so others follow
+                  along live.
+                </div>
+                <button
+                  onClick={() => {
+                    setTablesHomeOpen(false);
+                    openExampleTable();
+                  }}
+                  style={{
+                    marginTop: "11px",
+                    fontSize: "13px",
+                    fontWeight: 650,
+                    color: "#16a34a",
+                    background: "transparent",
+                    border: "1px solid #16a34a",
+                    borderRadius: "999px",
+                    padding: "8px 15px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Open the example table →
+                </button>
+              </div>
+            )}
+
+            {studyTables.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => {
+                  setTablesHomeOpen(false);
+                  setEditTableId(t.id);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "13px 13px",
+                  borderRadius: "12px",
+                  border: "1px solid " + C.border,
+                  background: C.panel,
+                  marginBottom: "9px",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "14.5px",
+                      fontWeight: 650,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t.name || "Untitled table"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: C.muted,
+                      marginTop: "2px",
+                    }}
+                  >
+                    {(t.cards.length === 1
+                      ? "1 card"
+                      : t.cards.length + " cards") +
+                      ((t.shelf || []).length
+                        ? " · " + (t.shelf || []).length + " set aside"
+                        : "")}
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (
+                      window.confirm(
+                        "Delete this study table? This can't be undone."
+                      )
+                    )
+                      deleteStudyTable(t.id);
+                  }}
+                  aria-label="Delete table"
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "8px",
+                    border: "1px solid " + C.border,
+                    background: "transparent",
+                    color: C.muted,
+                    cursor: "pointer",
+                    display: "grid",
+                    placeItems: "center",
+                    lineHeight: 0,
+                    flex: "0 0 auto",
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+
+            <button
+              onClick={() => {
+                const id = createStudyTable("Untitled", undefined, "master");
+                setTablesHomeOpen(false);
+                setEditTableId(id);
+              }}
+              style={{
+                width: "100%",
+                padding: "13px 12px",
+                borderRadius: "12px",
+                border: "1.5px dashed " + C.border,
+                background: "transparent",
+                color: "#16a34a",
+                fontSize: "14px",
+                fontWeight: 650,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textAlign: "center",
+              }}
+            >
+              + New study table
+            </button>
+
+            {tablesIntroSeen && (
+              <button
+                onClick={() => {
+                  setTablesHomeOpen(false);
+                  openExampleTable();
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: "10px",
+                  padding: "11px 12px",
+                  borderRadius: "12px",
+                  border: 0,
+                  background: "transparent",
+                  color: C.muted,
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "center",
+                }}
+              >
+                See the example table
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Edit a study table on the phone */}
       {editTableId &&
         (() => {
-          const t = studyTables.find((x) => x.id === editTableId);
+          const t =
+            exampleTable && editTableId === exampleTable.id
+              ? exampleTable
+              : studyTables.find((x) => x.id === editTableId);
           if (!t) return null;
+          const isExample = !!exampleTable && t.id === exampleTable.id;
           return (
             <StudyTablesMobile
               table={t}
-              onClose={() => setEditTableId(null)}
+              onClose={() => {
+                setEditTableId(null);
+                if (isExample) setExampleTable(null);
+              }}
               onPresent={() => setPresentTableId(t.id)}
-              updateTable={updateStudyTable}
-              renameTable={renameStudyTable}
+              updateTable={tableUpdate}
+              renameTable={tableRename}
               onDelete={() => {
+                if (isExample) {
+                  setExampleTable(null);
+                  setEditTableId(null);
+                  return;
+                }
                 if (
                   window.confirm(
                     "Delete this study table? This can't be undone."
@@ -9496,7 +9900,10 @@ export default function MobileApp() {
       {/* Present a study table (built anywhere, performed here) */}
       {presentTableId &&
         (() => {
-          const t = studyTables.find((x) => x.id === presentTableId);
+          const t =
+            exampleTable && presentTableId === exampleTable.id
+              ? exampleTable
+              : studyTables.find((x) => x.id === presentTableId);
           if (!t) return null;
           return (
             <StudyTablePresent
