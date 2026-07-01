@@ -10,6 +10,7 @@ import {
 import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
+import StudyTablePresent from "./StudyTablePresent";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
 import type { StudyMeta, StudyTheme } from "./VersePicker";
@@ -138,6 +139,8 @@ export default function StudyTablesDesktop({
     useState<"study" | "search" | "shelf">("search");
   // New-table flow: choose between a blank table and importing a study.
   const [creating, setCreating] = useState<null | "choose" | "import">(null);
+  // Present mode: the open table performed full-screen, beat by beat.
+  const [presenting, setPresenting] = useState(false);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
@@ -503,8 +506,13 @@ export default function StudyTablesDesktop({
             </button>
           )}
           <button
-            disabled
-            title="Present mode arrives in a later step"
+            onClick={() => open.cards.length > 0 && setPresenting(true)}
+            disabled={open.cards.length === 0}
+            title={
+              open.cards.length === 0
+                ? "Add cards first — the column becomes the lesson"
+                : "Present this table, beat by beat"
+            }
             style={{
               fontFamily: SANS,
               fontSize: 13,
@@ -514,8 +522,8 @@ export default function StudyTablesDesktop({
               border: 0,
               borderRadius: 999,
               padding: "9px 16px",
-              opacity: 0.4,
-              cursor: "not-allowed",
+              opacity: open.cards.length === 0 ? 0.4 : 1,
+              cursor: open.cards.length === 0 ? "not-allowed" : "pointer",
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
@@ -630,6 +638,15 @@ export default function StudyTablesDesktop({
               setOpenId(null);
             }}
             accent={accent}
+          />
+        )}
+
+        {presenting && (
+          <StudyTablePresent
+            table={open}
+            renderVerse={renderVerse}
+            accent={accent}
+            onClose={() => setPresenting(false)}
           />
         )}
       </div>
