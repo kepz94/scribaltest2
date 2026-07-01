@@ -64,6 +64,9 @@ interface Props {
   onClose: () => void;
   accent?: string;
   headerOffset?: number;
+  // Which tab to open on: defaults to "search". Import-a-study opens on "shelf"
+  // so the imported verses are visible in Selected right away.
+  initialTab?: "study" | "search" | "shelf";
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -114,8 +117,11 @@ export default function VersePicker({
   onClose,
   accent = ACCENT,
   headerOffset = 76,
+  initialTab,
 }: Props) {
-  const [tab, setTab] = useState<"study" | "search" | "shelf">("search");
+  const [tab, setTab] = useState<"study" | "search" | "shelf">(
+    initialTab || "search"
+  );
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
