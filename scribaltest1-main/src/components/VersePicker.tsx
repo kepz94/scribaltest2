@@ -17,6 +17,22 @@ const SERIF =
 
 type Source = "scripture" | "marks" | "themes";
 
+// A study as the picker shows it in its list. Scope resolution + theme grouping
+// live in the parent (which owns marks + labels); the picker just displays.
+export interface StudyMeta {
+  id: string;
+  name: string;
+  bookId: string;
+  kind: "chapter" | "linked" | "keyword";
+}
+
+// One theme within a study: a color, its name, and the marked verses under it.
+export interface StudyTheme {
+  color: MarkColor;
+  label: string;
+  refs: string[];
+}
+
 interface BookMeta {
   id: string;
   name: string;
@@ -33,6 +49,11 @@ interface Props {
   renderVerse: (reference: string, bookId?: string) => React.ReactNode;
   allMarks: ThemeMark[];
   books: BookMeta[];
+  // The user's studies (recorded + keyword) and a resolver that returns a
+  // study's marked verses grouped under its theme names. Both computed by the
+  // parent so scope + label resolution matches the reader exactly.
+  studies: StudyMeta[];
+  studyThemes: (studyId: string) => StudyTheme[];
   onClose: () => void;
   accent?: string;
   headerOffset?: number;
@@ -76,6 +97,8 @@ export default function VersePicker({
   renderVerse,
   allMarks,
   books,
+  studies,
+  studyThemes,
   onClose,
   accent = ACCENT,
   headerOffset = 76,
@@ -88,6 +111,9 @@ export default function VersePicker({
   const [selected, setSelected] = useState<string[]>([]);
   const [asPassage, setAsPassage] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
+  // "From a study": which study is open, and which theme sections are collapsed.
+  const [studyId, setStudyId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
 
   const softAccent = hexToRgba(accent, 0.1);
 
@@ -182,9 +208,57 @@ export default function VersePicker({
   const selCount = selected.length;
   const canPassage = selCount > 1 && isConsecutive(selected);
 
+  // The open study + its themed verses (recomputed only when the study changes).
+  const study = studies.find((s) => s.id === studyId) || null;
+  const themes = useMemo(
+    () => (studyId ? studyThemes(studyId) : []),
+    [studyId, studyThemes]
+  );
+
+  // Which book a verse's marks come from when added: the open study's book on the
+  // study tab, otherwise the chosen source book on the search tab.
+  const addBookId =
+    tab === "study" && study ? study.bookId : sourceBookId || undefined;
+
+  const toggleTheme = (refs: string[]) =>
+    setSelected((prev) => {
+      const all = refs.length > 0 && refs.every((r) => prev.includes(r));
+      if (all) return prev.filter((r) => !refs.includes(r));
+      const set = new Set(prev);
+      refs.forEach((r) => set.add(r));
+      return Array.from(set);
+    });
+  const anyExpanded = themes.some((t) => !collapsed[t.color]);
+  const setAllCollapsed = (val: boolean) => {
+    const next: Record<number, boolean> = {};
+    themes.forEach((t) => (next[t.color] = val));
+    setCollapsed(next);
+  };
+
+  // Shared square checkbox used by result rows, theme headers, and verse rows.
+  const checkbox = (on: boolean) => (
+    <span
+      style={{
+        flex: "0 0 auto",
+        width: 18,
+        height: 18,
+        marginTop: 3,
+        borderRadius: 5,
+        border: "1.5px solid " + (on ? accent : "var(--border)"),
+        background: on ? accent : "transparent",
+        color: "#fff",
+        display: "grid",
+        placeItems: "center",
+        lineHeight: 0,
+      }}
+    >
+      {on && <Ico d="M20 6 9 17l-5-5" size={12} />}
+    </span>
+  );
+
   const doAdd = () => {
     if (selCount === 0) return;
-    onAdd(sortRefs(selected), canPassage && asPassage, sourceBookId || undefined);
+    onAdd(sortRefs(selected), canPassage && asPassage, addBookId);
     setSelected([]);
     setAsPassage(false);
   };
@@ -324,17 +398,260 @@ export default function VersePicker({
       {tab === "study" ? (
         <div
           style={{
-            padding: "24px 18px 28px",
-            fontFamily: SANS,
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: "var(--muted)",
-            textAlign: "center",
+            flex: 1,
+            overflowY: "auto",
+            padding: "0 8px 8px",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          Pulling verses grouped under your own themes is coming next. For now,
-          use <strong style={{ color: "var(--text)" }}>Search</strong> — the same
-          search as the reader, including your marks and themes.
+          {!study ? (
+            studies.length === 0 ? (
+              <div style={hintStyle}>
+                No studies yet. Compile a chapter or a search into a study and it
+                will show up here — with its verses grouped under your themes.
+              </div>
+            ) : (
+              <div>
+                {studies.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      setStudyId(s.id);
+                      setCollapsed({});
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      marginBottom: 7,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontFamily: SERIF,
+                        fontSize: 14.5,
+                        color: "var(--text)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s.name || "Untitled study"}
+                    </span>
+                    <span
+                      style={{
+                        flex: "0 0 auto",
+                        fontFamily: SANS,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: ".04em",
+                        textTransform: "uppercase",
+                        color: "var(--muted)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        padding: "2px 8px",
+                      }}
+                    >
+                      {s.kind === "keyword" ? "search" : s.kind}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 10px" }}>
+                <button
+                  onClick={() => setStudyId(null)}
+                  style={{
+                    flex: "0 0 auto",
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: accent,
+                    background: "transparent",
+                    border: 0,
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  ← Studies
+                </button>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontFamily: SERIF,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {study.name || "Untitled study"}
+                </span>
+                {themes.length > 0 && (
+                  <button
+                    onClick={() => setAllCollapsed(anyExpanded)}
+                    style={{
+                      flex: "0 0 auto",
+                      fontFamily: SANS,
+                      fontSize: 11.5,
+                      color: "var(--muted)",
+                      background: "transparent",
+                      border: 0,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    {anyExpanded ? "Collapse all" : "Expand all"}
+                  </button>
+                )}
+              </div>
+              {themes.length === 0 ? (
+                <div style={hintStyle}>
+                  This study has no marked verses yet — mark some passages and
+                  they’ll appear here under their themes.
+                </div>
+              ) : (
+                themes.map((t) => {
+                  const allSel =
+                    t.refs.length > 0 && t.refs.every((r) => selected.includes(r));
+                  const isCollapsed = !!collapsed[t.color];
+                  return (
+                    <div key={t.color} style={{ marginBottom: 8 }}>
+                      <div
+                        onClick={() =>
+                          setCollapsed((c) => ({ ...c, [t.color]: !c[t.color] }))
+                        }
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 9,
+                          padding: "7px 8px",
+                          borderRadius: 9,
+                          cursor: "pointer",
+                          background: "var(--soft)",
+                        }}
+                      >
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleTheme(t.refs);
+                          }}
+                          style={{ marginTop: 0, lineHeight: 0 }}
+                        >
+                          {checkbox(allSel)}
+                        </span>
+                        <span
+                          style={{
+                            width: 11,
+                            height: 11,
+                            borderRadius: 999,
+                            background: COLOR_MAP[t.color],
+                            flex: "0 0 auto",
+                          }}
+                        />
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontFamily: SANS,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--text)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {t.label || "Unnamed theme"}
+                        </span>
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            fontFamily: SANS,
+                            fontSize: 11.5,
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {t.refs.length}
+                        </span>
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            color: "var(--muted)",
+                            lineHeight: 0,
+                            transform: isCollapsed ? "rotate(-90deg)" : "none",
+                            transition: "transform .12s ease",
+                          }}
+                        >
+                          <Ico d="M6 9l6 6 6-6" size={15} />
+                        </span>
+                      </div>
+                      {!isCollapsed &&
+                        t.refs.map((ref) => {
+                          const on = selected.includes(ref);
+                          return (
+                            <div
+                              key={ref}
+                              onClick={() => toggle(ref)}
+                              style={{
+                                display: "flex",
+                                gap: 9,
+                                alignItems: "flex-start",
+                                padding: "9px 8px 9px 14px",
+                                borderRadius: 10,
+                                cursor: "pointer",
+                                background: on ? softAccent : "transparent",
+                              }}
+                            >
+                              {checkbox(on)}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontFamily: SANS,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".02em",
+                                    color: accent,
+                                    marginBottom: 2,
+                                  }}
+                                >
+                                  {ref}
+                                </div>
+                                <div
+                                  style={{
+                                    fontFamily: SERIF,
+                                    fontSize: 14.5,
+                                    lineHeight: 1.6,
+                                    color: "var(--text)",
+                                  }}
+                                >
+                                  {renderVerse(ref, study.bookId)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  );
+                })
+              )}
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -675,7 +992,7 @@ export default function VersePicker({
             }}
           >
             Add {selCount} {selCount === 1 ? "verse" : "verses"}
-            {sourceBookId ? "" : " (empty)"}
+            {addBookId ? "" : " (empty)"}
           </button>
         </div>
       )}
