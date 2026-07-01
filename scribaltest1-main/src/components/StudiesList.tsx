@@ -4,7 +4,7 @@ import { COLOR_MAP, MarkColor } from "../types";
 // and hands them over ready to render.
 export type StudyRow = {
   id: string;
-  kind: "chapter" | "linked" | "keyword" | "combined";
+  kind: "chapter" | "linked" | "keyword" | "combined" | "table";
   bookId: string;
   name: string;
   meta: string;
@@ -29,6 +29,7 @@ const SECTIONS: {
   { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
   { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
   { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
+  { kinds: ["table"], label: "Study tables", color: "#16a34a" },
 ];
 
 export default function StudiesList({ rows, onClose, onImport }: Props) {
