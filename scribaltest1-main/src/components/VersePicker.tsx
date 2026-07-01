@@ -67,6 +67,9 @@ interface Props {
   // Which tab to open on: defaults to "search". Import-a-study opens on "shelf"
   // so the imported verses are visible in Selected right away.
   initialTab?: "study" | "search" | "shelf";
+  // The table's marks home: the "Marks from" selector starts here (falling back
+  // to master), so picked verses carry the book the user chose at creation.
+  defaultBookId?: string;
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -118,6 +121,7 @@ export default function VersePicker({
   accent = ACCENT,
   headerOffset = 76,
   initialTab,
+  defaultBookId,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
     initialTab || "search"
@@ -125,7 +129,9 @@ export default function VersePicker({
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
-  const [sourceBookId, setSourceBookId] = useState<string>("master");
+  const [sourceBookId, setSourceBookId] = useState<string>(
+    defaultBookId || "master"
+  );
   const [selected, setSelected] = useState<string[]>([]);
   const [asPassage, setAsPassage] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
