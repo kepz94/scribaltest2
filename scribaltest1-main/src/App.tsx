@@ -9480,6 +9480,8 @@ export default function App() {
               actionButton(sidebarOpen ? "Hide marks" : "Show marks", () =>
                 setSidebarOpen(!sidebarOpen)
               )}
+            {mode === "read" &&
+              actionButton("Study tables", () => setMode("table"))}
             {mode === "read" && (
               <span data-tour="compile" style={{ display: "inline-flex" }}>
                 {actionButton(
@@ -9498,8 +9500,6 @@ export default function App() {
                 )}
               </span>
             )}
-            {mode === "read" &&
-              actionButton("Study tables", () => setMode("table"))}
             {mode === "compile" &&
               actionButton(
                 "← Back to Reading",
