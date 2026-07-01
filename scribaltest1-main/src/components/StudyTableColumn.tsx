@@ -26,6 +26,9 @@ interface StudyTableColumnProps {
   // Render one verse (its text + the marks from a chosen book) for a scripture
   // card. Supplied by the parent, which owns the marks; absent in previews.
   renderVerse?: (reference: string, bookId?: string) => React.ReactNode;
+  // Picking "Scripture" from the chooser opens the verse panel at this insert
+  // index instead of dropping an empty card. Absent → falls back to an empty card.
+  onPickScripture?: (index: number) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -161,6 +164,7 @@ export default function StudyTableColumn({
   onChange,
   accent = ACCENT,
   renderVerse,
+  onPickScripture,
 }: StudyTableColumnProps) {
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
@@ -200,6 +204,16 @@ export default function StudyTableColumn({
     onChange([...cards.slice(0, index), card, ...cards.slice(index)]);
     setOpenAt(null);
     setFocusId(card.id);
+  };
+  // Choosing a type from the chooser. Scripture opens the verse panel (so verses
+  // come in already carrying their marks) instead of dropping an empty card.
+  const pickType = (index: number, kind: CardKind) => {
+    if (kind === "scripture" && onPickScripture) {
+      setOpenAt(null);
+      onPickScripture(index);
+      return;
+    }
+    insertAt(index, kind);
   };
 
   // ---------- shared bits ----------
@@ -776,7 +790,7 @@ export default function StudyTableColumn({
             {TYPES.map((t) => (
               <button
                 key={t.kind}
-                onClick={() => insertAt(index, t.kind)}
+                onClick={() => pickType(index, t.kind)}
                 style={{
                   display: "flex",
                   alignItems: "center",
