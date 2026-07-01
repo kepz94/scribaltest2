@@ -99,6 +99,10 @@ export interface StudyTable {
   // Tombstone. A table counts as deleted only while the delete is its newest
   // action (>= nameAt and updatedAt), so a later edit or rename revives it.
   deletedAt?: number;
+  // Verses set aside for this table but not yet placed in the column — a staging
+  // shelf. Holds scripture cards only; each is moved into `cards` when the user
+  // decides where it goes. Syncs last-write like `cards`.
+  shelf?: TableCard[];
 }
 
 // A table is hidden iff its delete is its newest action (so editing or renaming
@@ -150,7 +154,7 @@ export function useStudyTables() {
   // make a stale name win a rename sync.
   const updateTable = (
     id: string,
-    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose">>
+    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
   ) => {
     setTables((prev) =>
       prev.map((t) => {
@@ -212,6 +216,7 @@ export function useStudyTables() {
         const contentNewer = (r.updatedAt || 0) > (local.updatedAt || 0);
         const cards = contentNewer ? r.cards || [] : local.cards;
         const purpose = contentNewer ? r.purpose : local.purpose;
+        const shelf = contentNewer ? r.shelf : local.shelf;
         const updatedAt = Math.max(local.updatedAt || 0, r.updatedAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
         const differs =
@@ -229,6 +234,8 @@ export function useStudyTables() {
             purpose,
             updatedAt,
           };
+          if (shelf && shelf.length) merged.shelf = shelf;
+          else delete merged.shelf;
           if (deletedAt) merged.deletedAt = deletedAt;
           byId.set(r.id, merged);
           changed = true;
