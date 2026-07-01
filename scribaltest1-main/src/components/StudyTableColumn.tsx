@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ACCENT } from "../theme";
+import { COLOR_MAP, MarkColor } from "../types";
 import {
   TableCard,
   CardKind,
@@ -32,6 +33,12 @@ interface StudyTableColumnProps {
   // Open the marking panel for a single scripture card's verse(s). Absent →
   // the per-card "Mark" affordance is hidden.
   onMarkCard?: (card: TableCard) => void;
+  // Named themes present on a scripture card's verses (color + the user's
+  // name for it, resolved by the parent). Rendered as chips on the card.
+  themesFor?: (
+    refs: string[],
+    bookId?: string
+  ) => { color: number; label: string }[];
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -151,6 +158,69 @@ export function fmtTime(t?: number): string {
   const m = Math.floor(t / 60),
     s = t % 60;
   return m + ":" + String(s).padStart(2, "0");
+}
+
+// A time field ("m:ss" or plain seconds) that lets you TYPE freely. The old
+// version parsed and reformatted on every keystroke, so entering "6" instantly
+// became "0:06" and the caret/digits jumped around. This one holds a local
+// draft while focused and only parses + commits on blur or Enter.
+function TimeInput({
+  seconds,
+  placeholder,
+  onCommit,
+  style,
+}: {
+  seconds?: number;
+  placeholder?: string;
+  onCommit: (secs: number | undefined) => void;
+  style?: React.CSSProperties;
+}) {
+  const [draft, setDraft] = useState(fmtTime(seconds));
+  const focused = useRef(false);
+  // Adopt outside changes (e.g. "Set start here" from the preview player) —
+  // but never while the user is mid-typing.
+  useEffect(() => {
+    if (!focused.current) setDraft(fmtTime(seconds));
+  }, [seconds]);
+  const commit = () => {
+    const val = draft.trim();
+    if (!val) {
+      onCommit(undefined);
+      setDraft("");
+      return;
+    }
+    const p = val.split(":").map((n) => parseInt(n, 10) || 0);
+    const secs =
+      p.length >= 3
+        ? p[0] * 3600 + p[1] * 60 + p[2]
+        : p.length === 2
+        ? p[0] * 60 + p[1]
+        : p[0] || 0;
+    onCommit(secs);
+    setDraft(fmtTime(secs));
+  };
+  return (
+    <input
+      value={draft}
+      placeholder={placeholder}
+      inputMode="numeric"
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      style={style}
+    />
+  );
 }
 
 // Fade a hex color to an rgba tint (safe on every browser, unlike color-mix).
@@ -491,6 +561,7 @@ export default function StudyTableColumn({
   renderVerse,
   onPickScripture,
   onMarkCard,
+  themesFor,
 }: StudyTableColumnProps) {
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
@@ -905,6 +976,48 @@ export default function StudyTableColumn({
               </span>
             ))}
           </div>
+          {refs.length > 0 &&
+            themesFor &&
+            (() => {
+              const themes = themesFor(refs, card.bookId);
+              if (!themes.length) return null;
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 10,
+                    marginBottom: 8,
+                  }}
+                >
+                  {themes.map((t) => (
+                    <span
+                      key={t.color}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontFamily: SANS,
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          background: COLOR_MAP[t.color as MarkColor],
+                          flexShrink: 0,
+                        }}
+                      />
+                      {t.label}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
           {refs.length > 1 && (
             <label
               style={{
@@ -1052,29 +1165,19 @@ export default function StudyTableColumn({
             <div style={{ ...kicker, marginBottom: 5 }}>
               Starts at {card.startSec != null ? "(from link)" : ""}
             </div>
-            <input
-              value={fmtTime(card.startSec)}
+            <TimeInput
+              seconds={card.startSec}
               placeholder="0:00"
-              onChange={(e) => {
-                const p = e.target.value.split(":").map((n) => parseInt(n, 10) || 0);
-                const secs = p.length === 2 ? p[0] * 60 + p[1] : p[0] || 0;
-                patch(card.id, { startSec: secs });
-              }}
+              onCommit={(secs) => patch(card.id, { startSec: secs ?? 0 })}
               style={clipTimeStyle}
             />
           </div>
           <div style={{ flex: 1, minWidth: 110 }}>
             <div style={{ ...kicker, marginBottom: 5 }}>End (optional)</div>
-            <input
-              value={fmtTime(card.endSec)}
+            <TimeInput
+              seconds={card.endSec}
               placeholder="e.g. 6:10"
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                if (!val) return patch(card.id, { endSec: undefined });
-                const p = val.split(":").map((n) => parseInt(n, 10) || 0);
-                const secs = p.length === 2 ? p[0] * 60 + p[1] : p[0] || 0;
-                patch(card.id, { endSec: secs });
-              }}
+              onCommit={(secs) => patch(card.id, { endSec: secs })}
               style={clipTimeStyle}
             />
           </div>
