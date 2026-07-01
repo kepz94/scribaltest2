@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { ACCENT } from "../theme";
+import { Mark } from "../types";
 import {
   useStudyTables,
   StudyTable,
   TablePurpose,
   TableCard,
+  newCardId,
 } from "../hooks/useStudyTables";
 import StudyTableColumn from "./StudyTableColumn";
+import MarkedVerse from "./MarkedVerse";
+import VersePicker from "./VersePicker";
+import { getVerse } from "../data/verseIndex";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
 // one open table (its name, purpose, and the column surface). This owns the
@@ -22,6 +27,10 @@ interface Props {
   accent?: string;
   // Height of the app's sticky header, so the outline rail sticks just below it.
   headerOffset?: number;
+  // The reader's live marks, so scripture cards + the verse panel show the exact
+  // same marking the reader has. Passed from the shell (single source of truth)
+  // rather than re-reading marks here.
+  marks: Mark[];
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -57,11 +66,13 @@ export default function StudyTablesDesktop({
   onClose,
   accent = ACCENT,
   headerOffset = 76,
+  marks,
 }: Props) {
   const { tables, createTable, updateTable, renameTable, deleteTable } =
     useStudyTables();
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
@@ -73,6 +84,36 @@ export default function StudyTablesDesktop({
     const el = document.querySelector('[data-card-id="' + id + '"]');
     if (el)
       (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  // Render one verse's text + the reader's live marks. Same MarkedVerse the
+  // reader uses + the same marks array, so a card can never show different
+  // marking than the reader. Missing verses (bad ref) degrade gracefully.
+  const renderVerse = (reference: string): React.ReactNode => {
+    const rec = getVerse(reference);
+    if (!rec)
+      return (
+        <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          {reference} — not found
+        </span>
+      );
+    return (
+      <MarkedVerse
+        reference={reference}
+        verseNumber={rec.verse}
+        text={rec.text}
+        marks={marks}
+      />
+    );
+  };
+
+  // Insert the picked verses as scripture cards, appended to the open table.
+  const addVerses = (refs: string[], asPassage: boolean) => {
+    if (!open || refs.length === 0) return;
+    const newCards: TableCard[] = asPassage
+      ? [{ id: newCardId(), kind: "scripture", refs, passage: true }]
+      : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r] }));
+    updateTable(open.id, { cards: [...open.cards, ...newCards] });
   };
 
   const iconBtn: React.CSSProperties = {
@@ -113,8 +154,9 @@ export default function StudyTablesDesktop({
   if (open) {
     const sections = open.cards.filter((c) => c.kind === "heading");
     const hasRail = sections.length > 0;
+    const editorMax = 780 + (hasRail ? 200 : 0) + (panelOpen ? 386 : 0);
     return (
-      <div style={{ maxWidth: hasRail ? 980 : 780, margin: "0 auto", padding: "16px 16px 120px" }}>
+      <div style={{ maxWidth: editorMax, margin: "0 auto", padding: "16px 16px 120px" }}>
         {/* editor top bar */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
           <button onClick={() => setOpenId(null)} style={iconBtn} title="Back to your tables">
@@ -139,6 +181,27 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          <button
+            onClick={() => setPanelOpen((v) => !v)}
+            title={panelOpen ? "Hide the verse panel" : "Add verses from scripture"}
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              color: panelOpen ? accent : "var(--text)",
+              background: panelOpen ? softAccent : "var(--panel)",
+              border: "1px solid " + (panelOpen ? accent : "var(--border)"),
+              borderRadius: 999,
+              padding: "8px 15px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              flex: "0 0 auto",
+            }}
+          >
+            <Ico d="M12 5v14 M5 12h14" size={14} /> Verses
+          </button>
           <button
             disabled
             title="Present mode arrives in a later step"
@@ -231,8 +294,18 @@ export default function StudyTablesDesktop({
               cards={open.cards}
               onChange={(cards) => updateTable(open.id, { cards })}
               accent={accent}
+              renderVerse={renderVerse}
             />
           </div>
+          {panelOpen && (
+            <VersePicker
+              onAdd={addVerses}
+              renderVerse={renderVerse}
+              onClose={() => setPanelOpen(false)}
+              accent={accent}
+              headerOffset={headerOffset}
+            />
+          )}
         </div>
 
         {confirmId === open.id && (
