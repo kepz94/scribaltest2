@@ -10535,13 +10535,12 @@ export default function App() {
             new Set<number>([...unionMarks.map((m) => m.color), selectedColor])
           ).sort((a, b) => a - b) as MarkColor[];
           const legendValue = (color: MarkColor): string => {
+            // Scoped labels ONLY — the reader's own precedence. Falling back to
+            // the book-level color name leaked old names (e.g. red = "Nephi")
+            // onto brand-new pages that had nothing to do with that study.
             for (const p of labelPairs) {
               const bk = getBook(p.book);
               const v = bk.scopedLabels?.[p.scope]?.[color];
-              if (v && v.trim()) return v;
-            }
-            for (const p of labelPairs) {
-              const v = getBook(p.book).colorLabels?.[color];
               if (v && v.trim()) return v;
             }
             return "";
