@@ -13,6 +13,7 @@
 //   }
 
 import { getApps, initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import {
   getFirestore,
   doc,
@@ -45,6 +46,9 @@ export interface RoomDoc {
   revealed: number[]; // beat indexes whose veil the presenter lifted
   ended: boolean;
   updatedAt: number;
+  // The presenter. Security rules only let this uid update or end the room —
+  // everyone else can only read (watch).
+  ownerUid: string;
 }
 
 // The lookup key a card's themes are stored under (mirrored by the viewer).
@@ -68,10 +72,13 @@ export function joinUrl(code: string): string {
 
 export async function createRoom(
   code: string,
-  payload: Omit<RoomDoc, "i" | "revealed" | "ended" | "updatedAt">
+  payload: Omit<RoomDoc, "i" | "revealed" | "ended" | "updatedAt" | "ownerUid">
 ): Promise<void> {
+  const uid = getAuth(app).currentUser?.uid;
+  if (!uid) throw new Error("not-signed-in");
   await setDoc(doc(db, "rooms", code), {
     ...payload,
+    ownerUid: uid,
     i: 0,
     revealed: [],
     ended: false,
