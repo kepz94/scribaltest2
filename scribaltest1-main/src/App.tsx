@@ -1081,10 +1081,13 @@ export default function App() {
       makeTabId("master", 0, 0, 0)
   );
 
-  // Drag-to-reorder reading panels. dragTabRef holds the panel being dragged;
-  // dragOverTab is the panel currently under the cursor (for the drop hint).
+  // Drag-to-reorder reading panels via their tab pills. dragTabRef holds the
+  // pill being dragged; draggingTab drives the source pill's lifted look;
+  // dragOverTab is the pill we last reordered past (throttles live reordering
+  // so each crossing moves the tab exactly once).
   const dragTabRef = useRef<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
+  const [draggingTab, setDraggingTab] = useState<string | null>(null);
   const reorderTabs = (fromId: string | null, toId: string) => {
     if (!fromId || fromId === toId) return;
     setTabs((prev) => {
@@ -1097,6 +1100,22 @@ export default function App() {
       return next;
     });
   };
+
+  // The sticky tab-pill row must pin directly beneath the sticky header. The
+  // header height is not fixed (it reflows/wraps at narrow widths), so measure
+  // it and pin the pill row at exactly that offset — otherwise the header
+  // overlaps the pills as you scroll.
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [headerH, setHeaderH] = useState(76);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const measure = () => setHeaderH(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
   // the same group are one study — they compile together and share one set of
@@ -3323,37 +3342,30 @@ export default function App() {
     const tabIds = locs.map((loc) =>
       makeTabId(s.bookId, loc.volume, loc.book, loc.chapter)
     );
-    setTabs((prev) => {
-      let next = prev;
-      locs.forEach((loc) => {
-        const id = makeTabId(s.bookId, loc.volume, loc.book, loc.chapter);
-        if (!next.some((t) => t.id === id))
-          next = [
-            ...next,
-            {
-              id,
-              volume: loc.volume,
-              book: loc.book,
-              chapter: loc.chapter,
-              bookId: s.bookId,
-            },
-          ];
-      });
+    setTabs(() => {
+      const next: Tab[] = [];
+      const add = (tab: Tab) => {
+        if (!next.some((t) => t.id === tab.id)) next.push(tab);
+      };
+      locs.forEach((loc) =>
+        add({
+          id: makeTabId(s.bookId, loc.volume, loc.book, loc.chapter),
+          volume: loc.volume,
+          book: loc.book,
+          chapter: loc.chapter,
+          bookId: s.bookId,
+        })
+      );
       linkedKw.forEach((ks) => {
-        const id = "studytab_" + ks.id;
-        if (next.some((t) => t.id === id)) return;
         const loc = ks.refs.length ? refLoc.get(ks.refs[0]) : undefined;
-        next = [
-          ...next,
-          {
-            id,
-            volume: loc ? loc.volume : 0,
-            book: loc ? loc.book : 0,
-            chapter: loc ? loc.chapter : 0,
-            bookId: ks.bookId,
-            studyId: ks.id,
-          },
-        ];
+        add({
+          id: "studytab_" + ks.id,
+          volume: loc ? loc.volume : 0,
+          book: loc ? loc.book : 0,
+          chapter: loc ? loc.chapter : 0,
+          bookId: ks.bookId,
+          studyId: ks.id,
+        });
       });
       return next;
     });
@@ -3377,29 +3389,32 @@ export default function App() {
 
   // ---- keyword (search) studies ----
   // Open a study as its own tab — desktop is tab-based, not a full-screen screen.
-  const openStudyTab = (study: SearchStudy) => {
+  const openStudyTab = (study: SearchStudy, replace = false) => {
     setStudiesOpen(false);
     const loc = study.refs.length ? refLoc.get(study.refs[0]) : undefined;
     const tabId = "studytab_" + study.id;
+    const tab = {
+      id: tabId,
+      volume: loc ? loc.volume : 0,
+      book: loc ? loc.book : 0,
+      chapter: loc ? loc.chapter : 0,
+      bookId: study.bookId,
+      studyId: study.id,
+    };
     setTabs((prev) =>
-      prev.some((t) => t.id === tabId)
+      replace
+        ? [tab]
+        : prev.some((t) => t.id === tabId)
         ? prev
-        : [
-            ...prev,
-            {
-              id: tabId,
-              volume: loc ? loc.volume : 0,
-              book: loc ? loc.book : 0,
-              chapter: loc ? loc.chapter : 0,
-              bookId: study.bookId,
-              studyId: study.id,
-            },
-          ]
+        : [...prev, tab]
     );
     setActiveTabId(tabId);
     // Reopen on the view this study was saved in, so a relational keyword study
     // lands on Relational instead of whatever view was last on screen.
     setCompileView(study.view ?? "outline");
+    // A plain keyword study has no notes to compile — it just opens its verses
+    // in the reading panel. (Combined studies come through openRecordedStudy.)
+    if (replace) setMode("read");
   };
   // "Open as a study": open the selected verses as their own working study tab
   // right away — no naming or book step. Nothing is saved here; the study is
@@ -4549,7 +4564,7 @@ export default function App() {
             " · " +
             fmtDate(ss.createdAt),
           themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-          onOpen: () => openStudyTab(ss),
+          onOpen: () => openStudyTab(ss, true),
           onAddVerses: () => {
             setAddToStudyId(ss.id);
             setShowSearch(true);
@@ -4619,7 +4634,7 @@ export default function App() {
           " verses" +
           withBook(bookLabel(primary.bookId)),
         themes: themesFor(primary.bookId, "searchstudy:" + primary.id, refOk),
-        onOpen: () => openStudyTab(primary),
+        onOpen: () => openStudyTab(primary, true),
         onAddVerses: () => {
           setAddToStudyId(primary.id);
           setShowSearch(true);
@@ -8243,6 +8258,7 @@ export default function App() {
 
       {/* ============ HEADER ============ */}
       <div
+        ref={headerRef}
         style={{
           display: "flex",
           alignItems: "center",
@@ -9459,8 +9475,8 @@ export default function App() {
             borderBottom: "1px solid var(--border)",
             flexWrap: "wrap",
             position: "sticky",
-            top: "62px",
-            zIndex: 25,
+            top: headerH,
+            zIndex: 31,
           }}
           data-tour="tabs"
         >
@@ -9501,11 +9517,50 @@ export default function App() {
             return (
               <div
                 key={t.id}
+                draggable={tabs.length > 1}
+                onDragStart={(e) => {
+                  dragTabRef.current = t.id;
+                  setDraggingTab(t.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  try {
+                    e.dataTransfer.setData("text/plain", t.id);
+                  } catch (err) {
+                    /* some browsers require a payload; ignore if it throws */
+                  }
+                }}
+                onDragEnd={() => {
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                onDragOver={(e) => {
+                  const from = dragTabRef.current;
+                  if (!from || from === t.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  // Reorder live as the cursor crosses each pill, so the tab
+                  // visibly slides into its new spot while you drag it (the
+                  // panels follow because both are driven by the same order).
+                  if (dragOverTab !== t.id) {
+                    setDragOverTab(t.id);
+                    reorderTabs(from, t.id);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "3px",
+                  cursor: tabs.length > 1 ? "grab" : "default",
+                  opacity: draggingTab === t.id ? 0.4 : 1,
+                  transform: draggingTab === t.id ? "scale(0.96)" : "scale(1)",
+                  transition: "opacity 0.15s, transform 0.15s",
                 }}
               >
                 <span
@@ -9774,21 +9829,6 @@ export default function App() {
                   key={t.id}
                   data-compile-tab={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
-                  onDragOver={(e) => {
-                    if (dragTabRef.current && dragTabRef.current !== t.id) {
-                      e.preventDefault();
-                      if (dragOverTab !== t.id) setDragOverTab(t.id);
-                    }
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverTab === t.id) setDragOverTab(null);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    reorderTabs(dragTabRef.current, t.id);
-                    dragTabRef.current = null;
-                    setDragOverTab(null);
-                  }}
                   style={{
                     flex: multi ? "1 0 540px" : 1,
                     minWidth: 0,
@@ -9796,64 +9836,11 @@ export default function App() {
                     outline:
                       multi && isActive ? "2px solid " + ICON_ACCENT : "none",
                     outlineOffset: "-2px",
-                    boxShadow:
-                      dragOverTab === t.id
-                        ? "inset 4px 0 0 " + ICON_ACCENT
-                        : "none",
                     position: "relative",
                     overflow: "hidden",
                     height: "calc(100vh - 164px)",
                   }}
                 >
-                  {multi && (
-                    <div
-                      draggable
-                      onDragStart={(e) => {
-                        dragTabRef.current = t.id;
-                        e.dataTransfer.effectAllowed = "move";
-                        try {
-                          e.dataTransfer.setData("text/plain", t.id);
-                        } catch (err) {
-                          /* some browsers require a payload; ignore if it throws */
-                        }
-                      }}
-                      onDragEnd={() => {
-                        dragTabRef.current = null;
-                        setDragOverTab(null);
-                      }}
-                      title="Drag to reorder this panel"
-                      style={{
-                        position: "absolute",
-                        top: 6,
-                        left: 6,
-                        zIndex: 6,
-                        width: 24,
-                        height: 18,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "grab",
-                        borderRadius: 5,
-                        color: "var(--muted)",
-                        background: "var(--panel)",
-                        border: "1px solid var(--border)",
-                      }}
-                    >
-                      <svg
-                        width="11"
-                        height="13"
-                        viewBox="0 0 11 13"
-                        fill="currentColor"
-                      >
-                        <circle cx="3" cy="2.5" r="1.15" />
-                        <circle cx="8" cy="2.5" r="1.15" />
-                        <circle cx="3" cy="6.5" r="1.15" />
-                        <circle cx="8" cy="6.5" r="1.15" />
-                        <circle cx="3" cy="10.5" r="1.15" />
-                        <circle cx="8" cy="10.5" r="1.15" />
-                      </svg>
-                    </div>
-                  )}
                   <div
                     style={{
                       height: "100%",
