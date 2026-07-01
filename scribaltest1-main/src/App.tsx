@@ -10212,7 +10212,10 @@ export default function App() {
       )}
 
       {mode === "table" && (
-        <StudyTablesDesktop onClose={() => setMode("read")} />
+        <StudyTablesDesktop
+          onClose={() => setMode("read")}
+          headerOffset={headerH}
+        />
       )}
 
       {mode === "compile" && (
