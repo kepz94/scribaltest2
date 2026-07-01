@@ -9439,6 +9439,28 @@ export default function MobileApp() {
                   />
                 );
               }}
+              themesFor={(refs, bookId) => {
+                // Same resolution the desktop card uses: scoped label for the
+                // verse's chapter/group, falling back to the book color name.
+                const bk = getBook(bookId || "master");
+                const refset = new Set(refs);
+                const seen = new Map<number, string>();
+                bk.marks.forEach((m) => {
+                  if (!refset.has(m.reference) || seen.has(m.color)) return;
+                  const scoped =
+                    bk.scopedLabels?.[resolveScope(scopeOf(m.reference))]?.[
+                      m.color
+                    ];
+                  const label = (
+                    (scoped || bk.colorLabels?.[m.color] || "") as string
+                  ).trim();
+                  seen.set(m.color, label);
+                });
+                return Array.from(seen.entries())
+                  .filter(([, label]) => !!label)
+                  .sort((a, b) => a[0] - b[0])
+                  .map(([color, label]) => ({ color, label }));
+              }}
               onClose={() => setPresentTableId(null)}
             />
           );
