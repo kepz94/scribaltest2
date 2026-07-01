@@ -52,13 +52,20 @@ interface Props {
   // truth), so the shell can also drop verses onto a table's shelf from the
   // reading panels and list tables in the Studies hub.
   tables: StudyTable[];
-  createTable: (name?: string, purpose?: TablePurpose) => string;
+  createTable: (
+    name?: string,
+    purpose?: TablePurpose,
+    bookId?: string
+  ) => string;
   updateTable: (
     id: string,
     changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
   ) => void;
   renameTable: (id: string, name: string) => void;
   deleteTable: (id: string) => void;
+  // Create a new session book (for "start from scratch" → new session): the
+  // shell owns useMarks, so book creation happens there. Returns the book id.
+  createSession: (name: string) => string;
   // When set, open straight into this table (deep-link from the Studies hub);
   // the callback clears it once consumed.
   openTableId?: string | null;
@@ -116,6 +123,7 @@ export default function StudyTablesDesktop({
   updateTable,
   renameTable,
   deleteTable,
+  createSession,
   openTableId,
   onConsumeOpenTable,
   onMarkVerses,
@@ -137,8 +145,12 @@ export default function StudyTablesDesktop({
   // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
   const [panelTab, setPanelTab] =
     useState<"study" | "search" | "shelf">("search");
-  // New-table flow: choose between a blank table and importing a study.
-  const [creating, setCreating] = useState<null | "choose" | "import">(null);
+  // New-table flow: choose blank vs. import; "book" picks the marks home for a
+  // from-scratch table (master / a session / a brand-new named session).
+  const [creating, setCreating] = useState<
+    null | "choose" | "import" | "book"
+  >(null);
+  const [newSessionName, setNewSessionName] = useState("");
   // Present mode: the open table performed full-screen, beat by beat.
   const [presenting, setPresenting] = useState(false);
 
@@ -182,10 +194,17 @@ export default function StudyTablesDesktop({
     refs: string[],
     asPassage: boolean,
     bookId?: string
-  ): TableCard[] =>
-    asPassage
-      ? [{ id: newCardId(), kind: "scripture", refs, passage: true, bookId }]
-      : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r], bookId }));
+  ): TableCard[] => {
+    const bid = bookId || (open && open.bookId) || undefined;
+    return asPassage
+      ? [{ id: newCardId(), kind: "scripture", refs, passage: true, bookId: bid }]
+      : refs.map((r) => ({
+          id: newCardId(),
+          kind: "scripture",
+          refs: [r],
+          bookId: bid,
+        }));
+  };
 
   // Insert the picked verses as scripture cards at the spot the panel was opened
   // from (falling back to the end). Consecutive adds in one panel session stack
@@ -259,7 +278,7 @@ export default function StudyTablesDesktop({
       if (c.kind === "scripture" && c.refs) {
         c.refs.forEach((r) => {
           if (!(r in refBook)) {
-            refBook[r] = c.bookId || "master";
+            refBook[r] = c.bookId || (open && open.bookId) || "master";
             refs.push(r);
           }
         });
@@ -321,19 +340,34 @@ export default function StudyTablesDesktop({
 
   // ---- New table: blank, or seeded from a study ----
   const startScratch = () => {
+    setNewSessionName("");
+    setCreating("book");
+  };
+  // From-scratch step 2: the chosen marks home. All this table's marking pulls
+  // from (and writes to) this book unless a card says otherwise.
+  const pickBook = (bookId: string) => {
     setCreating(null);
-    const id = createTable();
+    const id = createTable("Untitled", undefined, bookId);
     setOpenId(id);
+  };
+  const createSessionAndPick = () => {
+    const name = newSessionName.trim() || "Session";
+    pickBook(createSession(name));
   };
   // Import a study: gather every marked verse in the study (across its themes)
   // and set them aside on the new table's shelf, then open it on the shelf tab
-  // so they're waiting in "Selected".
+  // so they're waiting in "Selected". The study's own book becomes the table's
+  // marks home.
   const importStudy = (meta: StudyMeta) => {
     setCreating(null);
     const refs = sortRefs(
       Array.from(new Set(studyThemes(meta.id).flatMap((t) => t.refs)))
     );
-    const id = createTable(meta.name?.trim() || "Untitled");
+    const id = createTable(
+      meta.name?.trim() || "Untitled",
+      undefined,
+      meta.bookId
+    );
     if (refs.length) {
       const cards: TableCard[] = refs.map((r) => ({
         id: newCardId(),
@@ -659,6 +693,7 @@ export default function StudyTablesDesktop({
               accent={accent}
               headerOffset={headerOffset}
               initialTab={panelTab}
+              defaultBookId={open.bookId}
             />
           )}
         </div>
@@ -805,7 +840,148 @@ export default function StudyTablesDesktop({
               boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
             }}
           >
-            {creating === "choose" ? (
+            {creating === "book" ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  Where should marking live?
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 16,
+                  }}
+                >
+                  This table pulls its verse marking from the book you pick —
+                  and marks you make from the table go there too.
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    overflowY: "auto",
+                    marginBottom: 12,
+                  }}
+                >
+                  {books.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => pickBook(b.id)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "11px 13px",
+                        borderRadius: 10,
+                        border:
+                          "1px solid " +
+                          (b.isMaster ? softAccentBorder : "var(--border)"),
+                        background: b.isMaster ? softAccent : "var(--panel)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontFamily: SANS,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {b.isMaster ? "Master Book" : b.name || "Session"}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}
+                      >
+                        {b.markCount === 1
+                          ? "1 mark"
+                          : b.markCount + " marks"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    borderTop: "1px solid var(--border)",
+                    paddingTop: 12,
+                  }}
+                >
+                  <input
+                    value={newSessionName}
+                    placeholder="Or name a new session…"
+                    onChange={(e) => setNewSessionName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newSessionName.trim()) {
+                        e.preventDefault();
+                        createSessionAndPick();
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                      outline: 0,
+                      background: "var(--soft)",
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      color: "var(--text)",
+                      padding: "10px 12px",
+                    }}
+                  />
+                  <button
+                    onClick={createSessionAndPick}
+                    disabled={!newSessionName.trim()}
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: "#fff",
+                      background: accent,
+                      border: 0,
+                      borderRadius: 10,
+                      padding: "10px 16px",
+                      opacity: newSessionName.trim() ? 1 : 0.45,
+                      cursor: newSessionName.trim() ? "pointer" : "not-allowed",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    Create
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-start",
+                    marginTop: 12,
+                  }}
+                >
+                  <button
+                    onClick={() => setCreating("choose")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            ) : creating === "choose" ? (
               <>
                 <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
                   New study table
@@ -834,7 +1010,7 @@ export default function StudyTablesDesktop({
                     on: startScratch,
                     d: "M12 5v14 M5 12h14",
                     title: "Start from scratch",
-                    sub: "A blank table — add cards in any order",
+                    sub: "A blank table — you pick where its marking lives",
                     strong: false,
                   },
                 ].map((o) => (
