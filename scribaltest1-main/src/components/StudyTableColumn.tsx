@@ -653,35 +653,33 @@ export default function StudyTableColumn({
   }
 
   // ---------- per-kind editors ----------
-  const renderCard = (card: TableCard) => {
+  const renderCard = (card: TableCard, index: number) => {
     const focus = card.id === focusId;
 
     if (card.kind === "heading") {
       return (
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <input
-            value={card.text || ""}
-            autoFocus={focus}
-            placeholder="Name this section…"
-            onChange={(e) => patch(card.id, { text: e.target.value })}
-            style={{
-              fontFamily: SANS,
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: ".12em",
-              textTransform: "uppercase",
-              color: "var(--text)",
-              background: "transparent",
-              border: 0,
-              borderBottom: "1.5px dashed var(--border)",
-              outline: 0,
-              padding: "6px 2px",
-              flex: "0 1 340px",
-              minWidth: 0,
-            }}
-          />
-          <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
-        </div>
+        <input
+          value={card.text || ""}
+          autoFocus={focus}
+          placeholder="Name this section…"
+          onChange={(e) => patch(card.id, { text: e.target.value })}
+          style={{
+            display: "block",
+            width: "100%",
+            boxSizing: "border-box",
+            fontFamily: SANS,
+            fontSize: 15,
+            fontWeight: 700,
+            letterSpacing: ".12em",
+            textTransform: "uppercase",
+            color: "var(--text)",
+            background: "transparent",
+            border: 0,
+            borderBottom: "1.5px dashed var(--border)",
+            outline: 0,
+            padding: "6px 2px",
+          }}
+        />
       );
     }
 
@@ -799,7 +797,7 @@ export default function StudyTableColumn({
     if (card.kind === "scripture") {
       const refs = card.refs || [];
       return (
-        <div style={{ ...cardBox, borderLeft: "3px solid var(--pen3)" }}>
+        <div style={{ ...cardBox, borderLeft: "3px solid " + accent }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <div style={{ ...kicker, color: accent, margin: 0, flex: 1 }}>
               <Icon d={ICON.scripture} size={12} /> Scripture
@@ -871,7 +869,7 @@ export default function StudyTableColumn({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                marginTop: refs.length ? 0 : 11,
+                marginTop: 4,
                 fontFamily: SANS,
                 fontSize: 12.5,
                 color: "var(--muted)",
@@ -902,6 +900,30 @@ export default function StudyTableColumn({
                 <Fragment key={r}>{renderVerse(r, card.bookId)}</Fragment>
               ))}
             </div>
+          ) : refs.length === 0 && onPickScripture ? (
+            <button
+              onClick={() => {
+                // A verse-less card is a dead end (verses come from the panel),
+                // so swap it for the panel itself: remove it and open the picker
+                // at its spot — the chosen verses land exactly here.
+                remove(card.id);
+                onPickScripture(index);
+              }}
+              style={{
+                marginTop: 4,
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                color: accent,
+                background: "transparent",
+                border: "1px solid " + accent,
+                borderRadius: 999,
+                padding: "6px 14px",
+              }}
+            >
+              Choose verses
+            </button>
           ) : (
             <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
               The verse text and your marks appear here once linked.
@@ -1319,7 +1341,7 @@ export default function StudyTableColumn({
                 }}
               />
               <div style={{ gridColumn: 2, minWidth: 0, padding: "8px 0 8px 4px" }}>
-                {renderCard(card)}
+                {renderCard(card, i)}
                 <Controls id={card.id} />
               </div>
             </div>
