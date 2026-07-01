@@ -10218,6 +10218,9 @@ export default function App() {
           allMarks={allMarks}
           getBook={getBook}
           books={books}
+          recordedStudies={recordedStudies}
+          searchStudies={searchStudies}
+          chapterGroups={chapterGroups}
         />
       )}
 
