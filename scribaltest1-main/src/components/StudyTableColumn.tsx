@@ -29,6 +29,9 @@ interface StudyTableColumnProps {
   // Picking "Scripture" from the chooser opens the verse panel at this insert
   // index instead of dropping an empty card. Absent → falls back to an empty card.
   onPickScripture?: (index: number) => void;
+  // Open the marking panel for a single scripture card's verse(s). Absent →
+  // the per-card "Mark" affordance is hidden.
+  onMarkCard?: (card: TableCard) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -445,6 +448,7 @@ export default function StudyTableColumn({
   accent = ACCENT,
   renderVerse,
   onPickScripture,
+  onMarkCard,
 }: StudyTableColumnProps) {
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
@@ -796,8 +800,36 @@ export default function StudyTableColumn({
       const refs = card.refs || [];
       return (
         <div style={{ ...cardBox, borderLeft: "3px solid var(--pen3)" }}>
-          <div style={{ ...kicker, color: accent }}>
-            <Icon d={ICON.scripture} size={12} /> Scripture
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ ...kicker, color: accent, margin: 0, flex: 1 }}>
+              <Icon d={ICON.scripture} size={12} /> Scripture
+            </div>
+            {onMarkCard && refs.length > 0 && (
+              <button
+                onClick={() => onMarkCard(card)}
+                title="Mark this verse"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: accent,
+                  background: "transparent",
+                  border: "1px solid " + accent,
+                  borderRadius: 999,
+                  padding: "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon
+                  d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+                  size={11}
+                />
+                Mark
+              </button>
+            )}
           </div>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: refs.length ? 10 : 0 }}>
             {refs.map((r, i) => (
