@@ -20,6 +20,18 @@ interface Props {
   ) => { color: number; label: string }[];
   accent?: string;
   onClose: () => void;
+  // Live room (presenter side): start creates the Firestore room and returns
+  // its code; push mirrors each beat change; end closes it. Supplied by the
+  // shell (which owns the marks needed to build the room's payload).
+  room?: {
+    start: () => Promise<string>;
+    push: (code: string, i: number, revealed: number[]) => void;
+    end: (code: string) => void;
+    joinUrl: (code: string) => string;
+  };
+  // Follower mode (viewer side): the beat position comes from the presenter;
+  // all navigation is disabled and the footer says who's driving.
+  follow?: { i: number; revealed: number[] };
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -138,7 +150,10 @@ export default function StudyTablePresent({
   themesFor,
   accent = "#8b5cf6",
   onClose,
+  room,
+  follow,
 }: Props) {
+  const following = !!follow;
   // Build the beat list once per card set. Headings become section pages;
   // empty cards are skipped so a stray blank never becomes a dead page.
   const beats = useMemo<Beat[]>(() => {
@@ -159,12 +174,35 @@ export default function StudyTablePresent({
     return out;
   }, [table.cards]);
 
-  const [i, setI] = useState(0);
+  const [localI, setLocalI] = useState(0);
   // Which beat indexes have had their veil lifted (questions / notes).
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  const [localRevealed, setLocalRevealed] = useState<Set<number>>(new Set());
+  // Followers take beat + veils from the presenter; presenters own them.
+  const i = following ? Math.min(follow!.i, beats.length - 1) : localI;
+  const revealed = following ? new Set(follow!.revealed) : localRevealed;
+  const setI: React.Dispatch<React.SetStateAction<number>> = following
+    ? () => {}
+    : setLocalI;
+  const setRevealed: React.Dispatch<React.SetStateAction<Set<number>>> =
+    following ? () => {} : setLocalRevealed;
+  // Live room (presenter): the active code, and the QR overlay's visibility.
+  const [roomCode, setRoomCode] = useState<string | null>(null);
+  const [roomOverlay, setRoomOverlay] = useState(false);
+  const [roomBusy, setRoomBusy] = useState(false);
+  const [roomError, setRoomError] = useState("");
   const startRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Mirror each beat change into the live room. The room object is rebuilt by
+  // the shell every render, so it lives in a ref and the effect keys off the
+  // actual beat state.
+  const roomRef = useRef(room);
+  roomRef.current = room;
+  useEffect(() => {
+    if (roomRef.current && roomCode)
+      roomRef.current.push(roomCode, localI, Array.from(localRevealed));
+  }, [roomCode, localI, localRevealed]);
 
   useEffect(() => {
     const t = window.setInterval(
@@ -187,6 +225,7 @@ export default function StudyTablePresent({
   const isVeiled = veiledKind && !revealed.has(i);
 
   const next = () => {
+    if (following) return;
     // A veiled beat reveals first; the next tap advances.
     if (isVeiled) {
       setRevealed((p) => new Set(p).add(i));
@@ -194,12 +233,49 @@ export default function StudyTablePresent({
     }
     setI((p) => Math.min(p + 1, beats.length - 1));
   };
-  const back = () => setI((p) => Math.max(p - 1, 0));
+  const back = () => {
+    if (following) return;
+    setI((p) => Math.max(p - 1, 0));
+  };
+
+  // Closing while a room is live ends it, so followers see "ended" instead of
+  // a frozen last beat.
+  const handleClose = () => {
+    if (roomRef.current && roomCode) roomRef.current.end(roomCode);
+    onClose();
+  };
+
+  // Presenter: open (or create) the live room and show the QR overlay.
+  const openRoom = async () => {
+    if (!room) return;
+    if (roomCode) {
+      setRoomOverlay(true);
+      return;
+    }
+    setRoomBusy(true);
+    setRoomError("");
+    try {
+      const code = await room.start();
+      setRoomCode(code);
+      setRoomOverlay(true);
+    } catch {
+      setRoomError(
+        "Couldn’t start the room. Make sure you’re signed in to sync, then try again."
+      );
+      setRoomOverlay(true);
+    }
+    setRoomBusy(false);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight" || e.key === " " || e.key === "Enter") {
+      if (e.key === "Escape") {
+        if (roomRef.current && roomCode) roomRef.current.end(roomCode);
+        onClose();
+        return;
+      }
+      if (following) return;
+      if (e.key === "ArrowRight" || e.key === " " || e.key === "Enter") {
         e.preventDefault();
         if (veiledKind && !revealed.has(i)) {
           setRevealed((p) => new Set(p).add(i));
@@ -212,7 +288,7 @@ export default function StudyTablePresent({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [i, veiledKind, revealed, beats.length, onClose]);
+  }, [i, veiledKind, revealed, beats.length, onClose, following, roomCode]);
 
   const kicker: React.CSSProperties = {
     fontFamily: SANS,
@@ -272,7 +348,7 @@ export default function StudyTablePresent({
             {fmtElapsed(elapsed)} · thank you
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             style={{
               marginTop: 26,
               fontFamily: SANS,
@@ -608,7 +684,7 @@ export default function StudyTablePresent({
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               aria-label="Leave present mode"
               style={{
                 width: 28,
@@ -655,6 +731,55 @@ export default function StudyTablePresent({
             >
               {sectionLabel || table.name || "Present"}
             </div>
+            {room && !following && (
+              <button
+                onClick={openRoom}
+                disabled={roomBusy}
+                title="Share a live room — others scan a QR and follow along"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontFamily: SANS,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  textTransform: "uppercase",
+                  color: roomCode ? "#fff" : P.muted,
+                  background: roomCode ? accent : P.paper,
+                  border: "1px solid " + (roomCode ? accent : P.border),
+                  borderRadius: 999,
+                  padding: "5px 11px",
+                  cursor: roomBusy ? "wait" : "pointer",
+                  flex: "0 0 auto",
+                }}
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 999,
+                    background: roomCode ? "#fff" : P.faint,
+                  }}
+                />
+                {roomCode ? "Live · " + roomCode : roomBusy ? "…" : "Share"}
+              </button>
+            )}
+            {following && (
+              <span
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  textTransform: "uppercase",
+                  color: accent,
+                  flex: "0 0 auto",
+                }}
+              >
+                Following
+              </span>
+            )}
             <div
               style={{
                 fontFamily: SANS,
@@ -720,23 +845,24 @@ export default function StudyTablePresent({
             background: P.paper,
           }}
         >
-          <button
-            onClick={back}
-            disabled={i === 0}
-            aria-label="Back"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 999,
-              border: "1px solid " + P.border,
-              background: P.paper,
-              color: i === 0 ? P.border : P.muted,
-              cursor: i === 0 ? "default" : "pointer",
-              display: "grid",
-              placeItems: "center",
-              lineHeight: 0,
-            }}
-          >
+          {!following && (
+            <button
+              onClick={back}
+              disabled={i === 0}
+              aria-label="Back"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 999,
+                border: "1px solid " + P.border,
+                background: P.paper,
+                color: i === 0 ? P.border : P.muted,
+                cursor: i === 0 ? "default" : "pointer",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+              }}
+            >
             <svg
               width="15"
               height="15"
@@ -749,7 +875,8 @@ export default function StudyTablePresent({
             >
               <path d="M15 6l-6 6 6 6" />
             </svg>
-          </button>
+            </button>
+          )}
           <div
             style={{ flex: 1, display: "flex", alignItems: "center", gap: 12 }}
           >
@@ -781,41 +908,166 @@ export default function StudyTablePresent({
                 whiteSpace: "nowrap",
               }}
             >
-              {Math.min(i + 1, beats.length)} / {beats.length}
+              {following
+                ? "Following · " + Math.min(i + 1, beats.length) + " / " + beats.length
+                : Math.min(i + 1, beats.length) + " / " + beats.length}
             </div>
           </div>
-          <button
-            onClick={next}
-            disabled={atEnd}
-            aria-label="Next"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 999,
-              border: 0,
-              background: atEnd ? P.veil : accent,
-              color: atEnd ? P.muted : "#fff",
-              cursor: atEnd ? "default" : "pointer",
-              display: "grid",
-              placeItems: "center",
-              lineHeight: 0,
-            }}
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {!following && (
+            <button
+              onClick={next}
+              disabled={atEnd}
+              aria-label="Next"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 999,
+                border: 0,
+                background: atEnd ? P.veil : accent,
+                color: atEnd ? P.muted : "#fff",
+                cursor: atEnd ? "default" : "pointer",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+              }}
             >
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Live room overlay: the QR to scan, the code, the link */}
+      {roomOverlay && (
+        <div
+          onClick={() => setRoomOverlay(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 460,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 360,
+              background: P.paper,
+              color: P.text,
+              borderRadius: 16,
+              padding: "24px 24px 20px",
+              textAlign: "center",
+              boxShadow: "0 30px 80px -20px rgba(0,0,0,.6)",
+            }}
+          >
+            {roomError ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 600 }}>
+                  Room not started
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: P.muted,
+                    lineHeight: 1.5,
+                    marginTop: 8,
+                  }}
+                >
+                  {roomError}
+                </div>
+              </>
+            ) : roomCode ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 600 }}>
+                  Follow along
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    color: P.muted,
+                    marginTop: 4,
+                    marginBottom: 14,
+                  }}
+                >
+                  Scan to follow this presentation live.
+                </div>
+                <img
+                  src={
+                    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" +
+                    encodeURIComponent(room ? room.joinUrl(roomCode) : "")
+                  }
+                  alt={"QR code for room " + roomCode}
+                  width={220}
+                  height={220}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid " + P.border,
+                    background: "#fff",
+                    padding: 8,
+                  }}
+                />
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    letterSpacing: ".24em",
+                    marginTop: 12,
+                  }}
+                >
+                  {roomCode}
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 11.5,
+                    color: P.muted,
+                    marginTop: 5,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {room ? room.joinUrl(roomCode) : ""}
+                </div>
+              </>
+            ) : null}
+            <button
+              onClick={() => setRoomOverlay(false)}
+              style={{
+                marginTop: 16,
+                fontFamily: SANS,
+                fontSize: 13.5,
+                fontWeight: 650,
+                color: "#fff",
+                background: accent,
+                border: 0,
+                borderRadius: 999,
+                padding: "10px 22px",
+                cursor: "pointer",
+              }}
+            >
+              {roomCode ? "Keep presenting" : "Close"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
