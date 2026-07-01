@@ -11,6 +11,14 @@ import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
 import StudyTablePresent from "./StudyTablePresent";
+import {
+  newRoomCode,
+  createRoom,
+  pushBeat,
+  endRoom,
+  joinUrl,
+  themesKey,
+} from "../presentRoom";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
 import type { StudyMeta, StudyTheme } from "./VersePicker";
@@ -151,6 +159,16 @@ export default function StudyTablesDesktop({
     null | "choose" | "import" | "book"
   >(null);
   const [newSessionName, setNewSessionName] = useState("");
+  // The "how it works" intro on the home — shown until dismissed.
+  const [showIntro, setShowIntro] = useState(
+    () => localStorage.getItem("scribal_tables_intro_seen") !== "1"
+  );
+  const dismissIntro = () => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem("scribal_tables_intro_seen", "1");
+    } catch {}
+  };
   // Present mode: the open table performed full-screen, beat by beat.
   const [presenting, setPresenting] = useState(false);
 
@@ -355,6 +373,73 @@ export default function StudyTablesDesktop({
   const createSessionAndPick = () => {
     const name = newSessionName.trim() || "Session";
     pickBook(createSession(name));
+  };
+  // The example: a finished table that uses every card kind, so a new user can
+  // see what a built lesson looks like — and Present it immediately. It's a
+  // real table (homed to master, so their own marks show if they have any):
+  // explore it, change it, delete it.
+  const makeExample = () => {
+    setCreating(null);
+    const id = createTable("Example · Faith as a Seed", "lesson", "master");
+    const cards: TableCard[] = [
+      { id: newCardId(), kind: "heading", text: "An experiment on the word" },
+      {
+        id: newCardId(),
+        kind: "text",
+        role: "thought",
+        text:
+          "Alma is talking to people who feel like outsiders — thrown out of their own synagogues. He doesn't start with an argument. He starts with an invitation to try something small.",
+      },
+      {
+        id: newCardId(),
+        kind: "scripture",
+        refs: ["Alma 32:21"],
+        bookId: "master",
+      },
+      {
+        id: newCardId(),
+        kind: "question",
+        qtype: "analysis",
+        text: "Why would Alma define faith by what it is NOT?",
+      },
+      {
+        id: newCardId(),
+        kind: "note",
+        text:
+          "Pause here. Let two or three people answer before moving on — the silence is doing work.",
+      },
+      { id: newCardId(), kind: "heading", text: "Plant the seed" },
+      {
+        id: newCardId(),
+        kind: "scripture",
+        refs: ["Alma 32:27", "Alma 32:28"],
+        passage: true,
+        bookId: "master",
+      },
+      {
+        id: newCardId(),
+        kind: "quote",
+        text:
+          "Faith is a principle of action and of power.",
+        attribution: "True to the Faith",
+      },
+      {
+        id: newCardId(),
+        kind: "clip",
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        startSec: 0,
+        endSec: 12,
+        clipSaved: true,
+      },
+      {
+        id: newCardId(),
+        kind: "question",
+        qtype: "application",
+        text: "What is one place in your life where you could give the word a place to be planted this week?",
+      },
+    ];
+    updateTable(id, { cards });
+    setOpenId(id);
   };
   // Import a study: gather every marked verse in the study (across its themes)
   // and set them aside on the new table's shelf, then open it on the shelf tab
@@ -720,6 +805,44 @@ export default function StudyTablesDesktop({
             themesFor={cardThemes}
             accent={accent}
             onClose={() => setPresenting(false)}
+            room={{
+              // Serialize everything a follower needs: the table, the marks on
+              // its verses (from each card's book), and its named themes.
+              start: async () => {
+                const marks: Mark[] = [];
+                const seenMark = new Set<string>();
+                const themes: Record<
+                  string,
+                  { color: number; label: string }[]
+                > = {};
+                [...open.cards, ...(open.shelf || [])].forEach((c) => {
+                  if (c.kind !== "scripture" || !c.refs || !c.refs.length)
+                    return;
+                  const bid = c.bookId || open.bookId || "master";
+                  const refset = new Set(c.refs);
+                  getBook(bid).marks.forEach((m) => {
+                    if (refset.has(m.reference) && !seenMark.has(m.id)) {
+                      seenMark.add(m.id);
+                      marks.push(m);
+                    }
+                  });
+                  themes[themesKey(c.refs, c.bookId)] = cardThemes(
+                    c.refs,
+                    c.bookId || open.bookId
+                  );
+                });
+                const code = newRoomCode();
+                await createRoom(code, {
+                  tableJson: JSON.stringify(open),
+                  marksJson: JSON.stringify(marks),
+                  themesJson: JSON.stringify(themes),
+                });
+                return code;
+              },
+              push: pushBeat,
+              end: endRoom,
+              joinUrl,
+            }}
           />
         )}
       </div>
@@ -769,6 +892,88 @@ export default function StudyTablesDesktop({
           <Ico d="M12 5v14 M5 12h14" size={15} /> New table
         </button>
       </div>
+
+      {showIntro && (
+        <div
+          style={{
+            border: "1px solid " + softAccentBorder,
+            background: softAccent,
+            borderRadius: 14,
+            padding: "16px 18px",
+            marginBottom: 18,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                fontFamily: SERIF,
+                fontSize: 17,
+                fontWeight: 600,
+                color: "var(--text)",
+              }}
+            >
+              How a study table works
+            </div>
+            <button
+              onClick={dismissIntro}
+              aria-label="Dismiss"
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "var(--muted)",
+                cursor: "pointer",
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              color: "var(--text)",
+              lineHeight: 1.7,
+            }}
+          >
+            <b>1 · Gather</b> — pull verses in from your studies or search (or
+            send them here from any reading panel).{" "}
+            <b>2 · Arrange</b> — stack cards in order: scripture, your words,
+            questions, quotes, a clip; the column becomes the lesson.{" "}
+            <b>3 · Mark</b> — open Mark verses, mark everything in one screen,
+            and name your themes; they appear on the cards.{" "}
+            <b>4 · Present</b> — perform it beat by beat, and share a QR so
+            others follow along live.
+          </div>
+          <button
+            onClick={makeExample}
+            style={{
+              marginTop: 12,
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 650,
+              color: accent,
+              background: "transparent",
+              border: "1px solid " + accent,
+              borderRadius: 999,
+              padding: "8px 16px",
+              cursor: "pointer",
+            }}
+          >
+            Open the example table →
+          </button>
+        </div>
+      )}
 
       {tables.length === 0 ? (
         <div
@@ -1013,6 +1218,13 @@ export default function StudyTablesDesktop({
                     d: "M12 5v14 M5 12h14",
                     title: "Start from scratch",
                     sub: "A blank table — you pick where its marking lives",
+                    strong: false,
+                  },
+                  {
+                    on: makeExample,
+                    d: "M12 2l2.4 4.9L20 8l-4 3.9.9 5.6-4.9-2.6L7.1 17.5 8 11.9 4 8l5.6-1.1z",
+                    title: "See the example",
+                    sub: "A finished lesson using every card — open it, present it",
                     strong: false,
                   },
                 ].map((o) => (
