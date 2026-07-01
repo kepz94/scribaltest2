@@ -277,6 +277,7 @@ export default function StudyTablesMobile({
 
   return (
     <div
+      className="st-mobile"
       style={{
         position: "fixed",
         inset: 0,
@@ -288,6 +289,12 @@ export default function StudyTablesMobile({
         paddingTop: "env(safe-area-inset-top)",
       }}
     >
+      {/* iOS auto-zooms (and a standalone PWA can't zoom back out) whenever a
+          focused input's font-size is under 16px. Force every field in this
+          editor — including the verse panel rendered inside it — to 16px so
+          the trigger can't exist. Stylesheet !important outranks the inline
+          sizes the shared components carry. */}
+      <style>{`.st-mobile input, .st-mobile textarea { font-size: 16px !important; }`}</style>
       {/* header: back · name · present · delete */}
       <div
         style={{
