@@ -128,9 +128,9 @@ export default function StudyTablesDesktop({
   chapterGroups,
   tables,
   createTable,
-  updateTable,
-  renameTable,
-  deleteTable,
+  updateTable: updateTableReal,
+  renameTable: renameTableReal,
+  deleteTable: deleteTableReal,
   createSession,
   openTableId,
   onConsumeOpenTable,
@@ -169,13 +169,40 @@ export default function StudyTablesDesktop({
       localStorage.setItem("scribal_tables_intro_seen", "1");
     } catch {}
   };
+  // The example table is EPHEMERAL: it lives only in this state, is never
+  // persisted or synced, never appears in any list, and vanishes on close.
+  // These shadows route edits to it in-memory and everything else to the real
+  // store — so every existing call site works unchanged for both.
+  const [example, setExample] = useState<StudyTable | null>(null);
+  const updateTable: typeof updateTableReal = (id, changes) => {
+    if (example && id === example.id) {
+      setExample((p) => (p ? { ...p, ...changes, updatedAt: Date.now() } : p));
+      return;
+    }
+    updateTableReal(id, changes);
+  };
+  const renameTable: typeof renameTableReal = (id, name) => {
+    if (example && id === example.id) {
+      setExample((p) => (p ? { ...p, name } : p));
+      return;
+    }
+    renameTableReal(id, name);
+  };
+  const deleteTable: typeof deleteTableReal = (id) => {
+    if (example && id === example.id) {
+      setExample(null);
+      return;
+    }
+    deleteTableReal(id);
+  };
   // Present mode: the open table performed full-screen, beat by beat.
   const [presenting, setPresenting] = useState(false);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
 
-  const open = openId ? tables.find((t) => t.id === openId) || null : null;
+  const open =
+    example || (openId ? tables.find((t) => t.id === openId) || null : null);
 
   // Smooth-scroll a card into view (used by the outline rail).
   const scrollToCard = (id: string) => {
@@ -380,7 +407,7 @@ export default function StudyTablesDesktop({
   // explore it, change it, delete it.
   const makeExample = () => {
     setCreating(null);
-    const id = createTable("Example · Faith as a Seed", "lesson", "master");
+    const now = Date.now();
     const cards: TableCard[] = [
       { id: newCardId(), kind: "heading", text: "An experiment on the word" },
       {
@@ -438,8 +465,16 @@ export default function StudyTablesDesktop({
         text: "What is one place in your life where you could give the word a place to be planted this week?",
       },
     ];
-    updateTable(id, { cards });
-    setOpenId(id);
+    setExample({
+      id: "example",
+      name: "Example · Faith as a Seed",
+      purpose: "lesson",
+      bookId: "master",
+      cards,
+      createdAt: now,
+      updatedAt: now,
+    });
+    setOpenId(null);
   };
   // Import a study: gather every marked verse in the study (across its themes)
   // and set them aside on the new table's shelf, then open it on the shelf tab
@@ -604,7 +639,14 @@ export default function StudyTablesDesktop({
       <div style={{ maxWidth: editorMax, margin: "0 auto", padding: "16px 16px 120px" }}>
         {/* editor top bar */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-          <button onClick={() => setOpenId(null)} style={iconBtn} title="Back to your tables">
+          <button
+            onClick={() => {
+              setExample(null);
+              setOpenId(null);
+            }}
+            style={iconBtn}
+            title="Back to your tables"
+          >
             <Ico d="M15 6l-6 6 6 6" />
           </button>
           <input
@@ -626,6 +668,24 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          {example && open.id === example.id && (
+            <span
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: ".08em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                border: "1.5px dashed var(--border)",
+                borderRadius: 999,
+                padding: "5px 12px",
+                flex: "0 0 auto",
+              }}
+            >
+              Example · not saved
+            </span>
+          )}
           {onMarkVerses && (
             <button
               onClick={markAllVerses}
