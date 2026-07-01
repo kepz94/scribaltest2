@@ -86,14 +86,36 @@ export async function createRoom(
   });
 }
 
-export function pushBeat(code: string, i: number, revealed: number[]): void {
-  updateDoc(doc(db, "rooms", code), {
-    i,
-    revealed,
-    updatedAt: Date.now(),
-  }).catch(() => {
+// Beat updates are coalesced per room, latest-wins: an idle tap writes
+// immediately, but while a write is in flight further taps only update the
+// pending state, and ONE follow-up write lands the newest position. Firestore
+// soft-limits sustained writes to ~1/sec per document, so pushing every tap of
+// a fast next-next-next burst is what made rooms lag and appear to drop beats.
+const pending = new Map<string, { i: number; revealed: number[] }>();
+const inFlight = new Set<string>();
+
+async function flushBeat(code: string): Promise<void> {
+  const p = pending.get(code);
+  if (!p || inFlight.has(code)) return;
+  pending.delete(code);
+  inFlight.add(code);
+  try {
+    await updateDoc(doc(db, "rooms", code), {
+      i: p.i,
+      revealed: p.revealed,
+      updatedAt: Date.now(),
+    });
+  } catch {
     /* transient network errors — the next beat change retries naturally */
-  });
+  }
+  inFlight.delete(code);
+  // Something newer arrived while we were writing — send it too.
+  if (pending.has(code)) flushBeat(code);
+}
+
+export function pushBeat(code: string, i: number, revealed: number[]): void {
+  pending.set(code, { i, revealed });
+  flushBeat(code);
 }
 
 export function endRoom(code: string): void {
