@@ -69,6 +69,24 @@ type Action =
       }[];
     }
   | { type: "deleteMany"; ids: string[] }
+  | {
+      // Book-targeted marking (used by the Study Table marking panel, which
+      // marks verses in whichever book each card belongs to — not the active
+      // book). Mirrors addMany but writes to books[bookId] and never touches
+      // the active book's undo history.
+      type: "addManyTo";
+      bookId: string;
+      items: {
+        reference: string;
+        verseText: string;
+        markedText: string;
+        startIndex: number;
+        endIndex: number;
+        style: MarkStyle;
+        color: MarkColor;
+      }[];
+    }
+  | { type: "deleteMarkIn"; bookId: string; id: string }
   | { type: "recolorMark"; id: string; color: MarkColor }
   | {
       type: "updateMarkRange";
@@ -391,6 +409,76 @@ function reducer(state: State, action: Action): State {
         nextMarks = [...survivors, newMark];
       });
       return withActiveMarks(nextMarks, true);
+    }
+
+    case "addManyTo": {
+      // Same coalescing logic as addMany, but on a specific book and without an
+      // undo entry (the active book's history is left alone).
+      const bk = state.books[action.bookId];
+      if (!bk) return state;
+      const GAP = 1;
+      let nextMarks = bk.marks;
+      action.items.forEach((it) => {
+        let ms = it.startIndex;
+        let me = it.endIndex;
+        const survivors = nextMarks.filter((m) => {
+          if (
+            m.reference !== it.reference ||
+            m.color !== it.color ||
+            m.style !== it.style
+          )
+            return true;
+          const touches = m.startIndex <= me + GAP && m.endIndex >= ms - GAP;
+          if (touches) {
+            ms = Math.min(ms, m.startIndex);
+            me = Math.max(me, m.endIndex);
+            return false;
+          }
+          return true;
+        });
+        const newMark: Mark = {
+          id: "mark_" + Date.now() + "_" + rand(),
+          reference: it.reference,
+          verseText: it.verseText,
+          markedText: it.verseText.slice(ms, me),
+          startIndex: ms,
+          endIndex: me,
+          style: it.style,
+          color: it.color,
+          timestamp: Date.now(),
+        };
+        nextMarks = [...survivors, newMark];
+      });
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.bookId]: {
+            ...bk,
+            marks: nextMarks,
+            tombstones: diffTombstones(bk.marks, nextMarks, bk.tombstones),
+            lastStudiedAt: Date.now(),
+          },
+        },
+      };
+    }
+
+    case "deleteMarkIn": {
+      const bk = state.books[action.bookId];
+      if (!bk) return state;
+      const nextMarks = bk.marks.filter((m) => m.id !== action.id);
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.bookId]: {
+            ...bk,
+            marks: nextMarks,
+            tombstones: diffTombstones(bk.marks, nextMarks, bk.tombstones),
+            lastStudiedAt: Date.now(),
+          },
+        },
+      };
     }
 
     case "deleteMany": {
@@ -1118,6 +1206,28 @@ export function useMarks() {
     (ids: string[]) => dispatch({ type: "deleteMany", ids }),
     []
   );
+  // Book-targeted marking for the Study Table panel: add marks to a specific
+  // book (each verse marked in the book its card belongs to), and erase one.
+  const addMarksToBook = useCallback(
+    (
+      bookId: string,
+      items: {
+        reference: string;
+        verseText: string;
+        markedText: string;
+        startIndex: number;
+        endIndex: number;
+        style: MarkStyle;
+        color: MarkColor;
+      }[]
+    ) => dispatch({ type: "addManyTo", bookId, items }),
+    []
+  );
+  const deleteMarkInBook = useCallback(
+    (bookId: string, id: string) =>
+      dispatch({ type: "deleteMarkIn", bookId, id }),
+    []
+  );
   const recolorMark = useCallback(
     (id: string, color: MarkColor) =>
       dispatch({ type: "recolorMark", id, color }),
@@ -1268,6 +1378,8 @@ export function useMarks() {
     deleteMark,
     addMarks,
     deleteMarks,
+    addMarksToBook,
+    deleteMarkInBook,
     recolorMark,
     updateMarkRange,
     deleteMarkGroup,
