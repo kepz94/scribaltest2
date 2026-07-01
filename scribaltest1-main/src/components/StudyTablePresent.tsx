@@ -25,7 +25,6 @@ const P = {
   desk1: "#4a4234",
   desk2: "#2e2a20",
   paper: "#fdfaf1",
-  rule: "rgba(88, 108, 138, 0.10)",
   text: "#2b2416",
   muted: "#8d7c5c",
   faint: "#b3a482",
@@ -617,10 +616,13 @@ export default function StudyTablePresent({
           </div>
         </div>
 
-        {/* the page — ruled paper. Tap to advance (or lift the veil). NOTE:
-            content is NOT flex-centered in the scroller; `margin: auto` centers
-            it when it fits and top-aligns when it overflows, so long passages
-            scroll instead of clipping at the top. */}
+        {/* the page. Tap to advance (or lift the veil). The notepad cue is a
+            single red margin line down the left — a horizontal rule grid can
+            never align with the beats' varied text sizes, so it always looked
+            broken; the margin line can't clash with anything. NOTE: content is
+            NOT flex-centered in the scroller; `margin: auto` centers it when it
+            fits and top-aligns when it overflows, so long passages scroll
+            instead of clipping at the top. */}
         <div
           ref={scrollRef}
           onClick={next}
@@ -632,12 +634,7 @@ export default function StudyTablePresent({
             flexDirection: "column",
             cursor: atEnd ? "default" : "pointer",
             background:
-              "repeating-linear-gradient(180deg, transparent 0px, transparent 31px, " +
-              P.rule +
-              " 31px, " +
-              P.rule +
-              " 32px)",
-            backgroundAttachment: "local",
+              "linear-gradient(90deg, transparent 0px, transparent 52px, rgba(209, 84, 84, 0.30) 52px, rgba(209, 84, 84, 0.30) 53.5px, transparent 53.5px)",
           }}
         >
           <div
@@ -647,7 +644,7 @@ export default function StudyTablePresent({
               margin: "auto",
               width: "100%",
               maxWidth: 640,
-              padding: "30px 34px 40px",
+              padding: "30px 34px 40px 74px",
               boxSizing: "border-box",
             }}
             onClick={atEnd ? (e) => e.stopPropagation() : undefined}
