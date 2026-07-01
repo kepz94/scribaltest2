@@ -4,6 +4,7 @@ import {
   useStudyTables,
   StudyTable,
   TablePurpose,
+  TableCard,
 } from "../hooks/useStudyTables";
 import StudyTableColumn from "./StudyTableColumn";
 
@@ -19,6 +20,8 @@ interface Props {
   // Return to the reading view (the shell owns the actual mode switch).
   onClose: () => void;
   accent?: string;
+  // Height of the app's sticky header, so the outline rail sticks just below it.
+  headerOffset?: number;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -50,7 +53,11 @@ function relTime(ts: number): string {
   return d + "d ago";
 }
 
-export default function StudyTablesDesktop({ onClose, accent = ACCENT }: Props) {
+export default function StudyTablesDesktop({
+  onClose,
+  accent = ACCENT,
+  headerOffset = 76,
+}: Props) {
   const { tables, createTable, updateTable, renameTable, deleteTable } =
     useStudyTables();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -60,6 +67,13 @@ export default function StudyTablesDesktop({ onClose, accent = ACCENT }: Props) 
   const softAccentBorder = hexToRgba(accent, 0.28);
 
   const open = openId ? tables.find((t) => t.id === openId) || null : null;
+
+  // Smooth-scroll a card into view (used by the outline rail).
+  const scrollToCard = (id: string) => {
+    const el = document.querySelector('[data-card-id="' + id + '"]');
+    if (el)
+      (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   const iconBtn: React.CSSProperties = {
     width: 32,
@@ -97,8 +111,10 @@ export default function StudyTablesDesktop({ onClose, accent = ACCENT }: Props) 
 
   // ---------------- EDITOR ----------------
   if (open) {
+    const sections = open.cards.filter((c) => c.kind === "heading");
+    const hasRail = sections.length > 0;
     return (
-      <div style={{ maxWidth: 780, margin: "0 auto", padding: "16px 16px 120px" }}>
+      <div style={{ maxWidth: hasRail ? 980 : 780, margin: "0 auto", padding: "16px 16px 120px" }}>
         {/* editor top bar */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
           <button onClick={() => setOpenId(null)} style={iconBtn} title="Back to your tables">
@@ -191,12 +207,33 @@ export default function StudyTablesDesktop({ onClose, accent = ACCENT }: Props) 
           })}
         </div>
 
-        {/* the column */}
-        <StudyTableColumn
-          cards={open.cards}
-          onChange={(cards) => updateTable(open.id, { cards })}
-          accent={accent}
-        />
+        {/* three-zone body: outline rail (appears once you add sections) + column */}
+        <div style={{ display: "flex", gap: 26, alignItems: "flex-start" }}>
+          {hasRail && (
+            <div
+              style={{
+                width: 210,
+                flex: "0 0 auto",
+                position: "sticky",
+                top: headerOffset + 14,
+                alignSelf: "flex-start",
+              }}
+            >
+              <OutlineRail
+                sections={sections}
+                onJump={scrollToCard}
+                accent={accent}
+              />
+            </div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <StudyTableColumn
+              cards={open.cards}
+              onChange={(cards) => updateTable(open.id, { cards })}
+              accent={accent}
+            />
+          </div>
+        </div>
 
         {confirmId === open.id && (
           <ConfirmDelete
@@ -303,6 +340,82 @@ export default function StudyTablesDesktop({ onClose, accent = ACCENT }: Props) 
         />
       )}
     </div>
+  );
+}
+
+// ---- the outline rail: a sticky list of the table's section headings ----
+function OutlineRail({
+  sections,
+  onJump,
+  accent,
+}: {
+  sections: TableCard[];
+  onJump: (id: string) => void;
+  accent: string;
+}) {
+  const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  return (
+    <nav
+      style={{
+        borderLeft: "2px solid var(--border)",
+        paddingLeft: 14,
+        maxHeight: "calc(100vh - 160px)",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: SANS,
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: ".14em",
+          textTransform: "uppercase",
+          color: "var(--muted)",
+          marginBottom: 12,
+        }}
+      >
+        Outline
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {sections.map((s) => {
+          const label = (s.text || "").trim() || "Untitled section";
+          return (
+            <button
+              key={s.id}
+              onClick={() => onJump(s.id)}
+              title={label}
+              style={{
+                textAlign: "left",
+                background: "transparent",
+                border: 0,
+                cursor: "pointer",
+                padding: "7px 8px",
+                borderRadius: 8,
+                fontFamily: SANS,
+                fontSize: 13,
+                lineHeight: 1.35,
+                color: "var(--text)",
+                display: "block",
+                width: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = hexToRgba(accent, 0.09);
+                e.currentTarget.style.color = accent;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = "var(--text)";
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
