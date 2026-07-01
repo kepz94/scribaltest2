@@ -967,6 +967,7 @@ export default function App() {
     updateTable: updateStudyTable,
     renameTable: renameStudyTable,
     deleteTable: deleteStudyTable,
+    mergeRemote: tablesMergeRemote,
   } = useStudyTables();
   const [openTableId, setOpenTableId] = useState<string | null>(null);
   // Study Table marking panel: a full-screen VerseViewer that loads a set of the
@@ -1016,6 +1017,10 @@ export default function App() {
     );
     mergeRecordedRemote(data["scribal_studies_v1"]);
     mergeSearchRemote(data["scribal_search_studies"]);
+    // Study tables: field-level last-write-wins merge with tombstones (the hook
+    // owns the rules), so a table edited on one device and renamed on another
+    // converges instead of one side clobbering the other.
+    tablesMergeRemote(data["scribal_tables_v1"]);
     // Chapter-link groups + their per-scope timestamps. Converges links AND
     // unlinks; reads current state via refs so this long-lived merge (held by the
     // Firebase listener) never works off stale mount-time values.
