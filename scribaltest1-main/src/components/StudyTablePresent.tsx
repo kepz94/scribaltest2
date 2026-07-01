@@ -296,29 +296,23 @@ export default function StudyTablePresent({
 
     if (isVeiled) {
       // The veil: the presenter sees WHAT is waiting (a question / a note) but
-      // not its content — one tap lifts it, the next advances.
+      // not its content — one tap lifts it, the next advances. Rendered as
+      // writing on the page (no box), so it sits seamlessly on the pad.
       const label =
         c.kind === "question" ? "A question is waiting" : "A note to self";
       return (
-        <div style={{ textAlign: "center", padding: "26px 0" }}>
+        <div style={{ textAlign: "center", padding: "40px 0" }}>
+          <div style={{ ...kicker, color: accent }}>{label}</div>
+          <Ornament color={accent} />
           <div
             style={{
-              display: "inline-flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 13,
-              background: P.veil,
-              border: "1.5px dashed " + P.border,
-              borderRadius: 16,
-              padding: "44px 56px",
-              maxWidth: "100%",
-              boxSizing: "border-box",
+              fontFamily: SANS,
+              fontSize: 13,
+              color: P.faint,
+              marginTop: 22,
             }}
           >
-            <span style={{ ...kicker, color: accent }}>{label}</span>
-            <span style={{ fontFamily: SANS, fontSize: 13, color: P.muted }}>
-              Tap to reveal
-            </span>
+            Tap to reveal
           </div>
         </div>
       );
@@ -516,9 +510,12 @@ export default function StudyTablePresent({
         </div>
         <div
           style={{
+            // Break out of the page's writing margins so the video gets the
+            // pad's full width — vertical phones were leaving it tiny.
+            marginLeft: "calc(min(74px, 16vw) * -1 + 10px)",
+            marginRight: -14,
             borderRadius: 12,
             overflow: "hidden",
-            border: "1px solid " + P.border,
           }}
         >
           <ClipPlayer
