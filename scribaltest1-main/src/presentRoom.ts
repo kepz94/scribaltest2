@@ -55,6 +55,22 @@ export interface RoomDoc {
 export const themesKey = (refs: string[], bookId?: string) =>
   refs.join(",") + "|" + (bookId || "");
 
+// Private "note to self" cards must never leave the presenter's device: their
+// text is blanked before the table is serialized into the room document (the
+// doc is readable by anyone with the code). The cards themselves stay, so the
+// follower's beat indexes line up with the presenter's — followers render a
+// neutral placeholder for them.
+export function redactTableForRoom<
+  T extends { cards: any[]; shelf?: any[] }
+>(table: T): T {
+  const blank = (c: any) => (c.kind === "note" ? { ...c, text: "" } : c);
+  return {
+    ...table,
+    cards: table.cards.map(blank),
+    ...(table.shelf ? { shelf: table.shelf.map(blank) } : {}),
+  };
+}
+
 // Six unambiguous characters (no 0/O or 1/I).
 export function newRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
