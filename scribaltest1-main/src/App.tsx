@@ -10215,7 +10215,9 @@ export default function App() {
         <StudyTablesDesktop
           onClose={() => setMode("read")}
           headerOffset={headerH}
-          marks={marks}
+          allMarks={allMarks}
+          getBook={getBook}
+          books={books}
         />
       )}
 
