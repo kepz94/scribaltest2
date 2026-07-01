@@ -132,20 +132,65 @@ export default function StudyTablesDesktop({
     );
   };
 
-  // Insert the picked verses as scripture cards at the spot the panel was opened
-  // from (falling back to the end). Each card remembers which book its marks come
-  // from (bookId), so it keeps rendering that book's marking. Consecutive adds in
-  // one panel session stack in order at the insertion point.
-  const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
-    if (!open || refs.length === 0) return;
-    const newCards: TableCard[] = asPassage
+  // Build scripture cards from picked references (one passage card, or one card
+  // per verse). Shared by "add to column" and "set aside".
+  const makeScriptureCards = (
+    refs: string[],
+    asPassage: boolean,
+    bookId?: string
+  ): TableCard[] =>
+    asPassage
       ? [{ id: newCardId(), kind: "scripture", refs, passage: true, bookId }]
       : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r], bookId }));
+
+  // Insert the picked verses as scripture cards at the spot the panel was opened
+  // from (falling back to the end). Consecutive adds in one panel session stack
+  // in order at the insertion point.
+  const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
+    if (!open || refs.length === 0) return;
+    const newCards = makeScriptureCards(refs, asPassage, bookId);
     const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
     updateTable(open.id, {
       cards: [...open.cards.slice(0, idx), ...newCards, ...open.cards.slice(idx)],
     });
     setPendingIndex(idx + newCards.length);
+  };
+
+  // ---- staging shelf: set verses aside, then place them later ----
+  const shelve = (refs: string[], asPassage: boolean, bookId?: string) => {
+    if (!open || refs.length === 0) return;
+    updateTable(open.id, {
+      shelf: [...(open.shelf || []), ...makeScriptureCards(refs, asPassage, bookId)],
+    });
+  };
+  const unshelve = (cardId: string) => {
+    if (!open) return;
+    updateTable(open.id, {
+      shelf: (open.shelf || []).filter((c) => c.id !== cardId),
+    });
+  };
+  const shelfToColumn = (cardId: string) => {
+    if (!open) return;
+    const shelf = open.shelf || [];
+    const card = shelf.find((c) => c.id === cardId);
+    if (!card) return;
+    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
+    updateTable(open.id, {
+      cards: [...open.cards.slice(0, idx), card, ...open.cards.slice(idx)],
+      shelf: shelf.filter((c) => c.id !== cardId),
+    });
+    setPendingIndex(idx + 1);
+  };
+  const shelfAllToColumn = () => {
+    if (!open) return;
+    const shelf = open.shelf || [];
+    if (shelf.length === 0) return;
+    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
+    updateTable(open.id, {
+      cards: [...open.cards.slice(0, idx), ...shelf, ...open.cards.slice(idx)],
+      shelf: [],
+    });
+    setPendingIndex(idx + shelf.length);
   };
 
   // Open the verse panel to add a scripture card at a given gap.
@@ -418,6 +463,11 @@ export default function StudyTablesDesktop({
               books={books}
               studies={studyMetas}
               studyThemes={studyThemes}
+              shelf={open.shelf || []}
+              onShelve={shelve}
+              onUnshelve={unshelve}
+              onShelfToColumn={shelfToColumn}
+              onShelfAllToColumn={shelfAllToColumn}
               onClose={closePanel}
               accent={accent}
               headerOffset={headerOffset}
