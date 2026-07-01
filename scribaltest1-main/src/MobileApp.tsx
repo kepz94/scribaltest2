@@ -34,6 +34,14 @@ import { useStudyTables } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
 import MarkedVerse from "./components/MarkedVerse";
 import { getVerse } from "./data/verseIndex";
+import {
+  newRoomCode,
+  createRoom,
+  pushBeat,
+  endRoom,
+  joinUrl as roomJoinUrl,
+  themesKey,
+} from "./presentRoom";
 import * as drive from "./googleDrive";
 import {
   CORE_KEYS,
@@ -9461,6 +9469,57 @@ export default function MobileApp() {
                   .map(([color, label]) => ({ color, label }));
               }}
               onClose={() => setPresentTableId(null)}
+              room={{
+                start: async () => {
+                  // Serialize what a follower needs: table + its verses' marks
+                  // (per card book) + named themes, same as the desktop shell.
+                  const marks: Mark[] = [];
+                  const seenMark = new Set<string>();
+                  const themes: Record<
+                    string,
+                    { color: number; label: string }[]
+                  > = {};
+                  [...t.cards, ...(t.shelf || [])].forEach((c) => {
+                    if (c.kind !== "scripture" || !c.refs || !c.refs.length)
+                      return;
+                    const bid = c.bookId || t.bookId || "master";
+                    const refset = new Set(c.refs);
+                    const bk = getBook(bid);
+                    bk.marks.forEach((m) => {
+                      if (refset.has(m.reference) && !seenMark.has(m.id)) {
+                        seenMark.add(m.id);
+                        marks.push(m);
+                      }
+                    });
+                    const chips = new Map<number, string>();
+                    bk.marks.forEach((m) => {
+                      if (!refset.has(m.reference) || chips.has(m.color))
+                        return;
+                      const scoped =
+                        bk.scopedLabels?.[
+                          resolveScope(scopeOf(m.reference))
+                        ]?.[m.color];
+                      chips.set(m.color, ((scoped || "") as string).trim());
+                    });
+                    themes[themesKey(c.refs, c.bookId)] = Array.from(
+                      chips.entries()
+                    )
+                      .filter(([, label]) => !!label)
+                      .sort((a, b) => a[0] - b[0])
+                      .map(([color, label]) => ({ color, label }));
+                  });
+                  const code = newRoomCode();
+                  await createRoom(code, {
+                    tableJson: JSON.stringify(t),
+                    marksJson: JSON.stringify(marks),
+                    themesJson: JSON.stringify(themes),
+                  });
+                  return code;
+                },
+                push: pushBeat,
+                end: endRoom,
+                joinUrl: roomJoinUrl,
+              }}
             />
           );
         })()}
