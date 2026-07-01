@@ -79,6 +79,8 @@ export default function StudyTablesDesktop({
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Where the verse panel will drop cards: the chooser gap that opened it.
+  const [pendingIndex, setPendingIndex] = useState<number | null>(null);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
@@ -114,15 +116,30 @@ export default function StudyTablesDesktop({
     );
   };
 
-  // Insert the picked verses as scripture cards, appended to the open table.
-  // Each card remembers which book its marks come from (bookId), so it keeps
-  // rendering that book's marking even as the reader works elsewhere.
+  // Insert the picked verses as scripture cards at the spot the panel was opened
+  // from (falling back to the end). Each card remembers which book its marks come
+  // from (bookId), so it keeps rendering that book's marking. Consecutive adds in
+  // one panel session stack in order at the insertion point.
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
     const newCards: TableCard[] = asPassage
       ? [{ id: newCardId(), kind: "scripture", refs, passage: true, bookId }]
       : refs.map((r) => ({ id: newCardId(), kind: "scripture", refs: [r], bookId }));
-    updateTable(open.id, { cards: [...open.cards, ...newCards] });
+    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
+    updateTable(open.id, {
+      cards: [...open.cards.slice(0, idx), ...newCards, ...open.cards.slice(idx)],
+    });
+    setPendingIndex(idx + newCards.length);
+  };
+
+  // Open the verse panel to add a scripture card at a given gap.
+  const openPanelAt = (index: number) => {
+    setPendingIndex(index);
+    setPanelOpen(true);
+  };
+  const closePanel = () => {
+    setPanelOpen(false);
+    setPendingIndex(null);
   };
 
   const iconBtn: React.CSSProperties = {
@@ -190,27 +207,6 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
-          <button
-            onClick={() => setPanelOpen((v) => !v)}
-            title={panelOpen ? "Hide the verse panel" : "Add verses from scripture"}
-            style={{
-              fontFamily: SANS,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              color: panelOpen ? accent : "var(--text)",
-              background: panelOpen ? softAccent : "var(--panel)",
-              border: "1px solid " + (panelOpen ? accent : "var(--border)"),
-              borderRadius: 999,
-              padding: "8px 15px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              flex: "0 0 auto",
-            }}
-          >
-            <Ico d="M12 5v14 M5 12h14" size={14} /> Verses
-          </button>
           <button
             disabled
             title="Present mode arrives in a later step"
@@ -304,6 +300,7 @@ export default function StudyTablesDesktop({
               onChange={(cards) => updateTable(open.id, { cards })}
               accent={accent}
               renderVerse={renderVerse}
+              onPickScripture={openPanelAt}
             />
           </div>
           {panelOpen && (
@@ -312,7 +309,7 @@ export default function StudyTablesDesktop({
               renderVerse={renderVerse}
               allMarks={allMarks}
               books={books}
-              onClose={() => setPanelOpen(false)}
+              onClose={closePanel}
               accent={accent}
               headerOffset={headerOffset}
             />
