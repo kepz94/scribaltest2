@@ -80,6 +80,9 @@ export interface TableCard {
   endSec?: number;
   clipTitle?: string;
   clipSource?: string;
+  // Once true, the clip card shows its clean "press play" view (the slice, ready
+  // to watch) instead of the editing fields. Toggled by Save as clip / Edit.
+  clipSaved?: boolean;
 }
 
 export interface StudyTable {
