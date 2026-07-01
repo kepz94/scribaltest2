@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import StudyTablePresent from "./StudyTablePresent";
 import MarkedVerse from "./MarkedVerse";
 import { watchRoom, themesKey, RoomDoc } from "../presentRoom";
@@ -47,6 +47,40 @@ export default function RoomViewer({ code }: { code: string }) {
     return un;
   }, [code]);
 
+  // Every beat change delivers a fresh snapshot, but the heavy payload (the
+  // table, all its marks, the theme names) only changes if the table itself
+  // does — so parse it ONCE per payload, not on every page turn. Re-parsing
+  // megabyte JSON per beat is what made phones lag behind the presenter.
+  const tableJson = room !== "loading" && room ? room.tableJson : "";
+  const marksJson = room !== "loading" && room ? room.marksJson || "[]" : "[]";
+  const themesJson =
+    room !== "loading" && room ? room.themesJson || "{}" : "{}";
+  const parsed = useMemo(() => {
+    if (!tableJson)
+      return {
+        table: null as StudyTable | null,
+        marks: [] as Mark[],
+        themes: {} as Record<string, { color: number; label: string }[]>,
+      };
+    try {
+      return {
+        table: JSON.parse(tableJson) as StudyTable,
+        marks: JSON.parse(marksJson) as Mark[],
+        themes: JSON.parse(themesJson) as Record<
+          string,
+          { color: number; label: string }[]
+        >,
+      };
+    } catch {
+      return {
+        table: null as StudyTable | null,
+        marks: [] as Mark[],
+        themes: {} as Record<string, { color: number; label: string }[]>,
+      };
+    }
+  }, [tableJson, marksJson, themesJson]);
+  const { table, marks, themes } = parsed;
+
   if (room === "loading")
     return <Notice title="Joining…" body={"Connecting to room " + code + "."} />;
   if (!room)
@@ -64,16 +98,6 @@ export default function RoomViewer({ code }: { code: string }) {
       />
     );
 
-  let table: StudyTable | null = null;
-  let marks: Mark[] = [];
-  let themes: Record<string, { color: number; label: string }[]> = {};
-  try {
-    table = JSON.parse(room.tableJson) as StudyTable;
-    marks = JSON.parse(room.marksJson || "[]") as Mark[];
-    themes = JSON.parse(room.themesJson || "{}");
-  } catch {
-    table = null;
-  }
   if (!table)
     return (
       <Notice
