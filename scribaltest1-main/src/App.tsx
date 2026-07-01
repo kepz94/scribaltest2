@@ -922,6 +922,8 @@ export default function App() {
     addMark,
     deleteMark,
     addMarks,
+    addMarksToBook,
+    deleteMarkInBook,
     deleteMarkGroup,
     clearMarks,
     undo,
@@ -967,6 +969,22 @@ export default function App() {
     deleteTable: deleteStudyTable,
   } = useStudyTables();
   const [openTableId, setOpenTableId] = useState<string | null>(null);
+  // Study Table marking panel: a full-screen VerseViewer that loads a set of the
+  // table's verses so they can be marked together (not one card at a time). Each
+  // verse is marked in its own book, so refBook maps reference -> bookId.
+  const [markPanel, setMarkPanel] = useState<{
+    refs: string[];
+    refBook: Record<string, string>;
+    title: string;
+  } | null>(null);
+  const openTableMarkPanel = (
+    refs: string[],
+    refBook: Record<string, string>,
+    title?: string
+  ) => {
+    if (!refs.length) return;
+    setMarkPanel({ refs, refBook, title: title || "Mark verses" });
+  };
 
   const {
     studies: searchStudies,
@@ -10467,8 +10485,183 @@ export default function App() {
           deleteTable={deleteStudyTable}
           openTableId={openTableId}
           onConsumeOpenTable={() => setOpenTableId(null)}
+          onMarkVerses={openTableMarkPanel}
         />
       )}
+
+      {markPanel &&
+        (() => {
+          // Assemble the marks to show (union across the verses' books) and a
+          // markId -> book map for erasing. Marks route per-verse to the book
+          // that verse's card belongs to.
+          const books = Array.from(new Set(Object.values(markPanel.refBook)));
+          const refset = new Set(markPanel.refs);
+          const unionMarks: Mark[] = [];
+          const markBook: Record<string, string> = {};
+          books.forEach((bid) => {
+            getBook(bid).marks.forEach((m) => {
+              if (refset.has(m.reference)) {
+                unionMarks.push(m);
+                markBook[m.id] = bid;
+              }
+            });
+          });
+          const fallbackBook = books[0] || "master";
+          const loc = refLoc.get(markPanel.refs[0]);
+          const routeMany = (
+            items: {
+              reference: string;
+              verseText: string;
+              markedText: string;
+              startIndex: number;
+              endIndex: number;
+              style: MarkStyle;
+              color: MarkColor;
+            }[]
+          ) => {
+            const byBook: Record<string, typeof items> = {};
+            items.forEach((it) => {
+              const b = markPanel.refBook[it.reference] || fallbackBook;
+              if (!byBook[b]) byBook[b] = [];
+              byBook[b].push(it);
+            });
+            Object.keys(byBook).forEach((b) => addMarksToBook(b, byBook[b]));
+          };
+          return (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 420,
+                background: "var(--bg)",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  flex: "0 0 auto",
+                }}
+              >
+                <button
+                  onClick={() => setMarkPanel(null)}
+                  aria-label="Close marking"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    display: "grid",
+                    placeItems: "center",
+                    lineHeight: 0,
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M15 6l-6 6 6 6" />
+                  </svg>
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text)" }}>
+                    {markPanel.title}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                    {markPanel.refs.length === 1
+                      ? "1 verse"
+                      : markPanel.refs.length + " verses"}{" "}
+                    · select text to mark
+                  </div>
+                </div>
+                <button
+                  onClick={() => setMarkPanel(null)}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: ICON_ACCENT,
+                    color: "#fff",
+                    fontSize: "13.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
+                <VerseViewer
+                  selectedVolume={loc ? loc.volume : 0}
+                  selectedBook={loc ? loc.book : 0}
+                  selectedChapter={loc ? loc.chapter : 0}
+                  onChange={() => {}}
+                  selectedTool={selectedTool}
+                  selectedColor={selectedColor}
+                  onChangeTool={setSelectedTool}
+                  onChangeColor={setSelectedColor}
+                  onMark={(
+                    reference,
+                    verseText,
+                    markedText,
+                    startIndex,
+                    endIndex,
+                    style,
+                    color
+                  ) =>
+                    routeMany([
+                      {
+                        reference,
+                        verseText,
+                        markedText,
+                        startIndex,
+                        endIndex,
+                        style,
+                        color,
+                      },
+                    ])
+                  }
+                  onEraseMark={(id) =>
+                    deleteMarkInBook(markBook[id] || fallbackBook, id)
+                  }
+                  onMarkMany={routeMany}
+                  marks={unionMarks}
+                  showToolbar
+                  toolbarPos={toolbarPos}
+                  onToolbarPos={setToolbarPos}
+                  toolbarOrient={toolbarOrient}
+                  onToolbarOrient={setToolbarOrient}
+                  panelMode
+                  controlsStickyTop={0}
+                  fontScale={reading.fontScale}
+                  lineScale={reading.lineScale}
+                  warm={reading.warm}
+                  dark={dark}
+                  studyRefs={markPanel.refs}
+                  studyTitle={markPanel.title}
+                  hideStudyHeader
+                  jumpTarget={null}
+                  onJumpHandled={() => {}}
+                />
+              </div>
+            </div>
+          );
+        })()}
 
       {mode === "compile" && (
         <div>
