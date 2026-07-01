@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ACCENT } from "../theme";
 import { MarkColor, COLOR_MAP } from "../types";
 import { buildSearchMatcher, SearchMode } from "../searchMatch";
-import { verseList, sortRefs, isConsecutive } from "../data/verseIndex";
+import { verseList, sortRefs, isConsecutive, passageLabel } from "../data/verseIndex";
+import type { TableCard } from "../hooks/useStudyTables";
 import type { ThemeMark } from "./SearchPanel";
 
 // The docked verse panel for a Study Table. Its search IS the app's search — the
@@ -54,6 +55,12 @@ interface Props {
   // parent so scope + label resolution matches the reader exactly.
   studies: StudyMeta[];
   studyThemes: (studyId: string) => StudyTheme[];
+  // The staging shelf (scripture cards set aside for this table) + its operations.
+  shelf: TableCard[];
+  onShelve: (refs: string[], asPassage: boolean, bookId?: string) => void;
+  onUnshelve: (cardId: string) => void;
+  onShelfToColumn: (cardId: string) => void;
+  onShelfAllToColumn: () => void;
   onClose: () => void;
   accent?: string;
   headerOffset?: number;
@@ -99,11 +106,16 @@ export default function VersePicker({
   books,
   studies,
   studyThemes,
+  shelf,
+  onShelve,
+  onUnshelve,
+  onShelfToColumn,
+  onShelfAllToColumn,
   onClose,
   accent = ACCENT,
   headerOffset = 76,
 }: Props) {
-  const [tab, setTab] = useState<"study" | "search">("search");
+  const [tab, setTab] = useState<"study" | "search" | "shelf">("search");
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
@@ -262,6 +274,12 @@ export default function VersePicker({
     setSelected([]);
     setAsPassage(false);
   };
+  const doShelve = () => {
+    if (selCount === 0) return;
+    onShelve(sortRefs(selected), canPassage && asPassage, addBookId);
+    setSelected([]);
+    setAsPassage(false);
+  };
 
   // ---- small styled bits, matching the app's search chrome ----
   const seg = (on: boolean, label: string, onClick: () => void) => (
@@ -365,11 +383,14 @@ export default function VersePicker({
             <Ico d="M18 6 6 18 M6 6l12 12" size={14} />
           </button>
         </div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-          {([
-            ["study", "From a study"],
-            ["search", "Search"],
-          ] as const).map(([key, label]) => {
+        <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
+          {(
+            [
+              ["study", "From a study"],
+              ["search", "Search"],
+              ["shelf", shelf.length ? "Selected · " + shelf.length : "Selected"],
+            ] as ["study" | "search" | "shelf", string][]
+          ).map(([key, label]) => {
             const on = tab === key;
             return (
               <button
@@ -378,14 +399,15 @@ export default function VersePicker({
                 style={{
                   flex: 1,
                   fontFamily: SANS,
-                  fontSize: 12.5,
+                  fontSize: 11.5,
                   fontWeight: 600,
                   cursor: "pointer",
                   color: on ? accent : "var(--muted)",
                   background: on ? softAccent : "transparent",
                   border: "1px solid " + (on ? accent : "var(--border)"),
                   borderRadius: 999,
-                  padding: "7px 0",
+                  padding: "7px 2px",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}
@@ -651,6 +673,107 @@ export default function VersePicker({
                 })
               )}
             </>
+          )}
+        </div>
+      ) : tab === "shelf" ? (
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
+          {shelf.length === 0 ? (
+            <div style={hintStyle}>
+              Nothing set aside yet. On{" "}
+              <strong style={{ color: "var(--text)" }}>Search</strong> or{" "}
+              <strong style={{ color: "var(--text)" }}>From a study</strong>, pick
+              verses and choose{" "}
+              <strong style={{ color: "var(--text)" }}>Set aside</strong> to
+              collect them here — then place them in the column in the order you
+              want.
+            </div>
+          ) : (
+            shelf.map((item) => {
+              const refs = item.refs || [];
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    display: "flex",
+                    gap: 9,
+                    alignItems: "flex-start",
+                    padding: "10px 4px 10px 8px",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: ".02em",
+                        color: accent,
+                        marginBottom: 2,
+                      }}
+                    >
+                      {passageLabel(refs)}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: SERIF,
+                        fontSize: 14.5,
+                        lineHeight: 1.6,
+                        color: "var(--text)",
+                      }}
+                    >
+                      {refs.map((r) => (
+                        <Fragment key={r}>{renderVerse(r, item.bookId)}</Fragment>
+                      ))}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      flex: "0 0 auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    <button
+                      onClick={() => onShelfToColumn(item.id)}
+                      title="Add this to the column"
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        color: "#fff",
+                        background: accent,
+                        border: 0,
+                        borderRadius: 8,
+                        padding: "5px 10px",
+                      }}
+                    >
+                      Add
+                    </button>
+                    <button
+                      onClick={() => onUnshelve(item.id)}
+                      title="Remove from set aside"
+                      style={{
+                        width: 28,
+                        height: 26,
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: "var(--panel)",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                        display: "grid",
+                        placeItems: "center",
+                        lineHeight: 0,
+                      }}
+                    >
+                      <Ico d="M18 6 6 18 M6 6l12 12" size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       ) : (
@@ -945,56 +1068,106 @@ export default function VersePicker({
         </>
       )}
 
-      {/* selection footer */}
-      {selCount > 0 && (
-        <div
-          style={{
-            flex: "0 0 auto",
-            borderTop: "1px solid var(--border)",
-            padding: "10px 12px",
-            background: "var(--panel)",
-          }}
-        >
-          {canPassage && (
-            <label
+      {/* footer */}
+      {tab === "shelf" ? (
+        shelf.length > 0 && (
+          <div
+            style={{
+              flex: "0 0 auto",
+              borderTop: "1px solid var(--border)",
+              padding: "10px 12px",
+              background: "var(--panel)",
+            }}
+          >
+            <button
+              onClick={onShelfAllToColumn}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 9,
+                width: "100%",
                 fontFamily: SANS,
-                fontSize: 12.5,
-                color: "var(--muted)",
+                fontSize: 13.5,
+                fontWeight: 650,
+                color: "#fff",
+                background: accent,
+                border: 0,
+                borderRadius: 10,
+                padding: "10px 0",
                 cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={asPassage}
-                onChange={(e) => setAsPassage(e.target.checked)}
-              />
-              Add as one passage
-            </label>
-          )}
-          <button
-            onClick={doAdd}
+              Add all {shelf.length} to the column
+            </button>
+          </div>
+        )
+      ) : (
+        selCount > 0 && (
+          <div
             style={{
-              width: "100%",
-              fontFamily: SANS,
-              fontSize: 13.5,
-              fontWeight: 650,
-              color: "#fff",
-              background: accent,
-              border: 0,
-              borderRadius: 10,
-              padding: "10px 0",
-              cursor: "pointer",
+              flex: "0 0 auto",
+              borderTop: "1px solid var(--border)",
+              padding: "10px 12px",
+              background: "var(--panel)",
             }}
           >
-            Add {selCount} {selCount === 1 ? "verse" : "verses"}
-            {addBookId ? "" : " (empty)"}
-          </button>
-        </div>
+            {canPassage && (
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 9,
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={asPassage}
+                  onChange={(e) => setAsPassage(e.target.checked)}
+                />
+                Keep together as one passage
+              </label>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={doShelve}
+                title="Set these aside to place later"
+                style={{
+                  flex: 1,
+                  fontFamily: SANS,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: "10px 0",
+                  cursor: "pointer",
+                }}
+              >
+                Set aside
+              </button>
+              <button
+                onClick={doAdd}
+                style={{
+                  flex: 1,
+                  fontFamily: SANS,
+                  fontSize: 13,
+                  fontWeight: 650,
+                  color: "#fff",
+                  background: accent,
+                  border: 0,
+                  borderRadius: 10,
+                  padding: "10px 0",
+                  cursor: "pointer",
+                }}
+              >
+                Add to column
+              </button>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
