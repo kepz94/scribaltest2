@@ -89,6 +89,10 @@ export interface StudyTable {
   id: string;
   name: string;
   purpose?: TablePurpose;
+  // The table's marks home: which book scripture cards pull marking from by
+  // default (master, an existing session, or a session created for this table).
+  // Individual cards can still carry their own bookId (e.g. imported studies).
+  bookId?: string;
   // The ordered column. Index IS the order — first card first, and that order
   // drives Present. There is no board geometry here; a spatial "board" lens can
   // be layered on later without touching this shape.
@@ -142,11 +146,24 @@ export function useStudyTables() {
 
   // Create a blank, untitled table and return its id so the caller can open it.
   // No purpose yet — the empty state offers one but never requires it.
-  const createTable = (name = "Untitled", purpose?: TablePurpose): string => {
+  const createTable = (
+    name = "Untitled",
+    purpose?: TablePurpose,
+    bookId?: string
+  ): string => {
     const now = Date.now();
     const id = newTableId();
     setTables((prev) => [
-      { id, name, purpose, cards: [], createdAt: now, updatedAt: now, nameAt: now },
+      {
+        id,
+        name,
+        purpose,
+        bookId,
+        cards: [],
+        createdAt: now,
+        updatedAt: now,
+        nameAt: now,
+      },
       ...prev,
     ]);
     return id;
@@ -219,6 +236,7 @@ export function useStudyTables() {
         const contentNewer = (r.updatedAt || 0) > (local.updatedAt || 0);
         const cards = contentNewer ? r.cards || [] : local.cards;
         const purpose = contentNewer ? r.purpose : local.purpose;
+        const bookId = contentNewer ? r.bookId : local.bookId;
         const shelf = contentNewer ? r.shelf : local.shelf;
         const updatedAt = Math.max(local.updatedAt || 0, r.updatedAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
@@ -237,6 +255,8 @@ export function useStudyTables() {
             purpose,
             updatedAt,
           };
+          if (bookId) merged.bookId = bookId;
+          else delete merged.bookId;
           if (shelf && shelf.length) merged.shelf = shelf;
           else delete merged.shelf;
           if (deletedAt) merged.deletedAt = deletedAt;
