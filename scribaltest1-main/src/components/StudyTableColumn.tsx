@@ -833,37 +833,13 @@ export default function StudyTableColumn({
               </span>
             ))}
           </div>
-          <input
-            autoFocus={focus}
-            placeholder="Add a reference, e.g. Alma 32:21 — Enter"
-            onKeyDown={(e) => {
-              const el = e.target as HTMLInputElement;
-              if (e.key === "Enter" && el.value.trim()) {
-                e.preventDefault();
-                patch(card.id, { refs: [...refs, el.value.trim()] });
-                el.value = "";
-              }
-            }}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              outline: 0,
-              background: "var(--soft)",
-              fontFamily: SERIF,
-              fontSize: 14.5,
-              color: "var(--text)",
-              padding: "9px 11px",
-            }}
-          />
           {refs.length > 1 && (
             <label
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                marginTop: 11,
+                marginTop: refs.length ? 0 : 11,
                 fontFamily: SANS,
                 fontSize: 12.5,
                 color: "var(--muted)",
@@ -1293,6 +1269,8 @@ export default function StudyTableColumn({
                 display: "grid",
                 gridTemplateColumns: "28px 1fr",
                 alignItems: "start",
+                marginTop: isSection ? 18 : 0,
+                marginBottom: isSection ? 6 : 0,
               }}
             >
               <span
