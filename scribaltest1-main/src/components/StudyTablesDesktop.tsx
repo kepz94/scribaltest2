@@ -285,6 +285,40 @@ export default function StudyTablesDesktop({
     ? collectMarkTargets([...open.cards, ...(open.shelf || [])]).refs.length
     : 0;
 
+  // Theme chips for one scripture card: the colors marked on its verses, each
+  // resolved to its name exactly the way the reader does (scoped label for the
+  // verse's chapter/group, falling back to the book-level color name). Only
+  // named themes surface — unnamed colors stay silent on cards and in Present.
+  const cardThemes = (
+    refs: string[],
+    bookId?: string
+  ): { color: number; label: string }[] => {
+    if (!refs.length) return [];
+    const bid = bookId || "master";
+    const bk = getBook(bid);
+    const refset = new Set(refs);
+    const scopeOfRef = (ref: string) => {
+      const ix = ref.indexOf(":");
+      return ix < 0 ? ref : ref.slice(0, ix);
+    };
+    const resolve = (cs: string) =>
+      chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const seen = new Map<number, string>();
+    bk.marks.forEach((m) => {
+      if (!refset.has(m.reference)) return;
+      if (seen.has(m.color)) return;
+      const scoped = bk.scopedLabels?.[resolve(scopeOfRef(m.reference))]?.[
+        m.color
+      ];
+      const label = ((scoped || bk.colorLabels?.[m.color] || "") as string).trim();
+      seen.set(m.color, label);
+    });
+    return Array.from(seen.entries())
+      .filter(([, label]) => !!label)
+      .sort((a, b) => a[0] - b[0])
+      .map(([color, label]) => ({ color, label }));
+  };
+
   // ---- New table: blank, or seeded from a study ----
   const startScratch = () => {
     setCreating(null);
@@ -605,6 +639,7 @@ export default function StudyTablesDesktop({
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
               onMarkCard={onMarkVerses ? markCardVerses : undefined}
+              themesFor={cardThemes}
             />
           </div>
           {panelOpen && (
@@ -645,6 +680,7 @@ export default function StudyTablesDesktop({
           <StudyTablePresent
             table={open}
             renderVerse={renderVerse}
+            themesFor={cardThemes}
             accent={accent}
             onClose={() => setPresenting(false)}
           />
