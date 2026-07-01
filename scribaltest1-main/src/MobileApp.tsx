@@ -42,6 +42,7 @@ import {
   endRoom,
   joinUrl as roomJoinUrl,
   themesKey,
+  redactTableForRoom,
 } from "./presentRoom";
 import * as drive from "./googleDrive";
 import {
@@ -9983,7 +9984,7 @@ export default function MobileApp() {
                   });
                   const code = newRoomCode();
                   await createRoom(code, {
-                    tableJson: JSON.stringify(t),
+                    tableJson: JSON.stringify(redactTableForRoom(t)),
                     marksJson: JSON.stringify(marks),
                     themesJson: JSON.stringify(themes),
                   });
