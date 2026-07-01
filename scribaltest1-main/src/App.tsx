@@ -8786,41 +8786,6 @@ export default function App() {
                     <div
                       onClick={() => {
                         setBackupOpen(false);
-                        setMode("table");
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          verticalAlign: "-2px",
-                          marginRight: "6px",
-                        }}
-                      >
-                        <svg
-                          width={14}
-                          height={14}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M4 5h16M4 12h16M4 19h10" />
-                        </svg>
-                      </span>
-                      Study tables
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
                         setMode("vault");
                       }}
                       style={{
@@ -8840,7 +8805,7 @@ export default function App() {
                       >
                         <IconBook size={14} />
                       </span>
-                      Study books &amp; Vault
+                      Vault
                     </div>
                     <div
                       style={{
@@ -9533,6 +9498,8 @@ export default function App() {
                 )}
               </span>
             )}
+            {mode === "read" &&
+              actionButton("Study tables", () => setMode("table"))}
             {mode === "compile" &&
               actionButton(
                 "← Back to Reading",
