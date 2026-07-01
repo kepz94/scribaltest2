@@ -23,9 +23,9 @@ interface StudyTableColumnProps {
   onChange: (cards: TableCard[]) => void;
   // Accent for active/primary bits; defaults to the app accent.
   accent?: string;
-  // Render one verse (its text + the reader's live marks) for a scripture card.
-  // Supplied by the parent, which owns the marks; absent in preview contexts.
-  renderVerse?: (reference: string) => React.ReactNode;
+  // Render one verse (its text + the marks from a chosen book) for a scripture
+  // card. Supplied by the parent, which owns the marks; absent in previews.
+  renderVerse?: (reference: string, bookId?: string) => React.ReactNode;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -595,7 +595,7 @@ export default function StudyTableColumn({
               }}
             >
               {refs.map((r) => (
-                <Fragment key={r}>{renderVerse(r)}</Fragment>
+                <Fragment key={r}>{renderVerse(r, card.bookId)}</Fragment>
               ))}
             </div>
           ) : (
