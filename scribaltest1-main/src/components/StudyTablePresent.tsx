@@ -12,6 +12,12 @@ import { ClipPlayer, parseYouTubeId, fmtTime } from "./StudyTableColumn";
 interface Props {
   table: StudyTable;
   renderVerse: (reference: string, bookId?: string) => React.ReactNode;
+  // Named themes on a scripture card's verses (color + the user's name),
+  // resolved by the shell. Shown as chips under the reference.
+  themesFor?: (
+    refs: string[],
+    bookId?: string
+  ) => { color: number; label: string }[];
   accent?: string;
   onClose: () => void;
 }
@@ -65,6 +71,20 @@ const PRESENT_VARS = {
   "--hl10": "#c9f0f5",
 } as React.CSSProperties;
 
+// Theme-chip dot colors: the light pen palette (matches PRESENT_VARS pens).
+const MARK_COLOR_DOTS: Record<number, string> = {
+  1: "#d11a2a",
+  2: "#e07b1a",
+  3: "#c9a200",
+  4: "#2f8f3e",
+  5: "#2f6fb0",
+  6: "#7b4fbf",
+  7: "#1a1a1a",
+  8: "#d6448c",
+  9: "#5fa515",
+  10: "#0e9aab",
+};
+
 // A beat is one page: a section break, a card, or the closing page.
 type Beat =
   | { kind: "section"; title: string; n: number }
@@ -115,6 +135,7 @@ function Ornament({ color }: { color: string }) {
 export default function StudyTablePresent({
   table,
   renderVerse,
+  themesFor,
   accent = "#8b5cf6",
   onClose,
 }: Props) {
@@ -306,6 +327,7 @@ export default function StudyTablePresent({
     if (c.kind === "scripture") {
       const refs = c.refs || [];
       const label = c.passage ? passageLabel(refs) : refs.join("  ·  ");
+      const themes = themesFor ? themesFor(refs, c.bookId) : [];
       return (
         <div>
           <div
@@ -313,12 +335,48 @@ export default function StudyTablePresent({
               ...kicker,
               color: accent,
               paddingBottom: 12,
-              marginBottom: 18,
+              marginBottom: themes.length ? 12 : 18,
               borderBottom: "1px solid " + P.border,
             }}
           >
             {label}
           </div>
+          {themes.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 14,
+                marginBottom: 16,
+              }}
+            >
+              {themes.map((t) => (
+                <span
+                  key={t.color}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: P.muted,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 11,
+                      height: 11,
+                      borderRadius: "50%",
+                      background: MARK_COLOR_DOTS[t.color] || P.muted,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
           <div
             style={{
               fontFamily: SERIF,
@@ -634,7 +692,7 @@ export default function StudyTablePresent({
             flexDirection: "column",
             cursor: atEnd ? "default" : "pointer",
             background:
-              "linear-gradient(90deg, transparent 0px, transparent 52px, rgba(209, 84, 84, 0.30) 52px, rgba(209, 84, 84, 0.30) 53.5px, transparent 53.5px)",
+              "linear-gradient(90deg, transparent 0px, transparent min(52px, 11vw), rgba(209, 84, 84, 0.30) min(52px, 11vw), rgba(209, 84, 84, 0.30) min(53.5px, calc(11vw + 1.5px)), transparent min(53.5px, calc(11vw + 1.5px)))",
           }}
         >
           <div
@@ -644,7 +702,7 @@ export default function StudyTablePresent({
               margin: "auto",
               width: "100%",
               maxWidth: 640,
-              padding: "30px 34px 40px 74px",
+              padding: "30px 24px 40px min(74px, 16vw)",
               boxSizing: "border-box",
             }}
             onClick={atEnd ? (e) => e.stopPropagation() : undefined}
