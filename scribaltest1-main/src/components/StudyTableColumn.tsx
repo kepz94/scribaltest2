@@ -146,7 +146,7 @@ function parseStart(url: string): number | undefined {
   const s = +(v.match(/(\d+)s/)?.[1] || 0);
   return h * 3600 + mi * 60 + s;
 }
-function fmtTime(t?: number): string {
+export function fmtTime(t?: number): string {
   if (t == null) return "";
   const m = Math.floor(t / 60),
     s = t % 60;
@@ -164,7 +164,7 @@ function hexToRgba(hex: string, a: number): string {
 
 // Pull a YouTube video id out of any of its link shapes (watch, youtu.be,
 // embed, shorts, live). Returns null when it isn't a recognizable YouTube link.
-function parseYouTubeId(url: string): string | null {
+export function parseYouTubeId(url: string): string | null {
   if (!url) return null;
   let m = url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/);
   if (m) return m[1];
@@ -351,7 +351,7 @@ function ClipPreview({
 // The saved clip's "press play" view: a thumbnail that, on tap, plays only the
 // chosen slice (YouTube's start/end embed params stop it at the end). No editing
 // controls — this is the clip as it will appear when the lesson is presented.
-function ClipPlayer({
+export function ClipPlayer({
   videoId,
   startSec,
   endSec,
