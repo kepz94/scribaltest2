@@ -345,6 +345,100 @@ function ClipPreview({
   );
 }
 
+// The saved clip's "press play" view: a thumbnail that, on tap, plays only the
+// chosen slice (YouTube's start/end embed params stop it at the end). No editing
+// controls — this is the clip as it will appear when the lesson is presented.
+function ClipPlayer({
+  videoId,
+  startSec,
+  endSec,
+  accent,
+}: {
+  videoId: string;
+  startSec?: number;
+  endSec?: number;
+  accent: string;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const start = Math.max(0, Math.round(startSec || 0));
+  const src =
+    "https://www.youtube.com/embed/" +
+    videoId +
+    "?start=" +
+    start +
+    (endSec != null ? "&end=" + Math.round(endSec) : "") +
+    "&autoplay=1&rel=0&modestbranding=1";
+  return (
+    <div
+      style={{
+        position: "relative",
+        paddingBottom: "56.25%",
+        height: 0,
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "#000",
+      }}
+    >
+      {playing ? (
+        <iframe
+          title="clip"
+          src={src}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowFullScreen
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+        />
+      ) : (
+        <button
+          onClick={() => setPlaying(true)}
+          aria-label="Play clip"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            padding: 0,
+            border: 0,
+            cursor: "pointer",
+            background: "#000",
+          }}
+        >
+          <img
+            src={"https://img.youtube.com/vi/" + videoId + "/hqdefault.jpg"}
+            alt=""
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+          />
+          <span
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%,-50%)",
+              width: 58,
+              height: 58,
+              borderRadius: 999,
+              background: hexToRgba(accent, 0.92),
+              display: "grid",
+              placeItems: "center",
+              boxShadow: "0 6px 20px -6px rgba(0,0,0,.6)",
+            }}
+          >
+            <span
+              style={{
+                width: 0,
+                height: 0,
+                marginLeft: 4,
+                borderTop: "11px solid transparent",
+                borderBottom: "11px solid transparent",
+                borderLeft: "18px solid #fff",
+              }}
+            />
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function StudyTableColumn({
   cards,
   onChange,
@@ -813,6 +907,48 @@ export default function StudyTableColumn({
     const url = card.url || "";
     const vid = parseYouTubeId(url);
     const previewOpen = previewId === card.id;
+
+    // Saved clip: a clean, press-to-play view with no editing controls.
+    if (card.clipSaved && vid) {
+      return (
+        <div style={cardBox}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ ...kicker, color: "var(--pen3)", margin: 0, flex: 1 }}>
+              <Icon d={ICON.clip} size={12} /> Clip
+            </div>
+            <button
+              onClick={() => patch(card.id, { clipSaved: false })}
+              style={{
+                fontFamily: SANS,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                color: "var(--muted)",
+                background: "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: 999,
+                padding: "4px 11px",
+              }}
+            >
+              Edit
+            </button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <ClipPlayer
+              videoId={vid}
+              startSec={card.startSec}
+              endSec={card.endSec}
+              accent={accent}
+            />
+          </div>
+          <div style={{ marginTop: 8, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+            Plays {fmtTime(card.startSec) || "0:00"} –{" "}
+            {card.endSec != null ? fmtTime(card.endSec) : "end"}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={cardBox}>
         <div style={{ ...kicker, color: "var(--pen3)" }}>
@@ -906,6 +1042,29 @@ export default function StudyTableColumn({
           <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
             Paste a YouTube link to preview it and set the clip’s start and end.
           </div>
+        )}
+        {vid && (
+          <button
+            onClick={() => {
+              setPreviewId(null);
+              patch(card.id, { clipSaved: true });
+            }}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 650,
+              cursor: "pointer",
+              color: "#fff",
+              background: accent,
+              border: 0,
+              borderRadius: 9,
+              padding: "9px 0",
+            }}
+          >
+            Save as clip
+          </button>
         )}
       </div>
     );
