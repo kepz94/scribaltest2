@@ -19,16 +19,49 @@ const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const SERIF =
   '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif';
 
-// The parchment. Fixed light "sanctuary" palette, independent of app dark mode
-// (a dark sanctuary is a later variant).
+// The parchment palette.
 const P = {
-  bg: "#f8f3e7",
-  panel: "#fffdf6",
+  bg: "#f6efe0",
+  panel: "#fefcf5",
   text: "#2b2416",
-  muted: "#8d7f63",
-  border: "#e3d9c2",
-  veil: "#efe7d2",
+  muted: "#8d7c5c",
+  faint: "#b3a482",
+  border: "#e0d5ba",
+  veil: "#ede4cc",
+  shadow: "0 22px 50px -28px rgba(74,60,28,.45), 0 2px 8px rgba(74,60,28,.07)",
 };
+
+// Present pins its OWN CSS variables so verse marks always render with the
+// light-reader palette on the parchment — even when the app is in dark mode
+// (whose pens are pale and highlights are dark washes; both unreadable here).
+const PRESENT_VARS = {
+  "--bg": P.bg,
+  "--panel": P.panel,
+  "--soft": P.veil,
+  "--text": P.text,
+  "--muted": P.muted,
+  "--border": P.border,
+  "--pen1": "#d11a2a",
+  "--pen2": "#e07b1a",
+  "--pen3": "#c9a200",
+  "--pen4": "#2f8f3e",
+  "--pen5": "#2f6fb0",
+  "--pen6": "#7b4fbf",
+  "--pen7": "#1a1a1a",
+  "--pen8": "#d6448c",
+  "--pen9": "#5fa515",
+  "--pen10": "#0e9aab",
+  "--hl1": "#ffd6d6",
+  "--hl2": "#ffe2c2",
+  "--hl3": "#fbedb0",
+  "--hl4": "#d3f0d6",
+  "--hl5": "#cfe2f7",
+  "--hl6": "#e6d9f7",
+  "--hl7": "#e0e0e0",
+  "--hl8": "#fcd9ea",
+  "--hl9": "#e8f5c4",
+  "--hl10": "#c9f0f5",
+} as React.CSSProperties;
 
 // A beat is one screen: a section break, a card, or the closing screen.
 type Beat =
@@ -47,6 +80,34 @@ function fmtElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return m + ":" + String(s % 60).padStart(2, "0");
+}
+
+// A small ornamental rule: — ◆ —
+function Ornament({ color }: { color: string }) {
+  return (
+    <div
+      aria-hidden
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        margin: "26px 0 0",
+      }}
+    >
+      <span style={{ width: 46, height: 1, background: color, opacity: 0.55 }} />
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          background: color,
+          transform: "rotate(45deg)",
+          borderRadius: 1.5,
+        }}
+      />
+      <span style={{ width: 46, height: 1, background: color, opacity: 0.55 }} />
+    </div>
+  );
 }
 
 export default function StudyTablePresent({
@@ -80,6 +141,7 @@ export default function StudyTablePresent({
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const startRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = window.setInterval(
@@ -88,6 +150,11 @@ export default function StudyTablePresent({
     );
     return () => window.clearInterval(t);
   }, []);
+
+  // A new beat always starts at the top of its own scroll.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [i]);
 
   const beat = beats[Math.min(i, beats.length - 1)];
   const atEnd = beat.kind === "end";
@@ -126,9 +193,9 @@ export default function StudyTablePresent({
 
   const kicker: React.CSSProperties = {
     fontFamily: SANS,
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: 700,
-    letterSpacing: ".16em",
+    letterSpacing: ".2em",
     textTransform: "uppercase",
     color: P.muted,
   };
@@ -136,44 +203,38 @@ export default function StudyTablePresent({
   const renderBeat = () => {
     if (beat.kind === "section") {
       return (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ ...kicker, marginBottom: 16 }}>
+        <div style={{ textAlign: "center", padding: "40px 0" }}>
+          <div style={{ ...kicker, color: P.faint, marginBottom: 20 }}>
             Section {beat.n}
           </div>
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 40,
+              fontSize: 46,
               fontWeight: 600,
               color: P.text,
-              lineHeight: 1.25,
+              lineHeight: 1.22,
+              letterSpacing: "-0.01em",
             }}
           >
             {beat.title}
           </div>
-          <div
-            style={{
-              width: 54,
-              height: 2,
-              background: accent,
-              margin: "26px auto 0",
-              borderRadius: 2,
-            }}
-          />
+          <Ornament color={accent} />
         </div>
       );
     }
 
     if (beat.kind === "end") {
       return (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ ...kicker, marginBottom: 16 }}>The end</div>
+        <div style={{ textAlign: "center", padding: "40px 0" }}>
+          <Ornament color={accent} />
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 34,
+              fontSize: 38,
               fontWeight: 600,
               color: P.text,
+              margin: "26px 0 0",
             }}
           >
             {table.name || "That’s the lesson."}
@@ -183,7 +244,7 @@ export default function StudyTablePresent({
               fontFamily: SANS,
               fontSize: 13.5,
               color: P.muted,
-              marginTop: 12,
+              marginTop: 14,
             }}
           >
             {fmtElapsed(elapsed)} · thank you
@@ -191,7 +252,7 @@ export default function StudyTablePresent({
           <button
             onClick={onClose}
             style={{
-              marginTop: 28,
+              marginTop: 30,
               fontFamily: SANS,
               fontSize: 14,
               fontWeight: 650,
@@ -199,8 +260,9 @@ export default function StudyTablePresent({
               background: accent,
               border: 0,
               borderRadius: 999,
-              padding: "11px 26px",
+              padding: "12px 28px",
               cursor: "pointer",
+              boxShadow: P.shadow,
             }}
           >
             Leave present mode
@@ -217,23 +279,22 @@ export default function StudyTablePresent({
       const label =
         c.kind === "question" ? "A question is waiting" : "A note to self";
       return (
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", padding: "30px 0" }}>
           <div
             style={{
               display: "inline-flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: 14,
-              background: P.veil,
-              border: "1.5px dashed " + P.border,
-              borderRadius: 18,
-              padding: "44px 60px",
+              gap: 15,
+              background: "linear-gradient(180deg, " + P.panel + ", " + P.veil + ")",
+              border: "1px solid " + P.border,
+              borderRadius: 20,
+              padding: "52px 72px",
+              boxShadow: P.shadow,
             }}
           >
-            <span style={kicker}>{label}</span>
-            <span
-              style={{ fontFamily: SANS, fontSize: 13.5, color: P.muted }}
-            >
+            <span style={{ ...kicker, color: accent }}>{label}</span>
+            <span style={{ fontFamily: SANS, fontSize: 13.5, color: P.muted }}>
               Tap to reveal
             </span>
           </div>
@@ -243,24 +304,45 @@ export default function StudyTablePresent({
 
     if (c.kind === "scripture") {
       const refs = c.refs || [];
-      const label = c.passage ? passageLabel(refs) : refs.join(" · ");
+      const label = c.passage ? passageLabel(refs) : refs.join("  ·  ");
       return (
         <div>
-          <div style={{ ...kicker, color: accent, marginBottom: 18 }}>
-            {label}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 14,
+              marginBottom: 24,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{ flex: "0 1 60px", height: 1, background: P.border }}
+            />
+            <span style={{ ...kicker, color: accent, whiteSpace: "nowrap" }}>
+              {label}
+            </span>
+            <span
+              aria-hidden
+              style={{ flex: "0 1 60px", height: 1, background: P.border }}
+            />
           </div>
           <div
             style={{
+              background: P.panel,
+              border: "1px solid " + P.border,
+              borderRadius: 18,
+              padding: "34px 40px",
+              boxShadow: P.shadow,
               fontFamily: SERIF,
-              fontSize: 22,
-              lineHeight: 1.85,
+              fontSize: 21,
+              lineHeight: 1.9,
               color: P.text,
             }}
           >
             {refs.map((r) => (
-              <div key={r} style={{ marginBottom: 10 }}>
-                {renderVerse(r, c.bookId)}
-              </div>
+              <div key={r}>{renderVerse(r, c.bookId)}</div>
             ))}
           </div>
         </div>
@@ -269,14 +351,16 @@ export default function StudyTablePresent({
 
     if (c.kind === "text") {
       return (
-        <div>
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
           {c.role && (
-            <div style={{ ...kicker, marginBottom: 16 }}>{c.role}</div>
+            <div style={{ ...kicker, color: P.faint, marginBottom: 18 }}>
+              {c.role}
+            </div>
           )}
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 27,
+              fontSize: 29,
               lineHeight: 1.6,
               color: P.text,
               whiteSpace: "pre-wrap",
@@ -290,47 +374,62 @@ export default function StudyTablePresent({
 
     if (c.kind === "question") {
       return (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ ...kicker, color: accent, marginBottom: 18 }}>
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <div style={{ ...kicker, color: accent, marginBottom: 20 }}>
             {c.qtype ? c.qtype + " · question" : "Question"}
           </div>
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 30,
-              lineHeight: 1.5,
+              fontSize: 33,
+              lineHeight: 1.45,
               color: P.text,
               whiteSpace: "pre-wrap",
             }}
           >
             {c.text}
           </div>
+          <Ornament color={accent} />
         </div>
       );
     }
 
     if (c.kind === "quote") {
       return (
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <div
+            aria-hidden
+            style={{
+              fontFamily: SERIF,
+              fontSize: 64,
+              lineHeight: 0.6,
+              color: accent,
+              opacity: 0.45,
+              marginBottom: 18,
+            }}
+          >
+            “
+          </div>
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 27,
+              fontSize: 28,
               fontStyle: "italic",
-              lineHeight: 1.6,
+              lineHeight: 1.62,
               color: P.text,
               whiteSpace: "pre-wrap",
             }}
           >
-            “{(c.text || "").trim()}”
+            {(c.text || "").trim()}
           </div>
           {c.attribution && (
             <div
               style={{
                 fontFamily: SANS,
-                fontSize: 14,
+                fontSize: 13.5,
+                letterSpacing: ".04em",
                 color: P.muted,
-                marginTop: 18,
+                marginTop: 20,
               }}
             >
               — {c.attribution}
@@ -342,16 +441,16 @@ export default function StudyTablePresent({
 
     if (c.kind === "note") {
       return (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ ...kicker, marginBottom: 16 }}>
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <div style={{ ...kicker, color: P.faint, marginBottom: 18 }}>
             Note to self · only you see this
           </div>
           <div
             style={{
               fontFamily: SERIF,
-              fontSize: 24,
+              fontSize: 25,
               fontStyle: "italic",
-              lineHeight: 1.6,
+              lineHeight: 1.65,
               color: P.muted,
               whiteSpace: "pre-wrap",
             }}
@@ -367,16 +466,25 @@ export default function StudyTablePresent({
     if (!vid) return null;
     return (
       <div onClick={(e) => e.stopPropagation()}>
-        <div style={{ ...kicker, marginBottom: 14 }}>
+        <div style={{ ...kicker, textAlign: "center", marginBottom: 16 }}>
           Clip · plays {fmtTime(c.startSec) || "0:00"} –{" "}
           {c.endSec != null ? fmtTime(c.endSec) : "end"}
         </div>
-        <ClipPlayer
-          videoId={vid}
-          startSec={c.startSec}
-          endSec={c.endSec}
-          accent={accent}
-        />
+        <div
+          style={{
+            borderRadius: 18,
+            overflow: "hidden",
+            boxShadow: P.shadow,
+            border: "1px solid " + P.border,
+          }}
+        >
+          <ClipPlayer
+            videoId={vid}
+            startSec={c.startSec}
+            endSec={c.endSec}
+            accent={accent}
+          />
+        </div>
       </div>
     );
   };
@@ -388,14 +496,16 @@ export default function StudyTablePresent({
     <div
       className="scribal-fade"
       style={{
+        ...PRESENT_VARS,
         position: "fixed",
         inset: 0,
         zIndex: 440,
-        background: P.bg,
+        background:
+          "radial-gradient(120% 90% at 50% 0%, #faf5e9 0%, " +
+          P.bg +
+          " 55%, #efe5cf 100%)",
         display: "flex",
         flexDirection: "column",
-        // Verse marks render with the app's pen/highlight vars; keep them
-        // legible on parchment regardless of the app's dark mode.
         color: P.text,
       }}
     >
@@ -405,7 +515,7 @@ export default function StudyTablePresent({
           display: "flex",
           alignItems: "center",
           gap: 12,
-          padding: "14px 20px",
+          padding: "16px 22px",
           flex: "0 0 auto",
         }}
       >
@@ -442,12 +552,13 @@ export default function StudyTablePresent({
           style={{
             flex: 1,
             minWidth: 0,
+            textAlign: "center",
             fontFamily: SANS,
-            fontSize: 11.5,
+            fontSize: 11,
             fontWeight: 700,
-            letterSpacing: ".13em",
+            letterSpacing: ".18em",
             textTransform: "uppercase",
-            color: P.muted,
+            color: P.faint,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -455,29 +566,46 @@ export default function StudyTablePresent({
         >
           {sectionLabel || table.name || "Present"}
         </div>
-        <div style={{ fontFamily: SANS, fontSize: 12.5, color: P.muted }}>
+        <div
+          style={{
+            fontFamily: SANS,
+            fontSize: 12.5,
+            fontVariantNumeric: "tabular-nums",
+            color: P.faint,
+            width: 32,
+            textAlign: "right",
+          }}
+        >
           {fmtElapsed(elapsed)}
         </div>
       </div>
 
-      {/* the beat — tapping anywhere advances (or lifts the veil) */}
+      {/* the beat — tapping anywhere advances (or lifts the veil). NOTE: the
+          content is NOT flex-centered inside the scroller; `margin: auto` on
+          the inner block centers it when it fits and top-aligns it when it
+          overflows, so long passages scroll instead of clipping at the top. */}
       <div
+        ref={scrollRef}
         onClick={next}
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px 28px",
+          flexDirection: "column",
           cursor: atEnd ? "default" : "pointer",
         }}
       >
         <div
           key={i + (isVeiled ? "v" : "")}
-          className="scribal-fade"
-          style={{ width: "100%", maxWidth: 720 }}
+          className="scribal-rise"
+          style={{
+            margin: "auto",
+            width: "100%",
+            maxWidth: 700,
+            padding: "34px 30px 44px",
+            boxSizing: "border-box",
+          }}
           onClick={atEnd ? (e) => e.stopPropagation() : undefined}
         >
           {renderBeat()}
@@ -489,8 +617,8 @@ export default function StudyTablePresent({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "14px 20px 18px",
+          gap: 16,
+          padding: "12px 22px 18px",
           flex: "0 0 auto",
         }}
       >
@@ -499,8 +627,8 @@ export default function StudyTablePresent({
           disabled={i === 0}
           aria-label="Back"
           style={{
-            width: 34,
-            height: 34,
+            width: 36,
+            height: 36,
             borderRadius: 999,
             border: "1px solid " + P.border,
             background: P.panel,
@@ -524,20 +652,20 @@ export default function StudyTablePresent({
             <path d="M15 6l-6 6 6 6" />
           </svg>
         </button>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
-              height: 4,
+              flex: 1,
+              height: 3,
               borderRadius: 999,
-              background: P.veil,
+              background: "rgba(74,60,28,.12)",
               overflow: "hidden",
             }}
           >
             <div
               style={{
                 height: "100%",
-                width:
-                  Math.round(((i + 1) / beats.length) * 100) + "%",
+                width: Math.round(((i + 1) / beats.length) * 100) + "%",
                 background: accent,
                 borderRadius: 999,
                 transition: "width .25s ease",
@@ -547,13 +675,13 @@ export default function StudyTablePresent({
           <div
             style={{
               fontFamily: SANS,
-              fontSize: 11,
-              color: P.muted,
-              marginTop: 6,
-              textAlign: "center",
+              fontSize: 11.5,
+              fontVariantNumeric: "tabular-nums",
+              color: P.faint,
+              whiteSpace: "nowrap",
             }}
           >
-            {Math.min(i + 1, beats.length)} of {beats.length}
+            {Math.min(i + 1, beats.length)} / {beats.length}
           </div>
         </div>
         <button
@@ -561,8 +689,8 @@ export default function StudyTablePresent({
           disabled={atEnd}
           aria-label="Next"
           style={{
-            width: 34,
-            height: 34,
+            width: 36,
+            height: 36,
             borderRadius: 999,
             border: 0,
             background: atEnd ? P.veil : accent,
@@ -571,6 +699,7 @@ export default function StudyTablePresent({
             display: "grid",
             placeItems: "center",
             lineHeight: 0,
+            boxShadow: atEnd ? "none" : "0 6px 16px -8px rgba(74,60,28,.5)",
           }}
         >
           <svg
