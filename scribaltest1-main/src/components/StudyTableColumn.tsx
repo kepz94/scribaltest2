@@ -162,6 +162,11 @@ export default function StudyTableColumn({
   const [openAt, setOpenAt] = useState<number | null>(null);
   // Newly inserted card to autofocus once.
   const [focusId, setFocusId] = useState<string | null>(null);
+  // Which gap is hovered — the + affordance reveals only there, so at rest the
+  // card stack stays an unbroken line.
+  const [hoverGap, setHoverGap] = useState<number | null>(null);
+  // Which card is pending a delete confirmation (guards accidental deletes).
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   // Clear the one-shot focus flag after it has been applied on mount.
   useEffect(() => {
@@ -272,6 +277,50 @@ export default function StudyTableColumn({
       placeItems: "center",
       lineHeight: 0,
     };
+    if (confirmId === id) {
+      return (
+        <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontFamily: SANS, fontSize: 12.5, color: "var(--muted)", marginRight: "auto" }}>
+            Delete this card?
+          </span>
+          <button
+            onClick={() => {
+              remove(id);
+              setConfirmId(null);
+            }}
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              color: "#fff",
+              background: "var(--pen1)",
+              border: 0,
+              borderRadius: 8,
+              padding: "6px 13px",
+            }}
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setConfirmId(null)}
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              color: "var(--text)",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "6px 13px",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      );
+    }
     return (
       <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
         <button
@@ -290,7 +339,7 @@ export default function StudyTableColumn({
         </button>
         <button
           title="Delete card"
-          onClick={() => remove(id)}
+          onClick={() => setConfirmId(id)}
           style={{ ...btn, marginLeft: "auto" }}
         >
           <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
@@ -604,7 +653,15 @@ export default function StudyTableColumn({
   }
 
   // + bar between/around cards
-  function AddBar({ index, big }: { index: number; big?: boolean }) {
+  function AddBar({
+    index,
+    big,
+    show,
+  }: {
+    index: number;
+    big?: boolean;
+    show?: boolean;
+  }) {
     if (big) {
       return (
         <div style={{ marginTop: 8, paddingLeft: 4 }}>
@@ -633,12 +690,10 @@ export default function StudyTableColumn({
     return (
       <div
         style={{
-          height: 16,
+          height: 18,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          margin: "-2px 0",
-          position: "relative",
         }}
       >
         <button
@@ -648,14 +703,17 @@ export default function StudyTableColumn({
             width: 22,
             height: 22,
             borderRadius: 999,
-            border: "1px solid var(--border)",
+            border: "1px solid " + accent,
             background: "var(--panel)",
             color: accent,
             cursor: "pointer",
             display: "grid",
             placeItems: "center",
             lineHeight: 0,
-            opacity: 0.55,
+            opacity: show ? 1 : 0,
+            pointerEvents: show ? "auto" : "none",
+            transition: "opacity .12s ease",
+            boxShadow: "0 1px 4px rgba(60,50,30,.12)",
           }}
         >
           <Icon d="M12 5v14 M5 12h14" size={13} />
@@ -802,8 +860,12 @@ export default function StudyTableColumn({
         const isSection = card.kind === "heading";
         return (
           <Fragment key={card.id}>
-            <div style={{ paddingLeft: 32 }}>
-              <AddBar index={i} />
+            <div
+              style={{ paddingLeft: 32 }}
+              onMouseEnter={() => setHoverGap(i)}
+              onMouseLeave={() => setHoverGap((g) => (g === i ? null : g))}
+            >
+              <AddBar index={i} show={hoverGap === i} />
               {openAt === i && <Chooser index={i} />}
             </div>
             <div
