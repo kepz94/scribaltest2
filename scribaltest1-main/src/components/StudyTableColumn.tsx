@@ -159,6 +159,193 @@ function hexToRgba(hex: string, a: number): string {
   return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
 }
 
+// Pull a YouTube video id out of any of its link shapes (watch, youtu.be,
+// embed, shorts, live). Returns null when it isn't a recognizable YouTube link.
+function parseYouTubeId(url: string): string | null {
+  if (!url) return null;
+  let m = url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/);
+  if (m) return m[1];
+  m = url.match(/[?&]v=([A-Za-z0-9_-]{6,})/);
+  if (m) return m[1];
+  m = url.match(/youtube\.com\/(?:embed|shorts|live|v)\/([A-Za-z0-9_-]{6,})/);
+  if (m) return m[1];
+  return null;
+}
+
+// Load the YouTube IFrame Player API once, shared across every clip card.
+// Resolves with the global YT namespace when it's ready.
+let ytApiPromise: Promise<any> | null = null;
+function loadYouTubeApi(): Promise<any> {
+  if (typeof window === "undefined") return Promise.reject(new Error("no window"));
+  const w = window as any;
+  if (w.YT && w.YT.Player) return Promise.resolve(w.YT);
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise((resolve) => {
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      if (typeof prev === "function") prev();
+      resolve(w.YT);
+    };
+    if (!document.getElementById("youtube-iframe-api")) {
+      const tag = document.createElement("script");
+      tag.id = "youtube-iframe-api";
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+  });
+  return ytApiPromise;
+}
+
+// An embedded player for a clip card: play the video, and capture the current
+// playback position as the clip's start or end (YouTube share links carry no
+// end, so the end is set by ear here). Previewing the clip stops at the end.
+function ClipPreview({
+  videoId,
+  startSec,
+  endSec,
+  onSetStart,
+  onSetEnd,
+  accent,
+}: {
+  videoId: string;
+  startSec?: number;
+  endSec?: number;
+  onSetStart: (sec: number) => void;
+  onSetEnd: (sec: number) => void;
+  accent: string;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<any>(null);
+  const pollRef = useRef<number | null>(null);
+  const endRef = useRef<number | undefined>(endSec);
+  endRef.current = endSec;
+  const [ready, setReady] = useState(false);
+  const [cur, setCur] = useState(0);
+
+  // Build the player once per video. YouTube replaces a child node with its
+  // iframe, so we hand it a node React doesn't manage (avoids reconcile fights).
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    loadYouTubeApi().then((YT) => {
+      if (cancelled || !hostRef.current) return;
+      const node = document.createElement("div");
+      hostRef.current.innerHTML = "";
+      hostRef.current.appendChild(node);
+      playerRef.current = new YT.Player(node, {
+        videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          start: Math.max(0, Math.round(startSec || 0)),
+          rel: 0,
+          modestbranding: 1,
+        },
+        events: {
+          onReady: () => {
+            if (!cancelled) setReady(true);
+          },
+        },
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      try {
+        playerRef.current?.destroy?.();
+      } catch {}
+      playerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId]);
+
+  // While the player is live, track the current time (for the readout) and stop
+  // a preview once it reaches the clip's end.
+  useEffect(() => {
+    if (!ready) return;
+    pollRef.current = window.setInterval(() => {
+      const p = playerRef.current;
+      if (!p || !p.getCurrentTime) return;
+      const t = p.getCurrentTime() || 0;
+      setCur(t);
+      const end = endRef.current;
+      if (end != null && t >= end && p.getPlayerState && p.getPlayerState() === 1) {
+        p.pauseVideo();
+      }
+    }, 250);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+  }, [ready]);
+
+  const now = () => Math.round(playerRef.current?.getCurrentTime?.() || 0);
+  const playClip = () => {
+    const p = playerRef.current;
+    if (!p) return;
+    p.seekTo(Math.max(0, Math.round(startSec || 0)), true);
+    p.playVideo();
+  };
+
+  const ctrlBtn: React.CSSProperties = {
+    fontFamily: SANS,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "1px solid var(--border)",
+    background: "var(--panel)",
+    color: "var(--text)",
+    borderRadius: 8,
+    padding: "6px 10px",
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          position: "relative",
+          paddingBottom: "56.25%",
+          height: 0,
+          borderRadius: 10,
+          overflow: "hidden",
+          background: "#000",
+        }}
+      >
+        <div ref={hostRef} style={{ position: "absolute", inset: 0 }} />
+        {!ready && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "grid",
+              placeItems: "center",
+              color: "rgba(255,255,255,.7)",
+              fontFamily: SANS,
+              fontSize: 12.5,
+            }}
+          >
+            Loading player…
+          </div>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 9 }}>
+        <button onClick={playClip} style={{ ...ctrlBtn, color: "#fff", background: accent, border: 0 }}>
+          ▶ Play clip
+        </button>
+        <button onClick={() => onSetStart(now())} style={ctrlBtn}>
+          Set start here
+        </button>
+        <button onClick={() => onSetEnd(now())} style={ctrlBtn}>
+          End clip here
+        </button>
+      </div>
+      <div style={{ marginTop: 8, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+        Start {fmtTime(startSec)} · End {endSec != null ? fmtTime(endSec) : "—"} ·{" "}
+        Playhead {fmtTime(Math.round(cur))}
+      </div>
+    </div>
+  );
+}
+
 export default function StudyTableColumn({
   cards,
   onChange,
@@ -175,6 +362,8 @@ export default function StudyTableColumn({
   const [hoverGap, setHoverGap] = useState<number | null>(null);
   // Which card is pending a delete confirmation (guards accidental deletes).
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Which clip card has its preview player open (only one at a time).
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   // Clear the one-shot focus flag after it has been applied on mount.
   useEffect(() => {
@@ -623,6 +812,8 @@ export default function StudyTableColumn({
 
     // clip
     const url = card.url || "";
+    const vid = parseYouTubeId(url);
+    const previewOpen = previewId === card.id;
     return (
       <div style={cardBox}>
         <div style={{ ...kicker, color: "var(--pen3)" }}>
@@ -681,9 +872,42 @@ export default function StudyTableColumn({
             />
           </div>
         </div>
-        <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
-          The thumbnail and a preview player appear here once linked.
-        </div>
+        {vid ? (
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={() => setPreviewId(previewOpen ? null : card.id)}
+              style={{
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                color: previewOpen ? "var(--muted)" : accent,
+                background: "transparent",
+                border: "1px solid " + (previewOpen ? "var(--border)" : accent),
+                borderRadius: 999,
+                padding: "6px 13px",
+              }}
+            >
+              {previewOpen ? "Hide preview" : "Preview & set clip"}
+            </button>
+            {previewOpen && (
+              <div style={{ marginTop: 11 }}>
+                <ClipPreview
+                  videoId={vid}
+                  startSec={card.startSec}
+                  endSec={card.endSec}
+                  onSetStart={(s) => patch(card.id, { startSec: s })}
+                  onSetEnd={(s) => patch(card.id, { endSec: s })}
+                  accent={accent}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+            Paste a YouTube link to preview it and set the clip’s start and end.
+          </div>
+        )}
       </div>
     );
   }
