@@ -329,7 +329,9 @@ export default function StudyTablesDesktop({
       const scoped = bk.scopedLabels?.[resolve(scopeOfRef(m.reference))]?.[
         m.color
       ];
-      const label = ((scoped || bk.colorLabels?.[m.color] || "") as string).trim();
+      // Scoped labels only (the reader's precedence) — the book-level fallback
+      // leaked unrelated old names onto fresh tables.
+      const label = ((scoped || "") as string).trim();
       seen.set(m.color, label);
     });
     return Array.from(seen.entries())
