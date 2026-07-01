@@ -1117,6 +1117,27 @@ export default function App() {
     return () => ro.disconnect();
   }, []);
 
+  // The theme-labels legend and the reading panels sit below BOTH the header
+  // and the tab-pill row. That row's height varies too (it wraps at narrow
+  // widths, and each pill carries a small book label above it), so measure it
+  // the same way as the header. Without this, the legend pinned at a guessed
+  // offset and the panels were sized against a guessed chrome height; when the
+  // guesses ran short of the real height, the page grew past the viewport, the
+  // whole window scrolled, and the "fixed" legend slid up behind the tabs. It
+  // only renders while reading, so re-measure whenever the reading view mounts.
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabsH, setTabsH] = useState(66);
+  useEffect(() => {
+    if (mode !== "read") return;
+    const el = tabsRef.current;
+    if (!el) return;
+    const measure = () => setTabsH(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode]);
+
   // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
   // the same group are one study — they compile together and share one set of
   // theme names. Different groups are fully independent (no theme bleed).
@@ -8295,7 +8316,7 @@ export default function App() {
           borderBottom: "1px solid var(--border)",
           position: "sticky",
           top: 0,
-          zIndex: 30,
+          zIndex: 40,
           flexWrap: "wrap",
         }}
       >
@@ -9505,6 +9526,7 @@ export default function App() {
             top: headerH,
             zIndex: 31,
           }}
+          ref={tabsRef}
           data-tour="tabs"
         >
           {tabs.map((t) => {
@@ -9689,7 +9711,7 @@ export default function App() {
             backgroundColor: "var(--bg)",
             borderBottom: "1px solid var(--border)",
             position: "sticky",
-            top: "127px",
+            top: headerH + tabsH,
             zIndex: 24,
             fontSize: "11.5px",
           }}
@@ -9865,7 +9887,7 @@ export default function App() {
                     outlineOffset: "-2px",
                     position: "relative",
                     overflow: "hidden",
-                    height: "calc(100vh - 164px)",
+                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
                   }}
                 >
                   <div
