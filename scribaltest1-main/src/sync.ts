@@ -47,6 +47,8 @@ export const CORE_KEYS = [
   // Mark colour intensity (saturation). A shared display setting, so it syncs
   // and marks look the same on every device.
   "scribal_color_intensity",
+  // Study tables (lesson boards): built on desktop, presentable on any device.
+  "scribal_tables_v1",
 ];
 
 // Merge a remote chapter-link map into the local one. Two chapters belong to the
@@ -227,6 +229,33 @@ export function booksFromBackup(text: string): string | null {
   }
 }
 
+// Pulls any single backed-up key's value out of a full backup string (the
+// generic form of booksFromBackup).
+export function valueFromBackup(text: string, key: string): string | null {
+  try {
+    const p = JSON.parse(text);
+    const data = p && p.data ? p.data : p;
+    return data ? data[key] || null : null;
+  } catch {
+    return null;
+  }
+}
+
+// Counts the live (not soft-deleted) entries in a persisted study list
+// (scribal_studies_v1 or scribal_search_studies). The emptiness safeguards use
+// this so a device that has lost its studies can't push that emptiness over a
+// cloud copy that still holds them — the same protection marks already had.
+export function countStudiesFromJson(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter((s) => s && !s.deletedAt).length;
+  } catch {
+    return 0;
+  }
+}
+
 // Run a Drive operation with a valid token, silently refreshing (no popup) when
 // the token is missing or has expired, then retrying once. Never throws.
 export async function withFreshToken<T>(
@@ -348,27 +377,60 @@ export async function pushToDrive(
   const localMarks = countBookMarksFromJson(
     localStorage.getItem("scribal_books_v1")
   );
+  const localStudies = countStudiesFromJson(
+    localStorage.getItem("scribal_studies_v1")
+  );
+  const localSearch = countStudiesFromJson(
+    localStorage.getItem("scribal_search_studies")
+  );
   let remoteAt = 0;
   let remoteMarks = -1;
+  let remoteStudies = -1;
+  let remoteSearch = -1;
   if (remoteText) {
     try {
       const p = JSON.parse(remoteText);
       remoteAt = p && p.exportedAt ? Date.parse(p.exportedAt) : 0;
       remoteMarks = countBookMarksFromJson(booksFromBackup(remoteText));
+      remoteStudies = countStudiesFromJson(
+        valueFromBackup(remoteText, "scribal_studies_v1")
+      );
+      remoteSearch = countStudiesFromJson(
+        valueFromBackup(remoteText, "scribal_search_studies")
+      );
     } catch {
       /* treat as no usable remote */
     }
   }
 
-  // Rule 1 — we're behind the cloud.
-  if (remoteText && remoteAt && remoteAt > base) {
-    if (remoteMarks === 0 && localMarks > 0) return "blocked";
+  // The cloud holds marks or studies this device is missing. Pushing would erase
+  // them, so the only safe move is to ADOPT the cloud (a union merge, so nothing
+  // here is lost either) — regardless of timestamps.
+  const cloudHasMore =
+    (remoteMarks > 0 && localMarks === 0) ||
+    (remoteStudies > 0 && localStudies === 0) ||
+    (remoteSearch > 0 && localSearch === 0);
+
+  // Rule 1 — we're behind the cloud (it's newer), or it holds content we lack.
+  if (remoteText && ((remoteAt && remoteAt > base) || cloudHasMore)) {
+    // Still refuse to let an empty-marks cloud blank good local marks — unless
+    // the cloud also holds studies we're missing, in which case we must adopt to
+    // recover them (the union merge keeps our marks regardless).
+    if (remoteMarks === 0 && localMarks > 0 && !cloudHasMore) return "blocked";
     applyRemoteLive(remoteText, mergeRemoteBooks, vaultMergeRemote, mergeOther);
     return "adopted";
   }
 
-  // Rule 2 — don't push emptiness over a cloud that has marks.
-  if (localMarks === 0 && remoteMarks > 0) return "blocked";
+  // Rule 2 — never push emptiness over a cloud that still has content. Now covers
+  // studies and gathered studies too, not just marks, so a device that has lost
+  // its studies can never overwrite the copy another device kept.
+  if (
+    (localMarks === 0 && remoteMarks > 0) ||
+    (localStudies === 0 && remoteStudies > 0) ||
+    (localSearch === 0 && remoteSearch > 0)
+  ) {
+    return "blocked";
+  }
 
   const payload = buildBackupString(keys);
   const r = await withFreshToken((tok) => drive.saveData(tok, payload));
@@ -397,12 +459,31 @@ export async function pullIfNewer(
       parsed && parsed.exportedAt ? Date.parse(parsed.exportedAt) : 0;
     const seen =
       Date.parse(localStorage.getItem("scribal_sync_seen") || "") || 0;
-    if (remoteAt && remoteAt > seen) {
-      const localMarks = countBookMarksFromJson(
-        localStorage.getItem("scribal_books_v1")
-      );
-      const remoteMarks = countBookMarksFromJson(booksFromBackup(text));
-      if (remoteMarks === 0 && localMarks > 0) return false;
+    const localMarks = countBookMarksFromJson(
+      localStorage.getItem("scribal_books_v1")
+    );
+    const localStudies = countStudiesFromJson(
+      localStorage.getItem("scribal_studies_v1")
+    );
+    const localSearch = countStudiesFromJson(
+      localStorage.getItem("scribal_search_studies")
+    );
+    const remoteMarks = countBookMarksFromJson(booksFromBackup(text));
+    const remoteStudies = countStudiesFromJson(
+      valueFromBackup(text, "scribal_studies_v1")
+    );
+    const remoteSearch = countStudiesFromJson(
+      valueFromBackup(text, "scribal_search_studies")
+    );
+    // Pull when the cloud is genuinely newer OR it holds marks/studies this
+    // device is missing — so a device that lost its studies recovers them on the
+    // next focus even if its seen-stamp says it's already up to date.
+    const cloudHasMore =
+      (remoteMarks > 0 && localMarks === 0) ||
+      (remoteStudies > 0 && localStudies === 0) ||
+      (remoteSearch > 0 && localSearch === 0);
+    if ((remoteAt && remoteAt > seen) || cloudHasMore) {
+      if (remoteMarks === 0 && localMarks > 0 && !cloudHasMore) return false;
       applyRemoteLive(text, mergeRemoteBooks, vaultMergeRemote, mergeOther);
       return true;
     }
