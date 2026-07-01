@@ -239,10 +239,16 @@ function ClipPreview({
         videoId,
         width: "100%",
         height: "100%",
+        // Privacy-enhanced host + explicit origin, to satisfy YouTube's bot
+        // check (same treatment as the saved-clip player).
+        host: "https://www.youtube-nocookie.com",
         playerVars: {
           start: Math.max(0, Math.round(startSec || 0)),
           rel: 0,
           modestbranding: 1,
+          playsinline: 1,
+          origin:
+            typeof window !== "undefined" ? window.location.origin : undefined,
         },
         events: {
           onReady: () => {
@@ -364,79 +370,115 @@ export function ClipPlayer({
 }) {
   const [playing, setPlaying] = useState(false);
   const start = Math.max(0, Math.round(startSec || 0));
+  // The privacy-enhanced embed host + an explicit origin usually satisfies
+  // YouTube's bot check (the plain youtube.com/embed + autoplay combo is what
+  // trips the "sign in to confirm you're not a bot" wall, and there's no way
+  // to sign in inside the frame).
   const src =
-    "https://www.youtube.com/embed/" +
+    "https://www.youtube-nocookie.com/embed/" +
     videoId +
     "?start=" +
     start +
     (endSec != null ? "&end=" + Math.round(endSec) : "") +
-    "&autoplay=1&rel=0&modestbranding=1";
+    "&autoplay=1&rel=0&modestbranding=1&playsinline=1" +
+    (typeof window !== "undefined"
+      ? "&origin=" + encodeURIComponent(window.location.origin)
+      : "");
+  // Escape hatch for videos that refuse to embed at all (age-restricted,
+  // embed-disabled, or a bot wall that won't clear): open on YouTube at the
+  // clip's start.
+  const watchUrl =
+    "https://www.youtube.com/watch?v=" +
+    videoId +
+    (start ? "&t=" + start + "s" : "");
   return (
-    <div
-      style={{
-        position: "relative",
-        paddingBottom: "56.25%",
-        height: 0,
-        borderRadius: 10,
-        overflow: "hidden",
-        background: "#000",
-      }}
-    >
-      {playing ? (
-        <iframe
-          title="clip"
-          src={src}
-          allow="autoplay; encrypted-media; picture-in-picture"
-          allowFullScreen
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-        />
-      ) : (
-        <button
-          onClick={() => setPlaying(true)}
-          aria-label="Play clip"
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            padding: 0,
-            border: 0,
-            cursor: "pointer",
-            background: "#000",
-          }}
-        >
-          <img
-            src={"https://img.youtube.com/vi/" + videoId + "/hqdefault.jpg"}
-            alt=""
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+    <div>
+      <div
+        style={{
+          position: "relative",
+          paddingBottom: "56.25%",
+          height: 0,
+          borderRadius: 10,
+          overflow: "hidden",
+          background: "#000",
+        }}
+      >
+        {playing ? (
+          <iframe
+            title="clip"
+            src={src}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
           />
-          <span
+        ) : (
+          <button
+            onClick={() => setPlaying(true)}
+            aria-label="Play clip"
             style={{
               position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%,-50%)",
-              width: 58,
-              height: 58,
-              borderRadius: 999,
-              background: hexToRgba(accent, 0.92),
-              display: "grid",
-              placeItems: "center",
-              boxShadow: "0 6px 20px -6px rgba(0,0,0,.6)",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              padding: 0,
+              border: 0,
+              cursor: "pointer",
+              background: "#000",
             }}
           >
+            <img
+              src={"https://img.youtube.com/vi/" + videoId + "/hqdefault.jpg"}
+              alt=""
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+            />
             <span
               style={{
-                width: 0,
-                height: 0,
-                marginLeft: 4,
-                borderTop: "11px solid transparent",
-                borderBottom: "11px solid transparent",
-                borderLeft: "18px solid #fff",
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%,-50%)",
+                width: 58,
+                height: 58,
+                borderRadius: 999,
+                background: hexToRgba(accent, 0.92),
+                display: "grid",
+                placeItems: "center",
+                boxShadow: "0 6px 20px -6px rgba(0,0,0,.6)",
               }}
-            />
-          </span>
-        </button>
+            >
+              <span
+                style={{
+                  width: 0,
+                  height: 0,
+                  marginLeft: 4,
+                  borderTop: "11px solid transparent",
+                  borderBottom: "11px solid transparent",
+                  borderLeft: "18px solid #fff",
+                }}
+              />
+            </span>
+          </button>
+        )}
+      </div>
+      {playing && (
+        <div style={{ textAlign: "right", marginTop: 6 }}>
+          <a
+            href={watchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              fontFamily: SANS,
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: "var(--muted)",
+              textDecoration: "none",
+            }}
+          >
+            Trouble playing? Watch on YouTube ↗
+          </a>
+        </div>
       )}
     </div>
   );
