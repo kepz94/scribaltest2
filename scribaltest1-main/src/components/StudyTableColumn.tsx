@@ -1,0 +1,857 @@
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ACCENT } from "../theme";
+import {
+  TableCard,
+  CardKind,
+  WordRole,
+  QuestionType,
+  newCardId,
+} from "../hooks/useStudyTables";
+
+// The COLUMN surface of a Study Table: an ordered stack of cards you build by
+// hand. The order is the lesson. This component only renders + edits the column
+// and reports changes up via onChange; persistence (localStorage + sync) lives
+// in useStudyTables, owned by the parent.
+//
+// Scripture and Clip cards get simple, forward-compatible editors here (a
+// reference list; a link + start/end). Later stages replace those with the
+// theme-grouped verse picker and the clip preview — the stored shape doesn't
+// change, so nothing built now is thrown away.
+
+interface StudyTableColumnProps {
+  cards: TableCard[];
+  onChange: (cards: TableCard[]) => void;
+  // Accent for active/primary bits; defaults to the app accent.
+  accent?: string;
+}
+
+const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const SERIF =
+  '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif';
+
+// ---- card-type metadata for the picker ----
+const ICON: Record<CardKind, string> = {
+  scripture: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20 M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
+  text: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
+  question: "M9.2 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.6 2.2-2.6 3.7 M12 17h.01 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  quote: "M7 7H4v5h3l-1.5 4H8l1.5-4V7z M16 7h-3v5h3l-1.5 4H18l1.5-4V7z",
+  clip: "M10 8l6 4-6 4V8z M3 5h18v14H3z",
+  heading: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
+  note: "M2 12s3.5-7 10-7 10 7 10 7 M2 12s3.5 7 10 7 10-7 10-7 M4 4l16 16",
+};
+const TYPES: { kind: CardKind; name: string; desc: string }[] = [
+  { kind: "scripture", name: "Scripture", desc: "your marks come with it" },
+  { kind: "text", name: "Your words", desc: "a thought in your voice" },
+  { kind: "question", name: "Question", desc: "something to ask" },
+  { kind: "quote", name: "Quote", desc: "an outside voice" },
+  { kind: "clip", name: "Clip", desc: "a video, starting where you want" },
+  { kind: "heading", name: "Heading", desc: "start a section" },
+  { kind: "note", name: "Note to self", desc: "private — only you" },
+];
+
+const ROLES: WordRole[] = ["thought", "story", "invitation"];
+const QTYPES: { t: QuestionType; c: string }[] = [
+  { t: "fact", c: "var(--muted)" },
+  { t: "analysis", c: "var(--pen4)" },
+  { t: "application", c: "var(--pen2)" },
+  { t: "feeling", c: "var(--pen1)" },
+];
+
+function Icon({ d, size = 16 }: { d: string; size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ display: "block" }}
+    >
+      {d.split(" M").map((seg, i) => (
+        <path key={i} d={(i === 0 ? seg : "M" + seg)} />
+      ))}
+    </svg>
+  );
+}
+
+// Textarea that grows to fit its content.
+function AutoTextarea({
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+  style,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = Math.max(el.scrollHeight, 22) + "px";
+    }
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      autoFocus={autoFocus}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      rows={1}
+      style={{
+        width: "100%",
+        border: 0,
+        outline: 0,
+        background: "transparent",
+        resize: "none",
+        overflow: "hidden",
+        display: "block",
+        color: "var(--text)",
+        fontFamily: SERIF,
+        fontSize: "16px",
+        lineHeight: 1.6,
+        padding: 0,
+        ...style,
+      }}
+    />
+  );
+}
+
+// Read a YouTube start time out of a pasted link's ?t= / &start= param.
+function parseStart(url: string): number | undefined {
+  const m = url.match(/[?&](?:t|start)=([0-9hms]+)/i);
+  if (!m) return undefined;
+  const v = m[1];
+  if (/^\d+s?$/.test(v)) return parseInt(v, 10);
+  const h = +(v.match(/(\d+)h/)?.[1] || 0);
+  const mi = +(v.match(/(\d+)m/)?.[1] || 0);
+  const s = +(v.match(/(\d+)s/)?.[1] || 0);
+  return h * 3600 + mi * 60 + s;
+}
+function fmtTime(t?: number): string {
+  if (t == null) return "";
+  const m = Math.floor(t / 60),
+    s = t % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+// Fade a hex color to an rgba tint (safe on every browser, unlike color-mix).
+// If the accent isn't a 6-digit hex, it's passed through unchanged.
+function hexToRgba(hex: string, a: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+}
+
+export default function StudyTableColumn({
+  cards,
+  onChange,
+  accent = ACCENT,
+}: StudyTableColumnProps) {
+  // Which "+" gap has its type-chooser open (insert index), or null.
+  const [openAt, setOpenAt] = useState<number | null>(null);
+  // Newly inserted card to autofocus once.
+  const [focusId, setFocusId] = useState<string | null>(null);
+
+  // Clear the one-shot focus flag after it has been applied on mount.
+  useEffect(() => {
+    if (!focusId) return;
+    const t = setTimeout(() => setFocusId(null), 0);
+    return () => clearTimeout(t);
+  }, [focusId]);
+
+  const softAccent = hexToRgba(accent, 0.1);
+  const softAccentBorder = hexToRgba(accent, 0.28);
+
+  const patch = (id: string, p: Partial<TableCard>) =>
+    onChange(cards.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const remove = (id: string) => onChange(cards.filter((c) => c.id !== id));
+  const move = (id: string, dir: -1 | 1) => {
+    const i = cards.findIndex((c) => c.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= cards.length) return;
+    const next = cards.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const insertAt = (index: number, kind: CardKind) => {
+    const card: TableCard = { id: newCardId(), kind };
+    if (kind === "scripture") card.refs = [];
+    if (kind === "clip") card.url = "";
+    onChange([...cards.slice(0, index), card, ...cards.slice(index)]);
+    setOpenAt(null);
+    setFocusId(card.id);
+  };
+
+  // ---------- shared bits ----------
+  const cardBox: React.CSSProperties = {
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: 13,
+    padding: "14px 16px",
+    boxShadow: "0 1px 2px rgba(60,50,30,.04), 0 8px 20px -14px rgba(60,50,30,.16)",
+  };
+  const kicker: React.CSSProperties = {
+    fontFamily: SANS,
+    fontSize: 10.5,
+    fontWeight: 700,
+    letterSpacing: ".13em",
+    textTransform: "uppercase",
+    color: "var(--muted)",
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 8,
+  };
+
+  function Chip({
+    on,
+    dot,
+    label,
+    onClick,
+  }: {
+    on: boolean;
+    dot?: string;
+    label: string;
+    onClick: () => void;
+  }) {
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          fontFamily: SANS,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+          color: on ? accent : "var(--muted)",
+          background: on ? softAccent : "transparent",
+          border: "1px solid " + (on ? accent : "var(--border)"),
+          borderRadius: 999,
+          padding: "4px 11px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        {dot && (
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: dot,
+            }}
+          />
+        )}
+        {label}
+      </button>
+    );
+  }
+
+  // reorder + delete controls for a card
+  function Controls({ id }: { id: string }) {
+    const btn: React.CSSProperties = {
+      width: 26,
+      height: 26,
+      borderRadius: 7,
+      border: "1px solid var(--border)",
+      background: "var(--panel)",
+      color: "var(--muted)",
+      cursor: "pointer",
+      display: "grid",
+      placeItems: "center",
+      lineHeight: 0,
+    };
+    return (
+      <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
+        <button
+          title="Move up"
+          onClick={() => move(id, -1)}
+          style={btn}
+        >
+          <Icon d="M12 19V5 M6 11l6-6 6 6" size={13} />
+        </button>
+        <button
+          title="Move down"
+          onClick={() => move(id, 1)}
+          style={btn}
+        >
+          <Icon d="M12 5v14 M6 13l6 6 6-6" size={13} />
+        </button>
+        <button
+          title="Delete card"
+          onClick={() => remove(id)}
+          style={{ ...btn, marginLeft: "auto" }}
+        >
+          <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  // ---------- per-kind editors ----------
+  function Editor({ card }: { card: TableCard }) {
+    const focus = card.id === focusId;
+
+    if (card.kind === "heading") {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <input
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="Name this section…"
+            onChange={(e) => patch(card.id, { text: e.target.value })}
+            style={{
+              fontFamily: SANS,
+              fontSize: 11.5,
+              fontWeight: 700,
+              letterSpacing: ".15em",
+              textTransform: "uppercase",
+              color: "var(--text)",
+              background: "transparent",
+              border: 0,
+              borderBottom: "1.5px dashed var(--border)",
+              outline: 0,
+              padding: "5px 2px",
+              flex: "0 1 250px",
+              minWidth: 0,
+            }}
+          />
+          <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        </div>
+      );
+    }
+
+    if (card.kind === "text") {
+      return (
+        <div style={{ borderLeft: "2px solid " + softAccentBorder, paddingLeft: 15 }}>
+          <AutoTextarea
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="Write your thought…"
+            onChange={(v) => patch(card.id, { text: v })}
+            style={{ fontSize: 15.5, color: "var(--text)" }}
+          />
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
+            <span style={{ ...kicker, margin: 0 }}>optional</span>
+            {ROLES.map((r) => (
+              <Chip
+                key={r}
+                on={card.role === r}
+                label={r}
+                onClick={() => patch(card.id, { role: card.role === r ? undefined : r })}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (card.kind === "question") {
+      return (
+        <div
+          style={{
+            background: softAccent,
+            border: "1px solid " + softAccentBorder,
+            borderRadius: 13,
+            padding: "13px 15px",
+          }}
+        >
+          <AutoTextarea
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="Ask something…"
+            onChange={(v) => patch(card.id, { text: v })}
+          />
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
+            <span style={{ ...kicker, margin: 0 }}>type</span>
+            {QTYPES.map(({ t, c }) => (
+              <Chip
+                key={t}
+                on={card.qtype === t}
+                dot={c}
+                label={t}
+                onClick={() => patch(card.id, { qtype: card.qtype === t ? undefined : t })}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (card.kind === "quote") {
+      return (
+        <div style={{ borderLeft: "2px solid var(--pen3)", paddingLeft: 15 }}>
+          <AutoTextarea
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="The quote…"
+            onChange={(v) => patch(card.id, { text: v })}
+            style={{ fontStyle: "italic", fontSize: 15.5, color: "var(--text)" }}
+          />
+          <input
+            value={card.attribution || ""}
+            placeholder="— who said it"
+            onChange={(e) => patch(card.id, { attribution: e.target.value })}
+            style={{
+              width: "100%",
+              border: 0,
+              outline: 0,
+              background: "transparent",
+              fontFamily: SANS,
+              fontSize: 12,
+              color: "var(--muted)",
+              marginTop: 8,
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (card.kind === "note") {
+      return (
+        <div
+          style={{
+            background:
+              "repeating-linear-gradient(135deg, var(--soft), var(--soft) 9px, var(--panel) 9px, var(--panel) 18px)",
+            border: "1.5px dashed var(--border)",
+            borderRadius: 11,
+            padding: "12px 15px",
+          }}
+        >
+          <div style={{ ...kicker, color: "var(--muted)" }}>
+            <Icon d={ICON.note} size={12} /> Note to self · only you see this
+          </div>
+          <AutoTextarea
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="A private note — pause here, tell the story…"
+            onChange={(v) => patch(card.id, { text: v })}
+            style={{ fontStyle: "italic", fontSize: 15, color: "var(--text)" }}
+          />
+        </div>
+      );
+    }
+
+    if (card.kind === "scripture") {
+      const refs = card.refs || [];
+      return (
+        <div style={{ ...cardBox, borderLeft: "3px solid var(--pen3)" }}>
+          <div style={{ ...kicker, color: accent }}>
+            <Icon d={ICON.scripture} size={12} /> Scripture
+          </div>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: refs.length ? 10 : 0 }}>
+            {refs.map((r, i) => (
+              <span
+                key={i}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  background: "var(--soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: "4px 6px 4px 11px",
+                }}
+              >
+                {r}
+                <button
+                  onClick={() => patch(card.id, { refs: refs.filter((_, k) => k !== i) })}
+                  style={{
+                    border: 0,
+                    background: "transparent",
+                    color: "var(--muted)",
+                    cursor: "pointer",
+                    lineHeight: 0,
+                  }}
+                >
+                  <Icon d="M18 6 6 18 M6 6l12 12" size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <input
+            autoFocus={focus}
+            placeholder="Add a reference, e.g. Alma 32:21 — Enter"
+            onKeyDown={(e) => {
+              const el = e.target as HTMLInputElement;
+              if (e.key === "Enter" && el.value.trim()) {
+                e.preventDefault();
+                patch(card.id, { refs: [...refs, el.value.trim()] });
+                el.value = "";
+              }
+            }}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              outline: 0,
+              background: "var(--soft)",
+              fontFamily: SERIF,
+              fontSize: 14.5,
+              color: "var(--text)",
+              padding: "9px 11px",
+            }}
+          />
+          {refs.length > 1 && (
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 11,
+                fontFamily: SANS,
+                fontSize: 12.5,
+                color: "var(--muted)",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!card.passage}
+                onChange={(e) => patch(card.id, { passage: e.target.checked })}
+              />
+              Show as one passage
+            </label>
+          )}
+          <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+            The verse text and your marks appear here once linked.
+          </div>
+        </div>
+      );
+    }
+
+    // clip
+    const url = card.url || "";
+    return (
+      <div style={cardBox}>
+        <div style={{ ...kicker, color: "var(--pen3)" }}>
+          <Icon d={ICON.clip} size={12} /> Clip
+        </div>
+        <input
+          autoFocus={focus}
+          value={url}
+          placeholder="Paste a YouTube link…"
+          onChange={(e) => {
+            const u = e.target.value;
+            patch(card.id, { url: u, startSec: parseStart(u) });
+          }}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            outline: 0,
+            background: "var(--soft)",
+            fontFamily: SANS,
+            fontSize: 13.5,
+            color: "var(--text)",
+            padding: "9px 11px",
+          }}
+        />
+        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 110 }}>
+            <div style={{ ...kicker, marginBottom: 5 }}>
+              Starts at {card.startSec != null ? "(from link)" : ""}
+            </div>
+            <input
+              value={fmtTime(card.startSec)}
+              placeholder="0:00"
+              onChange={(e) => {
+                const p = e.target.value.split(":").map((n) => parseInt(n, 10) || 0);
+                const secs = p.length === 2 ? p[0] * 60 + p[1] : p[0] || 0;
+                patch(card.id, { startSec: secs });
+              }}
+              style={clipTimeStyle}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 110 }}>
+            <div style={{ ...kicker, marginBottom: 5 }}>End (optional)</div>
+            <input
+              value={fmtTime(card.endSec)}
+              placeholder="e.g. 6:10"
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                if (!val) return patch(card.id, { endSec: undefined });
+                const p = val.split(":").map((n) => parseInt(n, 10) || 0);
+                const secs = p.length === 2 ? p[0] * 60 + p[1] : p[0] || 0;
+                patch(card.id, { endSec: secs });
+              }}
+              style={clipTimeStyle}
+            />
+          </div>
+        </div>
+        <div style={{ marginTop: 11, fontFamily: SANS, fontSize: 11.5, color: "var(--muted)" }}>
+          The thumbnail and a preview player appear here once linked.
+        </div>
+      </div>
+    );
+  }
+
+  // + bar between/around cards
+  function AddBar({ index, big }: { index: number; big?: boolean }) {
+    if (big) {
+      return (
+        <div style={{ marginTop: 8, paddingLeft: 4 }}>
+          <button
+            onClick={() => setOpenAt(openAt === index ? null : index)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--muted)",
+              cursor: "pointer",
+              background: "transparent",
+              border: "1px dashed var(--border)",
+              borderRadius: 10,
+              padding: "10px 14px",
+            }}
+          >
+            <Icon d="M12 5v14 M5 12h14" size={14} /> Add a card
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div
+        style={{
+          height: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          margin: "-2px 0",
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={() => setOpenAt(openAt === index ? null : index)}
+          aria-label="Add a card here"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 999,
+            border: "1px solid var(--border)",
+            background: "var(--panel)",
+            color: accent,
+            cursor: "pointer",
+            display: "grid",
+            placeItems: "center",
+            lineHeight: 0,
+            opacity: 0.55,
+          }}
+        >
+          <Icon d="M12 5v14 M5 12h14" size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  function Chooser({ index }: { index: number }) {
+    return (
+      <div style={{ paddingLeft: 4, margin: "4px 0" }}>
+        <div
+          style={{
+            border: "1px solid " + accent,
+            background: "var(--panel)",
+            borderRadius: 13,
+            padding: 8,
+            boxShadow: "0 12px 30px -14px rgba(60,50,30,.35)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "4px 6px 8px",
+            }}
+          >
+            <span style={{ ...kicker, color: accent, margin: 0 }}>Add a card</span>
+            <button
+              onClick={() => setOpenAt(null)}
+              style={{ border: 0, background: "transparent", color: "var(--muted)", cursor: "pointer", lineHeight: 0 }}
+            >
+              <Icon d="M18 6 6 18 M6 6l12 12" size={15} />
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+            {TYPES.map((t) => (
+              <button
+                key={t.kind}
+                onClick={() => insertAt(index, t.kind)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  textAlign: "left",
+                  fontFamily: SANS,
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: "9px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 7,
+                    flex: "0 0 auto",
+                    display: "grid",
+                    placeItems: "center",
+                    background: softAccent,
+                    color: accent,
+                  }}
+                >
+                  <Icon d={ICON[t.kind]} size={15} />
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text)", lineHeight: 1.15 }}>
+                    {t.name}
+                  </span>
+                  <span style={{ display: "block", fontSize: 10.5, color: "var(--muted)", marginTop: 1 }}>
+                    {t.desc}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- empty state ----------
+  if (cards.length === 0) {
+    return (
+      <div style={{ maxWidth: 660, margin: "0 auto" }}>
+        {openAt === 0 ? (
+          <Chooser index={0} />
+        ) : (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "48px 22px",
+              color: "var(--muted)",
+              fontFamily: SANS,
+            }}
+          >
+            <div style={{ fontFamily: SERIF, fontSize: 20, color: "var(--text)", marginBottom: 6 }}>
+              A blank table.
+            </div>
+            <div style={{ fontSize: 13.5, marginBottom: 20 }}>
+              Add cards in any order — the order becomes the lesson.
+            </div>
+            <button
+              onClick={() => setOpenAt(0)}
+              style={{
+                fontFamily: SANS,
+                fontSize: 14,
+                fontWeight: 650,
+                color: "#fff",
+                cursor: "pointer",
+                background: accent,
+                border: 0,
+                borderRadius: 11,
+                padding: "11px 18px",
+              }}
+            >
+              Add your first card
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- the column ----------
+  return (
+    <div style={{ maxWidth: 660, margin: "0 auto", position: "relative" }}>
+      {/* spine */}
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          bottom: 34,
+          left: 13,
+          width: 1,
+          background: "var(--border)",
+          zIndex: 0,
+        }}
+      />
+      {cards.map((card, i) => {
+        const isSection = card.kind === "heading";
+        return (
+          <Fragment key={card.id}>
+            <div style={{ paddingLeft: 32 }}>
+              <AddBar index={i} />
+              {openAt === i && <Chooser index={i} />}
+            </div>
+            <div
+              style={{
+                position: "relative",
+                display: "grid",
+                gridTemplateColumns: "28px 1fr",
+                alignItems: "start",
+              }}
+            >
+              <span
+                style={{
+                  gridColumn: 1,
+                  justifySelf: "center",
+                  marginTop: 16,
+                  zIndex: 1,
+                  width: isSection ? 11 : 9,
+                  height: isSection ? 11 : 9,
+                  borderRadius: "50%",
+                  background: "var(--panel)",
+                  border: "1.5px solid " + (isSection ? "var(--pen3)" : "var(--border)"),
+                }}
+              />
+              <div style={{ gridColumn: 2, minWidth: 0, padding: "8px 0 8px 4px" }}>
+                <Editor card={card} />
+                <Controls id={card.id} />
+              </div>
+            </div>
+          </Fragment>
+        );
+      })}
+      <div style={{ paddingLeft: 32 }}>
+        <AddBar index={cards.length} big />
+        {openAt === cards.length && <Chooser index={cards.length} />}
+      </div>
+    </div>
+  );
+}
+
+const clipTimeStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  outline: 0,
+  background: "var(--panel)",
+  fontFamily: SANS,
+  fontSize: 14,
+  color: "var(--text)",
+  padding: "9px 11px",
+};
