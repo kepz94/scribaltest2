@@ -264,8 +264,20 @@ export default function DesktopWalkthrough({
     });
     setCompileOpen(false);
     setPen({ color: FAITH, tool: "highlight" });
-    const id = createSession("Walkthrough", true);
-    tempId.current = id;
+    // Phase 1: create + activate the throwaway book. Opening the demo chapter
+    // must WAIT until the activation has actually landed — desktop tabs carry
+    // a bookId, and jumpToReference reads the live active book, so calling it
+    // in this same tick would open the tab against the PREVIOUS book.
+    tempId.current = createSession("Walkthrough", true);
+    // eslint-disable-next-line
+  }, []);
+
+  // Phase 2: the demo book is active — now open its chapter tab and seed it.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current) return;
+    if (!DEMO || !tempId.current || activeBookId !== tempId.current) return;
+    seeded.current = true;
     openDemoChapter();
     SEEDS.forEach((sd) => {
       const verse = DEMO.verses[sd.verseIdx];
@@ -284,7 +296,7 @@ export default function DesktopWalkthrough({
     });
     setScopedLabel(demoScopeKey, FAITH, "Faith");
     // eslint-disable-next-line
-  }, []);
+  }, [activeBookId]);
 
   const finish = () => {
     if (cleaned.current) {
