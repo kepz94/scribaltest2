@@ -1,6 +1,6 @@
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import {
   Mark,
   MarkColor,
@@ -132,7 +132,7 @@ const LENSES: LensCfg[] = [
   },
 ];
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 // Legacy flat map = one global condition/promise pair. Read ONLY as the
 // starting default for a study that has no roles of its own yet; the real
 // per-study roles now live in the synced data layer (passed in via props).
