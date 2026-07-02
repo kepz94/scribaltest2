@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
 import NoteField from "./NoteField";
 import {
@@ -38,7 +38,7 @@ interface OutlineProps {
 }
 
 type SortMode = "points" | "order";
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 const toRoman = (num: number) => {
   const map: [number, string][] = [
