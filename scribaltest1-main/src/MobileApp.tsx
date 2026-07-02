@@ -5344,7 +5344,8 @@ export default function MobileApp() {
             >
               Or add a keyword search
             </div>
-            <button
+            <button data-wt="wt-search"
+
               onClick={() => {
                 setLinkToChapterScope(title);
                 setLinkOpen(false);
@@ -11894,6 +11895,16 @@ export default function MobileApp() {
           resolveScope={resolveScope}
           scopedLabels={getBook(activeBookId).scopedLabels || {}}
           linkOpen={linkOpen}
+          searchOpen={searchOpen}
+          chapterGroups={chapterGroups}
+          searchStudyIds={searchStudies.map((x) => x.id)}
+          tabIds={tabs.map((x) => x.id)}
+          demoCombined={chapterIsCombined("1 Nephi 1")}
+          unlinkChapter={unlink}
+          deleteSearchStudy={(id) =>
+            setSearchStudies((prev) => prev.filter((x) => x.id !== id))
+          }
+          closeTab={closeTab}
           marks={marks}
           activeBookId={activeBookId}
           loc={loc}
