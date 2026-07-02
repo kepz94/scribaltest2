@@ -25,7 +25,6 @@ import CompileBook, {
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
-import MobileFeatureGuide from "./MobileFeatureGuide";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
 import { useMarks } from "./hooks/useMarks";
@@ -1569,8 +1568,6 @@ export default function MobileApp() {
   const [kwLinkStudy, setKwLinkStudy] = useState<SearchStudy | null>(null);
   const [kwLinkMode, setKwLinkMode] = useState<"menu" | "chapter">("menu");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [gesturesOpen, setGesturesOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
   // When set, Compile + Save are scoped to this search study, not the chapter.
   const [compileStudy, setCompileStudy] = useState<SearchStudy | null>(null);
@@ -1616,10 +1613,8 @@ export default function MobileApp() {
   // After the sign-in reload, finish opening the gestures sheet.
   useEffect(() => {
     try {
-      if (localStorage.getItem("scribal_mobile_show_gestures") === "1") {
-        localStorage.removeItem("scribal_mobile_show_gestures");
-        setGesturesOpen(true);
-      }
+      // legacy flag from the retired gestures sheet — clear it if present
+      localStorage.removeItem("scribal_mobile_show_gestures");
     } catch {
       /* ignore */
     }
@@ -3793,8 +3788,6 @@ export default function MobileApp() {
           ? "m-studies"
           : label === "Search"
           ? "m-search"
-          : label === "Gestures & marking"
-          ? "m-gestures"
           : undefined
       }
       onClick={onClick}
@@ -6723,22 +6716,6 @@ export default function MobileApp() {
             >
               A place to study scripture
             </div>
-            <button
-              onClick={() => setGuideOpen(true)}
-              style={{
-                marginTop: "14px",
-                background: "transparent",
-                border: "none",
-                color: ACCENT,
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                letterSpacing: "0.02em",
-              }}
-            >
-              Advanced tutorial →
-            </button>
           </div>
 
           {/* Continue reading — hero */}
@@ -6961,48 +6938,6 @@ export default function MobileApp() {
                 setSearchOpen(true);
               }
             )}
-            {homeTile(
-              "Gestures & marking",
-              "How to mark & navigate",
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M8 10V5.5a2 2 0 1 1 4 0V10" />
-                <path d="M12 10V8a2 2 0 1 1 4 0v6a6 6 0 0 1-6 6h-1a6 6 0 0 1-5.2-3L3 14.5a1.8 1.8 0 0 1 3.1-1.8L8 15" />
-              </svg>,
-              () => {
-                setHomeOpen(false);
-                setGesturesOpen(true);
-              }
-            )}
-            {homeTile(
-              "Features guide",
-              "Learn each feature in depth",
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z" />
-              </svg>,
-              () => {
-                setHomeOpen(false);
-                setGuideOpen(true);
-              }
-            )}
           </div>
 
           {/* Study books — slim row (the study-book switcher) */}
@@ -7208,97 +7143,6 @@ export default function MobileApp() {
         )}
 
       {/* Gestures cheat sheet */}
-      {gesturesOpen &&
-        sheet(
-          () => setGesturesOpen(false),
-          (() => {
-            const row = (icon: string, name: string, desc: string) => (
-              <div
-                key={name}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "14px",
-                  padding: "13px 0",
-                  borderBottom: "1px solid " + C.border,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "20px",
-                    width: "30px",
-                    textAlign: "center",
-                    flexShrink: 0,
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {icon}
-                </span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: 600 }}>{name}</div>
-                  <div
-                    style={{
-                      fontSize: "12.5px",
-                      color: C.muted,
-                      marginTop: "2px",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {desc}
-                  </div>
-                </div>
-              </div>
-            );
-            return (
-              <div>
-                <div
-                  style={{ fontSize: "18px", fontWeight: 700, marginBottom: "4px" }}
-                >
-                  Gestures
-                </div>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: C.muted,
-                    marginBottom: "8px",
-                  }}
-                >
-                  Everything you can do while reading.
-                </div>
-                {row("👆", "Tap a word", "Marks it in your armed pen. Tap it again to remove it.")}
-                {row("↔", "Swipe sideways across words", "Marks the whole phrase you drag over.")}
-                {row("↕", "Swipe up or down", "Scrolls — your marks stay put.")}
-                {row("✌", "Two-finger tap", "Undoes your last mark.")}
-                {row("⊙", "Double-tap a mark", "Edit its edges — tap words to extend or trim, then Done.")}
-                {row("⏱", "Long-press a mark", "Opens manage — recolor, copy, or erase it.")}
-                {row("✎", "Long-press plain text", "Starts a deliberate phrase selection.")}
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: C.muted,
-                    marginTop: "14px",
-                    lineHeight: 1.55,
-                  }}
-                >
-                  Tip: the pen pill at the bottom always shows your armed color,
-                  theme, and which study book you're marking into.
-                </div>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: C.muted,
-                    marginTop: "10px",
-                    lineHeight: 1.55,
-                    fontWeight: 600,
-                  }}
-                >
-                  You can reopen this anytime from Settings.
-                </div>
-              </div>
-            );
-          })()
-        )}
-
       {/* Settings */}
       {settingsOpen &&
         sheet(
@@ -7710,9 +7554,9 @@ export default function MobileApp() {
                 )}
 
                 {label("Help")}
-                {actionBtn("Gestures & marking guide", () => {
+                {actionBtn("How Scribal works", () => {
                   setSettingsOpen(false);
-                  setGesturesOpen(true);
+                  setSlidesOpen(true);
                 })}
                 {actionBtn("Replay the welcome tour", resetIntro)}
 
@@ -11944,10 +11788,6 @@ export default function MobileApp() {
           notes={notes}
           setNote={setNote}
         />
-      )}
-
-      {guideOpen && (
-        <MobileFeatureGuide C={C} onClose={() => setGuideOpen(false)} />
       )}
 
       {/* Edit-mark mode bar */}
