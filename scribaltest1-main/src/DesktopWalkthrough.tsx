@@ -51,7 +51,14 @@ interface Props {
 
 const ACCENT = "#8b5cf6";
 
-const DEMO = (() => {
+// The demo chapter, resolved LAZILY — this must never run at module
+// scope, because scripture data loads at runtime (fetching it before the
+// bundle evaluates is exactly the crash that black-screened the app).
+type DemoData = { loc?: any; verses: { reference: string; verse: number; text: string }[] } | null;
+let DEMO_CACHE: DemoData | undefined;
+function getDemo(): DemoData {
+  if (DEMO_CACHE !== undefined) return DEMO_CACHE;
+  DEMO_CACHE = (() => {
   const vols = getScriptures().volumes as any[];
   for (let v = 0; v < vols.length; v++) {
     const books = vols[v].books || [];
@@ -74,6 +81,8 @@ const DEMO = (() => {
   }
   return null;
 })();
+  return DEMO_CACHE;
+}
 
 const DEMO_SCOPE = "1 Nephi 1";
 
@@ -250,6 +259,7 @@ export default function DesktopWalkthrough({
 
   // Setup once, behind the welcome card.
   useEffect(() => {
+    const DEMO = getDemo();
     if (!DEMO) {
       onClose();
       return;
@@ -276,6 +286,7 @@ export default function DesktopWalkthrough({
   const seeded = useRef(false);
   useEffect(() => {
     if (seeded.current) return;
+    const DEMO = getDemo();
     if (!DEMO || !tempId.current || activeBookId !== tempId.current) return;
     seeded.current = true;
     openDemoChapter();
