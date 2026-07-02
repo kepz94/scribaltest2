@@ -41,7 +41,7 @@ import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
 import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import {
   Mark,
   MarkColor,
@@ -265,7 +265,7 @@ const scopeOfRef = (ref: string) => {
   return i < 0 ? ref : ref.slice(0, i);
 };
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 // Reference -> scripture order, so hand-picked study verses sort canonically.
 const refOrderIndex = new Map<string, number>();
@@ -4688,7 +4688,17 @@ export default function App() {
             " · " +
             fmtDate(ss.createdAt),
           themes: themesFor(ss.bookId, "searchstudy:" + ss.id, refOk),
-          onOpen: () => openStudyTab(ss, true),
+          onOpen: () => {
+            // The opening rule, same as everywhere else: a study with marks
+            // opens straight to its notes; only an unmarked one lands in
+            // reading. (openStudyTab already restores the saved view.)
+            const bk = getBook(ss.bookId);
+            const marked = ss.refs.some((r) =>
+              bk.marks.some((m) => m.reference === r)
+            );
+            openStudyTab(ss, !marked);
+            if (marked) setMode("compile");
+          },
           onAddVerses: () => {
             setAddToStudyId(ss.id);
             setShowSearch(true);
