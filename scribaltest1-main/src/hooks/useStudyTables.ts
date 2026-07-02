@@ -69,6 +69,11 @@ export interface TableCard {
   // (consecutive verses only — enforced at the picker, not here). Marks are
   // pulled live from `bookId`'s session ("master" when absent).
   refs?: string[];
+  // Shelf grouping (set at import): the study theme this card came from, so
+  // Selected can mirror the study's own structure. Cards set aside from search
+  // carry no tag and group by their marks instead.
+  shelfGroup?: string;
+  shelfGroupColor?: number;
   passage?: boolean;
   bookId?: string;
 
