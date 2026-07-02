@@ -189,15 +189,15 @@ const STEPS: Step[] = [
     coachPos: "bottom",
     cta: "Next",
     title: "Your study — grouped by your colors",
-    body: "Every mark, sorted under its theme. One group is already named — Faith. But look at the other one: it just says a color. That's on purpose.",
+    body: "Every mark, sorted under its theme. One group is already named — Faith. But scroll down: the other group has no name yet. It's waiting, and that's on purpose.",
   },
   {
     id: "name",
     mode: "free",
-    target: null,
+    target: '[data-wt="wt-themename"]',
     coachPos: "bottom",
     title: "Name what you see",
-    body: "Tap that unnamed grey theme title and call it what YOU see in its verses — \"The Lord\", \"Warnings\", anything. Scribal will never name a theme for you, and named themes are what turn marks into real notes.",
+    body: "See the ringed line that says \"Name this theme…\"? Tap it and call the theme what YOU see in its verses — \"The Lord\", \"Warnings\", anything. Scribal will never name a theme for you, and named themes are what turn marks into real notes.",
   },
   {
     id: "meaning",
@@ -206,7 +206,7 @@ const STEPS: Step[] = [
     coachPos: "bottom",
     cta: "Next",
     title: "Your name just became structure",
-    body: "See it? The heading is yours now. And above each theme's verses sits a dotted + — the line where you write what they mean together. Structure comes from your colors; meaning comes from your pen.",
+    body: "See it? The heading is yours now. Two more places belong to your pen: the dotted + atop each theme — the line for what its verses mean together — and every verse card FLIPS — tap one and write that verse's own note on its back.",
   },
   {
     id: "system",
@@ -402,11 +402,25 @@ export default function MobileWalkthrough({
     }
     let raf = 0;
     let tries = 0;
+    let scrolled = false;
     const measure = () => {
       const el = document.querySelector(sel) as HTMLElement | null;
       if (el) {
+        // If the ringed control sits off-screen (e.g. the unnamed theme below
+        // an expanded Faith group), bring it into view once before ringing.
+        if (!scrolled) {
+          scrolled = true;
+          const r0 = el.getBoundingClientRect();
+          if (r0.top < 70 || r0.bottom > window.innerHeight - 190) {
+            try {
+              el.scrollIntoView({ block: "center", behavior: "smooth" });
+            } catch {
+              el.scrollIntoView();
+            }
+          }
+        }
         setRect(el.getBoundingClientRect());
-        if (tries < 3) {
+        if (tries < 12) {
           tries++;
           raf = requestAnimationFrame(measure);
         }
