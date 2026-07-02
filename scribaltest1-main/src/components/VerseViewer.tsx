@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
@@ -127,7 +127,7 @@ type AppliedRange = {
   endIndex: number;
 };
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 // Every verse reference -> number, text, and chapter title. Study tabs render
 // hand-picked verses that span many chapters, so they look these up here.
