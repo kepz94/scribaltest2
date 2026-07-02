@@ -9,12 +9,28 @@ import {
   useIsCoarsePointer,
 } from "./pwa/usePlatform";
 import { registerServiceWorker, unregisterServiceWorker } from "./pwa/registerSW";
+import { loadScriptures, scripturesReady } from "./data/scripturesStore";
 
 export default function Root() {
   const narrow = useIsNarrow();
   const coarse = useIsCoarsePointer();
   const standalone = useIsStandalone();
   const [updateReady, setUpdateReady] = useState(false);
+  // Scriptures load at runtime (they're no longer inside the JS bundle, so the
+  // app itself opens fast). Everything gates on this; failure shows a retry.
+  const [scriptState, setScriptState] = useState<"loading" | "ready" | "error">(
+    scripturesReady() ? "ready" : "loading"
+  );
+  useEffect(() => {
+    if (scriptState !== "loading") return;
+    let alive = true;
+    loadScriptures()
+      .then(() => alive && setScriptState("ready"))
+      .catch(() => alive && setScriptState("error"));
+    return () => {
+      alive = false;
+    };
+  }, [scriptState]);
 
   // A scanned present-room QR (?room=CODE) opens the follower page directly —
   // on ANY device, browser tab or not, with no install gate in the way.
@@ -30,6 +46,59 @@ export default function Root() {
     if (isPhone) registerServiceWorker(() => setUpdateReady(true));
     else unregisterServiceWorker();
   }, [isPhone]);
+
+  if (scriptState !== "ready") {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "14px",
+          background: "#f6f4ee",
+          color: "#1d1c18",
+          fontFamily: "Georgia, serif",
+          padding: "24px",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: "26px", fontWeight: 700, letterSpacing: "0.5px" }}>
+          Scribal
+        </div>
+        {scriptState === "loading" ? (
+          <div style={{ fontSize: "14px", opacity: 0.65 }}>
+            Opening the scriptures…
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: "14px", opacity: 0.75, maxWidth: "320px", lineHeight: 1.5 }}>
+              The scriptures couldn't load — check your connection and try
+              again.
+            </div>
+            <button
+              onClick={() => setScriptState("loading")}
+              style={{
+                fontFamily: "system-ui, sans-serif",
+                fontSize: "14px",
+                fontWeight: 600,
+                border: "1.5px solid #1d1c18",
+                background: "transparent",
+                color: "#1d1c18",
+                borderRadius: "999px",
+                padding: "10px 24px",
+                cursor: "pointer",
+              }}
+            >
+              Try again
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (roomCode) return <RoomViewer code={roomCode.toUpperCase()} />;
 
