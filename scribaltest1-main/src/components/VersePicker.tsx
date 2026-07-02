@@ -234,7 +234,32 @@ export default function VersePicker({
       string,
       { key: string; color: MarkColor | null; label: string; items: TableCard[] }
     >();
+    const push = (
+      key: string,
+      color: MarkColor | null,
+      label: string,
+      item: TableCard
+    ) => {
+      let g = map.get(key);
+      if (!g) {
+        g = { key, color, label, items: [] };
+        map.set(key, g);
+      }
+      g.items.push(item);
+    };
     shelf.forEach((item) => {
+      // Cards tagged at import carry their study theme — group by it verbatim,
+      // in the study's own order (insertion order of the shelf).
+      if (item.shelfGroup) {
+        push(
+          "t|" + item.shelfGroup + "|" + (item.shelfGroupColor ?? ""),
+          (item.shelfGroupColor as MarkColor | undefined) ?? null,
+          item.shelfGroup,
+          item
+        );
+        return;
+      }
+      // Untagged cards (set aside from search): group by their first mark.
       const refs = item.refs || [];
       let found: { color: MarkColor; label: string } | null = null;
       for (const r of refs) {
@@ -246,26 +271,30 @@ export default function VersePicker({
           break;
         }
       }
-      const key = found ? "c" + found.color + "|" + found.label : "other";
-      let g = map.get(key);
-      if (!g) {
-        g = {
-          key,
-          color: found ? found.color : null,
-          label: found
-            ? found.label || "Theme " + found.color
-            : "Other verses",
-          items: [],
-        };
-        map.set(key, g);
-      }
-      g.items.push(item);
+      if (found)
+        push(
+          "c" + found.color + "|" + found.label,
+          found.color,
+          found.label || "Theme " + found.color,
+          item
+        );
+      else push("other", null, "Other verses", item);
     });
-    return Array.from(map.values()).sort((a, b) => {
-      if (a.color === null) return 1;
-      if (b.color === null) return -1;
-      return a.color - b.color;
-    });
+    // Tagged theme groups keep their insertion (study) order; "Added verses"
+    // and untagged groups follow; "Other verses" sits last.
+    const all = Array.from(map.values());
+    const rank = (g: { key: string; label: string }) =>
+      g.key === "other"
+        ? 3
+        : g.label === "Added verses"
+        ? 2
+        : g.key.startsWith("t|")
+        ? 0
+        : 1;
+    return all
+      .map((g, i) => ({ g, i }))
+      .sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i)
+      .map((x) => x.g);
   })();
 
   const canPassage = selCount > 1 && isConsecutive(selected);
