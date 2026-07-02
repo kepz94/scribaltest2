@@ -1011,6 +1011,9 @@ export default function MobileApp() {
   const [ntSessionName, setNtSessionName] = useState("");
   // After an import, the editor opens with the verse panel on Selected.
   const [editOpenShelf, setEditOpenShelf] = useState(false);
+  // A "marking trip": the reader was opened from a table card to mark it;
+  // a floating pill offers the way back to that table.
+  const [markTripTableId, setMarkTripTableId] = useState<string | null>(null);
   const byOrder = (a: string, b: string) => orderOf(a) - orderOf(b);
   // A study's marked verses grouped by theme — the desktop resolution, with
   // the tolerant link-group fix (raw gid, "group:" prefix, or anchor chapter).
@@ -9707,6 +9710,63 @@ export default function MobileApp() {
           );
         })()}
 
+      {/* Back-to-table pill: shown while marking a card's verses in the reader */}
+      {markTripTableId && !editTableId && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "calc(20px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            background: C.panel,
+            border: "1px solid " + C.border,
+            borderRadius: "999px",
+            boxShadow: "0 12px 34px -10px rgba(0,0,0,.45)",
+            padding: "4px 4px 4px 6px",
+          }}
+        >
+          <button
+            onClick={() => {
+              setEditTableId(markTripTableId);
+              setMarkTripTableId(null);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: ACCENT,
+              fontSize: "14px",
+              fontWeight: 700,
+              padding: "10px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ‹ Back to table
+          </button>
+          <button
+            onClick={() => setMarkTripTableId(null)}
+            aria-label="Dismiss"
+            style={{
+              width: "34px",
+              height: "34px",
+              borderRadius: "999px",
+              border: "none",
+              background: "transparent",
+              color: C.muted,
+              fontSize: "16px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* New-table flow: import a study, or pick where marking lives */}
       {newTableFlow && (
         <div
@@ -10364,6 +10424,16 @@ export default function MobileApp() {
               wordTags={wordTags}
               onTagTap={openTagRef}
               initialShelfOpen={editOpenShelf}
+              onMarkCard={(card) => {
+                const ref = (card.refs || [])[0];
+                if (!ref) return;
+                const bid = card.bookId || t.bookId || "master";
+                if (activeBookId !== bid) setActiveBook(bid);
+                jumpToRef(ref);
+                setMarkTripTableId(t.id);
+                setEditTableId(null);
+                setEditOpenShelf(false);
+              }}
             />
           );
         })()}
