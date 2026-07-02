@@ -1,10 +1,10 @@
 import { useState, CSSProperties } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { Mark, MarkColor, COLORS, COLOR_MAP, Tab } from "../types";
 import SharePreview from "../SharePreview";
 import { VersesCardEntry } from "../shareCard";
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 interface CC {
   bg: string;
