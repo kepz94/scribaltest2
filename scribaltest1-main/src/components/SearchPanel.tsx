@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { Mark, MarkColor, COLORS, COLOR_MAP } from "../types";
 import { buildSearchMatcher } from "../searchMatch";
 
@@ -44,7 +44,7 @@ interface SearchPanelProps {
 type Mode = "all" | "any" | "phrase";
 type Source = "scripture" | "marks" | "themes";
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 const MAX_RESULTS = 400;
 
 interface IndexEntry {
