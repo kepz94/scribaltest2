@@ -10567,12 +10567,53 @@ export default function App() {
               <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text)" }}>
                 Reader
               </div>
-              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                Marks go to{" "}
-                {tableReader.bookId === "master"
-                  ? "Master Book"
-                  : getBook(tableReader.bookId).name || "session"}{" "}
-                · Send verses drops them in Selected
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 2,
+                }}
+              >
+                <span style={{ fontSize: 11.5, color: "var(--muted)", flex: "0 0 auto" }}>
+                  Marks go to
+                </span>
+                <select
+                  value={tableReader.bookId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__new") {
+                      const name = window.prompt("Name the new session:");
+                      if (name && name.trim()) {
+                        const id = createSession(name.trim());
+                        setTableReader((p) => (p ? { ...p, bookId: id } : p));
+                      }
+                      return;
+                    }
+                    setTableReader((p) => (p ? { ...p, bookId: v } : p));
+                  }}
+                  style={{
+                    fontFamily: "inherit",
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    background: "var(--soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 7,
+                    padding: "3px 6px",
+                    maxWidth: 170,
+                  }}
+                >
+                  {books.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.isMaster ? "Master Book" : b.name || "Session"}
+                    </option>
+                  ))}
+                  <option value="__new">＋ New session…</option>
+                </select>
+                <span style={{ fontSize: 11.5, color: "var(--muted)", flex: "0 0 auto" }}>
+                  · Send → Selected
+                </span>
               </div>
             </div>
             <button
