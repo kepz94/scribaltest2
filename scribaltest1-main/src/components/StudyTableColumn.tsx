@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ACCENT } from "../theme";
 import { COLOR_MAP, MarkColor } from "../types";
-import { isConsecutive } from "../data/verseIndex";
+import { isConsecutive, sortRefs } from "../data/verseIndex";
 import {
   TableCard,
   CardKind,
@@ -45,6 +45,13 @@ interface StudyTableColumnProps {
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const SERIF =
   '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif';
+
+// Touch screens get thumb-sized card controls (the 26px buttons were too
+// small to hit reliably on a phone).
+const COARSE =
+  typeof window !== "undefined" &&
+  !!window.matchMedia &&
+  window.matchMedia("(pointer: coarse)").matches;
 
 // ---- card-type metadata for the picker ----
 const ICON: Record<CardKind, string> = {
@@ -575,41 +582,50 @@ export default function StudyTableColumn({
   // verses join one card (presented together). dragId = the card in hand,
   // mergeOverId = the card it's hovering, mergePrompt = the confirm dialog.
   const [dragId, setDragId] = useState<string | null>(null);
-  // Button-driven merge (works everywhere, incl. touch): tap Merge on a card,
-  // then tap the scripture card to merge into. Escape hatch: Cancel.
-  const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
+  // Button-driven merge (works everywhere, incl. touch): tap Merge on a card
+  // to arm the mode, tap more scripture cards to add them, then hit "Merge
+  // cards" in the floating bar. Verses always combine in scripture order.
+  const [mergeSel, setMergeSel] = useState<string[]>([]);
+  const toggleMergeSel = (id: string) =>
+    setMergeSel((p) =>
+      p.includes(id) ? p.filter((x) => x !== id) : [...p, id]
+    );
   const [mergeOverId, setMergeOverId] = useState<string | null>(null);
-  const [mergePrompt, setMergePrompt] = useState<{
-    fromId: string;
-    toId: string;
-  } | null>(null);
+  const [mergePrompt, setMergePrompt] = useState<{ ids: string[] } | null>(
+    null
+  );
   const doMerge = () => {
     if (!mergePrompt) return;
-    const from = cards.find((c) => c.id === mergePrompt.fromId);
-    const to = cards.find((c) => c.id === mergePrompt.toId);
+    const ids = mergePrompt.ids;
     setMergePrompt(null);
-    if (!from || !to || from.kind !== "scripture" || to.kind !== "scripture")
-      return;
-    const merged = [
-      ...(to.refs || []),
-      ...(from.refs || []).filter((r) => !(to.refs || []).includes(r)),
-    ];
+    setMergeSel([]);
+    const chosen = cards.filter(
+      (c) => ids.includes(c.id) && c.kind === "scripture"
+    );
+    if (chosen.length < 2) return;
+    // The topmost selected card (column order) receives everyone's verses,
+    // ALWAYS re-sorted into scripture order.
+    const target = chosen[0];
+    const merged = sortRefs(
+      Array.from(new Set(chosen.flatMap((c) => c.refs || [])))
+    );
+    const dropIds = new Set(chosen.slice(1).map((c) => c.id));
     onChange(
       cards
-        .filter((c) => c.id !== from.id)
+        .filter((c) => !dropIds.has(c.id))
         .map((c) =>
-          c.id === to.id
+          c.id === target.id
             ? {
                 ...c,
                 refs: merged,
                 // A passage stays a passage only while its verses still run
                 // consecutively; otherwise it becomes a verse list.
-                passage: !!to.passage && isConsecutive(merged),
+                passage: !!target.passage && isConsecutive(merged),
               }
             : c
         )
     );
-  };
+    };
   // Which card is pending a delete confirmation (guards accidental deletes).
   const [confirmId, setConfirmId] = useState<string | null>(null);
   // Which clip card has its preview player open (only one at a time).
@@ -723,9 +739,9 @@ export default function StudyTableColumn({
   // reorder + delete controls for a card
   function Controls({ id }: { id: string }) {
     const btn: React.CSSProperties = {
-      width: 26,
-      height: 26,
-      borderRadius: 7,
+      width: COARSE ? 42 : 26,
+      height: COARSE ? 42 : 26,
+      borderRadius: COARSE ? 11 : 7,
       border: "1px solid var(--border)",
       background: "var(--panel)",
       color: "var(--muted)",
@@ -782,24 +798,27 @@ export default function StudyTableColumn({
       <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
         <button
           title="Move up"
+          aria-label="Move card up"
           onClick={() => move(id, -1)}
           style={btn}
         >
-          <Icon d="M12 19V5 M6 11l6-6 6 6" size={13} />
+          <Icon d="M12 19V5 M6 11l6-6 6 6" size={COARSE ? 18 : 13} />
         </button>
         <button
           title="Move down"
+          aria-label="Move card down"
           onClick={() => move(id, 1)}
           style={btn}
         >
-          <Icon d="M12 5v14 M6 13l6 6 6-6" size={13} />
+          <Icon d="M12 5v14 M6 13l6 6 6-6" size={COARSE ? 18 : 13} />
         </button>
         <button
           title="Delete card"
+          aria-label="Delete card"
           onClick={() => setConfirmId(id)}
           style={{ ...btn, marginLeft: "auto" }}
         >
-          <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
+          <Icon d="M18 6 6 18 M6 6l12 12" size={COARSE ? 18 : 13} />
         </button>
       </div>
     );
@@ -957,29 +976,30 @@ export default function StudyTableColumn({
             </div>
             {refs.length > 0 && (
               <button
-                onClick={() =>
-                  setMergeSourceId((p) => (p === card.id ? null : card.id))
-                }
+                onClick={() => toggleMergeSel(card.id)}
                 title={
-                  mergeSourceId === card.id
-                    ? "Cancel merging"
-                    : "Merge this card into another — tap Merge, then tap the target card"
+                  mergeSel.includes(card.id)
+                    ? "Remove from the merge"
+                    : mergeSel.length
+                    ? "Add this card to the merge"
+                    : "Merge cards — tap Merge here, then tap the other cards to combine"
                 }
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 5,
                   fontFamily: SANS,
-                  fontSize: 11.5,
+                  fontSize: COARSE ? 12.5 : 11.5,
                   fontWeight: 600,
-                  color: mergeSourceId === card.id ? "#fff" : "var(--muted)",
-                  background:
-                    mergeSourceId === card.id ? accent : "transparent",
+                  color: mergeSel.includes(card.id) ? "#fff" : "var(--muted)",
+                  background: mergeSel.includes(card.id)
+                    ? accent
+                    : "transparent",
                   border:
                     "1px solid " +
-                    (mergeSourceId === card.id ? accent : "var(--border)"),
+                    (mergeSel.includes(card.id) ? accent : "var(--border)"),
                   borderRadius: 999,
-                  padding: "3px 10px",
+                  padding: COARSE ? "6px 13px" : "3px 10px",
                   cursor: "pointer",
                 }}
               >
@@ -987,7 +1007,11 @@ export default function StudyTableColumn({
                   d="M8 7h8M8 12h8M8 17h5 M17 14l3 3-3 3"
                   size={11}
                 />
-                {mergeSourceId === card.id ? "Cancel" : "Merge"}
+                {mergeSel.includes(card.id)
+                  ? "✓ Merging"
+                  : mergeSel.length
+                  ? "Select"
+                  : "Merge"}
               </button>
             )}
             {onMarkCard && refs.length > 0 && (
@@ -1621,23 +1645,17 @@ export default function StudyTableColumn({
                   card.kind === "scripture"
                 ) {
                   e.preventDefault();
-                  setMergePrompt({ fromId: dragId, toId: card.id });
+                  setMergePrompt({ ids: [dragId, card.id] });
                 }
                 setDragId(null);
                 setMergeOverId(null);
               }}
               onClickCapture={
-                mergeSourceId &&
-                mergeSourceId !== card.id &&
-                card.kind === "scripture"
+                mergeSel.length > 0 && card.kind === "scripture"
                   ? (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setMergePrompt({
-                        fromId: mergeSourceId,
-                        toId: card.id,
-                      });
-                      setMergeSourceId(null);
+                      toggleMergeSel(card.id);
                     }
                   : undefined
               }
@@ -1649,25 +1667,26 @@ export default function StudyTableColumn({
                 marginTop: isSection ? 18 : 0,
                 marginBottom: isSection ? 6 : 0,
                 cursor:
-                  mergeSourceId &&
-                  mergeSourceId !== card.id &&
-                  card.kind === "scripture"
+                  mergeSel.length && card.kind === "scripture"
                     ? "pointer"
                     : card.kind === "scripture"
                     ? "grab"
                     : undefined,
                 opacity: dragId === card.id ? 0.45 : 1,
-                outline:
-                  mergeOverId === card.id ||
-                  (mergeSourceId &&
-                    mergeSourceId !== card.id &&
-                    card.kind === "scripture")
-                    ? "2.5px dashed " + accent
-                    : undefined,
+                outline: mergeSel.includes(card.id)
+                  ? "2.5px solid " + accent
+                  : mergeOverId === card.id ||
+                    (mergeSel.length && card.kind === "scripture")
+                  ? "2.5px dashed " + accent
+                  : undefined,
                 outlineOffset:
-                  mergeOverId === card.id || mergeSourceId ? 3 : undefined,
+                  mergeOverId === card.id ||
+                  mergeSel.length ||
+                  mergeSel.includes(card.id)
+                    ? 3
+                    : undefined,
                 borderRadius:
-                  mergeOverId === card.id || mergeSourceId ? 14 : undefined,
+                  mergeOverId === card.id || mergeSel.length ? 14 : undefined,
                 transition: "opacity .12s ease",
               }}
             >
@@ -1697,16 +1716,86 @@ export default function StudyTableColumn({
         {openAt === cards.length && <Chooser index={cards.length} />}
       </div>
 
-      {/* Merge confirm: dropped one scripture card onto another */}
+      {/* Floating merge bar: shown while cards are selected for merging */}
+      {mergeSel.length > 0 && !mergePrompt && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "calc(18px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            zIndex: 390,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            padding: "8px 10px 8px 16px",
+            boxShadow: "0 14px 40px -12px rgba(0,0,0,.4)",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--text)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {mergeSel.length} selected
+            {mergeSel.length < 2 ? " · tap more cards" : ""}
+          </span>
+          <button
+            onClick={() => setMergeSel([])}
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--muted)",
+              background: "transparent",
+              border: 0,
+              padding: "8px 6px",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              const ordered = cards
+                .filter((c) => mergeSel.includes(c.id))
+                .map((c) => c.id);
+              setMergePrompt({ ids: ordered });
+            }}
+            disabled={mergeSel.length < 2}
+            style={{
+              fontFamily: SANS,
+              fontSize: 13.5,
+              fontWeight: 700,
+              color: "#fff",
+              background: accent,
+              border: 0,
+              borderRadius: 999,
+              padding: "9px 18px",
+              opacity: mergeSel.length < 2 ? 0.45 : 1,
+              cursor: mergeSel.length < 2 ? "default" : "pointer",
+            }}
+          >
+            Merge cards
+          </button>
+        </div>
+      )}
+
+      {/* Merge confirm */}
       {mergePrompt &&
         (() => {
-          const from = cards.find((c) => c.id === mergePrompt.fromId);
-          const to = cards.find((c) => c.id === mergePrompt.toId);
-          if (!from || !to) return null;
-          const n = (from.refs || []).filter(
-            (r) => !(to.refs || []).includes(r)
-          ).length;
-          const toLabel = (to.refs || [])[0] || "this card";
+          const chosen = cards.filter(
+            (c) => mergePrompt.ids.includes(c.id) && c.kind === "scripture"
+          );
+          if (chosen.length < 2) return null;
+          const total = new Set(chosen.flatMap((c) => c.refs || [])).size;
           return (
             <div
               onClick={() => setMergePrompt(null)}
@@ -1742,7 +1831,7 @@ export default function StudyTableColumn({
                     marginBottom: 6,
                   }}
                 >
-                  Merge these cards?
+                  Merge {chosen.length} cards?
                 </div>
                 <div
                   style={{
@@ -1753,13 +1842,8 @@ export default function StudyTableColumn({
                     marginBottom: 16,
                   }}
                 >
-                  {n === 0
-                    ? "Every verse on the dragged card is already on " +
-                      toLabel +
-                      " — the extra card will simply be removed."
-                    : (n === 1 ? "1 verse joins " : n + " verses join ") +
-                      toLabel +
-                      " as one card. They'll present together."}
+                  {total === 1 ? "1 verse combines" : total + " verses combine"}{" "}
+                  onto one card, in scripture order. They'll present together.
                 </div>
                 <div
                   style={{
