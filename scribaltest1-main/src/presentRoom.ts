@@ -20,6 +20,11 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
+  query,
+  collection,
+  where,
+  getDocs,
+  deleteDoc,
 } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
 
@@ -46,6 +51,7 @@ export interface RoomDoc {
   revealed: number[]; // beat indexes whose veil the presenter lifted
   ended: boolean;
   updatedAt: number;
+  createdAt: number;
   // The presenter. Security rules only let this uid update or end the room —
   // everyone else can only read (watch).
   ownerUid: string;
@@ -88,10 +94,16 @@ export function joinUrl(code: string): string {
 
 export async function createRoom(
   code: string,
-  payload: Omit<RoomDoc, "i" | "revealed" | "ended" | "updatedAt" | "ownerUid">
+  payload: Omit<
+    RoomDoc,
+    "i" | "revealed" | "ended" | "updatedAt" | "ownerUid" | "createdAt"
+  >
 ): Promise<void> {
   const uid = getAuth(app).currentUser?.uid;
   if (!uid) throw new Error("not-signed-in");
+  // Sweep this presenter's stale rooms before making a new one (best-effort,
+  // never blocks the new room).
+  void cleanupMyRooms();
   await setDoc(doc(db, "rooms", code), {
     ...payload,
     ownerUid: uid,
@@ -99,6 +111,7 @@ export async function createRoom(
     revealed: [],
     ended: false,
     updatedAt: Date.now(),
+    createdAt: Date.now(),
   });
 }
 
@@ -142,6 +155,38 @@ export function endRoom(code: string): void {
 }
 
 // Follow a room. cb(null) = the room doesn't exist (bad/expired code).
+// A room lives one day. Followers treat older rooms as expired; presenters
+// sweep their own old rooms away every time they start a new one (no server
+// job needed — the owner is the only account the rules let delete them).
+export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+export function roomExpired(doc: RoomDoc): boolean {
+  const born = doc.createdAt || doc.updatedAt || 0;
+  return Date.now() - born > ROOM_TTL_MS;
+}
+
+// Best-effort cleanup of the signed-in user's stale rooms. Fire-and-forget:
+// failures are logged (never silent) but don't block presenting.
+export async function cleanupMyRooms(): Promise<void> {
+  const uid = getAuth(app).currentUser?.uid;
+  if (!uid) return;
+  try {
+    const q = query(collection(db, "rooms"), where("ownerUid", "==", uid));
+    const snap = await getDocs(q);
+    const now = Date.now();
+    await Promise.all(
+      snap.docs
+        .filter((d) => {
+          const v = d.data() as RoomDoc;
+          const born = v.createdAt || v.updatedAt || 0;
+          return v.ended || now - born > ROOM_TTL_MS;
+        })
+        .map((d) => deleteDoc(d.ref))
+    );
+  } catch (err) {
+    console.warn("room cleanup failed", err);
+  }
+}
+
 export function watchRoom(
   code: string,
   cb: (room: RoomDoc | null) => void
