@@ -4235,6 +4235,7 @@ export default function MobileApp() {
               fontFamily: "inherit",
             }}
             aria-label="Link this chapter into a study"
+            data-wt="wt-link"
           >
             <LinkGlyph
               color={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
@@ -11892,6 +11893,7 @@ export default function MobileApp() {
           setScopedLabel={setScopedLabel}
           resolveScope={resolveScope}
           scopedLabels={getBook(activeBookId).scopedLabels || {}}
+          linkOpen={linkOpen}
           marks={marks}
           activeBookId={activeBookId}
           loc={loc}
