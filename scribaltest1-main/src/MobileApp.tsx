@@ -897,6 +897,8 @@ export default function MobileApp() {
     scopedLabels,
     scopedRoles,
     setScopedRoles,
+    scopedPins,
+    setScopedPins,
     scopedLens,
     setScopedLens,
     getBook,
@@ -11020,6 +11022,8 @@ export default function MobileApp() {
               savedStudy={!!(cr || cs)}
               relSavedRoles={scopedRoles[cScope]}
               onRelRoles={(r) => setScopedRoles(cScope, r)}
+              savedPins={scopedPins[cScope]}
+              onPins={(p) => setScopedPins(cScope, p)}
               relSavedLens={scopedLens[cScope]}
               onRelLens={(l) => setScopedLens(cScope, l)}
               marks={cMarks}
