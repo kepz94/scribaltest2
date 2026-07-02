@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { ACCENT } from "../theme";
-import { Mark, MarkColor } from "../types";
+import { Mark, MarkColor, WordTag } from "../types";
 import {
   StudyTable,
   TablePurpose,
@@ -75,6 +75,13 @@ interface Props {
   // Create a new session book (for "start from scratch" → new session): the
   // shell owns useMarks, so book creation happens there. Returns the book id.
   createSession: (name: string) => string;
+  // Open the reader dock beside the table: browse + mark + define + send.
+  // atRef navigates it straight to that verse's chapter.
+  onOpenReader?: (tableId: string, bookId: string, atRef?: string) => void;
+  // Dictionary word-tags: rendered on scripture cards (and in Present via the
+  // shared renderVerse); tapping one opens its definition.
+  wordTags?: WordTag[];
+  onTagTap?: (tag: WordTag) => void;
   // When set, open straight into this table (deep-link from the Studies hub);
   // the callback clears it once consumed.
   openTableId?: string | null;
@@ -133,6 +140,9 @@ export default function StudyTablesDesktop({
   renameTable: renameTableReal,
   deleteTable: deleteTableReal,
   createSession,
+  onOpenReader,
+  wordTags,
+  onTagTap,
   openTableId,
   onConsumeOpenTable,
   onMarkVerses,
@@ -244,6 +254,8 @@ export default function StudyTablesDesktop({
         verseNumber={rec.verse}
         text={rec.text}
         marks={bookMarks}
+        tags={wordTags}
+        onTagTap={onTagTap}
       />
     );
   };
@@ -379,8 +391,18 @@ export default function StudyTablesDesktop({
     onMarkVerses(refs, refBook, "Mark verses · " + (open.name || "table"));
   };
   const markCardVerses = (card: TableCard) => {
-    if (!onMarkVerses || card.kind !== "scripture" || !(card.refs || []).length)
+    if (card.kind !== "scripture" || !(card.refs || []).length) return;
+    // Prefer the reader dock: it opens at this verse's chapter with the full
+    // toolbar (and dictionary). Falls back to the mark screen if no dock.
+    if (onOpenReader && open) {
+      onOpenReader(
+        open.id,
+        card.bookId || open.bookId || "master",
+        (card.refs || [])[0]
+      );
       return;
+    }
+    if (!onMarkVerses) return;
     const { refs, refBook } = collectMarkTargets([card]);
     onMarkVerses(refs, refBook, "Mark verse");
   };
@@ -760,6 +782,35 @@ export default function StudyTablesDesktop({
             >
               Example · not saved
             </span>
+          )}
+          {onOpenReader && (
+            <button
+              onClick={() =>
+                onOpenReader(open.id, open.bookId || "master")
+              }
+              title="Open a reading panel beside the table — browse, mark, and send verses"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 650,
+                color: "#fff",
+                background: accent,
+                border: 0,
+                borderRadius: 999,
+                padding: "7px 14px",
+                cursor: "pointer",
+                flex: "0 0 auto",
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
+                <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
+              </svg>
+              Reader
+            </button>
           )}
           {onMarkVerses && (
             <button
