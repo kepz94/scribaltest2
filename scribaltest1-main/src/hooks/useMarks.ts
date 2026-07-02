@@ -29,6 +29,10 @@ interface StudyBook {
       // Outline lead verses: per color, the refs the user pinned to the top of
       // that theme (in pin order). Rides the same per-scope LWW sync.
       pins?: Record<string, string[]>;
+      // Relational threads: per lens, the verse pairs the USER connected —
+      // "this condition ties to that promise" across any distance. The system
+      // never invents these; it only renders them.
+      threads?: Record<string, { a: string; b: string }[]>;
     }
   >;
   createdAt: number;
@@ -130,6 +134,11 @@ type Action =
     }
   | { type: "setScopedLens"; scope: string; lens: string }
   | { type: "setScopedPins"; scope: string; pins: Record<string, string[]> }
+  | {
+      type: "setScopedThreads";
+      scope: string;
+      threads: Record<string, { a: string; b: string }[]>;
+    }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
@@ -1137,6 +1146,7 @@ function reducer(state: State, action: Action): State {
                 roles: action.roles,
                 lens: cur[action.scope]?.lens,
                 pins: cur[action.scope]?.pins,
+                threads: cur[action.scope]?.threads,
               },
             },
           },
@@ -1158,6 +1168,29 @@ function reducer(state: State, action: Action): State {
                 roles: cur[action.scope]?.roles || {},
                 lens: action.lens,
                 pins: cur[action.scope]?.pins,
+                threads: cur[action.scope]?.threads,
+              },
+            },
+          },
+        },
+      };
+    }
+    case "setScopedThreads": {
+      const cur = active.scopedRoles || {};
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [state.activeId]: {
+            ...active,
+            scopedRoles: {
+              ...cur,
+              [action.scope]: {
+                at: Date.now(),
+                roles: cur[action.scope]?.roles || {},
+                lens: cur[action.scope]?.lens,
+                pins: cur[action.scope]?.pins,
+                threads: action.threads,
               },
             },
           },
@@ -1179,6 +1212,7 @@ function reducer(state: State, action: Action): State {
                 roles: cur[action.scope]?.roles || {},
                 lens: cur[action.scope]?.lens,
                 pins: action.pins,
+                threads: cur[action.scope]?.threads,
               },
             },
           },
@@ -1345,6 +1379,11 @@ export function useMarks() {
       dispatch({ type: "setScopedRoles", scope, roles }),
     []
   );
+  const setScopedThreads = useCallback(
+    (scope: string, threads: Record<string, { a: string; b: string }[]>) =>
+      dispatch({ type: "setScopedThreads", scope, threads }),
+    []
+  );
   const setScopedPins = useCallback(
     (scope: string, pins: Record<string, string[]>) =>
       dispatch({ type: "setScopedPins", scope, pins }),
@@ -1462,6 +1501,7 @@ export function useMarks() {
     setScopedRoles,
     setScopedLens,
     setScopedPins,
+    setScopedThreads,
     scopedLabels: active.scopedLabels || {},
     scopedRoles: (() => {
       const src = active.scopedRoles || {};
@@ -1484,6 +1524,17 @@ export function useMarks() {
       const out: Record<string, Record<string, string[]>> = {};
       Object.keys(src).forEach((k) => {
         if (src[k].pins) out[k] = src[k].pins as Record<string, string[]>;
+      });
+      return out;
+    })(),
+    scopedThreads: (() => {
+      const src = active.scopedRoles || {};
+      const out: Record<
+        string,
+        Record<string, { a: string; b: string }[]>
+      > = {};
+      Object.keys(src).forEach((k) => {
+        if (src[k].threads) out[k] = src[k].threads!;
       });
       return out;
     })(),
