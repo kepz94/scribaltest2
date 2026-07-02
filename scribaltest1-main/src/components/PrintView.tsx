@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Mark, MarkStyle, MarkColor, WordTag, COLORS, STYLE_POINTS, Tab } from "../types";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import WordStudies from "./WordStudies";
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 interface PrintViewProps {
   view: "cornell" | "outline" | "charting";
