@@ -44,6 +44,9 @@ interface Props {
   // "this verse carries the theme for me." Pure user choice; no ranking.
   savedPins?: Record<string, string[]>;
   onPins?: (pins: Record<string, string[]>) => void;
+  // Relational threads: user-declared verse pairs, per lens (see Covenants).
+  relSavedThreads?: Record<string, { a: string; b: string }[]>;
+  onRelThreads?: (t: Record<string, { a: string; b: string }[]>) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -127,6 +130,8 @@ export default function MobileCompile({
   onRelLens,
   savedPins,
   onPins,
+  relSavedThreads,
+  onRelThreads,
   defaultName,
   onClose,
   dark,
@@ -1213,6 +1218,8 @@ export default function MobileCompile({
             onRoles={onRelRoles}
             savedLens={relSavedLens}
             onLens={onRelLens}
+            savedThreads={relSavedThreads}
+            onThreads={onRelThreads}
             shareSignal={covShareSignal}
           />
         )}
