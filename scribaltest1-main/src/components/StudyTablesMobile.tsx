@@ -381,6 +381,12 @@ export default function StudyTablesMobile({
           }}
           accent={accent}
           defaultBookId={table.bookId}
+          themeLabelFor={(ref, color, bookId) => {
+            const bk = getBook(bookId || table.bookId || "master");
+            const scoped =
+              bk.scopedLabels?.[resolve(scopeOfRef(ref))]?.[color];
+            return ((scoped || "") as string).trim();
+          }}
           initialTab={initialShelfOpen ? "shelf" : undefined}
           fullScreen
         />
