@@ -20,7 +20,7 @@
 // resolved against Scribal's own scripture data, so the importer can build a
 // real Search Study and tell the user exactly what matched.
 // ---------------------------------------------------------------------------
-import { getScriptures, volumesProxy } from "./data/scripturesStore";
+import { getScriptures, registerOnLoaded } from "./data/scripturesStore";
 
 export interface ParsedVerse {
   ref: string; // canonical Scribal reference (e.g. "D&C 20:41")
@@ -55,7 +55,7 @@ const vtextByRef = new Map<string, string>();
 const norm = (s: string): string =>
   s.replace(/[—–]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
 
-(() => {
+registerOnLoaded(() => {
   let n = 0;
   const vols = getScriptures().volumes || [];
   for (const v of vols) {
@@ -80,7 +80,7 @@ const norm = (s: string): string =>
       }
     }
   }
-})();
+});
 
 // Resolve a (book text, chapter, verse) triple to a canonical reference, or null.
 function resolveRef(
