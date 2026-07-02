@@ -59,6 +59,9 @@ interface Props {
   // Live scoped theme labels of the active (demo) book — watched so the NAME
   // beat advances the moment the user actually names their theme.
   scopedLabels: Record<string, Record<number, string>>;
+  // Whether the reader's Link sheet is open — the power journey's "tap Link"
+  // beat advances on it.
+  linkOpen: boolean;
   marks: Mark[];
   activeBookId: string;
   loc: Loc;
@@ -227,6 +230,73 @@ const STEPS: Step[] = [
     body: "Mark by swiping. Name what you see. Compile. Write the meaning. Linking, keyword search, and study tables are all waiting — and they all run on your marks.",
   },
 ];
+// ── The power journey: links, colors, jump, keyword, combined, Screens.
+// Rings the REAL controls; the Link beat waits for the real sheet.
+const JSTEPS: Step[] = [
+  {
+    id: "j-colors",
+    mode: "free",
+    target: '[data-wt="wt-link"]',
+    coachPos: "bottom",
+    cta: "Next",
+    title: "The link glyph speaks in color",
+    body: "See the ringed chain in the header? Its color tells you what this chapter is part of at a glance:",
+  },
+  {
+    id: "j-link",
+    mode: "spotlight",
+    target: '[data-wt="wt-link"]',
+    coachPos: "near",
+    title: "Open the Link sheet",
+    body: "Tap Link. This is where chapters join into one study.",
+  },
+  {
+    id: "j-sheet",
+    mode: "free",
+    target: null,
+    coachPos: "top",
+    cta: "Next",
+    title: "Link chapters — and jump between them",
+    body: "Pick any chapter here and it links to this one: they'll compile as ONE study, themes carrying across. Once linked, this same sheet lists every member with a colored dot — tap one to JUMP straight to it. That dot's color is the group's own color, so you always know which study a chapter belongs to.",
+  },
+  {
+    id: "j-keyword",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    cta: "Next",
+    title: "Keyword studies — the blue kind",
+    body: "From search (the magnifier), any word can become a study: search it, gather the verses you choose, save. No chapter required. Keyword studies carry BLUE — and they can be linked too.",
+  },
+  {
+    id: "j-combined",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    cta: "Next",
+    title: "Combined — when red meets blue",
+    body: "Link a keyword study to a chapter study and they merge into a COMBINED study: chapter verses plus gathered verses, one set of themes. The chain turns PURPLE — red + blue. One glance at any link glyph now tells you the whole story: red = chapter, blue = keyword, purple = both.",
+  },
+  {
+    id: "j-screens",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    cta: "Next",
+    title: "Screens — up to 8 places at once",
+    body: "The tab row above the chapter title holds your open Screens. Each keeps its own book, chapter, and scroll position — study in one, cross-reference in another, tap + for a fresh one.",
+  },
+  {
+    id: "j-done",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    cta: "Start studying",
+    title: "The full toolkit",
+    body: "Mark, name, compile — then scale it: link chapters into one study, gather any word into a blue keyword study, merge them purple, and keep it all open across Screens.",
+  },
+];
+
 const LAST = STEPS.length - 1; // the Done beat
 const TEACH = LAST; // numbered beats 1..LAST
 const NOTES_FROM = 5; // beats >= this are on the compile/notes screen
@@ -241,6 +311,7 @@ export default function MobileWalkthrough({
   setScopedLabel,
   resolveScope,
   scopedLabels,
+  linkOpen,
   marks,
   activeBookId,
   loc,
@@ -254,6 +325,9 @@ export default function MobileWalkthrough({
   setNote,
 }: Props) {
   const [beat, setBeat] = useState(0);
+  // false = the core loop; true = the power journey (links/keyword/Screens),
+  // entered from the Done beat's "Go further" chip.
+  const [journey, setJourney] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   // The scope key the compile uses for this chapter (identity while the tour
@@ -346,12 +420,19 @@ export default function MobileWalkthrough({
     onClose();
   };
 
-  const advance = () => setBeat((b) => (b < LAST ? b + 1 : b));
+  const steps = journey ? JSTEPS : STEPS;
+  const last = journey ? JSTEPS.length - 1 : LAST;
+  const advance = () => setBeat((b) => (b < last ? b + 1 : b));
+  const startJourney = () => {
+    setCompileOpen(false); // the journey runs on the reading screen
+    setJourney(true);
+    setBeat(0);
+  };
 
   // Set each beat's baseline the instant it opens. Mark/Phrase/Theme each snap
   // the current mark ids, so only a brand-new mark counts.
   useEffect(() => {
-    const id = STEPS[beat]?.id;
+    const id = steps[beat]?.id;
     if (id === "mark" || id === "phrase" || id === "theme")
       baseIds.current = new Set(marks.map((m) => m.id));
     if (id === "name")
@@ -362,7 +443,7 @@ export default function MobileWalkthrough({
   // The naming act: any theme in the demo study gaining a fresh, nonempty name
   // (rename of Faith counts too — the lesson is that names are theirs to give).
   useEffect(() => {
-    if (STEPS[beat]?.id !== "name") return;
+    if (steps[beat]?.id !== "name") return;
     const cur = scopedLabels[demoScopeKey] || {};
     const grew = Object.keys(cur).some((k) => {
       const v = (cur[Number(k)] || "").trim();
@@ -376,7 +457,7 @@ export default function MobileWalkthrough({
   // Advance on marks: a new mark (mark), a new multi-word mark (phrase), or a
   // new mark in a different color than the starting theme (theme).
   useEffect(() => {
-    const id = STEPS[beat]?.id;
+    const id = steps[beat]?.id;
     const fresh = marks.filter((m) => !baseIds.current.has(m.id));
     if (id === "mark" && fresh.length) advance();
     else if (id === "phrase" && fresh.some((m) => m.markedText.trim().includes(" ")))
@@ -386,16 +467,24 @@ export default function MobileWalkthrough({
 
   // Compile opening (compile beat); the notes screen closing wraps up the tour.
   useEffect(() => {
-    const id = STEPS[beat]?.id;
+    const id = steps[beat]?.id;
     if (id === "compile" && compileOpen) advance();
-    else if (beat >= NOTES_FROM && !compileOpen) finish();
+    // Closing the notes screen ends the CORE tour — but not the journey,
+    // which runs on the reading screen with the compile closed.
+    else if (!journey && beat >= NOTES_FROM && !compileOpen) finish();
     // eslint-disable-next-line
   }, [compileOpen, beat]);
+
+  // Journey: the Link beat advances when the real Link sheet opens.
+  useEffect(() => {
+    if (journey && steps[beat]?.id === "j-link" && linkOpen) advance();
+    // eslint-disable-next-line
+  }, [linkOpen, beat, journey]);
 
   // Measure the spotlight / ring target. Re-measures on beat change, on scroll
   // (capture, so inner scrolls count) and resize; rAF passes cover mount timing.
   useEffect(() => {
-    const sel = STEPS[beat]?.target;
+    const sel = steps[beat]?.target;
     if (!sel) {
       setRect(null);
       return;
@@ -449,13 +538,13 @@ export default function MobileWalkthrough({
       document.removeEventListener("focusin", onMove);
       document.removeEventListener("focusout", onMove);
     };
-  }, [beat]);
+  }, [beat, journey]);
 
   const Z = 600;
   const dim = "rgba(18,16,12,0.64)";
   const vw = typeof window !== "undefined" ? window.innerWidth : 0;
   const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-  const step = STEPS[beat];
+  const step = steps[beat];
 
   // ── Welcome ────────────────────────────────────────────────────────────────
   if (step.id === "welcome") {
@@ -514,7 +603,9 @@ export default function MobileWalkthrough({
   // ── Coach card (shared) ──────────────────────────────────────────────────────
   const dots = (
     <div style={{ display: "flex", gap: "5px", justifyContent: "center", marginTop: "12px", flexWrap: "wrap" }}>
-      {Array.from({ length: TEACH }, (_, i) => i + 1).map((n) => (
+      {Array.from({ length: journey ? JSTEPS.length : TEACH }, (_, i) =>
+        journey ? i : i + 1
+      ).map((n) => (
         <span
           key={n}
           style={{
@@ -543,10 +634,29 @@ export default function MobileWalkthrough({
       }}
     >
       <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: ACCENT, marginBottom: "5px" }}>
-        Step {beat} of {TEACH}
+        {journey ? "Power tour · " + (beat + 1) + " of " + JSTEPS.length : "Step " + beat + " of " + TEACH}
       </div>
       <div style={{ fontSize: "17.5px", fontWeight: 800, marginBottom: "5px", color: C.text }}>{step.title}</div>
       <div style={{ fontSize: "14.5px", lineHeight: 1.5, color: C.muted }}>{step.body}</div>
+      {step.id === "j-colors" && (
+        <div style={{ marginTop: "10px" }}>
+          {[
+            ["#ef4444", "Red", "a chapter study"],
+            ["#3b82f6", "Blue", "a keyword study"],
+            ["#8b5cf6", "Purple", "combined — chapter + keyword"],
+          ].map(([col, name, what]) => (
+            <div key={name} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1 1" />
+                <path d="M14 11a5 5 0 0 0-7.07 0l-2 2a5 5 0 0 0 7.07 7.07l1-1" />
+              </svg>
+              <span style={{ fontSize: "12.5px", lineHeight: 1.45, color: C.muted }}>
+                <b style={{ color: col }}>{name}</b> — {what}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {step.id === "system" && (
         <div style={{ marginTop: "10px" }}>
           <div
@@ -590,9 +700,17 @@ export default function MobileWalkthrough({
           ))}
         </div>
       )}
+      {step.id === "done" && (
+        <button
+          onClick={startJourney}
+          style={{ marginTop: "13px", width: "100%", padding: "12px", border: "1px solid " + ACCENT, borderRadius: "999px", backgroundColor: "transparent", color: ACCENT, fontSize: "14.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          Go further: links, keyword & Screens →
+        </button>
+      )}
       {step.cta && (
         <button
-          onClick={step.id === "done" ? finish : advance}
+          onClick={step.id === "done" || step.id === "j-done" ? finish : advance}
           style={{ marginTop: "13px", width: "100%", padding: "12px", border: "none", borderRadius: "999px", backgroundColor: C.text, color: C.bg, fontSize: "14.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
         >
           {step.cta}
