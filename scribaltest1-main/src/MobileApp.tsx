@@ -30,7 +30,6 @@ import MobileWalkthrough from "./MobileWalkthrough";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
-import FirstStudyGuide from "./components/FirstStudyGuide";
 import { useStudyTables, StudyTable, TableCard, newCardId } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
 import StudyTablesMobile from "./components/StudyTablesMobile";
@@ -1603,16 +1602,6 @@ export default function MobileApp() {
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
   const [mtourOpen, setMtourOpen] = useState(false);
-  // The guided first study: shown once to new users (it watches real marking
-  // and advances as they do each step). guideMap reopens just the Map later.
-  const [fsgOpen, setFsgOpen] = useState<boolean>(() => {
-    try {
-      return !window.localStorage.getItem("scribal_guide_done_v1");
-    } catch {
-      return false;
-    }
-  });
-  const [guideMap, setGuideMap] = useState(false);
   const [chooseRef, setChooseRef] = useState<string | null>(null);
 
   // Replay the first-run tour (which then opens the gestures sheet).
@@ -6882,27 +6871,6 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
-              "How Scribal works",
-              "The 90-second guided study",
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M16 8l-2.5 5.5L8 16l2.5-5.5z" />
-              </svg>,
-              () => {
-                setHomeOpen(false);
-                setGuideMap(true);
-              }
-            )}
-            {homeTile(
               "Study tables",
               "Build & present lessons",
               <svg
@@ -9688,43 +9656,6 @@ export default function MobileApp() {
                 )}
               </div>
             </div>
-          );
-        })()}
-
-      {/* Guided first study / "How Scribal works" map */}
-      {(fsgOpen || guideMap) &&
-        !mtourOpen &&
-        (() => {
-          const gb = getBook(activeBookId);
-          const named =
-            Object.values(gb.colorLabels || {}).filter(
-              (v) => typeof v === "string" && v.trim()
-            ).length +
-            Object.values(gb.scopedLabels || {}).reduce(
-              (n, rec) =>
-                n +
-                Object.values(rec || {}).filter(
-                  (v) => typeof v === "string" && (v as string).trim()
-                ).length,
-              0
-            );
-          return (
-            <FirstStudyGuide
-              colors={C}
-              accent={ACCENT}
-              markCount={gb.marks.length}
-              colorCount={new Set(gb.marks.map((m) => m.color)).size}
-              namedThemeCount={named}
-              compileOpen={compileOpen}
-              startAtMap={guideMap && !fsgOpen}
-              onClose={() => {
-                try {
-                  window.localStorage.setItem("scribal_guide_done_v1", "1");
-                } catch {}
-                setFsgOpen(false);
-                setGuideMap(false);
-              }}
-            />
           );
         })()}
 
