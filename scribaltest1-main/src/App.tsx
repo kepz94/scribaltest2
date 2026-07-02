@@ -1286,6 +1286,38 @@ export default function App() {
     existing: Study;
   } | null>(null);
   const [selectedTool, setSelectedTool] = useState<Tool>("highlight");
+  // Assignable toolbar hotkeys. Defaults mirror the classic layout
+  // (Q W E / A S D F / Z X C V, from KEY_TO_TOOL); the Shortcuts sheet edits
+  // them, localStorage keeps them, the toolbar displays them.
+  const DEFAULT_TOOL_HOTKEYS = (() => {
+    const out = {} as Record<Tool, string>;
+    (Object.keys(KEY_TO_TOOL) as string[]).forEach((k) => {
+      out[KEY_TO_TOOL[k]] = k;
+    });
+    return out;
+  })();
+  const [toolHotkeys, setToolHotkeys] = useState<Record<Tool, string>>(() => {
+    try {
+      const raw = localStorage.getItem("scribal_tool_hotkeys_v1");
+      if (raw)
+        return { ...DEFAULT_TOOL_HOTKEYS, ...(JSON.parse(raw) || {}) };
+    } catch {
+      /* ignore */
+    }
+    return { ...DEFAULT_TOOL_HOTKEYS };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "scribal_tool_hotkeys_v1",
+        JSON.stringify(toolHotkeys)
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [toolHotkeys]);
+  const toolHotkeysRef = useRef(toolHotkeys);
+  toolHotkeysRef.current = toolHotkeys;
   const [selectedColor, setSelectedColor] = useState<MarkColor>(1);
   // Define: the looked-up word's verse + exact range + result (range lets a tag
   // anchor to that occurrence, same as mobile).
@@ -2013,9 +2045,13 @@ export default function App() {
         e.preventDefault();
         return;
       }
-      if (KEY_TO_TOOL[key]) {
-        setSelectedTool(KEY_TO_TOOL[key]);
-        e.preventDefault();
+      {
+        const hk = toolHotkeysRef.current;
+        const tool = (Object.keys(hk) as Tool[]).find((t) => hk[t] === key);
+        if (tool) {
+          setSelectedTool(tool);
+          e.preventDefault();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -4999,7 +5035,14 @@ export default function App() {
         />
       )}
 
-      {showShortcuts && <Shortcuts onClose={() => setShowShortcuts(false)} />}
+      {showShortcuts && (
+        <Shortcuts
+          onClose={() => setShowShortcuts(false)}
+          hotkeys={toolHotkeys}
+          onChange={setToolHotkeys}
+          defaults={DEFAULT_TOOL_HOTKEYS}
+        />
+      )}
       {showSearch && (
         <SearchPanel
           currentVolume={activeTab.volume}
@@ -7282,6 +7325,7 @@ export default function App() {
                 }}
               >
                 <VerseViewer
+                toolHotkeys={toolHotkeys}
                   key={"markverses_" + st.id}
                   selectedVolume={firstLoc.volume}
                   selectedBook={firstLoc.book}
@@ -10169,6 +10213,7 @@ export default function App() {
                     </div>
                   )}
                   <VerseViewer
+                toolHotkeys={toolHotkeys}
                     key={t.id}
                     selectedVolume={t.volume}
                     selectedBook={t.book}
@@ -10594,6 +10639,7 @@ export default function App() {
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
             <VerseViewer
+                toolHotkeys={toolHotkeys}
               selectedVolume={trLoc.v}
               selectedBook={trLoc.b}
               selectedChapter={trLoc.c}
@@ -10857,6 +10903,7 @@ export default function App() {
               </div>
               <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
                 <VerseViewer
+                toolHotkeys={toolHotkeys}
                   selectedVolume={loc ? loc.volume : 0}
                   selectedBook={loc ? loc.book : 0}
                   selectedChapter={loc ? loc.chapter : 0}
