@@ -389,6 +389,41 @@ export default function Covenants(props: CovenantsProps) {
     return () => window.removeEventListener("resize", measure);
   }, [webSig]);
 
+  // Scripture position of a ref within this compile (for column ordering).
+  const orderKey = (reference: string): number => {
+    const i = entries.findIndex((e) => e.reference === reference);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  // The FULL verse, with this role's marked spans styled in its color — so a
+  // card reads as the verse itself, the user's emphasis lit within it.
+  const fullVerse = (reference: string, color: MarkColor) => {
+    const text = textByRef.get(reference) || "";
+    const ms = marks
+      .filter((m) => m.reference === reference && m.color === color)
+      .slice()
+      .sort((x, y) => x.startIndex - y.startIndex);
+    const out: React.ReactNode[] = [];
+    let at = 0;
+    ms.forEach((m, i) => {
+      const start = Math.max(at, Math.min(m.startIndex, text.length));
+      const end = Math.max(start, Math.min(m.endIndex, text.length));
+      if (start > at)
+        out.push(<span key={"p" + i}>{text.slice(at, start)}</span>);
+      if (end > start)
+        out.push(
+          <span
+            key={"m" + i}
+            style={{ color: COLOR_MAP[color], fontWeight: 700 }}
+          >
+            {text.slice(start, end)}
+          </span>
+        );
+      at = Math.max(at, end);
+    });
+    if (at < text.length) out.push(<span key="tail">{text.slice(at)}</span>);
+    return out;
+  };
+
   const addThread = (leftRefs: string[], rightRefs: string[]) => {
     props.onThreads?.({
       ...allThreads,
@@ -458,25 +493,6 @@ export default function Covenants(props: CovenantsProps) {
     });
 
 
-  const renderFrags = (frags: Frag[]) =>
-    frags.map((f, i) => (
-      <span key={i}>
-        {f.gapBefore && (
-          <span
-            style={{
-              color: "var(--muted)",
-              margin: "0 5px",
-              fontFamily: "system-ui, sans-serif",
-              fontSize: "0.8em",
-            }}
-          >
-            …
-          </span>
-        )}
-        {i > 0 && !f.gapBefore && " "}
-        <span style={markStyleCSS(f.style, f.color)}>{f.text}</span>
-      </span>
-    ));
 
   const swatch = (color: MarkColor, on: boolean, onClick: () => void) => (
     <button
@@ -510,23 +526,6 @@ export default function Covenants(props: CovenantsProps) {
     />
   );
 
-  const card = (frags: Frag[], color: MarkColor) => (
-    <div
-      style={{
-        flex: "1 1 240px",
-        background: "var(--soft)",
-        borderLeft: "3px solid " + COLOR_MAP[color],
-        borderRadius: "8px",
-        padding: "12px 14px",
-        fontFamily: '"Times New Roman", Times, serif',
-        fontSize: "16px",
-        lineHeight: 1.7,
-        color: "var(--text)",
-      }}
-    >
-      {renderFrags(frags)}
-    </div>
-  );
 
   // ----- share helpers -----
   const rowKey = (r: Row, i: number) => r.reference + "_" + i;
@@ -806,81 +805,12 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {rows.length > 0 && (
-        <div>
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              alignItems: "center",
-              padding: "0 4px 8px",
-              fontSize: "11px",
-              letterSpacing: "1.5px",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-              fontWeight: 700,
-            }}
-          >
-            <div style={{ flex: 1 }}>{cfg.leftHeader}</div>
-            <div style={{ width: "22px" }} />
-            <div style={{ flex: 1 }}>{cfg.rightHeader}</div>
-            <div style={{ width: "64px" }} />
-          </div>
-          {rows.map((r, i) => (
-            <div
-              key={rowKey(r, i)}
-              data-vref={r.reference}
-              style={{
-                display: "flex",
-                gap: "12px",
-                alignItems: "stretch",
-                marginBottom: "10px",
-                flexWrap: "wrap",
-              }}
-            >
-              {card(r.left, a)}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "22px",
-                  color: "var(--muted)",
-                  fontSize: "18px",
-                }}
-              >
-                {cfg.connector}
-              </div>
-              {card(r.right, b)}
-              <button
-                onClick={() => onJumpToReference(r.reference)}
-                title="Open in reading view"
-                style={{
-                  width: "64px",
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  padding: 0,
-                  alignSelf: "center",
-                  fontFamily: "inherit",
-                }}
-              >
-                {r.reference}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* THE WEB — the two roles as facing columns, threads drawn as real
           curves converging at a tappable junction. Loose halves are dashed
           cards; tap one on each side and Create thread ties them. The system
           draws only what the user connected. */}
-      {(halfAll.length > 0 || threadRows.length > 0) && (
+      {(halfAll.length > 0 || threadRows.length > 0 || rows.length > 0) && (
         <div style={{ marginTop: "26px" }}>
           <div
             style={{
@@ -928,13 +858,25 @@ export default function Covenants(props: CovenantsProps) {
                   >
                     {side === "left" ? cfg.leftHeader : cfg.rightHeader}
                   </div>
-                  {halfAll
-                    .filter((h) => h.side === side)
+                  {[
+                    ...halfAll.filter((h) => h.side === side),
+                    // Same-verse pairs live in the web too: the verse shows on
+                    // BOTH sides, auto-bridged (the verse itself ties them).
+                    ...rows.map((r) => ({
+                      reference: r.reference,
+                      side,
+                      frags: side === "left" ? r.left : r.right,
+                      inVerse: true as const,
+                    })),
+                  ]
+                    .sort((x, y) => orderKey(x.reference) - orderKey(y.reference))
                     .map((h) => {
+                      const inVerse = (h as { inVerse?: boolean }).inVerse === true;
                       const threaded =
-                        side === "left"
+                        inVerse ||
+                        (side === "left"
                           ? threadedLeft.has(h.reference)
-                          : threadedRight.has(h.reference);
+                          : threadedRight.has(h.reference));
                       const selected = threadSel[side].includes(h.reference);
                       const color = COLOR_MAP[
                         (side === "left" ? a : b) as MarkColor
@@ -953,7 +895,9 @@ export default function Covenants(props: CovenantsProps) {
                           }}
                           role="button"
                           title={
-                            threaded
+                            inVerse
+                              ? "Related within the verse itself"
+                              : threaded
                               ? "In a thread — tap its knot to untie"
                               : selected
                               ? "Tap to deselect"
@@ -1016,15 +960,14 @@ export default function Covenants(props: CovenantsProps) {
                             style={{
                               fontFamily: '"Times New Roman", Times, serif',
                               fontSize: "13.5px",
-                              lineHeight: 1.5,
+                              lineHeight: 1.55,
                               color: "var(--text)",
-                              display: "-webkit-box",
-                              WebkitLineClamp: 4,
-                              WebkitBoxOrient: "vertical",
-                              overflow: "hidden",
                             }}
                           >
-                            {renderFrags(h.frags)}
+                            {fullVerse(
+                              h.reference,
+                              (side === "left" ? a : b) as MarkColor
+                            )}
                           </div>
                         </div>
                       );
@@ -1043,6 +986,38 @@ export default function Covenants(props: CovenantsProps) {
                 pointerEvents: "none",
               }}
             >
+              {/* same-verse bridges: the verse itself ties these — a short
+                  line with a solid dot (nothing to untie) */}
+              {rows.map((r) => {
+                const lp = webPos["L|" + r.reference];
+                const rp = webPos["R|" + r.reference];
+                if (!lp || !rp) return null;
+                const sx = lp.x + lp.w;
+                const sy = lp.y + lp.h / 2;
+                const ex = rp.x;
+                const ey = rp.y + rp.h / 2;
+                return (
+                  <g key={"bridge_" + r.reference}>
+                    <path
+                      d={
+                        "M " + sx + " " + sy +
+                        " C " + (sx + 20) + " " + sy + ", " +
+                        (ex - 20) + " " + ey + ", " + ex + " " + ey
+                      }
+                      fill="none"
+                      stroke="var(--muted)"
+                      strokeWidth={1.6}
+                      opacity={0.85}
+                    />
+                    <circle
+                      cx={(sx + ex) / 2}
+                      cy={(sy + ey) / 2}
+                      r={4}
+                      fill="var(--muted)"
+                    />
+                  </g>
+                );
+              })}
               {threadRows.map((tr) => {
                 const pts: { x: number; y: number; from: "L" | "R" }[] = [];
                 tr.aRefs.forEach((r) => {
