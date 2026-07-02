@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, CSSProperties } from "react";
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import { Mark, MarkColor, MarkStyle, Tool, COLOR_MAP } from "./types";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ interface Props {
 const ACCENT = "#8b5cf6";
 
 const DEMO = (() => {
-  const vols = (scriptures as any).volumes as any[];
+  const vols = getScriptures().volumes as any[];
   for (let v = 0; v < vols.length; v++) {
     const books = vols[v].books || [];
     for (let b = 0; b < books.length; b++) {
