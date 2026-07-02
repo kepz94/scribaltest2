@@ -30,7 +30,7 @@ import MobileWalkthrough from "./MobileWalkthrough";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
-import { useStudyTables, StudyTable, newCardId } from "./hooks/useStudyTables";
+import { useStudyTables, StudyTable, TableCard, newCardId } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
 import StudyTablesMobile from "./components/StudyTablesMobile";
 import MarkedVerse from "./components/MarkedVerse";
@@ -1002,6 +1002,130 @@ export default function MobileApp() {
       ],
     });
     setEditTableId("example");
+  };
+  // New-table flow: choose blank vs import; "book" picks the marks home for a
+  // from-scratch table; "import" lists studies. Mirrors desktop.
+  const [newTableFlow, setNewTableFlow] = useState<
+    null | "choose" | "book" | "import"
+  >(null);
+  const [ntSessionName, setNtSessionName] = useState("");
+  // After an import, the editor opens with the verse panel on Selected.
+  const [editOpenShelf, setEditOpenShelf] = useState(false);
+  const byOrder = (a: string, b: string) => orderOf(a) - orderOf(b);
+  // A study's marked verses grouped by theme — the desktop resolution, with
+  // the tolerant link-group fix (raw gid, "group:" prefix, or anchor chapter).
+  const mobileStudyThemes = (
+    studyId: string
+  ): { color: number; label: string; refs: string[] }[] => {
+    const rec = studies.find((x) => x.id === studyId);
+    const kw = searchStudies.find((x) => x.id === studyId);
+    const study = rec || kw;
+    if (!study) return [];
+    const bookId = study.bookId;
+    let inScope: (ref: string) => boolean;
+    if (kw) {
+      const set = new Set(kw.refs);
+      inScope = (r) => set.has(r);
+    } else if (rec && rec.type === "linked") {
+      const raw = rec.scopeRef || "";
+      const gid = raw.startsWith("group:")
+        ? raw.slice(6)
+        : chapterGroups[raw] || raw;
+      const chapters = new Set(
+        Object.keys(chapterGroups).filter((cs) => chapterGroups[cs] === gid)
+      );
+      if (chapterGroups[raw] || !raw.startsWith("group:")) chapters.add(raw);
+      const extra = new Set(rec.extraRefs || []);
+      inScope = (r) => chapters.has(scopeOf(r)) || extra.has(r);
+    } else {
+      const extra = new Set((rec && rec.extraRefs) || []);
+      inScope = (r) =>
+        scopeOf(r) === (rec ? rec.scopeRef : "") || extra.has(r);
+    }
+    const byColor = new Map<number, Set<string>>();
+    for (const m of allMarks) {
+      if (m.bookId !== bookId || !inScope(m.reference)) continue;
+      let st = byColor.get(m.color);
+      if (!st) {
+        st = new Set();
+        byColor.set(m.color, st);
+      }
+      st.add(m.reference);
+    }
+    const bk = getBook(bookId);
+    const nameFor = (ref: string, color: number): string => {
+      const scoped = bk.scopedLabels?.[resolveScope(scopeOf(ref))]?.[color];
+      const book = bk.colorLabels?.[color];
+      return ((scoped || book || "") as string).trim();
+    };
+    return Array.from(byColor.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([color, refset]) => {
+        const refs = Array.from(refset).sort(byOrder);
+        return {
+          color,
+          label: refs.length ? nameFor(refs[0], color) : "",
+          refs,
+        };
+      });
+  };
+  const importStudyToTable = (meta: {
+    id: string;
+    name: string;
+    bookId: string;
+  }) => {
+    setNewTableFlow(null);
+    setTablesHomeOpen(false);
+    setStudiesOpen(false);
+    const id = createStudyTable(
+      meta.name.trim() || "Untitled",
+      undefined,
+      meta.bookId
+    );
+    const cards: TableCard[] = [];
+    const covered = new Set<string>();
+    mobileStudyThemes(meta.id).forEach((t) => {
+      const label = (t.label || "").trim() || "Theme " + t.color;
+      t.refs.forEach((r) => {
+        if (covered.has(r)) return;
+        covered.add(r);
+        cards.push({
+          id: newCardId(),
+          kind: "scripture" as const,
+          refs: [r],
+          bookId: meta.bookId,
+          shelfGroup: label,
+          shelfGroupColor: t.color,
+        });
+      });
+    });
+    const rec = studies.find((x) => x.id === meta.id);
+    const kw = searchStudies.find((x) => x.id === meta.id);
+    Array.from(
+      new Set([...(rec?.extraRefs || []), ...(kw ? kw.refs : [])])
+    )
+      .filter((r) => !covered.has(r))
+      .sort(byOrder)
+      .forEach((r) => {
+        cards.push({
+          id: newCardId(),
+          kind: "scripture" as const,
+          refs: [r],
+          bookId: meta.bookId,
+          shelfGroup: "Added verses",
+        });
+      });
+    if (cards.length) updateStudyTable(id, { shelf: cards });
+    setEditOpenShelf(true);
+    setEditTableId(id);
+  };
+  const pickTableBook = (bookId: string) => {
+    setNewTableFlow(null);
+    setTablesHomeOpen(false);
+    setStudiesOpen(false);
+    const id = createStudyTable("Untitled", undefined, bookId);
+    setEditOpenShelf(false);
+    setEditTableId(id);
   };
 
   const {
@@ -9554,13 +9678,8 @@ export default function MobileApp() {
                           )}
                           <button
                             onClick={() => {
-                              const id = createStudyTable(
-                                "Untitled",
-                                undefined,
-                                "master"
-                              );
                               setStudiesOpen(false);
-                              setEditTableId(id);
+                              setNewTableFlow("choose");
                             }}
                             style={{
                               width: "100%",
@@ -9587,6 +9706,230 @@ export default function MobileApp() {
             </div>
           );
         })()}
+
+      {/* New-table flow: import a study, or pick where marking lives */}
+      {newTableFlow && (
+        <div
+          onClick={() => setNewTableFlow(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 470,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxHeight: "75vh",
+              overflowY: "auto",
+              background: C.panel,
+              color: C.text,
+              borderRadius: "16px 16px 0 0",
+              padding: "16px 16px calc(16px + env(safe-area-inset-bottom))",
+            }}
+          >
+            {newTableFlow === "choose" ? (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "12px" }}>
+                  New study table
+                </div>
+                <button
+                  onClick={() => setNewTableFlow("import")}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "13px 14px",
+                    borderRadius: "11px",
+                    border: "1px solid #16a34a",
+                    background: "transparent",
+                    color: C.text,
+                    marginBottom: "9px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div style={{ fontSize: "14.5px", fontWeight: 650 }}>Import a study</div>
+                  <div style={{ fontSize: "12px", color: C.muted, marginTop: "2px" }}>
+                    Its verses arrive in Selected, grouped by theme
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setNtSessionName("");
+                    setNewTableFlow("book");
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "13px 14px",
+                    borderRadius: "11px",
+                    border: "1px solid " + C.border,
+                    background: C.panel,
+                    color: C.text,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div style={{ fontSize: "14.5px", fontWeight: 650 }}>Start from scratch</div>
+                  <div style={{ fontSize: "12px", color: C.muted, marginTop: "2px" }}>
+                    A blank table — you pick where its marking lives
+                  </div>
+                </button>
+              </>
+            ) : newTableFlow === "book" ? (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Where should marking live?
+                </div>
+                <div style={{ fontSize: "12.5px", color: C.muted, margin: "4px 0 12px" }}>
+                  This table pulls its verse marking from the book you pick.
+                </div>
+                {books.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => pickTableBook(b.id)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "12px 13px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      background: C.panel,
+                      color: C.text,
+                      marginBottom: "8px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ fontSize: "14px", fontWeight: 650 }}>
+                      {b.isMaster ? "Master Book" : b.name || "Session"}
+                    </div>
+                    <div style={{ fontSize: "12px", color: C.muted, marginTop: "2px" }}>
+                      {b.markCount === 1 ? "1 mark" : b.markCount + " marks"}
+                    </div>
+                  </button>
+                ))}
+                <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                  <input
+                    value={ntSessionName}
+                    placeholder="Or name a new session…"
+                    onChange={(e) => setNtSessionName(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "1px solid " + C.border,
+                      borderRadius: "10px",
+                      outline: "none",
+                      background: C.soft,
+                      color: C.text,
+                      fontSize: "16px",
+                      padding: "11px 12px",
+                      fontFamily: "inherit",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (!ntSessionName.trim()) return;
+                      pickTableBook(createSession(ntSessionName.trim()));
+                    }}
+                    disabled={!ntSessionName.trim()}
+                    style={{
+                      border: "none",
+                      borderRadius: "10px",
+                      background: ACCENT,
+                      color: "#fff",
+                      fontSize: "13.5px",
+                      fontWeight: 700,
+                      padding: "11px 16px",
+                      opacity: ntSessionName.trim() ? 1 : 0.45,
+                      cursor: ntSessionName.trim() ? "pointer" : "default",
+                      fontFamily: "inherit",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "12px" }}>
+                  Import a study
+                </div>
+                {[
+                  ...studies.map((st) => ({
+                    id: st.id,
+                    name: st.name,
+                    bookId: st.bookId,
+                    kind: st.type === "linked" ? "Linked study" : "Chapter study",
+                  })),
+                  ...searchStudies.map((st) => ({
+                    id: st.id,
+                    name: st.name,
+                    bookId: st.bookId,
+                    kind: "Keyword study",
+                  })),
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => importStudyToTable(m)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "12px 13px",
+                      borderRadius: "10px",
+                      border: "1px solid " + C.border,
+                      background: C.panel,
+                      color: C.text,
+                      marginBottom: "8px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ fontSize: "14px", fontWeight: 650 }}>
+                      {m.name || "Untitled study"}
+                    </div>
+                    <div style={{ fontSize: "12px", color: C.muted, marginTop: "2px" }}>
+                      {m.kind}
+                      {m.bookId !== "master"
+                        ? " · " + (getBook(m.bookId).name || "session")
+                        : ""}
+                    </div>
+                  </button>
+                ))}
+                {studies.length + searchStudies.length === 0 && (
+                  <div style={{ fontSize: "13px", color: C.muted }}>
+                    No studies yet — compile a chapter or save a keyword search
+                    first.
+                  </div>
+                )}
+              </>
+            )}
+            {newTableFlow !== "choose" && (
+              <button
+                onClick={() => setNewTableFlow("choose")}
+                style={{
+                  marginTop: "10px",
+                  border: "none",
+                  background: "transparent",
+                  color: C.muted,
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  padding: "6px 2px",
+                }}
+              >
+                ‹ Back
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Send → table: pick which table's Selected the verses land in */}
       {sendTablePicking && sendRefs && (
@@ -9933,11 +10276,7 @@ export default function MobileApp() {
             ))}
 
             <button
-              onClick={() => {
-                const id = createStudyTable("Untitled", undefined, "master");
-                setTablesHomeOpen(false);
-                setEditTableId(id);
-              }}
+              onClick={() => setNewTableFlow("choose")}
               style={{
                 width: "100%",
                 padding: "13px 12px",
@@ -9997,6 +10336,7 @@ export default function MobileApp() {
               table={t}
               onClose={() => {
                 setEditTableId(null);
+                setEditOpenShelf(false);
                 if (isExample) setExampleTable(null);
               }}
               onPresent={() => setPresentTableId(t.id)}
@@ -10023,6 +10363,7 @@ export default function MobileApp() {
               chapterGroups={chapterGroups}
               wordTags={wordTags}
               onTagTap={openTagRef}
+              initialShelfOpen={editOpenShelf}
             />
           );
         })()}
