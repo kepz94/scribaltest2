@@ -148,7 +148,13 @@ export default function StudyTablesDesktop({
     }
   }, [openTableId]);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Save indicator: every edit persists instantly; this makes that visible.
+  // Flashes "Saving…" → "Saved" whenever the open table's updatedAt moves.
+  const [saveFlash, setSaveFlash] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  // "+ Verse" on a card: while set, picked verses APPEND to this card instead
+  // of becoming new cards — several verses on one card, presented together.
+  const [panelCardId, setPanelCardId] = useState<string | null>(null);
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
@@ -204,6 +210,14 @@ export default function StudyTablesDesktop({
 
   const open =
     example || (openId ? tables.find((t) => t.id === openId) || null : null);
+  const openUpdatedAt = open ? open.updatedAt : 0;
+  useEffect(() => {
+    if (!openUpdatedAt) return;
+    setSaveFlash(true);
+    const t = window.setTimeout(() => setSaveFlash(false), 1400);
+    return () => window.clearTimeout(t);
+  }, [openUpdatedAt]);
+
 
   // Smooth-scroll a card into view (used by the outline rail).
   const scrollToCard = (id: string) => {
@@ -257,6 +271,21 @@ export default function StudyTablesDesktop({
   // in order at the insertion point.
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
+    if (panelCardId) {
+      const card = open.cards.find((c) => c.id === panelCardId);
+      if (card && card.kind === "scripture") {
+        const merged = [
+          ...(card.refs || []),
+          ...refs.filter((r) => !(card.refs || []).includes(r)),
+        ];
+        updateTable(open.id, {
+          cards: open.cards.map((c) =>
+            c.id === panelCardId ? { ...c, refs: merged } : c
+          ),
+        });
+        return;
+      }
+    }
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
     updateTable(open.id, {
@@ -304,13 +333,22 @@ export default function StudyTablesDesktop({
 
   // Open the verse panel to add a scripture card at a given gap.
   const openPanelAt = (index: number) => {
+    setPanelCardId(null);
     setPendingIndex(index);
+    setPanelTab("search");
+    setPanelOpen(true);
+  };
+  // "+ Verse" on a card: the panel appends picked verses to that card.
+  const openPanelForCard = (cardId: string) => {
+    setPendingIndex(null);
+    setPanelCardId(cardId);
     setPanelTab("search");
     setPanelOpen(true);
   };
   const closePanel = () => {
     setPanelOpen(false);
     setPendingIndex(null);
+    setPanelCardId(null);
   };
 
   // Gather every scripture verse in this table (placed + shelved) with the book
@@ -551,11 +589,19 @@ export default function StudyTablesDesktop({
         const set = new Set(kw.refs);
         inScope = (r) => set.has(r);
       } else if (rec && rec.type === "linked") {
+        // Resolve the study's link-group id tolerantly: records have stored it
+        // raw ("abc123"), prefixed ("group:abc123"), or as the anchor chapter
+        // ("Alma 32") depending on where the study was created. All linked
+        // chapters must import, whichever convention this record carries.
+        const raw = rec.scopeRef || "";
+        const gid = raw.startsWith("group:")
+          ? raw.slice(6)
+          : chapterGroups[raw] || raw;
         const chapters = new Set(
-          Object.keys(chapterGroups).filter(
-            (cs) => chapterGroups[cs] === rec.scopeRef
-          )
+          Object.keys(chapterGroups).filter((cs) => chapterGroups[cs] === gid)
         );
+        // The anchor itself belongs too, even if the group map lost it.
+        if (chapterGroups[raw] || !raw.startsWith("group:")) chapters.add(raw);
         const extra = new Set(rec.extraRefs || []);
         inScope = (r) => chapters.has(scopeOfRef(r)) || extra.has(r);
       } else {
@@ -669,6 +715,34 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          <span
+            title="Every change saves automatically"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: SANS,
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: saveFlash ? accent : "var(--muted)",
+              flex: "0 0 auto",
+              transition: "color .2s ease",
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            {saveFlash ? "Saved" : "Autosaves"}
+          </span>
           {example && open.id === example.id && (
             <span
               style={{
@@ -820,6 +894,7 @@ export default function StudyTablesDesktop({
               accent={accent}
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
+              onAddToCard={openPanelForCard}
               onMarkCard={onMarkVerses ? markCardVerses : undefined}
               themesFor={cardThemes}
             />
@@ -830,8 +905,6 @@ export default function StudyTablesDesktop({
               renderVerse={renderVerse}
               allMarks={allMarks}
               books={books}
-              studies={studyMetas}
-              studyThemes={studyThemes}
               shelf={open.shelf || []}
               onShelve={shelve}
               onUnshelve={unshelve}
