@@ -1,34 +1,17 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { StudyTable, TableCard, newCardId } from "../hooks/useStudyTables";
 import StudyTableColumn from "./StudyTableColumn";
 import VersePicker from "./VersePicker";
-import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
 import MarkedVerse from "./MarkedVerse";
-import { Mark, MarkColor } from "../types";
-import { getVerse, sortRefs } from "../data/verseIndex";
+import { Mark } from "../types";
+import { getVerse } from "../data/verseIndex";
 
 // The mobile study-table editor: a full-screen sheet with the same column the
 // desktop uses (same cards, same behaviors), plus the verse panel rendered as
 // a full-screen overlay. Marking still happens in the reader (the mobile mark
 // screen is a later step) — cards show whatever marks their book carries.
 
-// Structural prop types (mobile keeps its own Study/SearchStudy interfaces, so
-// the editor asks only for the fields it actually uses).
-interface RecStudyLike {
-  id: string;
-  name: string;
-  bookId: string;
-  type: "chapter" | "linked";
-  scopeRef: string;
-  extraRefs?: string[];
-}
-interface KwStudyLike {
-  id: string;
-  name: string;
-  bookId: string;
-  refs: string[];
-}
 
 interface Props {
   table: StudyTable;
@@ -47,8 +30,6 @@ interface Props {
     scopedLabels?: Record<string, Record<number, string>>;
   };
   books: { id: string; name: string; isMaster: boolean; markCount: number }[];
-  recordedStudies: RecStudyLike[];
-  searchStudies: KwStudyLike[];
   chapterGroups: Record<string, string>;
   accent?: string;
 }
@@ -67,13 +48,14 @@ export default function StudyTablesMobile({
   allMarks,
   getBook,
   books,
-  recordedStudies,
-  searchStudies,
   chapterGroups,
   accent = "#8b5cf6",
 }: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
+  // "+ Verse" on a card: picked verses append to that card (one card, many
+  // verses — they present together).
+  const [panelCardId, setPanelCardId] = useState<string | null>(null);
 
   const scopeOfRef = (ref: string) => {
     const ix = ref.indexOf(":");
@@ -121,76 +103,6 @@ export default function StudyTablesMobile({
       .map(([color, label]) => ({ color, label }));
   };
 
-  // The verse panel's study list + per-study theme grouping (desktop's logic).
-  const studyMetas: StudyMeta[] = [
-    ...recordedStudies.map((s) => ({
-      id: s.id,
-      name: s.name,
-      bookId: s.bookId,
-      kind: s.type,
-    })),
-    ...searchStudies.map((s) => ({
-      id: s.id,
-      name: s.name,
-      bookId: s.bookId,
-      kind: "keyword" as const,
-    })),
-  ];
-  const studyThemes = useCallback(
-    (studyId: string): StudyTheme[] => {
-      const rec = recordedStudies.find((s) => s.id === studyId);
-      const kw = searchStudies.find((s) => s.id === studyId);
-      const study = rec || kw;
-      if (!study) return [];
-      const bookId = study.bookId;
-      let inScope: (ref: string) => boolean;
-      if (kw) {
-        const set = new Set(kw.refs);
-        inScope = (r) => set.has(r);
-      } else if (rec && rec.type === "linked") {
-        const chapters = new Set(
-          Object.keys(chapterGroups).filter(
-            (cs) => chapterGroups[cs] === rec.scopeRef
-          )
-        );
-        const extra = new Set(rec.extraRefs || []);
-        inScope = (r) => chapters.has(scopeOfRef(r)) || extra.has(r);
-      } else {
-        const extra = new Set((rec && rec.extraRefs) || []);
-        inScope = (r) =>
-          scopeOfRef(r) === (rec ? rec.scopeRef : "") || extra.has(r);
-      }
-      const byColor = new Map<number, Set<string>>();
-      for (const m of allMarks) {
-        if (m.bookId !== bookId) continue;
-        if (!inScope(m.reference)) continue;
-        let s = byColor.get(m.color);
-        if (!s) {
-          s = new Set();
-          byColor.set(m.color, s);
-        }
-        s.add(m.reference);
-      }
-      const bk = getBook(bookId);
-      const nameFor = (ref: string, color: number): string => {
-        const scoped = bk.scopedLabels?.[resolve(scopeOfRef(ref))]?.[color];
-        const book = bk.colorLabels?.[color];
-        return ((scoped || book || "") as string).trim();
-      };
-      return Array.from(byColor.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map(([color, refset]) => {
-          const refs = sortRefs(Array.from(refset));
-          return {
-            color: color as MarkColor,
-            label: refs.length ? nameFor(refs[0], color) : "",
-            refs,
-          };
-        });
-    },
-    // eslint may not track these helpers; the arrays are the real inputs.
-    [recordedStudies, searchStudies, chapterGroups, allMarks, getBook]
-  );
 
   const makeScriptureCards = (
     refs: string[],
@@ -209,6 +121,21 @@ export default function StudyTablesMobile({
   };
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (refs.length === 0) return;
+    if (panelCardId) {
+      const card = table.cards.find((c) => c.id === panelCardId);
+      if (card && card.kind === "scripture") {
+        const merged = [
+          ...(card.refs || []),
+          ...refs.filter((r) => !(card.refs || []).includes(r)),
+        ];
+        updateTable(table.id, {
+          cards: table.cards.map((c) =>
+            c.id === panelCardId ? { ...c, refs: merged } : c
+          ),
+        });
+        return;
+      }
+    }
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const idx = Math.max(
       0,
@@ -257,7 +184,13 @@ export default function StudyTablesMobile({
     setPendingIndex(idx + shelf.length);
   };
   const openPanelAt = (index: number) => {
+    setPanelCardId(null);
     setPendingIndex(index);
+    setPanelOpen(true);
+  };
+  const openPanelForCard = (cardId: string) => {
+    setPendingIndex(null);
+    setPanelCardId(cardId);
     setPanelOpen(true);
   };
 
@@ -393,6 +326,7 @@ export default function StudyTablesMobile({
           accent={accent}
           renderVerse={renderVerse}
           onPickScripture={openPanelAt}
+          onAddToCard={openPanelForCard}
           themesFor={cardThemes}
         />
       </div>
@@ -403,8 +337,6 @@ export default function StudyTablesMobile({
           renderVerse={renderVerse}
           allMarks={allMarks}
           books={books}
-          studies={studyMetas}
-          studyThemes={studyThemes}
           shelf={table.shelf || []}
           onShelve={shelve}
           onUnshelve={unshelve}
@@ -413,6 +345,7 @@ export default function StudyTablesMobile({
           onClose={() => {
             setPanelOpen(false);
             setPendingIndex(null);
+            setPanelCardId(null);
           }}
           accent={accent}
           defaultBookId={table.bookId}
