@@ -11891,6 +11891,7 @@ export default function MobileApp() {
           addMark={addMark}
           setScopedLabel={setScopedLabel}
           resolveScope={resolveScope}
+          scopedLabels={getBook(activeBookId).scopedLabels || {}}
           marks={marks}
           activeBookId={activeBookId}
           loc={loc}
