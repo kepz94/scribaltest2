@@ -1276,6 +1276,7 @@ export default function MobileCompile({
                       }}
                     />
                     {onRenameTheme && g.key.indexOf("c:") === 0 ? (
+                      <>
                       <input
                         value={
                           editingTheme === c
@@ -1300,8 +1301,13 @@ export default function MobileCompile({
                           if (e.key === "Enter")
                             (e.target as HTMLInputElement).blur();
                         }}
-                        placeholder={"Color " + c}
+                        placeholder="Name this theme…"
                         aria-label="Theme name"
+                        data-wt={
+                          !(colorLabels[c] || "").trim()
+                            ? "wt-themename"
+                            : undefined
+                        }
                         style={{
                           flex: 1,
                           minWidth: 0,
@@ -1316,6 +1322,23 @@ export default function MobileCompile({
                           outline: "none",
                         }}
                       />
+                    {!(colorLabels[c] || "").trim() && (
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ color: C.muted, flexShrink: 0, marginLeft: "-6px" }}
+                        aria-hidden="true"
+                      >
+                        <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
+                      </svg>
+                    )}
+                      </>
                     ) : (
                       <span
                         style={{ fontSize: "15px", fontWeight: 700, flex: 1 }}
