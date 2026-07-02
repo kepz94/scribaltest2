@@ -14,6 +14,10 @@ import {
 import { Tab } from "../types";
 
 interface OutlineProps {
+  // Outline lead verses: per color, the refs the user pinned to a theme's top,
+  // in pin order — their call outranks either automatic sort. (Mobile parity.)
+  savedPins?: Record<string, string[]>;
+  onPins?: (pins: Record<string, string[]>) => void;
   tabs: Tab[];
   compileTabs: Tab[];
   compileSelection: string[];
@@ -89,6 +93,19 @@ export default function Outline(props: OutlineProps) {
   } = props;
 
   const [sortMode, setSortMode] = useState<SortMode>("points");
+  const pins = props.savedPins || {};
+  const pinsFor = (color: number): string[] => pins[String(color)] || [];
+  const togglePin = (color: number, ref: string) => {
+    if (!props.onPins) return;
+    const key = String(color);
+    const cur = pins[key] || [];
+    props.onPins({
+      ...pins,
+      [key]: cur.includes(ref)
+        ? cur.filter((r) => r !== ref)
+        : [...cur, ref],
+    });
+  };
   const [view, setView] = useState<"full" | "focused">("focused");
   const [showChapters, setShowChapters] = useState(false);
   const [collapsedInternal, setCollapsedInternal] = useState<number[]>([]);
@@ -405,14 +422,24 @@ export default function Outline(props: OutlineProps) {
               new Set(colorMarks.map((m) => m.reference))
             );
             let entries = allEntries.filter((e) => refs.includes(e.reference));
+            const pinned = pinsFor(color);
+            const pinRank = (r: string) => {
+              const i = pinned.indexOf(r);
+              return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+            };
             if (sortMode === "points") {
               entries = [...entries].sort(
                 (a, b) =>
+                  pinRank(a.reference) - pinRank(b.reference) ||
                   pointsFor(b.reference, colorMarks) -
-                  pointsFor(a.reference, colorMarks)
+                    pointsFor(a.reference, colorMarks)
               );
             } else {
-              entries = [...entries].sort((a, b) => a.order - b.order);
+              entries = [...entries].sort(
+                (a, b) =>
+                  pinRank(a.reference) - pinRank(b.reference) ||
+                  a.order - b.order
+              );
             }
 
             const totalPts = colorMarks.reduce(
@@ -530,6 +557,47 @@ export default function Outline(props: OutlineProps) {
                           >
                             {entry.reference} ↗
                           </span>
+                          <button
+                            onClick={() => togglePin(color, entry.reference)}
+                            aria-label={
+                              pinsFor(color).includes(entry.reference)
+                                ? "Unpin from top"
+                                : "Pin to top of theme"
+                            }
+                            title={
+                              pinsFor(color).includes(entry.reference)
+                                ? "Unpin — return to the sorted list"
+                                : "Pin to top — this verse leads the theme"
+                            }
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              padding: "2px 4px",
+                              cursor: "pointer",
+                              color: pinsFor(color).includes(entry.reference)
+                                ? COLOR_MAP[color]
+                                : "var(--muted)",
+                              lineHeight: 0,
+                              alignSelf: "center",
+                            }}
+                          >
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill={
+                                pinsFor(color).includes(entry.reference)
+                                  ? "currentColor"
+                                  : "none"
+                              }
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M12 17v5 M9 3h6l-1 7 3 2v2H7v-2l3-2z" />
+                            </svg>
+                          </button>
                           <span
                             style={{
                               fontSize: "11px",
