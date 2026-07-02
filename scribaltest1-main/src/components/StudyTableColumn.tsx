@@ -31,9 +31,6 @@ interface StudyTableColumnProps {
   // Picking "Scripture" from the chooser opens the verse panel at this insert
   // index instead of dropping an empty card. Absent → falls back to an empty card.
   onPickScripture?: (index: number) => void;
-  // "+ Verse" on a scripture card: opens the verse panel in append-to-this-card
-  // mode, so several verses can live on ONE card (they present together).
-  onAddToCard?: (cardId: string) => void;
   // Open the marking panel for a single scripture card's verse(s). Absent →
   // the per-card "Mark" affordance is hidden.
   onMarkCard?: (card: TableCard) => void;
@@ -564,7 +561,6 @@ export default function StudyTableColumn({
   accent = ACCENT,
   renderVerse,
   onPickScripture,
-  onAddToCard,
   onMarkCard,
   themesFor,
 }: StudyTableColumnProps) {
@@ -579,33 +575,14 @@ export default function StudyTableColumn({
   // verses join one card (presented together). dragId = the card in hand,
   // mergeOverId = the card it's hovering, mergePrompt = the confirm dialog.
   const [dragId, setDragId] = useState<string | null>(null);
+  // Button-driven merge (works everywhere, incl. touch): tap Merge on a card,
+  // then tap the scripture card to merge into. Escape hatch: Cancel.
+  const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
   const [mergeOverId, setMergeOverId] = useState<string | null>(null);
   const [mergePrompt, setMergePrompt] = useState<{
     fromId: string;
     toId: string;
   } | null>(null);
-  // Touch path (phones have no HTML5 drag events): LONG-PRESS a scripture
-  // card (~350ms without scrolling) to pick it up, drag over another
-  // scripture card, release to get the merge prompt. A touchmove before the
-  // timer fires means the user is scrolling — the press is cancelled.
-  const touchTimer = useRef<number | null>(null);
-  const touchDragging = useRef(false);
-  const clearTouch = () => {
-    if (touchTimer.current) {
-      window.clearTimeout(touchTimer.current);
-      touchTimer.current = null;
-    }
-    touchDragging.current = false;
-  };
-  const cardAtPoint = (x: number, y: number): { id: string; kind: string } | null => {
-    const el = document.elementFromPoint(x, y);
-    const host = el && (el as Element).closest("[data-card-id]");
-    if (!host) return null;
-    return {
-      id: host.getAttribute("data-card-id") || "",
-      kind: host.getAttribute("data-card-kind") || "",
-    };
-  };
   const doMerge = () => {
     if (!mergePrompt) return;
     const from = cards.find((c) => c.id === mergePrompt.fromId);
@@ -978,6 +955,41 @@ export default function StudyTableColumn({
             <div style={{ ...kicker, color: accent, margin: 0, flex: 1 }}>
               <Icon d={ICON.scripture} size={12} /> Scripture
             </div>
+            {refs.length > 0 && (
+              <button
+                onClick={() =>
+                  setMergeSourceId((p) => (p === card.id ? null : card.id))
+                }
+                title={
+                  mergeSourceId === card.id
+                    ? "Cancel merging"
+                    : "Merge this card into another — tap Merge, then tap the target card"
+                }
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: mergeSourceId === card.id ? "#fff" : "var(--muted)",
+                  background:
+                    mergeSourceId === card.id ? accent : "transparent",
+                  border:
+                    "1px solid " +
+                    (mergeSourceId === card.id ? accent : "var(--border)"),
+                  borderRadius: 999,
+                  padding: "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon
+                  d="M8 7h8M8 12h8M8 17h5 M17 14l3 3-3 3"
+                  size={11}
+                />
+                {mergeSourceId === card.id ? "Cancel" : "Merge"}
+              </button>
+            )}
             {onMarkCard && refs.length > 0 && (
               <button
                 onClick={() => onMarkCard(card)}
@@ -1086,28 +1098,6 @@ export default function StudyTableColumn({
                 </button>
               </span>
             ))}
-            {onAddToCard && (
-              <button
-                onClick={() => onAddToCard(card.id)}
-                title="Add more verses to this card — they present together as one"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  fontFamily: SANS,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: accent,
-                  background: "transparent",
-                  border: "1.5px dashed " + accent,
-                  borderRadius: 999,
-                  padding: "4px 11px",
-                  cursor: "pointer",
-                }}
-              >
-                <Icon d="M12 5v14 M5 12h14" size={11} /> Verse
-              </button>
-            )}
           </div>
           {refs.length > 0 &&
             themesFor &&
@@ -1598,49 +1588,6 @@ export default function StudyTableColumn({
               data-card-id={card.id}
               data-card-kind={card.kind}
               draggable={card.kind === "scripture"}
-              onTouchStart={() => {
-                if (card.kind !== "scripture") return;
-                clearTouch();
-                touchTimer.current = window.setTimeout(() => {
-                  touchDragging.current = true;
-                  setDragId(card.id);
-                  try {
-                    if (navigator.vibrate) navigator.vibrate(12);
-                  } catch {}
-                }, 350);
-              }}
-              onTouchMove={(e) => {
-                if (!touchDragging.current) {
-                  // Moving before the long-press fires = scrolling. Cancel.
-                  clearTouch();
-                  return;
-                }
-                e.preventDefault();
-                const t = e.touches[0];
-                const hit = cardAtPoint(t.clientX, t.clientY);
-                setMergeOverId(
-                  hit && hit.id !== card.id && hit.kind === "scripture"
-                    ? hit.id
-                    : null
-                );
-              }}
-              onTouchEnd={(e) => {
-                if (touchDragging.current) {
-                  const t = e.changedTouches[0];
-                  const hit = t ? cardAtPoint(t.clientX, t.clientY) : null;
-                  if (hit && hit.id !== card.id && hit.kind === "scripture") {
-                    setMergePrompt({ fromId: card.id, toId: hit.id });
-                  }
-                }
-                clearTouch();
-                setDragId(null);
-                setMergeOverId(null);
-              }}
-              onTouchCancel={() => {
-                clearTouch();
-                setDragId(null);
-                setMergeOverId(null);
-              }}
               onDragStart={(e) => {
                 if (card.kind !== "scripture") return;
                 setDragId(card.id);
@@ -1679,6 +1626,21 @@ export default function StudyTableColumn({
                 setDragId(null);
                 setMergeOverId(null);
               }}
+              onClickCapture={
+                mergeSourceId &&
+                mergeSourceId !== card.id &&
+                card.kind === "scripture"
+                  ? (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMergePrompt({
+                        fromId: mergeSourceId,
+                        toId: card.id,
+                      });
+                      setMergeSourceId(null);
+                    }
+                  : undefined
+              }
               style={{
                 position: "relative",
                 display: "grid",
@@ -1686,14 +1648,26 @@ export default function StudyTableColumn({
                 alignItems: "start",
                 marginTop: isSection ? 18 : 0,
                 marginBottom: isSection ? 6 : 0,
-                cursor: card.kind === "scripture" ? "grab" : undefined,
+                cursor:
+                  mergeSourceId &&
+                  mergeSourceId !== card.id &&
+                  card.kind === "scripture"
+                    ? "pointer"
+                    : card.kind === "scripture"
+                    ? "grab"
+                    : undefined,
                 opacity: dragId === card.id ? 0.45 : 1,
                 outline:
-                  mergeOverId === card.id
+                  mergeOverId === card.id ||
+                  (mergeSourceId &&
+                    mergeSourceId !== card.id &&
+                    card.kind === "scripture")
                     ? "2.5px dashed " + accent
                     : undefined,
-                outlineOffset: mergeOverId === card.id ? 3 : undefined,
-                borderRadius: mergeOverId === card.id ? 14 : undefined,
+                outlineOffset:
+                  mergeOverId === card.id || mergeSourceId ? 3 : undefined,
+                borderRadius:
+                  mergeOverId === card.id || mergeSourceId ? 14 : undefined,
                 transition: "opacity .12s ease",
               }}
             >
