@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import {
   Mark,
   MarkColor,
@@ -146,7 +146,7 @@ function applyBackupString(text: string) {
   } catch {}
 }
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 const PALETTE = NEUTRAL;
 
