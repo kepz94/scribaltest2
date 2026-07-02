@@ -1355,6 +1355,7 @@ export default function App() {
       kind: "scripture" as const,
       refs: [r],
       bookId: tableReader.bookId,
+      shelfGroup: "Sent from reading",
     }));
     updateStudyTable(t.id, { shelf: [...(t.shelf || []), ...cards] });
   };
@@ -3862,6 +3863,8 @@ export default function App() {
       kind: "scripture" as const,
       refs: [r],
       bookId: activeBookId,
+      // Their own dropdown in Selected — same on desktop and mobile.
+      shelfGroup: "Sent from reading",
     }));
   const sendVersesToTableShelf = (tableId: string, refs: string[]) => {
     const t = studyTables.find((x) => x.id === tableId);
@@ -3880,7 +3883,7 @@ export default function App() {
   // "New study table" from the send sheet: create it with these verses already
   // on its shelf, then open it so they can be placed.
   const sendVersesToNewTable = (refs: string[]) => {
-    const id = createStudyTable("Untitled");
+    const id = createStudyTable("Untitled", undefined, activeBookId);
     if (refs.length) updateStudyTable(id, { shelf: tableShelfCards(refs) });
     setOpenTableId(id);
     setMode("table");
