@@ -27,6 +27,7 @@ import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
 import MobileFeatureGuide from "./MobileFeatureGuide";
 import MobileWalkthrough from "./MobileWalkthrough";
+import FeatureSlides from "./FeatureSlides";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
@@ -1602,6 +1603,7 @@ export default function MobileApp() {
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
   const [mtourOpen, setMtourOpen] = useState(false);
+  const [slidesOpen, setSlidesOpen] = useState(false);
   const [chooseRef, setChooseRef] = useState<string | null>(null);
 
   // Replay the first-run tour (which then opens the gestures sheet).
@@ -6873,6 +6875,27 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
+              "How Scribal works",
+              "Every feature, on the real screens",
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M16 8l-2.5 5.5L8 16l2.5-5.5z" />
+              </svg>,
+              () => {
+                setHomeOpen(false);
+                setSlidesOpen(true);
+              }
+            )}
+            {homeTile(
               "Study tables",
               "Build & present lessons",
               <svg
@@ -11883,6 +11906,10 @@ export default function MobileApp() {
           </div>
         </div>
       )}
+      {slidesOpen && (
+        <FeatureSlides C={C} onClose={() => setSlidesOpen(false)} />
+      )}
+
       {mtourOpen && (
         <MobileWalkthrough
           C={C}
