@@ -235,7 +235,7 @@ const STEPS: Step[] = [
     coachPos: "bottom",
     cta: "Start studying",
     title: "That's the whole rhythm",
-    body: "Mark by swiping. Name what you see. Compile. Write the meaning. Linking, keyword search, and study tables are all waiting — and they all run on your marks.",
+    body: "Mark by swiping. Name what you see. Compile. Write the meaning. When you're ready for links, keyword search, and Screens, open \"How Scribal works\" in the menu — every power feature, shown on the real screens.",
   },
 ];
 // ── The power journey: links, colors, jump, keyword, combined, Screens.
@@ -370,9 +370,11 @@ export default function MobileWalkthrough({
   setNote,
 }: Props) {
   const [beat, setBeat] = useState(0);
-  // false = the core loop; true = the power journey (links/keyword/Screens),
-  // entered from the Done beat's "Go further" chip.
-  const [journey, setJourney] = useState(false);
+  // The interactive power journey is retired (its overlay choreography fought
+  // the real sheets); links/keyword/Screens live in the "How Scribal works"
+  // slides off the main menu. `journey` stays as a dormant constant so the
+  // engine compiles unchanged.
+  const journey = false;
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   // The scope key the compile uses for this chapter (identity while the tour
@@ -479,13 +481,7 @@ export default function MobileWalkthrough({
   const steps = journey ? JSTEPS : STEPS;
   const last = journey ? JSTEPS.length - 1 : LAST;
   const advance = () => setBeat((b) => (b < last ? b + 1 : b));
-  const startJourney = () => {
-    setCompileOpen(false); // the journey runs on the reading screen
-    jBase.current = { search: [...searchStudyIds], tabs: [...tabIds] };
-    jLoc.current = null;
-    setJourney(true);
-    setBeat(0);
-  };
+
 
   // Set each beat's baseline the instant it opens. Mark/Phrase/Theme each snap
   // the current mark ids, so only a brand-new mark counts.
@@ -808,14 +804,7 @@ export default function MobileWalkthrough({
           ))}
         </div>
       )}
-      {step.id === "done" && (
-        <button
-          onClick={startJourney}
-          style={{ marginTop: "13px", width: "100%", padding: "12px", border: "1px solid " + ACCENT, borderRadius: "999px", backgroundColor: "transparent", color: ACCENT, fontSize: "14.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-        >
-          Go further: links, keyword & Screens →
-        </button>
-      )}
+
       {step.cta && (
         <button
           onClick={step.id === "done" || step.id === "j-done" ? finish : advance}
