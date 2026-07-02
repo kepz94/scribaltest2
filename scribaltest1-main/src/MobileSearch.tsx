@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import { Mark, COLOR_MAP } from "./types";
 import { buildSearchMatcher, SearchMode } from "./searchMatch";
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 interface Palette {
   bg: string;
