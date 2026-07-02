@@ -35,6 +35,7 @@ import {
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import SpotlightTour, { TourStep } from "./components/SpotlightTour";
+import FeatureSlides from "./FeatureSlides";
 
 import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
@@ -937,6 +938,12 @@ export default function App() {
     seedScopeLabels,
     scopedRoles,
     setScopedRoles,
+    scopedLens,
+    setScopedLens,
+    scopedPins,
+    setScopedPins,
+    scopedThreads,
+    setScopedThreads,
     notes,
     setNote,
     books,
@@ -1376,6 +1383,7 @@ export default function App() {
     null
   );
   const [tourOpen, setTourOpen] = useState(false);
+  const [slidesOpen, setSlidesOpen] = useState(false);
   const [tourStart, setTourStart] = useState(0);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -5027,6 +5035,20 @@ export default function App() {
             updateActiveTab(1, 3, 0);
             setMode("read");
           }}
+        />
+      )}
+
+      {slidesOpen && (
+        <FeatureSlides
+          C={{
+            bg: "var(--bg)",
+            panel: "var(--panel)",
+            soft: "var(--soft)",
+            text: "var(--text)",
+            muted: "var(--muted)",
+            border: "var(--border)",
+          }}
+          onClose={() => setSlidesOpen(false)}
         />
       )}
 
@@ -9108,6 +9130,28 @@ export default function App() {
                     <div
                       onClick={() => {
                         setBackupOpen(false);
+                        setSlidesOpen(true);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.backgroundColor = "var(--soft)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.backgroundColor = "transparent")
+                      }
+                    >
+                      ◈ How Scribal works
+                    </div>
+                    <div
+                      onClick={() => {
+                        setBackupOpen(false);
                         setExampleOpen(true);
                       }}
                       style={{
@@ -11318,6 +11362,8 @@ export default function App() {
           <div className="scribal-swap" key={compileView} ref={scribalSwapRef}>
             {compileView === "outline" && (
               <Outline
+                savedPins={scopedPins[effectiveScope]}
+                onPins={(p) => setScopedPins(effectiveScope, p)}
                 {...sharedCompileProps}
                 notes={notes}
                 setNote={setNote}
@@ -11335,6 +11381,10 @@ export default function App() {
                 {...sharedCompileProps}
                 savedRoles={scopedRoles[effectiveScope]}
                 onRoles={(r) => setScopedRoles(effectiveScope, r)}
+                savedLens={scopedLens[effectiveScope]}
+                onLens={(l) => setScopedLens(effectiveScope, l)}
+                savedThreads={scopedThreads[effectiveScope]}
+                onThreads={(t) => setScopedThreads(effectiveScope, t)}
               />
             )}
             {effectiveTags.length > 0 && (
