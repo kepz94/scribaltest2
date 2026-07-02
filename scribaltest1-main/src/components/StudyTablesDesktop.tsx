@@ -993,6 +993,16 @@ export default function StudyTablesDesktop({
               headerOffset={headerOffset}
               initialTab={panelTab}
               defaultBookId={open.bookId}
+              themeLabelFor={(ref, color, bookId) => {
+                const bk = getBook(bookId || open.bookId || "master");
+                const ix = ref.indexOf(":");
+                const cs = ix < 0 ? ref : ref.slice(0, ix);
+                const scope = chapterGroups[cs]
+                  ? "group:" + chapterGroups[cs]
+                  : cs;
+                const scoped = bk.scopedLabels?.[scope]?.[color];
+                return ((scoped || "") as string).trim();
+              }}
             />
           )}
         </div>
