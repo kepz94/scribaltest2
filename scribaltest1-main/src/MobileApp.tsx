@@ -9891,8 +9891,6 @@ export default function MobileApp() {
               allMarks={allMarks}
               getBook={getBook}
               books={books}
-              recordedStudies={studies}
-              searchStudies={searchStudies}
               chapterGroups={chapterGroups}
             />
           );
