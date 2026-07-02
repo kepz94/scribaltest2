@@ -30,6 +30,9 @@ interface StudyTableColumnProps {
   // Picking "Scripture" from the chooser opens the verse panel at this insert
   // index instead of dropping an empty card. Absent → falls back to an empty card.
   onPickScripture?: (index: number) => void;
+  // "+ Verse" on a scripture card: opens the verse panel in append-to-this-card
+  // mode, so several verses can live on ONE card (they present together).
+  onAddToCard?: (cardId: string) => void;
   // Open the marking panel for a single scripture card's verse(s). Absent →
   // the per-card "Mark" affordance is hidden.
   onMarkCard?: (card: TableCard) => void;
@@ -560,6 +563,7 @@ export default function StudyTableColumn({
   accent = ACCENT,
   renderVerse,
   onPickScripture,
+  onAddToCard,
   onMarkCard,
   themesFor,
 }: StudyTableColumnProps) {
@@ -961,6 +965,54 @@ export default function StudyTableColumn({
                 }}
               >
                 {r}
+                {refs.length > 1 && (
+                  <span style={{ display: "inline-flex", gap: 2 }}>
+                    <button
+                      onClick={() => {
+                        if (i === 0) return;
+                        const next = [...refs];
+                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                        patch(card.id, { refs: next });
+                      }}
+                      title="Move earlier"
+                      aria-label="Move verse earlier"
+                      style={{
+                        border: 0,
+                        background: "transparent",
+                        color: i === 0 ? "var(--border)" : "var(--muted)",
+                        cursor: i === 0 ? "default" : "pointer",
+                        padding: 0,
+                        lineHeight: 0,
+                      }}
+                    >
+                      <Icon d="M15 6l-6 6 6 6" size={11} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (i === refs.length - 1) return;
+                        const next = [...refs];
+                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                        patch(card.id, { refs: next });
+                      }}
+                      title="Move later"
+                      aria-label="Move verse later"
+                      style={{
+                        border: 0,
+                        background: "transparent",
+                        color:
+                          i === refs.length - 1
+                            ? "var(--border)"
+                            : "var(--muted)",
+                        cursor:
+                          i === refs.length - 1 ? "default" : "pointer",
+                        padding: 0,
+                        lineHeight: 0,
+                      }}
+                    >
+                      <Icon d="M9 6l6 6-6 6" size={11} />
+                    </button>
+                  </span>
+                )}
                 <button
                   onClick={() => patch(card.id, { refs: refs.filter((_, k) => k !== i) })}
                   style={{
@@ -975,6 +1027,28 @@ export default function StudyTableColumn({
                 </button>
               </span>
             ))}
+            {onAddToCard && (
+              <button
+                onClick={() => onAddToCard(card.id)}
+                title="Add more verses to this card — they present together as one"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: accent,
+                  background: "transparent",
+                  border: "1.5px dashed " + accent,
+                  borderRadius: 999,
+                  padding: "4px 11px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon d="M12 5v14 M5 12h14" size={11} /> Verse
+              </button>
+            )}
           </div>
           {refs.length > 0 &&
             themesFor &&
