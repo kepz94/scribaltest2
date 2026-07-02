@@ -3418,7 +3418,9 @@ export default function MobileApp() {
         m.bookId === s.bookId &&
         (chs.includes(scopeOf(m.reference)) || extra.includes(m.reference))
     );
-    if (recMarks.length > 0) startCompile(recMarks);
+    // Straight to the notes — the gather animation belongs to COMPILING, not
+    // to reopening a study you already have.
+    if (recMarks.length > 0) setCompileOpen(true);
     else setCompileOpen(false);
   };
   // Open a keyword study straight to its compiled notes (in its saved view),
@@ -3434,7 +3436,7 @@ export default function MobileApp() {
     const kwMarks = allMarks.filter(
       (m) => m.bookId === ss.bookId && ss.refs.includes(m.reference)
     );
-    if (kwMarks.length > 0) startCompile(kwMarks);
+    if (kwMarks.length > 0) setCompileOpen(true);
     else setCompileOpen(false);
   };
   const deleteStudy = (id: string) => {
