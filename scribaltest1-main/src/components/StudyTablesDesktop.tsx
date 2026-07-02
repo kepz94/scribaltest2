@@ -543,23 +543,50 @@ export default function StudyTablesDesktop({
   // marks home.
   const importStudy = (meta: StudyMeta) => {
     setCreating(null);
-    const refs = sortRefs(
-      Array.from(new Set(studyThemes(meta.id).flatMap((t) => t.refs)))
-    );
     const id = createTable(
       meta.name?.trim() || "Untitled",
       undefined,
       meta.bookId
     );
-    if (refs.length) {
-      const cards: TableCard[] = refs.map((r) => ({
+    // Build the shelf theme-by-theme, in the study's own order, tagging every
+    // card with its theme so Selected mirrors the study's structure exactly.
+    const cards: TableCard[] = [];
+    const covered = new Set<string>();
+    studyThemes(meta.id).forEach((t) => {
+      const label = (t.label || "").trim() || "Theme " + t.color;
+      sortRefs(t.refs).forEach((r) => {
+        if (covered.has(r)) return;
+        covered.add(r);
+        cards.push({
+          id: newCardId(),
+          kind: "scripture" as const,
+          refs: [r],
+          bookId: meta.bookId,
+          shelfGroup: label,
+          shelfGroupColor: t.color,
+        });
+      });
+    });
+    // Extra verses added to the study (keyword additions) that carry no marks
+    // never appear in a theme — without this they'd silently not import.
+    const rec = recordedStudies.find((s) => s.id === meta.id);
+    const kw = searchStudies.find((s) => s.id === meta.id);
+    const extras = sortRefs(
+      Array.from(
+        new Set([...(rec?.extraRefs || []), ...(kw ? kw.refs : [])])
+      ).filter((r) => !covered.has(r))
+    );
+    extras.forEach((r) => {
+      covered.add(r);
+      cards.push({
         id: newCardId(),
         kind: "scripture" as const,
         refs: [r],
         bookId: meta.bookId,
-      }));
-      updateTable(id, { shelf: cards });
-    }
+        shelfGroup: "Added verses",
+      });
+    });
+    if (cards.length) updateTable(id, { shelf: cards });
     setOpenId(id);
     setPendingIndex(0);
     setPanelTab("shelf");
