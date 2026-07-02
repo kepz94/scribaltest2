@@ -59,9 +59,17 @@ interface Props {
   // Live scoped theme labels of the active (demo) book — watched so the NAME
   // beat advances the moment the user actually names their theme.
   scopedLabels: Record<string, Record<number, string>>;
-  // Whether the reader's Link sheet is open — the power journey's "tap Link"
-  // beat advances on it.
+  // Live app state the power journey watches (every beat is a real action):
   linkOpen: boolean;
+  searchOpen: boolean;
+  chapterGroups: Record<string, string>;
+  searchStudyIds: string[];
+  tabIds: string[];
+  demoCombined: boolean;
+  // Cleanup hooks so the journey leaves no trace:
+  unlinkChapter: (cs: string) => void;
+  deleteSearchStudy: (id: string) => void;
+  closeTab: (id: string) => void;
   marks: Mark[];
   activeBookId: string;
   loc: Loc;
@@ -240,7 +248,7 @@ const JSTEPS: Step[] = [
     coachPos: "bottom",
     cta: "Next",
     title: "The link glyph speaks in color",
-    body: "See the ringed chain in the header? Its color tells you what this chapter is part of at a glance:",
+    body: "See the ringed chain in the header? Its color tells you what a chapter is part of at a glance:",
   },
   {
     id: "j-link",
@@ -248,43 +256,72 @@ const JSTEPS: Step[] = [
     target: '[data-wt="wt-link"]',
     coachPos: "near",
     title: "Open the Link sheet",
-    body: "Tap Link. This is where chapters join into one study.",
+    body: "Tap Link.",
   },
   {
-    id: "j-sheet",
+    id: "j-pick",
     mode: "free",
     target: null,
     coachPos: "top",
+    title: "Link a chapter to this one",
+    body: "Pick 1 Nephi 2 from the sheet. Linked chapters compile as ONE study — themes carry across.",
+  },
+  {
+    id: "j-jump",
+    mode: "free",
+    target: '[data-wt="wt-link"]',
+    coachPos: "top",
+    title: "Now jump through the link",
+    body: "It's linked — the title wears the group's colored dot now. Open Link again: every member chapter is listed there. Tap 1 Nephi 2 to JUMP straight to it.",
+  },
+  {
+    id: "j-mark2",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    title: "Mark something HERE",
+    body: "You're in the second chapter of the same study. Swipe a phrase that stands out — any color.",
+  },
+  {
+    id: "j-compile2",
+    mode: "spotlight",
+    target: '[data-wt="wt-compile"]',
+    coachPos: "near",
+    title: "Compile the linked pair",
+    body: "Tap Compile — and watch what linking bought you.",
+  },
+  {
+    id: "j-payoff",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
     cta: "Next",
-    title: "Link chapters — and jump between them",
-    body: "Pick any chapter here and it links to this one: they'll compile as ONE study, themes carrying across. Once linked, this same sheet lists every member with a colored dot — tap one to JUMP straight to it. That dot's color is the group's own color, so you always know which study a chapter belongs to.",
+    title: "One study. Two chapters.",
+    body: "Look at the references under your themes: 1 Nephi 1 AND 1 Nephi 2, together. That's what a link is — chapters studied as one. Close the study (back arrow) to continue.",
   },
   {
     id: "j-keyword",
     mode: "free",
-    target: null,
+    target: '[data-wt="wt-search"]',
     coachPos: "bottom",
-    cta: "Next",
-    title: "Keyword studies — the blue kind",
-    body: "From search (the magnifier), any word can become a study: search it, gather the verses you choose, save. No chapter required. Keyword studies carry BLUE — and they can be linked too.",
+    title: "Build a study from a WORD",
+    body: "Tap the ringed magnifier and search a word — try \"faith\". Add a few of the verses it finds, then Save as a study. No chapter required. It waits here until you've saved one.",
   },
   {
     id: "j-combined",
     mode: "free",
-    target: null,
-    coachPos: "bottom",
-    cta: "Next",
-    title: "Combined — when red meets blue",
-    body: "Link a keyword study to a chapter study and they merge into a COMBINED study: chapter verses plus gathered verses, one set of themes. The chain turns PURPLE — red + blue. One glance at any link glyph now tells you the whole story: red = chapter, blue = keyword, purple = both.",
+    target: '[data-wt="wt-link"]',
+    coachPos: "top",
+    title: "Merge red with blue",
+    body: "Your keyword study is the BLUE kind. Open Link on this chapter and link your new keyword study into it — chapter verses + gathered verses become one COMBINED study, and the chain turns PURPLE.",
   },
   {
     id: "j-screens",
     mode: "free",
     target: null,
-    coachPos: "bottom",
-    cta: "Next",
-    title: "Screens — up to 8 places at once",
-    body: "The tab row above the chapter title holds your open Screens. Each keeps its own book, chapter, and scroll position — study in one, cross-reference in another, tap + for a fresh one.",
+    coachPos: "top",
+    title: "One more: open a second Screen",
+    body: "The tab row above the title holds your Screens — each keeps its own book, chapter, and scroll. Tap the + there to open a fresh one (up to 8).",
   },
   {
     id: "j-done",
@@ -292,8 +329,8 @@ const JSTEPS: Step[] = [
     target: null,
     coachPos: "bottom",
     cta: "Start studying",
-    title: "The full toolkit",
-    body: "Mark, name, compile — then scale it: link chapters into one study, gather any word into a blue keyword study, merge them purple, and keep it all open across Screens.",
+    title: "You just used the full toolkit",
+    body: "Linked chapters into one study, jumped through the link, compiled across both, gathered a word into a blue study, merged it purple, and opened a Screen. Red = chapter · blue = keyword · purple = both. Everything cleans up now — your real books are untouched.",
   },
 ];
 
@@ -312,6 +349,14 @@ export default function MobileWalkthrough({
   resolveScope,
   scopedLabels,
   linkOpen,
+  searchOpen,
+  chapterGroups,
+  searchStudyIds,
+  tabIds,
+  demoCombined,
+  unlinkChapter,
+  deleteSearchStudy,
+  closeTab,
   marks,
   activeBookId,
   loc,
@@ -413,6 +458,17 @@ export default function MobileWalkthrough({
       if ((cur[k] || "") !== (want || "")) setNote(k, want);
     });
     setCompileOpen(false);
+    // Journey artifacts: dissolve the demo link, delete any keyword study the
+    // journey created, close any Screen it opened.
+    if (journey) {
+      if (chapterGroups[DEMO_SCOPE]) unlinkChapter(DEMO_SCOPE);
+      searchStudyIds
+        .filter((x) => !jBase.current.search.includes(x))
+        .forEach((x) => deleteSearchStudy(x));
+      tabIds
+        .filter((x) => !jBase.current.tabs.includes(x))
+        .forEach((x) => closeTab(x));
+    }
     setActiveBook(prevBook.current);
     if (tempId.current) deleteBook(tempId.current);
     setLoc(prevLoc.current);
@@ -425,6 +481,8 @@ export default function MobileWalkthrough({
   const advance = () => setBeat((b) => (b < last ? b + 1 : b));
   const startJourney = () => {
     setCompileOpen(false); // the journey runs on the reading screen
+    jBase.current = { search: [...searchStudyIds], tabs: [...tabIds] };
+    jLoc.current = null;
     setJourney(true);
     setBeat(0);
   };
@@ -472,14 +530,61 @@ export default function MobileWalkthrough({
     // Closing the notes screen ends the CORE tour — but not the journey,
     // which runs on the reading screen with the compile closed.
     else if (!journey && beat >= NOTES_FROM && !compileOpen) finish();
+    else if (journey && steps[beat]?.id === "j-payoff" && !compileOpen)
+      advance();
     // eslint-disable-next-line
   }, [compileOpen, beat]);
 
-  // Journey: the Link beat advances when the real Link sheet opens.
+  // ── Journey detections: every beat waits for the REAL action. Baselines are
+  // snapped when the journey starts so pre-existing state never satisfies a beat.
+  const jBase = useRef({ search: [] as string[], tabs: [] as string[] });
+  const jLoc = useRef<Loc | null>(null);
   useEffect(() => {
-    if (journey && steps[beat]?.id === "j-link" && linkOpen) advance();
+    if (!journey) return;
+    const id = steps[beat]?.id;
+    if (id === "j-link" && linkOpen) advance();
+    else if (id === "j-pick" && chapterGroups[DEMO_SCOPE]) advance();
+    else if (id === "j-jump") {
+      if (!jLoc.current) jLoc.current = loc;
+      else if (
+        loc.v !== jLoc.current.v ||
+        loc.b !== jLoc.current.b ||
+        loc.c !== jLoc.current.c
+      ) {
+        jLoc.current = null;
+        baseIds.current = new Set(marks.map((m) => m.id));
+        advance();
+      }
+    } else if (
+      id === "j-mark2" &&
+      marks.some((m) => !baseIds.current.has(m.id))
+    )
+      advance();
+    else if (id === "j-compile2" && compileOpen) advance();
+    else if (
+      id === "j-keyword" &&
+      searchStudyIds.some((x) => !jBase.current.search.includes(x))
+    )
+      advance();
+    else if (id === "j-combined" && demoCombined) advance();
+    else if (
+      id === "j-screens" &&
+      tabIds.some((x) => !jBase.current.tabs.includes(x))
+    )
+      advance();
     // eslint-disable-next-line
-  }, [linkOpen, beat, journey]);
+  }, [
+    journey,
+    beat,
+    linkOpen,
+    chapterGroups,
+    loc,
+    marks,
+    compileOpen,
+    searchStudyIds,
+    demoCombined,
+    tabIds,
+  ]);
 
   // Measure the spotlight / ring target. Re-measures on beat change, on scroll
   // (capture, so inner scrolls count) and resize; rAF passes cover mount timing.
@@ -540,6 +645,9 @@ export default function MobileWalkthrough({
     };
   }, [beat, journey]);
 
+  // The user is mid-action inside an overlay (Link sheet / search): get out of
+  // the way — no card, no ring, just a slim status pill at the very top.
+  const busyInOverlay = journey && (linkOpen || searchOpen);
   const Z = 600;
   const dim = "rgba(18,16,12,0.64)";
   const vw = typeof window !== "undefined" ? window.innerWidth : 0;
@@ -796,6 +904,42 @@ export default function MobileWalkthrough({
       }}
     />
   );
+
+  if (busyInOverlay) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          top: "calc(8px + env(safe-area-inset-top))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: Z + 2,
+          pointerEvents: "none",
+          background: C.panel,
+          border: "1px solid " + C.border,
+          borderRadius: "999px",
+          boxShadow: "0 8px 26px rgba(0,0,0,0.28)",
+          padding: "7px 14px",
+          maxWidth: "88vw",
+          ...baseFont,
+        }}
+      >
+        <span
+          style={{
+            fontSize: "12.5px",
+            fontWeight: 700,
+            color: C.text,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "block",
+          }}
+        >
+          {step.title}
+        </span>
+      </div>
+    );
+  }
 
   // ── "free" beats — screen stays live (so a tool can be armed AND used on the
   // reading side, and the real study stays interactive on the notes side); just
