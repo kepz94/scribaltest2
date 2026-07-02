@@ -4813,33 +4813,6 @@ export default function App() {
       });
     });
 
-    // Study tables — their own green category in the hub. Tapping one opens it
-    // straight in the table editor.
-    studyTables.forEach((t) => {
-      const n = t.cards.length;
-      const shelfN = (t.shelf || []).length;
-      rows.push({
-        id: t.id,
-        kind: "table",
-        bookId: "",
-        name: t.name || "Untitled table",
-        meta:
-          (n === 1 ? "1 card" : n + " cards") +
-          (shelfN ? " \u00b7 " + shelfN + " set aside" : ""),
-        themes: [],
-        onOpen: () => {
-          setStudiesOpen(false);
-          setOpenTableId(t.id);
-          setMode("table");
-        },
-        onDelete: () =>
-          askConfirm({
-            title: "Delete \u201C" + (t.name || "this table") + "\u201D?",
-            body: "This study table will be deleted. This can\u2019t be undone.",
-            onConfirm: () => deleteStudyTable(t.id),
-          }),
-      });
-    });
 
     return rows;
   };
