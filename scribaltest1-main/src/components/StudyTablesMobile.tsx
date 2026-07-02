@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StudyTable, TableCard, newCardId } from "../hooks/useStudyTables";
 import StudyTableColumn from "./StudyTableColumn";
 import VersePicker from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
 import MarkedVerse from "./MarkedVerse";
-import { Mark } from "../types";
+import { Mark, WordTag } from "../types";
 import { getVerse } from "../data/verseIndex";
 
 // The mobile study-table editor: a full-screen sheet with the same column the
@@ -31,6 +31,9 @@ interface Props {
   };
   books: { id: string; name: string; isMaster: boolean; markCount: number }[];
   chapterGroups: Record<string, string>;
+  // Dictionary word-tags for card verses; tapping opens the definition sheet.
+  wordTags?: WordTag[];
+  onTagTap?: (tag: WordTag) => void;
   accent?: string;
 }
 
@@ -49,8 +52,18 @@ export default function StudyTablesMobile({
   getBook,
   books,
   chapterGroups,
+  wordTags,
+  onTagTap,
   accent = "#8b5cf6",
 }: Props) {
+  // Save indicator: edits persist instantly; flash "Saved" when they do.
+  const [saveFlash, setSaveFlash] = useState(false);
+  useEffect(() => {
+    if (!table.updatedAt) return;
+    setSaveFlash(true);
+    const t = window.setTimeout(() => setSaveFlash(false), 1200);
+    return () => window.clearTimeout(t);
+  }, [table.updatedAt]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   // "+ Verse" on a card: picked verses append to that card (one card, many
@@ -78,6 +91,8 @@ export default function StudyTablesMobile({
         verseNumber={rec.verse}
         text={rec.text}
         marks={bookId ? getBook(bookId).marks : []}
+        tags={wordTags}
+        onTagTap={onTagTap}
       />
     );
   };
@@ -272,6 +287,19 @@ export default function StudyTablesMobile({
             outline: "none",
           }}
         />
+        <span
+          title="Every change saves automatically"
+          style={{
+            fontFamily: SANS,
+            fontSize: 10.5,
+            fontWeight: 700,
+            color: saveFlash ? accent : "var(--muted)",
+            flex: "0 0 auto",
+            transition: "color .2s ease",
+          }}
+        >
+          ✓{saveFlash ? " Saved" : ""}
+        </span>
         <button
           onClick={onPresent}
           disabled={table.cards.length === 0}
