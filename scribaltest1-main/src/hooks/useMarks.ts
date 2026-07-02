@@ -32,7 +32,7 @@ interface StudyBook {
       // Relational threads: per lens, the verse pairs the USER connected —
       // "this condition ties to that promise" across any distance. The system
       // never invents these; it only renders them.
-      threads?: Record<string, { a: string; b: string }[]>;
+      threads?: Record<string, { a: string | string[]; b: string | string[] }[]>;
     }
   >;
   createdAt: number;
@@ -137,7 +137,7 @@ type Action =
   | {
       type: "setScopedThreads";
       scope: string;
-      threads: Record<string, { a: string; b: string }[]>;
+      threads: Record<string, { a: string | string[]; b: string | string[] }[]>;
     }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
@@ -1380,7 +1380,7 @@ export function useMarks() {
     []
   );
   const setScopedThreads = useCallback(
-    (scope: string, threads: Record<string, { a: string; b: string }[]>) =>
+    (scope: string, threads: Record<string, { a: string | string[]; b: string | string[] }[]>) =>
       dispatch({ type: "setScopedThreads", scope, threads }),
     []
   );
@@ -1531,7 +1531,7 @@ export function useMarks() {
       const src = active.scopedRoles || {};
       const out: Record<
         string,
-        Record<string, { a: string; b: string }[]>
+        Record<string, { a: string | string[]; b: string | string[] }[]>
       > = {};
       Object.keys(src).forEach((k) => {
         if (src[k].threads) out[k] = src[k].threads!;
