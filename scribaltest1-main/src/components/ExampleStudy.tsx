@@ -1,5 +1,5 @@
 import { useState } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { SAMPLE_JOHN1_MARKS } from "../data/sampleStudy";
 import { COLORS, COLOR_MAP, HIGHLIGHT_MAP, MarkColor, Tool } from "../types";
 import MobileVerse from "../MobileVerse";
@@ -35,7 +35,7 @@ interface VRow {
 // never stored in the sample; only the markings are.
 function johnOneVerses(): VRow[] {
   const out: VRow[] = [];
-  (scriptures as any).volumes.forEach((vol: any) =>
+  getScriptures().volumes.forEach((vol: any) =>
     vol.books.forEach((bk: any) => {
       if (bk.book !== "John") return;
       bk.chapters.forEach((ch: any) => {
