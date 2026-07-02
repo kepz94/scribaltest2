@@ -304,6 +304,44 @@ export default function FeatureSlides({
       ),
     },
     {
+      title: "The dictionary lives under your finger",
+      body: "Tap any single word while reading to look it up — 1828 Webster's, the language of the text. Tag a definition and the word stays quietly marked wherever it appears in your study.",
+      visual: mockCard(
+        <div>
+          <div style={{ fontFamily: serif, fontSize: "16px", lineHeight: 1.8, color: C.text, marginBottom: "10px" }}>
+            …to be learned is good if they{" "}
+            <span style={{ borderBottom: "2px dotted " + PURPLE, fontWeight: 600 }}>hearken</span>{" "}
+            unto the counsels of God.
+          </div>
+          <div style={{ borderTop: "1px solid " + C.border, paddingTop: "10px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 800, color: C.text }}>HEARKEN</div>
+            <div style={{ fontSize: "12.5px", color: C.muted, lineHeight: 1.5 }}>
+              v.i. — To listen; to lend the ear; to attend to what is uttered…
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: "Master & Sessions — books of marks",
+      body: "Your Master Book is the life copy — marks that stay. A Session is a fresh, clean copy for a class, a talk, or an experiment. Every study belongs to the book it was marked in.",
+      visual: mockCard(
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 4px", borderBottom: "1px solid " + C.border }}>
+            <span style={{ fontSize: "14px", fontWeight: 700, color: C.text, flex: 1 }}>Master Book</span>
+            <span style={{ fontSize: "11.5px", color: C.muted }}>1,204 marks</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 4px", borderBottom: "1px solid " + C.border }}>
+            <span style={{ fontSize: "14px", fontWeight: 600, color: C.text, flex: 1 }}>Sunday lesson</span>
+            <span style={{ fontSize: "11.5px", color: C.muted }}>36 marks</span>
+          </div>
+          <div style={{ padding: "9px 4px", fontSize: "13px", color: C.muted }}>
+            + New session…
+          </div>
+        </div>
+      ),
+    },
+    {
       title: "Screens — up to 8 places at once",
       body: "The tab row above the chapter title holds your open Screens. Each keeps its own book, chapter, and scroll — study in one, cross-reference in another. Tap + for a fresh one.",
       visual: mockCard(
