@@ -7865,7 +7865,7 @@ export default function MobileApp() {
       )}
 
       {/* Send verses → start a new study or add to an existing one */}
-      {sendRefs && (
+      {sendRefs && !sendTablePicking && (
         <div
           onClick={() => {
             setSendRefs(null);
@@ -10032,6 +10032,7 @@ export default function MobileApp() {
                     kind: "scripture" as const,
                     refs: [r],
                     bookId: activeBookId,
+                    shelfGroup: "Sent from reading",
                   }));
                   updateStudyTable(t.id, {
                     shelf: [...(t.shelf || []), ...cards],
@@ -10073,6 +10074,7 @@ export default function MobileApp() {
                   kind: "scripture" as const,
                   refs: [r],
                   bookId: activeBookId,
+                  shelfGroup: "Sent from reading",
                 }));
                 updateStudyTable(id, { shelf: cards });
                 setSendTablePicking(false);
