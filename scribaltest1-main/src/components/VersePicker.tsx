@@ -3,7 +3,7 @@ import { ACCENT } from "../theme";
 import { MarkColor, COLOR_MAP } from "../types";
 import { buildSearchMatcher, SearchMode } from "../searchMatch";
 import { verseList, sortRefs, isConsecutive, passageLabel } from "../data/verseIndex";
-import scripturesData from "../data/scriptures.json";
+import { getScriptures, registerOnLoaded } from "../data/scripturesStore";
 import type { TableCard } from "../hooks/useStudyTables";
 import type { ThemeMark } from "./SearchPanel";
 
@@ -93,8 +93,10 @@ const lowerText: string[] = verseList.map((v) => v.text.toLowerCase());
 const VOLS: { name: string; books: string[] }[] = [];
 const volOf: number[] = [];
 const bookOf: number[] = [];
-(() => {
-  const vols: any[] = (scripturesData as any).volumes || [];
+// Filled once the runtime scripture load lands (module-scope access would
+// crash the bundle; registerOnLoaded runs strictly after the data exists).
+registerOnLoaded(() => {
+  const vols: any[] = getScriptures().volumes || [];
   vols.forEach((vol: any, vi: number) => {
     const bookNames: string[] = [];
     (vol.books || []).forEach((book: any, bi: number) => {
@@ -109,7 +111,7 @@ const bookOf: number[] = [];
     });
     VOLS.push({ name: vol.volume || "Volume " + (vi + 1), books: bookNames });
   });
-})();
+});
 
 const RESULT_CAP = 50;
 
