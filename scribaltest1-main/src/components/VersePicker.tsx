@@ -65,6 +65,10 @@ interface Props {
   // The table's marks home: the "Marks from" selector starts here (falling back
   // to master), so picked verses carry the book the user chose at creation.
   defaultBookId?: string;
+  // Scoped theme-name resolution for the Selected fallback grouping (cards
+  // without an import tag). Without it, group labels fall back to the mark's
+  // book-level color name — which leaks unrelated old names.
+  themeLabelFor?: (ref: string, color: MarkColor, bookId?: string) => string;
   // Mobile: render as a full-screen overlay instead of the docked side panel.
   fullScreen?: boolean;
 }
@@ -117,6 +121,7 @@ export default function VersePicker({
   headerOffset = 76,
   initialTab,
   defaultBookId,
+  themeLabelFor,
   fullScreen = false,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
@@ -267,7 +272,10 @@ export default function VersePicker({
           (m) => !item.bookId || m.bookId === item.bookId
         );
         if (ms.length) {
-          found = { color: ms[0].color, label: ms[0].label || "" };
+          const label = themeLabelFor
+            ? themeLabelFor(r, ms[0].color, item.bookId)
+            : ms[0].label || "";
+          found = { color: ms[0].color, label };
           break;
         }
       }
