@@ -20,7 +20,7 @@
 // resolved against Scribal's own scripture data, so the importer can build a
 // real Search Study and tell the user exactly what matched.
 // ---------------------------------------------------------------------------
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 
 export interface ParsedVerse {
   ref: string; // canonical Scribal reference (e.g. "D&C 20:41")
@@ -57,7 +57,7 @@ const norm = (s: string): string =>
 
 (() => {
   let n = 0;
-  const vols = (scriptures as any).volumes || [];
+  const vols = getScriptures().volumes || [];
   for (const v of vols) {
     for (const b of v.books || []) {
       const chapters = b.chapters || [];
