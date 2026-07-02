@@ -1,5 +1,5 @@
 import { useState } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { Mark, MarkColor, MarkStyle, markStyleCSS } from "../types";
 import { Tab } from "../types";
 
@@ -15,7 +15,7 @@ interface DistilledProps {
   onJumpToReference: (reference: string) => void;
 }
 
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 export default function Distilled(props: DistilledProps) {
   const { compileTabs, marks, onJumpToReference } = props;
