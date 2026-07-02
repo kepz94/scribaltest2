@@ -584,6 +584,28 @@ export default function StudyTableColumn({
     fromId: string;
     toId: string;
   } | null>(null);
+  // Touch path (phones have no HTML5 drag events): LONG-PRESS a scripture
+  // card (~350ms without scrolling) to pick it up, drag over another
+  // scripture card, release to get the merge prompt. A touchmove before the
+  // timer fires means the user is scrolling — the press is cancelled.
+  const touchTimer = useRef<number | null>(null);
+  const touchDragging = useRef(false);
+  const clearTouch = () => {
+    if (touchTimer.current) {
+      window.clearTimeout(touchTimer.current);
+      touchTimer.current = null;
+    }
+    touchDragging.current = false;
+  };
+  const cardAtPoint = (x: number, y: number): { id: string; kind: string } | null => {
+    const el = document.elementFromPoint(x, y);
+    const host = el && (el as Element).closest("[data-card-id]");
+    if (!host) return null;
+    return {
+      id: host.getAttribute("data-card-id") || "",
+      kind: host.getAttribute("data-card-kind") || "",
+    };
+  };
   const doMerge = () => {
     if (!mergePrompt) return;
     const from = cards.find((c) => c.id === mergePrompt.fromId);
@@ -1574,7 +1596,51 @@ export default function StudyTableColumn({
             </div>
             <div
               data-card-id={card.id}
+              data-card-kind={card.kind}
               draggable={card.kind === "scripture"}
+              onTouchStart={() => {
+                if (card.kind !== "scripture") return;
+                clearTouch();
+                touchTimer.current = window.setTimeout(() => {
+                  touchDragging.current = true;
+                  setDragId(card.id);
+                  try {
+                    if (navigator.vibrate) navigator.vibrate(12);
+                  } catch {}
+                }, 350);
+              }}
+              onTouchMove={(e) => {
+                if (!touchDragging.current) {
+                  // Moving before the long-press fires = scrolling. Cancel.
+                  clearTouch();
+                  return;
+                }
+                e.preventDefault();
+                const t = e.touches[0];
+                const hit = cardAtPoint(t.clientX, t.clientY);
+                setMergeOverId(
+                  hit && hit.id !== card.id && hit.kind === "scripture"
+                    ? hit.id
+                    : null
+                );
+              }}
+              onTouchEnd={(e) => {
+                if (touchDragging.current) {
+                  const t = e.changedTouches[0];
+                  const hit = t ? cardAtPoint(t.clientX, t.clientY) : null;
+                  if (hit && hit.id !== card.id && hit.kind === "scripture") {
+                    setMergePrompt({ fromId: card.id, toId: hit.id });
+                  }
+                }
+                clearTouch();
+                setDragId(null);
+                setMergeOverId(null);
+              }}
+              onTouchCancel={() => {
+                clearTouch();
+                setDragId(null);
+                setMergeOverId(null);
+              }}
               onDragStart={(e) => {
                 if (card.kind !== "scripture") return;
                 setDragId(card.id);
