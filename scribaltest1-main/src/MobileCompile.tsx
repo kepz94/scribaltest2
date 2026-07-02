@@ -40,6 +40,10 @@ interface Props {
   onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
   relSavedLens?: string;
   onRelLens?: (lens: string) => void;
+  // Outline lead verses: per color, refs the user pinned to a theme's top —
+  // "this verse carries the theme for me." Pure user choice; no ranking.
+  savedPins?: Record<string, string[]>;
+  onPins?: (pins: Record<string, string[]>) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -121,6 +125,8 @@ export default function MobileCompile({
   onRelRoles,
   relSavedLens,
   onRelLens,
+  savedPins,
+  onPins,
   defaultName,
   onClose,
   dark,
@@ -144,6 +150,21 @@ export default function MobileCompile({
   // note follows its verse whether viewed alone or inside a linked study.
   const verseNoteKey = (ref: string) => "versenote:" + ref;
   const [sortMode, setSortMode] = useState<SortMode>("order");
+  // Lead verses (pins): user-chosen verses that always sit at a theme's top,
+  // in the order they were pinned — above any automatic sort.
+  const pins = savedPins || {};
+  const pinsFor = (color: number): string[] => pins[String(color)] || [];
+  const togglePin = (color: number, ref: string) => {
+    if (!onPins) return;
+    const key = String(color);
+    const cur = pins[key] || [];
+    onPins({
+      ...pins,
+      [key]: cur.includes(ref)
+        ? cur.filter((r) => r !== ref)
+        : [...cur, ref],
+    });
+  };
   const [studyName, setStudyName] = useState(defaultName);
   const [view, setView] = useState<"focused" | "full">("focused");
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
@@ -417,7 +438,7 @@ export default function MobileCompile({
     order: number;
     isNew: boolean;
   };
-  const verseEntriesFor = (list: Mark[]): VerseEntry[] => {
+  const verseEntriesFor = (list: Mark[], color?: number): VerseEntry[] => {
     const byRef = new Map<string, Mark[]>();
     list.forEach((m) => {
       const arr = byRef.get(m.reference);
@@ -434,7 +455,17 @@ export default function MobileCompile({
         isNew: ms.some(isNew),
       });
     });
+    const pinned = color != null ? pinsFor(color) : [];
+    const pinRank = (r: string) => {
+      const i = pinned.indexOf(r);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
     entries.sort((a, b) => {
+      // The user's lead verses first, in pin order — their call outranks
+      // every automatic sort.
+      const pa = pinRank(a.reference);
+      const pb = pinRank(b.reference);
+      if (pa !== pb) return pa - pb;
       if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
       return sortMode === "points"
         ? b.pts - a.pts || a.order - b.order
@@ -455,7 +486,7 @@ export default function MobileCompile({
   };
   const shareableVerses: ShareableVerse[] = [];
   groups.forEach((g) => {
-    verseEntriesFor(g.marks).forEach((ve) => {
+    verseEntriesFor(g.marks, g.color).forEach((ve) => {
       shareableVerses.push({
         key: g.key + "|" + ve.reference,
         reference: ve.reference,
@@ -1320,6 +1351,111 @@ export default function MobileCompile({
                     </span>
                   </div>
 
+                  {/* collapsed face: the theme's lead verse (user-pinned) or,
+                      failing that, the user's own heaviest-marked fragments —
+                      so a closed card still says something, in their words */}
+                  {!isOpen &&
+                    (() => {
+                      const pinned = pinsFor(c).filter((r) =>
+                        list.some((m) => m.reference === r)
+                      );
+                      const lead = pinned[0];
+                      if (lead) {
+                        const vt = (
+                          list.find((m) => m.reference === lead)?.verseText ||
+                          ""
+                        ).trim();
+                        if (!vt) return null;
+                        return (
+                          <div style={{ padding: "0 14px 12px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              <svg
+                                width="10"
+                                height="10"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                style={{
+                                  color: COLOR_MAP[c as MarkColor],
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <path d="M12 17v5 M9 3h6l-1 7 3 2v2H7v-2l3-2z" />
+                              </svg>
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  color: C.muted,
+                                }}
+                              >
+                                {lead}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "Georgia, serif",
+                                fontSize: "14px",
+                                lineHeight: 1.55,
+                                color: C.text,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {vt}
+                            </div>
+                          </div>
+                        );
+                      }
+                      // No pin: surface the user's own marked fragments from
+                      // the heaviest-marked verse — their emphasis, verbatim.
+                      const top = verseEntriesFor(list, c)[0];
+                      if (!top) return null;
+                      const frags = top.marks
+                        .map((m) => (m.markedText || "").trim())
+                        .filter(Boolean)
+                        .slice(0, 3);
+                      if (!frags.length) return null;
+                      return (
+                        <div style={{ padding: "0 14px 12px" }}>
+                          <div
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              color: C.muted,
+                              marginBottom: "4px",
+                            }}
+                          >
+                            {top.reference}
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: "Georgia, serif",
+                              fontSize: "13.5px",
+                              fontStyle: "italic",
+                              lineHeight: 1.5,
+                              color: C.text,
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {frags.join(" · ")}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   {/* synthesis-first: the conclusion sits up top */}
                   <div style={{ padding: "0 14px 14px" }}>
                     {(() => {
@@ -1506,7 +1642,7 @@ export default function MobileCompile({
                           marginTop: "12px",
                         }}
                       >
-                        {verseEntriesFor(list).map((ve) => {
+                        {verseEntriesFor(list, c).map((ve) => {
                           const info = VI.get(ve.reference);
                           const noteKey = verseNoteKey(ve.reference);
                           const noteVal = notes[noteKey] || "";
@@ -1650,6 +1786,50 @@ export default function MobileCompile({
                                       }}
                                     >
                                       {ve.reference} ↗
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        togglePin(c, ve.reference);
+                                      }}
+                                      aria-label={
+                                        pinsFor(c).includes(ve.reference)
+                                          ? "Unpin from top"
+                                          : "Pin to top of theme"
+                                      }
+                                      title={
+                                        pinsFor(c).includes(ve.reference)
+                                          ? "Unpin — return to the sorted list"
+                                          : "Pin to top — this verse leads the theme"
+                                      }
+                                      style={{
+                                        background: "transparent",
+                                        border: "none",
+                                        padding: "2px 4px",
+                                        cursor: "pointer",
+                                        color: pinsFor(c).includes(ve.reference)
+                                          ? COLOR_MAP[c as MarkColor]
+                                          : C.muted,
+                                        lineHeight: 0,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <svg
+                                        width="13"
+                                        height="13"
+                                        viewBox="0 0 24 24"
+                                        fill={
+                                          pinsFor(c).includes(ve.reference)
+                                            ? "currentColor"
+                                            : "none"
+                                        }
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      >
+                                        <path d="M12 17v5 M9 3h6l-1 7 3 2v2H7v-2l3-2z" />
+                                      </svg>
                                     </button>
                                     <span
                                       style={{
