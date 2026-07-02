@@ -1322,6 +1322,43 @@ export default function App() {
 
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
 
+  // The study-table READER DOCK: a docked reading panel beside the open table.
+  // Browse any chapter with the real reader + marking toolbar, marks land in
+  // the table's marks home, dictionary tags work, and "Send verses" drops the
+  // chosen verses onto the table's shelf (Selected).
+  const [tableReader, setTableReader] = useState<{
+    tableId: string;
+    bookId: string;
+  } | null>(null);
+  const [trLoc, setTrLoc] = useState<{ v: number; b: number; c: number }>({
+    v: 0,
+    b: 0,
+    c: 0,
+  });
+  const [trJump, setTrJump] = useState<string | null>(null);
+  const openTableReader = (tableId: string, bookId: string, atRef?: string) => {
+    if (atRef) {
+      const cut = atRef.lastIndexOf(":");
+      const scope = cut > 0 ? atRef.slice(0, cut) : atRef;
+      const loc = chapterLoc.get(scope);
+      if (loc) setTrLoc({ v: loc.volume, b: loc.book, c: loc.chapter });
+      setTrJump(atRef);
+    }
+    setTableReader({ tableId, bookId });
+  };
+  const sendReaderVersesToTable = (refs: string[]) => {
+    if (!tableReader || refs.length === 0) return;
+    const t = studyTables.find((x) => x.id === tableReader.tableId);
+    if (!t) return;
+    const cards: TableCard[] = refs.map((r) => ({
+      id: newCardId(),
+      kind: "scripture" as const,
+      refs: [r],
+      bookId: tableReader.bookId,
+    }));
+    updateStudyTable(t.id, { shelf: [...(t.shelf || []), ...cards] });
+  };
+
   const [showTutorial, setShowTutorial] = useState<boolean>(
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
@@ -10493,7 +10530,105 @@ export default function App() {
           openTableId={openTableId}
           onConsumeOpenTable={() => setOpenTableId(null)}
           onMarkVerses={openTableMarkPanel}
+          onOpenReader={openTableReader}
+          wordTags={wordTags}
+          onTagTap={openTagRef}
         />
+      )}
+
+      {/* READER DOCK for the open study table: browse, mark, define, send */}
+      {tableReader && (
+        <div
+          style={{
+            position: "fixed",
+            top: headerH,
+            right: 0,
+            bottom: 0,
+            width: "min(500px, 94vw)",
+            zIndex: 60,
+            display: "flex",
+            flexDirection: "column",
+            background: "var(--panel)",
+            borderLeft: "1px solid var(--border)",
+            boxShadow: "-18px 0 40px -28px rgba(0,0,0,.35)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 14px",
+              borderBottom: "1px solid var(--border)",
+              flex: "0 0 auto",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text)" }}>
+                Reader
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                Marks go to{" "}
+                {tableReader.bookId === "master"
+                  ? "Master Book"
+                  : getBook(tableReader.bookId).name || "session"}{" "}
+                · Send verses drops them in Selected
+              </div>
+            </div>
+            <button
+              onClick={() => setTableReader(null)}
+              aria-label="Close reader"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--panel)",
+                color: "var(--muted)",
+                cursor: "pointer",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            <VerseViewer
+              selectedVolume={trLoc.v}
+              selectedBook={trLoc.b}
+              selectedChapter={trLoc.c}
+              onChange={(v, b, c) => setTrLoc({ v, b, c })}
+              selectedTool={selectedTool}
+              selectedColor={selectedColor}
+              onChangeTool={setSelectedTool}
+              onChangeColor={setSelectedColor}
+              onMark={(reference, verseText, markedText, startIndex, endIndex, style, color) =>
+                addMarksToBook(tableReader.bookId, [
+                  { reference, verseText, markedText, startIndex, endIndex, style, color },
+                ])
+              }
+              onMarkMany={(items) => addMarksToBook(tableReader.bookId, items)}
+              onEraseMark={(id) => deleteMarkInBook(tableReader.bookId, id)}
+              onDefine={handleDefine}
+              tags={wordTags}
+              onTagTap={openTagRef}
+              marks={getBook(tableReader.bookId).marks}
+              showToolbar
+              panelMode
+              toolbarPos={toolbarPos}
+              onToolbarPos={setToolbarPos}
+              toolbarOrient={toolbarOrient}
+              onToolbarOrient={setToolbarOrient}
+              jumpTarget={trJump}
+              onJumpHandled={() => setTrJump(null)}
+              onSendVerses={sendReaderVersesToTable}
+            />
+          </div>
+        </div>
       )}
 
       {markPanel &&
