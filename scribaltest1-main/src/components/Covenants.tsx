@@ -38,6 +38,11 @@ interface CovenantsProps {
   // setter to persist a change — so the lens you chose is what you reopen to.
   savedLens?: string;
   onLens?: (lens: string) => void;
+  // User-declared verse pairs, per lens: "this half connects to that half",
+  // across any distance — verses, chapters, books. The system never invents a
+  // thread; it only renders the ones the user tied.
+  savedThreads?: Record<string, { a: string; b: string }[]>;
+  onThreads?: (t: Record<string, { a: string; b: string }[]>) => void;
 }
 
 type Lens = "covenant" | "contrast" | "type" | "question";
@@ -331,6 +336,27 @@ export default function Covenants(props: CovenantsProps) {
     side: "left" | "right";
     frags: Frag[];
   };
+  // Threads for THIS lens, plus the arming state for connecting two halves:
+  // tap Thread on one half, then tap a half on the other side.
+  const allThreads = props.savedThreads || {};
+  const threads = allThreads[lens] || [];
+  const [threadArm, setThreadArm] = useState<{
+    side: "left" | "right";
+    reference: string;
+  } | null>(null);
+  const addThread = (leftRef: string, rightRef: string) => {
+    props.onThreads?.({
+      ...allThreads,
+      [lens]: [...threads, { a: leftRef, b: rightRef }],
+    });
+    setThreadArm(null);
+  };
+  const removeThread = (i: number) => {
+    props.onThreads?.({
+      ...allThreads,
+      [lens]: threads.filter((_, k) => k !== i),
+    });
+  };
   const rows: Row[] = [];
   const half: Half[] = [];
   if (!sameColor) {
@@ -345,6 +371,26 @@ export default function Covenants(props: CovenantsProps) {
         half.push({ reference: e.reference, side: "right", frags: rf });
     });
   }
+
+  // Render-ready threads: fragments come from the live marks, so a thread
+  // whose marking was erased simply drops out (and returns if re-marked).
+  const textByRef = new Map<string, string>();
+  entries.forEach((e) => textByRef.set(e.reference, e.text));
+  type ThreadRow = {
+    idx: number;
+    aRef: string;
+    bRef: string;
+    left: Frag[];
+    right: Frag[];
+  };
+  const threadRows: ThreadRow[] = [];
+  if (!sameColor)
+    threads.forEach((t, idx) => {
+      const left = fragmentsForRole(t.a, textByRef.get(t.a) || "", a);
+      const right = fragmentsForRole(t.b, textByRef.get(t.b) || "", b);
+      if (left.length && right.length)
+        threadRows.push({ idx, aRef: t.a, bRef: t.b, left, right });
+    });
 
   const renderFrags = (frags: Frag[]) =>
     frags.map((f, i) => (
@@ -764,6 +810,112 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
+      {threadRows.length > 0 && (
+        <div style={{ marginTop: "26px" }}>
+          <div
+            style={{
+              fontSize: "11px",
+              letterSpacing: "1.5px",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              fontWeight: 700,
+              marginBottom: "10px",
+            }}
+          >
+            Threaded — connected by you
+          </div>
+          {threadRows.map((tr) => (
+            <div
+              key={"thread_" + tr.idx}
+              data-vref={tr.aRef}
+              style={{
+                display: "flex",
+                gap: "12px",
+                alignItems: "stretch",
+                marginBottom: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              {card(tr.left, a)}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "22px",
+                  color: "var(--muted)",
+                  fontSize: "18px",
+                }}
+              >
+                {cfg.connector}
+              </div>
+              {card(tr.right, b)}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  gap: "2px",
+                  alignSelf: "center",
+                }}
+              >
+                <button
+                  onClick={() => onJumpToReference(tr.aRef)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--muted)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted",
+                    padding: "2px 0",
+                    fontFamily: "inherit",
+                    textAlign: "left",
+                  }}
+                >
+                  {tr.aRef}
+                </button>
+                <button
+                  onClick={() => onJumpToReference(tr.bRef)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--muted)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted",
+                    padding: "2px 0",
+                    fontFamily: "inherit",
+                    textAlign: "left",
+                  }}
+                >
+                  {tr.bRef}
+                </button>
+                <button
+                  onClick={() => removeThread(tr.idx)}
+                  aria-label="Unthread this pair"
+                  title="Unthread — the halves return to the waiting list"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--muted)",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    padding: "6px 0 2px",
+                    fontFamily: "inherit",
+                    textAlign: "left",
+                  }}
+                >
+                  ✕ unthread
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {half.length > 0 && (
         <div style={{ marginTop: "26px" }}>
           <div
@@ -788,6 +940,20 @@ export default function Covenants(props: CovenantsProps) {
                 alignItems: "baseline",
                 marginBottom: "7px",
                 fontSize: "13.5px",
+                borderRadius: "10px",
+                outline:
+                  threadArm && threadArm.reference === h.reference
+                    ? "2px solid var(--text)"
+                    : threadArm && threadArm.side !== h.side
+                    ? "2px dashed var(--border)"
+                    : undefined,
+                outlineOffset: threadArm ? 4 : undefined,
+                opacity:
+                  threadArm &&
+                  threadArm.side === h.side &&
+                  threadArm.reference !== h.reference
+                    ? 0.4
+                    : 1,
               }}
             >
               <button
@@ -825,6 +991,59 @@ export default function Covenants(props: CovenantsProps) {
                   — needs the {h.side === "left" ? cfg.rightHeader : cfg.leftHeader}
                 </span>
               </span>
+              <button
+                onClick={() => {
+                  if (!props.onThreads) return;
+                  if (!threadArm) {
+                    setThreadArm({ side: h.side, reference: h.reference });
+                    return;
+                  }
+                  if (threadArm.reference === h.reference) {
+                    setThreadArm(null);
+                    return;
+                  }
+                  if (threadArm.side === h.side) {
+                    // Same side — switch the armed half instead.
+                    setThreadArm({ side: h.side, reference: h.reference });
+                    return;
+                  }
+                  const leftRef =
+                    h.side === "right" ? threadArm.reference : h.reference;
+                  const rightRef =
+                    h.side === "right" ? h.reference : threadArm.reference;
+                  addThread(leftRef, rightRef);
+                }}
+                style={{
+                  marginLeft: "auto",
+                  flexShrink: 0,
+                  minHeight: "36px",
+                  padding: "6px 13px",
+                  borderRadius: "999px",
+                  border:
+                    threadArm && threadArm.reference === h.reference
+                      ? "1px solid var(--text)"
+                      : "1px solid var(--border)",
+                  background:
+                    threadArm && threadArm.side !== h.side
+                      ? "var(--text)"
+                      : "transparent",
+                  color:
+                    threadArm && threadArm.side !== h.side
+                      ? "var(--panel)"
+                      : "var(--muted)",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  alignSelf: "center",
+                }}
+              >
+                {threadArm && threadArm.reference === h.reference
+                  ? "Cancel"
+                  : threadArm && threadArm.side !== h.side
+                  ? "Connect"
+                  : "Thread"}
+              </button>
             </div>
           ))}
         </div>
