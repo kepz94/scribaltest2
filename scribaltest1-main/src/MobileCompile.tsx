@@ -1803,9 +1803,17 @@ export default function MobileCompile({
                                           : "Pin to top — this verse leads the theme"
                                       }
                                       style={{
+                                        // A real thumb target, pushed to the
+                                        // far end of the row so it can never
+                                        // be confused with the jump link.
+                                        marginLeft: "auto",
+                                        width: "40px",
+                                        height: "40px",
+                                        margin: "-10px -8px -10px auto",
+                                        display: "grid",
+                                        placeItems: "center",
                                         background: "transparent",
                                         border: "none",
-                                        padding: "2px 4px",
                                         cursor: "pointer",
                                         color: pinsFor(c).includes(ve.reference)
                                           ? COLOR_MAP[c as MarkColor]
@@ -1815,8 +1823,8 @@ export default function MobileCompile({
                                       }}
                                     >
                                       <svg
-                                        width="13"
-                                        height="13"
+                                        width="18"
+                                        height="18"
                                         viewBox="0 0 24 24"
                                         fill={
                                           pinsFor(c).includes(ve.reference)
