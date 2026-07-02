@@ -1,5 +1,5 @@
 import { useState, useRef, useLayoutEffect, CSSProperties } from "react";
-import scriptures from "./data/scriptures.json";
+import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
@@ -80,7 +80,7 @@ let _verseIndex: Map<string, { text: string; verse: number }> | null = null;
 function verseIndex(): Map<string, { text: string; verse: number }> {
   if (_verseIndex) return _verseIndex;
   const m = new Map<string, { text: string; verse: number }>();
-  (scriptures as any).volumes.forEach((vol: any) =>
+  getScriptures().volumes.forEach((vol: any) =>
     vol.books.forEach((bk: any) =>
       bk.chapters.forEach((ch: any) =>
         ch.verses.forEach((v: any) =>
@@ -99,7 +99,7 @@ let _locIndex: Map<string, { v: number; b: number; c: number }> | null = null;
 function locIndex(): Map<string, { v: number; b: number; c: number }> {
   if (_locIndex) return _locIndex;
   const m = new Map<string, { v: number; b: number; c: number }>();
-  (scriptures as any).volumes.forEach((vol: any, vi: number) =>
+  getScriptures().volumes.forEach((vol: any, vi: number) =>
     vol.books.forEach((bk: any, bi: number) =>
       bk.chapters.forEach((ch: any, ci: number) =>
         ch.verses.forEach((v: any) =>
