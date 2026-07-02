@@ -1415,6 +1415,8 @@ export default function MobileApp() {
   const [sendMode, setSendMode] = useState(false);
   const [sendSel, setSendSel] = useState<Set<string>>(new Set());
   const [sendRefs, setSendRefs] = useState<string[] | null>(null);
+  // Send → "Set aside in a study table": the table picker step.
+  const [sendTablePicking, setSendTablePicking] = useState(false);
   const [sendPicking, setSendPicking] = useState(false);
   useEffect(() => {
     setSendMode(false);
@@ -7828,6 +7830,24 @@ export default function MobileApp() {
                   Add to an existing study
                 </button>
                 <button
+                  onClick={() => setSendTablePicking(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #16a34a",
+                    background: "transparent",
+                    color: "#16a34a",
+                    fontSize: "14px",
+                    fontWeight: 650,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Set aside in a study table
+                </button>
+                <button
                   onClick={() => {
                     setSendRefs(null);
                     setSendPicking(false);
@@ -9568,6 +9588,115 @@ export default function MobileApp() {
           );
         })()}
 
+      {/* Send → table: pick which table's Selected the verses land in */}
+      {sendTablePicking && sendRefs && (
+        <div
+          onClick={() => setSendTablePicking(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 460,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxHeight: "70vh",
+              overflowY: "auto",
+              background: C.panel,
+              color: C.text,
+              borderRadius: "16px 16px 0 0",
+              padding:
+                "16px 16px calc(16px + env(safe-area-inset-bottom))",
+            }}
+          >
+            <div style={{ fontSize: "15px", fontWeight: 700, marginBottom: "4px" }}>
+              Set aside in…
+            </div>
+            <div style={{ fontSize: "12.5px", color: C.muted, marginBottom: "12px" }}>
+              {sendRefs.length === 1 ? "1 verse lands" : sendRefs.length + " verses land"} in the table's Selected list.
+            </div>
+            {studyTables.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  const cards = sendRefs.map((r) => ({
+                    id: newCardId(),
+                    kind: "scripture" as const,
+                    refs: [r],
+                    bookId: activeBookId,
+                  }));
+                  updateStudyTable(t.id, {
+                    shelf: [...(t.shelf || []), ...cards],
+                  });
+                  setSendTablePicking(false);
+                  setSendRefs(null);
+                  setSendPicking(false);
+                  setSendMode(false);
+                  flash("Set aside in " + (t.name || "table"));
+                }}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "12px 13px",
+                  borderRadius: "10px",
+                  border: "1px solid " + C.border,
+                  background: C.panel,
+                  color: C.text,
+                  marginBottom: "8px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                <div style={{ fontSize: "14px", fontWeight: 650 }}>
+                  {t.name || "Untitled table"}
+                </div>
+                <div style={{ fontSize: "12px", color: C.muted, marginTop: "2px" }}>
+                  {(t.shelf || []).length
+                    ? (t.shelf || []).length + " set aside"
+                    : t.cards.length + " cards"}
+                </div>
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                const id = createStudyTable("Untitled", undefined, activeBookId);
+                const cards = sendRefs.map((r) => ({
+                  id: newCardId(),
+                  kind: "scripture" as const,
+                  refs: [r],
+                  bookId: activeBookId,
+                }));
+                updateStudyTable(id, { shelf: cards });
+                setSendTablePicking(false);
+                setSendRefs(null);
+                setSendPicking(false);
+                setSendMode(false);
+                flash("New table created");
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 13px",
+                borderRadius: "10px",
+                border: "1.5px dashed " + C.border,
+                background: "transparent",
+                color: "#16a34a",
+                fontSize: "14px",
+                fontWeight: 650,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              + New study table
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Study tables home: the menu entry — learn it, open the example,
           open or create a table */}
       {tablesHomeOpen && (
@@ -9892,6 +10021,8 @@ export default function MobileApp() {
               getBook={getBook}
               books={books}
               chapterGroups={chapterGroups}
+              wordTags={wordTags}
+              onTagTap={openTagRef}
             />
           );
         })()}
@@ -9916,6 +10047,8 @@ export default function MobileApp() {
                     verseNumber={rec.verse}
                     text={rec.text}
                     marks={bookId ? getBook(bookId).marks : []}
+                    tags={wordTags}
+                    onTagTap={openTagRef}
                   />
                 );
               }}
