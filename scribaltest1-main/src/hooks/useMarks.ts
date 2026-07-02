@@ -26,6 +26,9 @@ interface StudyBook {
       at: number;
       roles: Record<string, { a: number; b: number }>;
       lens?: string;
+      // Outline lead verses: per color, the refs the user pinned to the top of
+      // that theme (in pin order). Rides the same per-scope LWW sync.
+      pins?: Record<string, string[]>;
     }
   >;
   createdAt: number;
@@ -126,6 +129,7 @@ type Action =
       roles: Record<string, { a: number; b: number }>;
     }
   | { type: "setScopedLens"; scope: string; lens: string }
+  | { type: "setScopedPins"; scope: string; pins: Record<string, string[]> }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
@@ -1132,6 +1136,7 @@ function reducer(state: State, action: Action): State {
                 at: Date.now(),
                 roles: action.roles,
                 lens: cur[action.scope]?.lens,
+                pins: cur[action.scope]?.pins,
               },
             },
           },
@@ -1152,6 +1157,28 @@ function reducer(state: State, action: Action): State {
                 at: Date.now(),
                 roles: cur[action.scope]?.roles || {},
                 lens: action.lens,
+                pins: cur[action.scope]?.pins,
+              },
+            },
+          },
+        },
+      };
+    }
+    case "setScopedPins": {
+      const cur = active.scopedRoles || {};
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [state.activeId]: {
+            ...active,
+            scopedRoles: {
+              ...cur,
+              [action.scope]: {
+                at: Date.now(),
+                roles: cur[action.scope]?.roles || {},
+                lens: cur[action.scope]?.lens,
+                pins: action.pins,
               },
             },
           },
@@ -1318,6 +1345,11 @@ export function useMarks() {
       dispatch({ type: "setScopedRoles", scope, roles }),
     []
   );
+  const setScopedPins = useCallback(
+    (scope: string, pins: Record<string, string[]>) =>
+      dispatch({ type: "setScopedPins", scope, pins }),
+    []
+  );
   const setScopedLens = useCallback(
     (scope: string, lens: string) =>
       dispatch({ type: "setScopedLens", scope, lens }),
@@ -1429,6 +1461,7 @@ export function useMarks() {
     seedScopeLabels,
     setScopedRoles,
     setScopedLens,
+    setScopedPins,
     scopedLabels: active.scopedLabels || {},
     scopedRoles: (() => {
       const src = active.scopedRoles || {};
@@ -1443,6 +1476,14 @@ export function useMarks() {
       const out: Record<string, string> = {};
       Object.keys(src).forEach((k) => {
         if (src[k].lens) out[k] = src[k].lens as string;
+      });
+      return out;
+    })(),
+    scopedPins: (() => {
+      const src = active.scopedRoles || {};
+      const out: Record<string, Record<string, string[]>> = {};
+      Object.keys(src).forEach((k) => {
+        if (src[k].pins) out[k] = src[k].pins as Record<string, string[]>;
       });
       return out;
     })(),
