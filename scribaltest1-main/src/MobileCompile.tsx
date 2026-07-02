@@ -45,8 +45,8 @@ interface Props {
   savedPins?: Record<string, string[]>;
   onPins?: (pins: Record<string, string[]>) => void;
   // Relational threads: user-declared verse pairs, per lens (see Covenants).
-  relSavedThreads?: Record<string, { a: string; b: string }[]>;
-  onRelThreads?: (t: Record<string, { a: string; b: string }[]>) => void;
+  relSavedThreads?: Record<string, { a: string | string[]; b: string | string[] }[]>;
+  onRelThreads?: (t: Record<string, { a: string | string[]; b: string | string[] }[]>) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
