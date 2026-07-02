@@ -356,6 +356,39 @@ export default function Covenants(props: CovenantsProps) {
         ? p[side].filter((r) => r !== reference)
         : [...p[side], reference],
     }));
+  // The web's geometry: each card's box, measured relative to the web
+  // container, so the SVG can draw the thread curves. Re-measured whenever the
+  // data or viewport changes.
+  const webRef = useRef<HTMLDivElement | null>(null);
+  const cardEls = useRef(new Map<string, HTMLElement>());
+  const [webPos, setWebPos] = useState<
+    Record<string, { x: number; y: number; w: number; h: number }>
+  >({});
+  const webSig =
+    lens + "|" + a + "|" + b + "|" + threads.length + "|" +
+    marks.length + "|" + compileTabs.length;
+  useEffect(() => {
+    const measure = () => {
+      const host = webRef.current;
+      if (!host) return;
+      const hostRect = host.getBoundingClientRect();
+      const next: Record<string, { x: number; y: number; w: number; h: number }> = {};
+      cardEls.current.forEach((el, k) => {
+        const r = el.getBoundingClientRect();
+        next[k] = {
+          x: r.left - hostRect.left,
+          y: r.top - hostRect.top,
+          w: r.width,
+          h: r.height,
+        };
+      });
+      setWebPos(next);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [webSig]);
+
   const addThread = (leftRefs: string[], rightRefs: string[]) => {
     props.onThreads?.({
       ...allThreads,
@@ -423,12 +456,7 @@ export default function Covenants(props: CovenantsProps) {
       if (left.length && right.length)
         threadRows.push({ idx, aRefs, bRefs, left, right });
     });
-  // The waiting list: only halves NOT already inside a thread.
-  const half: Half[] = halfAll.filter((h) =>
-    h.side === "left"
-      ? !threadedLeft.has(h.reference)
-      : !threadedRight.has(h.reference)
-  );
+
 
   const renderFrags = (frags: Frag[]) =>
     frags.map((f, i) => (
@@ -747,7 +775,7 @@ export default function Covenants(props: CovenantsProps) {
         </p>
       )}
 
-      {compileTabs.length > 0 && !sameColor && rows.length === 0 && half.length === 0 && (
+      {compileTabs.length > 0 && !sameColor && rows.length === 0 && halfAll.length === 0 && (
         <div
           style={{
             textAlign: "center",
@@ -848,7 +876,11 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {threadRows.length > 0 && (
+      {/* THE WEB — the two roles as facing columns, threads drawn as real
+          curves converging at a tappable junction. Loose halves are dashed
+          cards; tap one on each side and Create thread ties them. The system
+          draws only what the user connected. */}
+      {(halfAll.length > 0 || threadRows.length > 0) && (
         <div style={{ marginTop: "26px" }}>
           <div
             style={{
@@ -857,89 +889,224 @@ export default function Covenants(props: CovenantsProps) {
               textTransform: "uppercase",
               color: "var(--muted)",
               fontWeight: 700,
-              marginBottom: "10px",
+              marginBottom: "4px",
             }}
           >
-            Threaded — connected by you
+            The web
           </div>
-          {threadRows.map((tr) => (
-            <div
-              key={"thread_" + tr.idx}
-              data-vref={tr.aRefs[0]}
-              style={{
-                display: "flex",
-                gap: "12px",
-                alignItems: "stretch",
-                marginBottom: "10px",
-                flexWrap: "wrap",
-              }}
-            >
-              {card(tr.left, a)}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "22px",
-                  color: "var(--muted)",
-                  fontSize: "18px",
-                }}
-              >
-                {cfg.connector}
-              </div>
-              {card(tr.right, b)}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  gap: "2px",
-                  alignSelf: "center",
-                }}
-              >
-                {[...tr.aRefs, ...tr.bRefs].map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => onJumpToReference(r)}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      color: "var(--muted)",
-                      fontSize: "11px",
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                      textDecorationStyle: "dotted",
-                      padding: "2px 0",
-                      fontFamily: "inherit",
-                      textAlign: "left",
-                    }}
-                  >
-                    {r}
-                  </button>
-                ))}
-                <button
-                  onClick={() => removeThread(tr.idx)}
-                  aria-label="Unthread this pair"
-                  title="Unthread — the halves return to the waiting list"
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--muted)",
+              marginBottom: "12px",
+            }}
+          >
+            Tap a card on each side, then Create thread. Tap a thread's knot to
+            untie it.
+          </div>
+          <div ref={webRef} style={{ position: "relative" }}>
+            <div style={{ display: "flex", gap: "56px", alignItems: "flex-start" }}>
+              {(["left", "right"] as const).map((side) => (
+                <div
+                  key={side}
                   style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--muted)",
-                    fontSize: "12px",
-                    cursor: "pointer",
-                    padding: "6px 0 2px",
-                    fontFamily: "inherit",
-                    textAlign: "left",
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
                   }}
                 >
-                  ✕ unthread
-                </button>
-              </div>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: COLOR_MAP[(side === "left" ? a : b) as MarkColor],
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {side === "left" ? cfg.leftHeader : cfg.rightHeader}
+                  </div>
+                  {halfAll
+                    .filter((h) => h.side === side)
+                    .map((h) => {
+                      const threaded =
+                        side === "left"
+                          ? threadedLeft.has(h.reference)
+                          : threadedRight.has(h.reference);
+                      const selected = threadSel[side].includes(h.reference);
+                      const color = COLOR_MAP[
+                        (side === "left" ? a : b) as MarkColor
+                      ];
+                      return (
+                        <div
+                          key={h.reference}
+                          ref={(el) => {
+                            const k = (side === "left" ? "L|" : "R|") + h.reference;
+                            if (el) cardEls.current.set(k, el);
+                            else cardEls.current.delete(k);
+                          }}
+                          onClick={() => {
+                            if (threaded || !props.onThreads) return;
+                            toggleThreadSel(side, h.reference);
+                          }}
+                          role="button"
+                          title={
+                            threaded
+                              ? "In a thread — tap its knot to untie"
+                              : selected
+                              ? "Tap to deselect"
+                              : "Tap to select for a thread"
+                          }
+                          style={{
+                            borderLeft:
+                              side === "left"
+                                ? "3px solid " + color
+                                : "1px " +
+                                  (threaded ? "solid" : "dashed") +
+                                  " var(--border)",
+                            borderRight:
+                              side === "right"
+                                ? "3px solid " + color
+                                : "1px " +
+                                  (threaded ? "solid" : "dashed") +
+                                  " var(--border)",
+                            borderTop:
+                              "1px " +
+                              (threaded ? "solid" : "dashed") +
+                              " var(--border)",
+                            borderBottom:
+                              "1px " +
+                              (threaded ? "solid" : "dashed") +
+                              " var(--border)",
+                            outline: selected
+                              ? "2px solid var(--text)"
+                              : undefined,
+                            outlineOffset: selected ? 2 : undefined,
+                            borderRadius: "12px",
+                            background: "var(--panel)",
+                            padding: "10px 11px",
+                            cursor: threaded ? "default" : "pointer",
+                          }}
+                        >
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onJumpToReference(h.reference);
+                            }}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              padding: 0,
+                              marginBottom: "5px",
+                              color: "var(--muted)",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              textDecoration: "underline",
+                              textDecorationStyle: "dotted",
+                              fontFamily: "inherit",
+                              display: "block",
+                            }}
+                          >
+                            {h.reference}
+                          </button>
+                          <div
+                            style={{
+                              fontFamily: '"Times New Roman", Times, serif',
+                              fontSize: "13.5px",
+                              lineHeight: 1.5,
+                              color: "var(--text)",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 4,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {renderFrags(h.frags)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ))}
             </div>
-          ))}
+            {/* the threads: curves from each member to a shared knot */}
+            <svg
+              width="100%"
+              height="100%"
+              style={{
+                position: "absolute",
+                inset: 0,
+                overflow: "visible",
+                pointerEvents: "none",
+              }}
+            >
+              {threadRows.map((tr) => {
+                const pts: { x: number; y: number; from: "L" | "R" }[] = [];
+                tr.aRefs.forEach((r) => {
+                  const pos = webPos["L|" + r];
+                  if (pos)
+                    pts.push({ x: pos.x + pos.w, y: pos.y + pos.h / 2, from: "L" });
+                });
+                tr.bRefs.forEach((r) => {
+                  const pos = webPos["R|" + r];
+                  if (pos) pts.push({ x: pos.x, y: pos.y + pos.h / 2, from: "R" });
+                });
+                if (pts.length < 2) return null;
+                const jx = pts.reduce((sum, p2) => sum + p2.x, 0) / pts.length;
+                const jy = pts.reduce((sum, p2) => sum + p2.y, 0) / pts.length;
+                return (
+                  <g key={"web_" + tr.idx}>
+                    {pts.map((p2, k) => (
+                      <path
+                        key={k}
+                        d={
+                          "M " + p2.x + " " + p2.y +
+                          " C " + (p2.from === "L" ? p2.x + 26 : p2.x - 26) +
+                          " " + p2.y + ", " +
+                          (p2.from === "L" ? jx - 26 : jx + 26) + " " + jy +
+                          ", " + jx + " " + jy
+                        }
+                        fill="none"
+                        stroke="var(--muted)"
+                        strokeWidth={1.6}
+                        opacity={0.65}
+                      />
+                    ))}
+                    <circle
+                      cx={jx}
+                      cy={jy}
+                      r={10}
+                      fill="var(--panel)"
+                      stroke="var(--text)"
+                      strokeWidth={1.6}
+                      style={{ pointerEvents: "all", cursor: "pointer" }}
+                      onClick={() => removeThread(tr.idx)}
+                    >
+                      <title>Untie this thread</title>
+                    </circle>
+                    <path
+                      d={
+                        "M " + (jx - 3.4) + " " + (jy - 3.4) +
+                        " L " + (jx + 3.4) + " " + (jy + 3.4) +
+                        " M " + (jx + 3.4) + " " + (jy - 3.4) +
+                        " L " + (jx - 3.4) + " " + (jy + 3.4)
+                      }
+                      stroke="var(--muted)"
+                      strokeWidth={1.4}
+                      style={{ pointerEvents: "none" }}
+                    />
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
         </div>
       )}
 
+      {/* floating create-thread bar */}
       {threadSel.left.length + threadSel.right.length > 0 && (
         <div
           style={{
@@ -1009,112 +1176,6 @@ export default function Covenants(props: CovenantsProps) {
         </div>
       )}
 
-      {half.length > 0 && (
-        <div style={{ marginTop: "26px" }}>
-          <div
-            style={{
-              fontSize: "11px",
-              letterSpacing: "1.5px",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-              fontWeight: 700,
-              marginBottom: "10px",
-            }}
-          >
-            Half-marked — add the other side
-          </div>
-          {half.map((h, i) => (
-            <div
-              key={h.reference + "_" + i}
-              data-vref={h.reference}
-              style={{
-                display: "flex",
-                gap: "10px",
-                alignItems: "baseline",
-                marginBottom: "7px",
-                fontSize: "13.5px",
-                borderRadius: "10px",
-                outline: threadSel[h.side].includes(h.reference)
-                  ? "2px solid var(--text)"
-                  : threadSel.left.length + threadSel.right.length > 0
-                  ? "2px dashed var(--border)"
-                  : undefined,
-                outlineOffset:
-                  threadSel.left.length + threadSel.right.length > 0
-                    ? 4
-                    : undefined,
-              }}
-            >
-              <button
-                onClick={() => onJumpToReference(h.reference)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  padding: 0,
-                  fontSize: "13.5px",
-                  fontFamily: "inherit",
-                }}
-              >
-                {h.reference}
-              </button>
-              <span
-                style={{
-                  fontFamily: '"Times New Roman", Times, serif',
-                  color: "var(--text)",
-                }}
-              >
-                {renderFrags(h.frags)}{" "}
-                <span
-                  style={{
-                    fontFamily: "system-ui, sans-serif",
-                    color: "var(--muted)",
-                    fontSize: "12px",
-                  }}
-                >
-                  — needs the {h.side === "left" ? cfg.rightHeader : cfg.leftHeader}
-                </span>
-              </span>
-              <button
-                onClick={() => {
-                  if (!props.onThreads) return;
-                  toggleThreadSel(h.side, h.reference);
-                }}
-                style={{
-                  marginLeft: "auto",
-                  flexShrink: 0,
-                  minHeight: "36px",
-                  padding: "6px 13px",
-                  borderRadius: "999px",
-                  border: threadSel[h.side].includes(h.reference)
-                    ? "1px solid var(--text)"
-                    : "1px solid var(--border)",
-                  background: threadSel[h.side].includes(h.reference)
-                    ? "var(--text)"
-                    : "transparent",
-                  color: threadSel[h.side].includes(h.reference)
-                    ? "var(--panel)"
-                    : "var(--muted)",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  alignSelf: "center",
-                }}
-              >
-                {threadSel[h.side].includes(h.reference)
-                  ? "✓ Selected"
-                  : "Thread"}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {compileTabs.length > 1 && (
         <div style={{ marginTop: "28px" }}>
