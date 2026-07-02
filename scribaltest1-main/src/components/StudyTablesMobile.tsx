@@ -70,9 +70,6 @@ export default function StudyTablesMobile({
   }, [table.updatedAt]);
   const [panelOpen, setPanelOpen] = useState(!!initialShelfOpen);
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
-  // "+ Verse" on a card: picked verses append to that card (one card, many
-  // verses — they present together).
-  const [panelCardId, setPanelCardId] = useState<string | null>(null);
 
   const scopeOfRef = (ref: string) => {
     const ix = ref.indexOf(":");
@@ -140,21 +137,6 @@ export default function StudyTablesMobile({
   };
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (refs.length === 0) return;
-    if (panelCardId) {
-      const card = table.cards.find((c) => c.id === panelCardId);
-      if (card && card.kind === "scripture") {
-        const merged = [
-          ...(card.refs || []),
-          ...refs.filter((r) => !(card.refs || []).includes(r)),
-        ];
-        updateTable(table.id, {
-          cards: table.cards.map((c) =>
-            c.id === panelCardId ? { ...c, refs: merged } : c
-          ),
-        });
-        return;
-      }
-    }
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const idx = Math.max(
       0,
@@ -203,13 +185,7 @@ export default function StudyTablesMobile({
     setPendingIndex(idx + shelf.length);
   };
   const openPanelAt = (index: number) => {
-    setPanelCardId(null);
     setPendingIndex(index);
-    setPanelOpen(true);
-  };
-  const openPanelForCard = (cardId: string) => {
-    setPendingIndex(null);
-    setPanelCardId(cardId);
     setPanelOpen(true);
   };
 
@@ -358,7 +334,6 @@ export default function StudyTablesMobile({
           accent={accent}
           renderVerse={renderVerse}
           onPickScripture={openPanelAt}
-          onAddToCard={openPanelForCard}
           themesFor={cardThemes}
         />
       </div>
@@ -377,8 +352,7 @@ export default function StudyTablesMobile({
           onClose={() => {
             setPanelOpen(false);
             setPendingIndex(null);
-            setPanelCardId(null);
-          }}
+                  }}
           accent={accent}
           defaultBookId={table.bookId}
           themeLabelFor={(ref, color, bookId) => {
