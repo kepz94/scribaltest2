@@ -491,6 +491,11 @@ export default function Outline(props: OutlineProps) {
                     value={colorLabels[color] || ""}
                     onChange={(e) => setColorLabel(color, e.target.value)}
                     placeholder="Name this theme…"
+                    data-wt={
+                      !(colorLabels[color] || "").trim()
+                        ? "wt-themename"
+                        : undefined
+                    }
                     style={{
                       border: "none",
                       outline: "none",
