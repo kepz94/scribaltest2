@@ -1,5 +1,5 @@
 import { useState } from "react";
-import scriptures from "../data/scriptures.json";
+import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import {
   Mark,
   MarkStyle,
@@ -25,7 +25,7 @@ interface ChartingProps {
 
 type ColMode = "themes" | "styles";
 type RowSort = "book" | "points";
-const vols = scriptures.volumes;
+const vols = volumesProxy;
 
 const STYLE_LIST: { style: MarkStyle; label: string }[] = [
   { style: "bold", label: "Bold" },
