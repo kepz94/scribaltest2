@@ -37,6 +37,9 @@ interface Props {
   // Open with the verse panel on Selected (used right after an import, so the
   // imported themes are waiting on screen).
   initialShelfOpen?: boolean;
+  // Per-card "Mark": jump the mobile reader to this card's verse (in its book)
+  // so its marking can be edited with the full toolbar.
+  onMarkCard?: (card: TableCard) => void;
   accent?: string;
 }
 
@@ -58,6 +61,7 @@ export default function StudyTablesMobile({
   wordTags,
   onTagTap,
   initialShelfOpen,
+  onMarkCard,
   accent = "#8b5cf6",
 }: Props) {
   // Save indicator: edits persist instantly; flash "Saved" when they do.
@@ -334,6 +338,7 @@ export default function StudyTablesMobile({
           accent={accent}
           renderVerse={renderVerse}
           onPickScripture={openPanelAt}
+          onMarkCard={onMarkCard}
           themesFor={cardThemes}
         />
       </div>
