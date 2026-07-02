@@ -162,9 +162,6 @@ export default function StudyTablesDesktop({
   // Flashes "Saving…" → "Saved" whenever the open table's updatedAt moves.
   const [saveFlash, setSaveFlash] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  // "+ Verse" on a card: while set, picked verses APPEND to this card instead
-  // of becoming new cards — several verses on one card, presented together.
-  const [panelCardId, setPanelCardId] = useState<string | null>(null);
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
@@ -283,21 +280,6 @@ export default function StudyTablesDesktop({
   // in order at the insertion point.
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
-    if (panelCardId) {
-      const card = open.cards.find((c) => c.id === panelCardId);
-      if (card && card.kind === "scripture") {
-        const merged = [
-          ...(card.refs || []),
-          ...refs.filter((r) => !(card.refs || []).includes(r)),
-        ];
-        updateTable(open.id, {
-          cards: open.cards.map((c) =>
-            c.id === panelCardId ? { ...c, refs: merged } : c
-          ),
-        });
-        return;
-      }
-    }
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
     updateTable(open.id, {
@@ -345,22 +327,13 @@ export default function StudyTablesDesktop({
 
   // Open the verse panel to add a scripture card at a given gap.
   const openPanelAt = (index: number) => {
-    setPanelCardId(null);
     setPendingIndex(index);
-    setPanelTab("search");
-    setPanelOpen(true);
-  };
-  // "+ Verse" on a card: the panel appends picked verses to that card.
-  const openPanelForCard = (cardId: string) => {
-    setPendingIndex(null);
-    setPanelCardId(cardId);
     setPanelTab("search");
     setPanelOpen(true);
   };
   const closePanel = () => {
     setPanelOpen(false);
     setPendingIndex(null);
-    setPanelCardId(null);
   };
 
   // Gather every scripture verse in this table (placed + shelved) with the book
@@ -972,7 +945,6 @@ export default function StudyTablesDesktop({
               accent={accent}
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
-              onAddToCard={openPanelForCard}
               onMarkCard={onMarkVerses ? markCardVerses : undefined}
               themesFor={cardThemes}
             />
