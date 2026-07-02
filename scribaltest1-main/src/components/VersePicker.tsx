@@ -3,6 +3,7 @@ import { ACCENT } from "../theme";
 import { MarkColor, COLOR_MAP } from "../types";
 import { buildSearchMatcher, SearchMode } from "../searchMatch";
 import { verseList, sortRefs, isConsecutive, passageLabel } from "../data/verseIndex";
+import scripturesData from "../data/scriptures.json";
 import type { TableCard } from "../hooks/useStudyTables";
 import type { ThemeMark } from "./SearchPanel";
 
@@ -84,6 +85,32 @@ function hexToRgba(hex: string, a: number): string {
 // library (matches the app's own indexed search).
 const lowerText: string[] = verseList.map((v) => v.text.toLowerCase());
 
+// Per-verse volume/book indexes, built by walking scriptures.json in the SAME
+// canonical order verseIndex uses — so filtering is a parallel-array check.
+// This also makes the LAST volumes (e.g. the Joseph Smith sermons) reachable:
+// an unfiltered common-word search fills the result cap with earlier volumes
+// before ever getting to them.
+const VOLS: { name: string; books: string[] }[] = [];
+const volOf: number[] = [];
+const bookOf: number[] = [];
+(() => {
+  const vols: any[] = (scripturesData as any).volumes || [];
+  vols.forEach((vol: any, vi: number) => {
+    const bookNames: string[] = [];
+    (vol.books || []).forEach((book: any, bi: number) => {
+      bookNames.push(book.book || "Book " + (bi + 1));
+      (book.chapters || []).forEach((ch: any) => {
+        (ch.verses || []).forEach((v: any) => {
+          if (!v.reference) return;
+          volOf.push(vi);
+          bookOf.push(bi);
+        });
+      });
+    });
+    VOLS.push({ name: vol.volume || "Volume " + (vi + 1), books: bookNames });
+  });
+})();
+
 const RESULT_CAP = 50;
 
 function Ico({ d, size = 15 }: { d: string; size?: number }) {
@@ -130,6 +157,9 @@ export default function VersePicker({
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
+  // Scripture search scope: a volume (or one book inside it). -1 = all.
+  const [volIdx, setVolIdx] = useState(-1);
+  const [bookIdx, setBookIdx] = useState(-1);
   const [sourceBookId, setSourceBookId] = useState<string>(
     defaultBookId || "master"
   );
@@ -195,6 +225,8 @@ export default function VersePicker({
 
     if (source === "scripture") {
       for (let i = 0; i < verseList.length; i++) {
+        if (volIdx !== -1 && volOf[i] !== volIdx) continue;
+        if (bookIdx !== -1 && bookOf[i] !== bookIdx) continue;
         if (test(lowerText[i])) {
           total++;
           if (rows.length < RESULT_CAP) rows.push(verseList[i].reference);
@@ -226,7 +258,7 @@ export default function VersePicker({
       }
     }
     return { rows: sortRefs(rows), total };
-  }, [query, mode, source, sourceBookId, allMarks]);
+  }, [query, mode, source, sourceBookId, allMarks, volIdx, bookIdx]);
 
   const toggle = (ref: string) =>
     setSelected((prev) =>
@@ -753,6 +785,64 @@ export default function VersePicker({
               ? Legend
             </button>
           </div>
+              {source === "scripture" && (
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  <select
+                    value={volIdx}
+                    aria-label="Filter by volume"
+                    onChange={(e) => {
+                      setVolIdx(parseInt(e.target.value, 10));
+                      setBookIdx(-1);
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontFamily: SANS,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: volIdx === -1 ? "var(--muted)" : "var(--text)",
+                      background: "var(--soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      padding: "6px 8px",
+                    }}
+                  >
+                    <option value={-1}>All volumes</option>
+                    {VOLS.map((v, i) => (
+                      <option key={i} value={i}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={bookIdx}
+                    aria-label="Filter by book"
+                    disabled={volIdx === -1}
+                    onChange={(e) => setBookIdx(parseInt(e.target.value, 10))}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontFamily: SANS,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: bookIdx === -1 ? "var(--muted)" : "var(--text)",
+                      background: "var(--soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      padding: "6px 8px",
+                      opacity: volIdx === -1 ? 0.5 : 1,
+                    }}
+                  >
+                    <option value={-1}>All books</option>
+                    {volIdx !== -1 &&
+                      VOLS[volIdx].books.map((b, i) => (
+                        <option key={i} value={i}>
+                          {b}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
           {/* legend */}
           {showLegend && (
