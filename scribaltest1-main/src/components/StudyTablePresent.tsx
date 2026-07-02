@@ -302,8 +302,8 @@ export default function StudyTablePresent({
   const renderBeat = () => {
     if (beat.kind === "section") {
       return (
-        <div style={{ textAlign: "center", padding: "36px 0" }}>
-          <div style={{ ...kicker, color: P.faint, marginBottom: 18 }}>
+        <div style={{ padding: "26px 0" }}>
+          <div style={{ ...kicker, color: P.faint, marginBottom: 14 }}>
             Section {beat.n}
           </div>
           <div
@@ -317,7 +317,17 @@ export default function StudyTablePresent({
           >
             {beat.title}
           </div>
-          <Ornament color={accent} />
+          <div
+            aria-hidden
+            style={{
+              width: 72,
+              height: 3,
+              borderRadius: 2,
+              background: accent,
+              opacity: 0.75,
+              marginTop: 16,
+            }}
+          />
         </div>
       );
     }
@@ -376,11 +386,10 @@ export default function StudyTablePresent({
     // payload, so it isn't even present on this device.
     if (following && c.kind === "note") {
       return (
-        <div style={{ textAlign: "center", padding: "40px 0" }}>
+        <div style={{ padding: "34px 0" }}>
           <div style={{ ...kicker, color: P.faint }}>
             The presenter is checking a note
           </div>
-          <Ornament color={accent} />
         </div>
       );
     }
@@ -392,15 +401,14 @@ export default function StudyTablePresent({
       const label =
         c.kind === "question" ? "A question is waiting" : "A note to self";
       return (
-        <div style={{ textAlign: "center", padding: "40px 0" }}>
+        <div style={{ padding: "34px 0" }}>
           <div style={{ ...kicker, color: accent }}>{label}</div>
-          <Ornament color={accent} />
           <div
             style={{
               fontFamily: SANS,
               fontSize: 13,
               color: P.faint,
-              marginTop: 22,
+              marginTop: 14,
             }}
           >
             {following ? "Waiting for the presenter" : "Tap to reveal"}
@@ -503,8 +511,8 @@ export default function StudyTablePresent({
 
     if (c.kind === "question") {
       return (
-        <div style={{ textAlign: "center", padding: "14px 0" }}>
-          <div style={{ ...kicker, color: accent, marginBottom: 16 }}>
+        <div style={{ padding: "14px 0" }}>
+          <div style={{ ...kicker, color: accent, marginBottom: 14 }}>
             {c.qtype ? c.qtype + " · question" : "Question"}
           </div>
           <div
@@ -518,27 +526,24 @@ export default function StudyTablePresent({
           >
             {c.text}
           </div>
-          <Ornament color={accent} />
+          <div
+            aria-hidden
+            style={{
+              width: 54,
+              height: 3,
+              borderRadius: 2,
+              background: accent,
+              opacity: 0.6,
+              marginTop: 16,
+            }}
+          />
         </div>
       );
     }
 
     if (c.kind === "quote") {
       return (
-        <div style={{ textAlign: "center", padding: "14px 0" }}>
-          <div
-            aria-hidden
-            style={{
-              fontFamily: SERIF,
-              fontSize: 56,
-              lineHeight: 0.6,
-              color: accent,
-              opacity: 0.4,
-              marginBottom: 16,
-            }}
-          >
-            “
-          </div>
+        <div style={{ padding: "14px 0" }}>
           <div
             style={{
               fontFamily: SERIF,
@@ -549,6 +554,20 @@ export default function StudyTablePresent({
               whiteSpace: "pre-wrap",
             }}
           >
+            <span
+              aria-hidden
+              style={{
+                fontStyle: "normal",
+                fontSize: "1.6em",
+                lineHeight: 0,
+                verticalAlign: "-0.28em",
+                color: accent,
+                opacity: 0.55,
+                marginRight: 6,
+              }}
+            >
+              “
+            </span>
             {(c.text || "").trim()}
           </div>
           {c.attribution && (
@@ -558,7 +577,7 @@ export default function StudyTablePresent({
                 fontSize: 13,
                 letterSpacing: ".04em",
                 color: P.muted,
-                marginTop: 16,
+                marginTop: 14,
               }}
             >
               — {c.attribution}
@@ -570,8 +589,8 @@ export default function StudyTablePresent({
 
     if (c.kind === "note") {
       return (
-        <div style={{ textAlign: "center", padding: "14px 0" }}>
-          <div style={{ ...kicker, color: P.faint, marginBottom: 14 }}>
+        <div style={{ padding: "14px 0" }}>
+          <div style={{ ...kicker, color: P.faint, marginBottom: 12 }}>
             Note to self · only you see this
           </div>
           <div
@@ -595,7 +614,7 @@ export default function StudyTablePresent({
     if (!vid) return null;
     return (
       <div onClick={(e) => e.stopPropagation()}>
-        <div style={{ ...kicker, textAlign: "center", marginBottom: 14 }}>
+        <div style={{ ...kicker, marginBottom: 14 }}>
           Clip · plays {fmtTime(c.startSec) || "0:00"} –{" "}
           {c.endSec != null ? fmtTime(c.endSec) : "end"}
         </div>
@@ -625,7 +644,7 @@ export default function StudyTablePresent({
 
   return (
     <div
-      className="scribal-fade"
+      className="scribal-fade-plain"
       style={{
         position: "fixed",
         inset: 0,
@@ -834,7 +853,7 @@ export default function StudyTablePresent({
         >
           <div
             key={i + (isVeiled ? "v" : "")}
-            className="scribal-rise"
+            className="scribal-rise-plain"
             style={{
               margin: "auto",
               width: "100%",
