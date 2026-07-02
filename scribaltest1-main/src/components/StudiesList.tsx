@@ -29,7 +29,6 @@ const SECTIONS: {
   { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
   { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
   { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
-  { kinds: ["table"], label: "Study tables", color: "#16a34a" },
 ];
 
 export default function StudiesList({ rows, onClose, onImport }: Props) {
