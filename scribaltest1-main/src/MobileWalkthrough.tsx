@@ -56,6 +56,9 @@ interface Props {
   // tour is standalone (MobileApp forces it during mtour), so this is identity —
   // but keying off it keeps names rendering and the conclusion note leak-proof.
   resolveScope: (cs: string) => string;
+  // Live scoped theme labels of the active (demo) book — watched so the NAME
+  // beat advances the moment the user actually names their theme.
+  scopedLabels: Record<string, Record<number, string>>;
   marks: Mark[];
   activeBookId: string;
   loc: Loc;
@@ -151,8 +154,8 @@ const STEPS: Step[] = [
     target: '[data-wt="wt-verse"]',
     coachPos: "near",
     ghost: "tap",
-    title: "Mark a word",
-    body: "Your pen is ready. Tap any word in this verse — it marks in your color.",
+    title: "Your finger is the pen",
+    body: "Tap any word in the lit verse — it marks instantly in your color. No press-and-hold, no menus.",
   },
   {
     id: "phrase",
@@ -160,8 +163,8 @@ const STEPS: Step[] = [
     target: '[data-wt="wt-verse"]',
     coachPos: "near",
     ghost: "swipe",
-    title: "Mark a phrase",
-    body: "Drag your finger across a few words to mark the whole phrase at once.",
+    title: "Swipe to mark a phrase",
+    body: "Drag straight across a few words in one sweep. That swipe is how all marking works in Scribal.",
   },
   {
     id: "theme",
@@ -169,15 +172,15 @@ const STEPS: Step[] = [
     target: '[data-wt="wt-tray"]',
     coachPos: "top",
     title: "Each color is a theme",
-    body: "Pick a different color from the tray, then mark another word with it — that begins a second theme.",
+    body: "A color is a thread you're tracking through the text. Pick a DIFFERENT color from the tray and mark another word — that begins a second theme.",
   },
   {
     id: "compile",
     mode: "spotlight",
     target: '[data-wt="wt-compile"]',
     coachPos: "near",
-    title: "Gather it into a study",
-    body: "Now pull every mark together. Tap Compile.",
+    title: "Now watch marking become notes",
+    body: "Tap Compile. This is the whole point of the app — everything you just marked is about to organize itself.",
   },
   {
     id: "study",
@@ -185,8 +188,16 @@ const STEPS: Step[] = [
     target: null,
     coachPos: "bottom",
     cta: "Next",
-    title: "Organized by theme",
-    body: "Here's your study — every mark, grouped under the theme you gave it. Scribal arranged it for you, then stopped. What it means, it left blank.",
+    title: "Your study — grouped by your colors",
+    body: "Every mark, sorted under its theme. One group is already named — Faith. But look at the other one: it just says a color. That's on purpose.",
+  },
+  {
+    id: "name",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    title: "Name what you see",
+    body: "Tap that unnamed grey theme title and call it what YOU see in its verses — \"The Lord\", \"Warnings\", anything. Scribal will never name a theme for you, and named themes are what turn marks into real notes.",
   },
   {
     id: "meaning",
@@ -194,8 +205,17 @@ const STEPS: Step[] = [
     target: '[aria-label^="Add a thought"]',
     coachPos: "bottom",
     cta: "Next",
-    title: "The meaning is yours",
-    body: "Each theme carries a name you can edit — Faith, The Lord — and a dotted + at its top. That + is where you write what its verses mean together: the one line Scribal won't write for you.",
+    title: "Your name just became structure",
+    body: "See it? The heading is yours now. And above each theme's verses sits a dotted + — the line where you write what they mean together. Structure comes from your colors; meaning comes from your pen.",
+  },
+  {
+    id: "system",
+    mode: "free",
+    target: null,
+    coachPos: "bottom",
+    cta: "Next",
+    title: "The same loop scales",
+    body: "Everything else in Scribal feeds this one loop you just ran:",
   },
   {
     id: "done",
@@ -204,11 +224,11 @@ const STEPS: Step[] = [
     coachPos: "bottom",
     cta: "Start studying",
     title: "That's the whole rhythm",
-    body: "Mark by hand, compile, write what it means. The dictionary, sharing, and chapter-linking are all here for you to find when you're ready.",
+    body: "Mark by swiping. Name what you see. Compile. Write the meaning. Linking, keyword search, and study tables are all waiting — and they all run on your marks.",
   },
 ];
-const LAST = STEPS.length - 1; // 7 — the Done beat
-const TEACH = LAST; // numbered beats 1..7
+const LAST = STEPS.length - 1; // the Done beat
+const TEACH = LAST; // numbered beats 1..LAST
 const NOTES_FROM = 5; // beats >= this are on the compile/notes screen
 
 export default function MobileWalkthrough({
@@ -220,6 +240,7 @@ export default function MobileWalkthrough({
   addMark,
   setScopedLabel,
   resolveScope,
+  scopedLabels,
   marks,
   activeBookId,
   loc,
@@ -257,6 +278,7 @@ export default function MobileWalkthrough({
 
   // Per-beat baselines so "did it happen" reads true only on a real action.
   const baseIds = useRef<Set<string>>(new Set());
+  const baseLabels = useRef<Record<number, string>>({});
 
   // ── Setup: once, behind the welcome card. Arm a sensible pen, create the
   // throwaway book, drop in two demo marks + their theme names, open the demo
@@ -294,8 +316,9 @@ export default function MobileWalkthrough({
         sd.color
       );
     });
+    // One theme arrives named, one deliberately does NOT — the tour's core
+    // lesson is that the user names themes, so it leaves one for them.
     setScopedLabel(demoScopeKey, FAITH, "Faith");
-    setScopedLabel(demoScopeKey, LORD, "The Lord");
     // eslint-disable-next-line
   }, []);
 
@@ -331,8 +354,24 @@ export default function MobileWalkthrough({
     const id = STEPS[beat]?.id;
     if (id === "mark" || id === "phrase" || id === "theme")
       baseIds.current = new Set(marks.map((m) => m.id));
+    if (id === "name")
+      baseLabels.current = { ...(scopedLabels[demoScopeKey] || {}) };
     // eslint-disable-next-line
   }, [beat]);
+
+  // The naming act: any theme in the demo study gaining a fresh, nonempty name
+  // (rename of Faith counts too — the lesson is that names are theirs to give).
+  useEffect(() => {
+    if (STEPS[beat]?.id !== "name") return;
+    const cur = scopedLabels[demoScopeKey] || {};
+    const grew = Object.keys(cur).some((k) => {
+      const v = (cur[Number(k)] || "").trim();
+      const was = (baseLabels.current[Number(k)] || "").trim();
+      return v !== "" && v !== was;
+    });
+    if (grew) advance();
+    // eslint-disable-next-line
+  }, [scopedLabels, beat]);
 
   // Advance on marks: a new mark (mark), a new multi-word mark (phrase), or a
   // new mark in a different color than the starting theme (theme).
@@ -486,6 +525,49 @@ export default function MobileWalkthrough({
       </div>
       <div style={{ fontSize: "17.5px", fontWeight: 800, marginBottom: "5px", color: C.text }}>{step.title}</div>
       <div style={{ fontSize: "14.5px", lineHeight: 1.5, color: C.muted }}>{step.body}</div>
+      {step.id === "system" && (
+        <div style={{ marginTop: "10px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              flexWrap: "wrap",
+              marginBottom: "10px",
+            }}
+          >
+            {["Mark", "Themes", "Study", "Lesson"].map((n, i) => (
+              <span key={n} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                {i > 0 && <span style={{ color: C.muted, fontSize: "12px" }}>→</span>}
+                <span
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    border: "1px solid " + C.border,
+                    borderRadius: "999px",
+                    padding: "3px 10px",
+                    color: C.text,
+                  }}
+                >
+                  {n}
+                </span>
+              </span>
+            ))}
+          </div>
+          {[
+            ["Link chapters", "a story spanning chapters compiles as ONE study"],
+            ["Keyword search", "gather a word's verses from anywhere into a study"],
+            ["Study tables", "arrange verses into a lesson, then present it"],
+          ].map(([t, d]) => (
+            <div key={t} style={{ display: "flex", gap: "7px", marginBottom: "5px" }}>
+              <span style={{ color: ACCENT, fontSize: "12.5px", lineHeight: 1.45 }}>•</span>
+              <span style={{ fontSize: "12.5px", lineHeight: 1.45, color: C.muted }}>
+                <b style={{ color: C.text }}>{t}</b> — {d}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {step.cta && (
         <button
           onClick={step.id === "done" ? finish : advance}
