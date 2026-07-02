@@ -20,6 +20,9 @@ const PEN_TOOLS: Tool[] = [
 ];
 
 interface VerseViewerProps {
+  // Assignable toolbar hotkeys (tool → key). Falls back to the classic layout
+  // baked into each toolButton call when absent.
+  toolHotkeys?: Partial<Record<Tool, string>>;
   selectedVolume: number;
   selectedBook: number;
   selectedChapter: number;
@@ -153,6 +156,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     selectedBook,
     selectedChapter,
     onChange,
+    toolHotkeys,
     selectedTool,
     selectedColor,
     onChangeTool,
@@ -575,10 +579,11 @@ export default function VerseViewer(props: VerseViewerProps) {
 
   const toolButton = (tool: Tool, label: React.ReactNode, keyHint: string) => {
     const active = selectedTool === tool;
+    const hint = ((toolHotkeys && toolHotkeys[tool]) || keyHint).toUpperCase();
     return (
       <button
         onClick={() => onChangeTool(tool)}
-        title={"Shortcut: " + keyHint.toUpperCase()}
+        title={"Shortcut: " + hint}
         style={{
           width: "40px",
           height: "40px",
@@ -599,7 +604,7 @@ export default function VerseViewer(props: VerseViewerProps) {
         }}
       >
         {label}
-        {keyBadge(keyHint.toUpperCase(), active)}
+        {keyBadge(hint, active)}
       </button>
     );
   };
