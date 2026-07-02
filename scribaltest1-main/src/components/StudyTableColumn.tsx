@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ACCENT } from "../theme";
 import { COLOR_MAP, MarkColor } from "../types";
+import { isConsecutive } from "../data/verseIndex";
 import {
   TableCard,
   CardKind,
@@ -574,6 +575,42 @@ export default function StudyTableColumn({
   // Which gap is hovered — the + affordance reveals only there, so at rest the
   // card stack stays an unbroken line.
   const [hoverGap, setHoverGap] = useState<number | null>(null);
+  // Drag a scripture card onto another scripture card to MERGE them: their
+  // verses join one card (presented together). dragId = the card in hand,
+  // mergeOverId = the card it's hovering, mergePrompt = the confirm dialog.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [mergeOverId, setMergeOverId] = useState<string | null>(null);
+  const [mergePrompt, setMergePrompt] = useState<{
+    fromId: string;
+    toId: string;
+  } | null>(null);
+  const doMerge = () => {
+    if (!mergePrompt) return;
+    const from = cards.find((c) => c.id === mergePrompt.fromId);
+    const to = cards.find((c) => c.id === mergePrompt.toId);
+    setMergePrompt(null);
+    if (!from || !to || from.kind !== "scripture" || to.kind !== "scripture")
+      return;
+    const merged = [
+      ...(to.refs || []),
+      ...(from.refs || []).filter((r) => !(to.refs || []).includes(r)),
+    ];
+    onChange(
+      cards
+        .filter((c) => c.id !== from.id)
+        .map((c) =>
+          c.id === to.id
+            ? {
+                ...c,
+                refs: merged,
+                // A passage stays a passage only while its verses still run
+                // consecutively; otherwise it becomes a verse list.
+                passage: !!to.passage && isConsecutive(merged),
+              }
+            : c
+        )
+    );
+  };
   // Which card is pending a delete confirmation (guards accidental deletes).
   const [confirmId, setConfirmId] = useState<string | null>(null);
   // Which clip card has its preview player open (only one at a time).
@@ -1537,6 +1574,45 @@ export default function StudyTableColumn({
             </div>
             <div
               data-card-id={card.id}
+              draggable={card.kind === "scripture"}
+              onDragStart={(e) => {
+                if (card.kind !== "scripture") return;
+                setDragId(card.id);
+                e.dataTransfer.effectAllowed = "move";
+                try {
+                  e.dataTransfer.setData("text/plain", card.id);
+                } catch {}
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setMergeOverId(null);
+              }}
+              onDragOver={(e) => {
+                if (
+                  dragId &&
+                  dragId !== card.id &&
+                  card.kind === "scripture"
+                ) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setMergeOverId(card.id);
+                }
+              }}
+              onDragLeave={() =>
+                setMergeOverId((p) => (p === card.id ? null : p))
+              }
+              onDrop={(e) => {
+                if (
+                  dragId &&
+                  dragId !== card.id &&
+                  card.kind === "scripture"
+                ) {
+                  e.preventDefault();
+                  setMergePrompt({ fromId: dragId, toId: card.id });
+                }
+                setDragId(null);
+                setMergeOverId(null);
+              }}
               style={{
                 position: "relative",
                 display: "grid",
@@ -1544,6 +1620,15 @@ export default function StudyTableColumn({
                 alignItems: "start",
                 marginTop: isSection ? 18 : 0,
                 marginBottom: isSection ? 6 : 0,
+                cursor: card.kind === "scripture" ? "grab" : undefined,
+                opacity: dragId === card.id ? 0.45 : 1,
+                outline:
+                  mergeOverId === card.id
+                    ? "2.5px dashed " + accent
+                    : undefined,
+                outlineOffset: mergeOverId === card.id ? 3 : undefined,
+                borderRadius: mergeOverId === card.id ? 14 : undefined,
+                transition: "opacity .12s ease",
               }}
             >
               <span
@@ -1571,6 +1656,115 @@ export default function StudyTableColumn({
         <AddBar index={cards.length} big />
         {openAt === cards.length && <Chooser index={cards.length} />}
       </div>
+
+      {/* Merge confirm: dropped one scripture card onto another */}
+      {mergePrompt &&
+        (() => {
+          const from = cards.find((c) => c.id === mergePrompt.fromId);
+          const to = cards.find((c) => c.id === mergePrompt.toId);
+          if (!from || !to) return null;
+          const n = (from.refs || []).filter(
+            (r) => !(to.refs || []).includes(r)
+          ).length;
+          const toLabel = (to.refs || [])[0] || "this card";
+          return (
+            <div
+              onClick={() => setMergePrompt(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 400,
+                background: "rgba(0,0,0,.4)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 20,
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: 380,
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 14,
+                  padding: "20px 22px",
+                  boxShadow: "0 24px 60px -20px rgba(0,0,0,.4)",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    marginBottom: 6,
+                  }}
+                >
+                  Merge these cards?
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    lineHeight: 1.55,
+                    marginBottom: 16,
+                  }}
+                >
+                  {n === 0
+                    ? "Every verse on the dragged card is already on " +
+                      toLabel +
+                      " — the extra card will simply be removed."
+                    : (n === 1 ? "1 verse joins " : n + " verses join ") +
+                      toLabel +
+                      " as one card. They'll present together."}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <button
+                    onClick={() => setMergePrompt(null)}
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--muted)",
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      borderRadius: 999,
+                      padding: "8px 16px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={doMerge}
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: "#fff",
+                      background: accent,
+                      border: 0,
+                      borderRadius: 999,
+                      padding: "8px 18px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Merge
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
