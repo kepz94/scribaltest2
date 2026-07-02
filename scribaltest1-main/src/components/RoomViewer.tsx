@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import StudyTablePresent from "./StudyTablePresent";
 import MarkedVerse from "./MarkedVerse";
-import { watchRoom, themesKey, RoomDoc } from "../presentRoom";
+import { watchRoom, themesKey, roomExpired, RoomDoc } from "../presentRoom";
 import { getVerse } from "../data/verseIndex";
 import { StudyTable } from "../hooks/useStudyTables";
 import { Mark } from "../types";
@@ -43,7 +43,10 @@ export default function RoomViewer({ code }: { code: string }) {
   const [room, setRoom] = useState<RoomDoc | null | "loading">("loading");
 
   useEffect(() => {
-    const un = watchRoom(code, (r) => setRoom(r));
+    const un = watchRoom(code, (r) =>
+      // An expired room reads as ended — same calm closing screen.
+      setRoom(r && roomExpired(r) ? { ...r, ended: true } : r)
+    );
     return un;
   }, [code]);
 
