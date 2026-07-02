@@ -1,4 +1,4 @@
-import scriptures from "./scriptures.json";
+import { getScriptures, registerOnLoaded } from "./scripturesStore";
 
 // A flat, canonical-order index over every verse in scriptures.json. This is a
 // pure projection of the same file the reader uses, so it can never drift from
@@ -15,9 +15,18 @@ export interface VerseRec {
 const list: VerseRec[] = [];
 const byRef = new Map<string, VerseRec>();
 
-(() => {
+let indexBuilt = false;
+registerOnLoaded(() => buildVerseIndex());
+// Fills the module-scope indexes from the runtime-loaded scripture data.
+// Root awaits loadScriptures() before rendering anything, and the store calls
+// this the moment the fetch resolves — so every consumer downstream of the
+// gate sees complete indexes. All exported constants (verseList etc.) keep
+// their identities; this only fills them.
+export function buildVerseIndex(): void {
+  if (indexBuilt) return;
+  indexBuilt = true;
   let order = 0;
-  const vols: any[] = (scriptures as any).volumes || [];
+  const vols: any[] = getScriptures().volumes || [];
   for (const vol of vols) {
     const books: any[] = vol.books || [];
     for (const book of books) {
@@ -42,7 +51,7 @@ const byRef = new Map<string, VerseRec>();
       }
     }
   }
-})();
+}
 
 export const verseList = list;
 
