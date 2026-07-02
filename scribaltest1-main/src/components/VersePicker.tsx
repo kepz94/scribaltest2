@@ -131,6 +131,12 @@ export default function VersePicker({
   const [selected, setSelected] = useState<string[]>([]);
   const [asPassage, setAsPassage] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
+  // Selected tab: shelf cards grouped by theme (collapsible), so imported
+  // studies read as their themes. Cards whose verses carry no marks group
+  // under "Other verses".
+  const [shelfCollapsed, setShelfCollapsed] = useState<Record<string, boolean>>(
+    {}
+  );
 
   const softAccent = hexToRgba(accent, 0.1);
 
@@ -223,6 +229,45 @@ export default function VersePicker({
     );
 
   const selCount = selected.length;
+  const shelfGroups = (() => {
+    const map = new Map<
+      string,
+      { key: string; color: MarkColor | null; label: string; items: TableCard[] }
+    >();
+    shelf.forEach((item) => {
+      const refs = item.refs || [];
+      let found: { color: MarkColor; label: string } | null = null;
+      for (const r of refs) {
+        const ms = (marksByRef.get(r) || []).filter(
+          (m) => !item.bookId || m.bookId === item.bookId
+        );
+        if (ms.length) {
+          found = { color: ms[0].color, label: ms[0].label || "" };
+          break;
+        }
+      }
+      const key = found ? "c" + found.color + "|" + found.label : "other";
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          key,
+          color: found ? found.color : null,
+          label: found
+            ? found.label || "Theme " + found.color
+            : "Other verses",
+          items: [],
+        };
+        map.set(key, g);
+      }
+      g.items.push(item);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.color === null) return 1;
+      if (b.color === null) return -1;
+      return a.color - b.color;
+    });
+  })();
+
   const canPassage = selCount > 1 && isConsecutive(selected);
 
   // Which book a verse's marks come from when added: the chosen source book.
@@ -423,7 +468,83 @@ export default function VersePicker({
               want.
             </div>
           ) : (
-            shelf.map((item) => {
+            shelfGroups.map((g) => (
+              <div key={g.key}>
+                <button
+                  onClick={() =>
+                    setShelfCollapsed((p) => ({ ...p, [g.key]: !p[g.key] }))
+                  }
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 6px 8px",
+                    border: 0,
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontFamily: SANS,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "var(--text)",
+                    textAlign: "left",
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      color: "var(--muted)",
+                      transform: shelfCollapsed[g.key]
+                        ? "rotate(-90deg)"
+                        : "none",
+                      transition: "transform .15s ease",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                  {g.color !== null && (
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: COLOR_MAP[g.color],
+                        flex: "0 0 auto",
+                      }}
+                    />
+                  )}
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: g.color === null ? "var(--muted)" : "var(--text)",
+                    }}
+                  >
+                    {g.label}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color: "var(--muted)",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    {g.items.length}
+                  </span>
+                </button>
+                {!shelfCollapsed[g.key] &&
+                  g.items.map((item) => {
               const refs = item.refs || [];
               return (
                 <div
@@ -508,7 +629,9 @@ export default function VersePicker({
                   </div>
                 </div>
               );
-            })
+            })}
+              </div>
+            ))
           )}
         </div>
       ) : (
