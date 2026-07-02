@@ -41,8 +41,8 @@ interface CovenantsProps {
   // User-declared verse pairs, per lens: "this half connects to that half",
   // across any distance — verses, chapters, books. The system never invents a
   // thread; it only renders the ones the user tied.
-  savedThreads?: Record<string, { a: string; b: string }[]>;
-  onThreads?: (t: Record<string, { a: string; b: string }[]>) => void;
+  savedThreads?: Record<string, { a: string | string[]; b: string | string[] }[]>;
+  onThreads?: (t: Record<string, { a: string | string[]; b: string | string[] }[]>) => void;
 }
 
 type Lens = "covenant" | "contrast" | "type" | "question";
@@ -340,16 +340,28 @@ export default function Covenants(props: CovenantsProps) {
   // tap Thread on one half, then tap a half on the other side.
   const allThreads = props.savedThreads || {};
   const threads = allThreads[lens] || [];
-  const [threadArm, setThreadArm] = useState<{
-    side: "left" | "right";
-    reference: string;
-  } | null>(null);
-  const addThread = (leftRef: string, rightRef: string) => {
+  // Threading is a SELECTION: toggle any number of halves on each side, then
+  // "Create thread" in the floating bar ties them all into one pair. Old
+  // single-ref threads still load (refsOf normalizes both shapes).
+  const refsOf = (x: string | string[]): string[] =>
+    Array.isArray(x) ? x : [x];
+  const [threadSel, setThreadSel] = useState<{
+    left: string[];
+    right: string[];
+  }>({ left: [], right: [] });
+  const toggleThreadSel = (side: "left" | "right", reference: string) =>
+    setThreadSel((p) => ({
+      ...p,
+      [side]: p[side].includes(reference)
+        ? p[side].filter((r) => r !== reference)
+        : [...p[side], reference],
+    }));
+  const addThread = (leftRefs: string[], rightRefs: string[]) => {
     props.onThreads?.({
       ...allThreads,
-      [lens]: [...threads, { a: leftRef, b: rightRef }],
+      [lens]: [...threads, { a: leftRefs, b: rightRefs }],
     });
-    setThreadArm(null);
+    setThreadSel({ left: [], right: [] });
   };
   const removeThread = (i: number) => {
     props.onThreads?.({
@@ -358,7 +370,7 @@ export default function Covenants(props: CovenantsProps) {
     });
   };
   const rows: Row[] = [];
-  const half: Half[] = [];
+  const halfAll: Half[] = [];
   if (!sameColor) {
     entries.forEach((e) => {
       const lf = fragmentsForRole(e.reference, e.text, a);
@@ -366,9 +378,9 @@ export default function Covenants(props: CovenantsProps) {
       if (lf.length && rf.length)
         rows.push({ reference: e.reference, left: lf, right: rf });
       else if (lf.length)
-        half.push({ reference: e.reference, side: "left", frags: lf });
+        halfAll.push({ reference: e.reference, side: "left", frags: lf });
       else if (rf.length)
-        half.push({ reference: e.reference, side: "right", frags: rf });
+        halfAll.push({ reference: e.reference, side: "right", frags: rf });
     });
   }
 
@@ -378,19 +390,45 @@ export default function Covenants(props: CovenantsProps) {
   entries.forEach((e) => textByRef.set(e.reference, e.text));
   type ThreadRow = {
     idx: number;
-    aRef: string;
-    bRef: string;
+    aRefs: string[];
+    bRefs: string[];
     left: Frag[];
     right: Frag[];
   };
+  const sideFrags = (refs: string[], color: MarkColor): Frag[] => {
+    const out: Frag[] = [];
+    refs.forEach((r) => {
+      const fr = fragmentsForRole(r, textByRef.get(r) || "", color);
+      fr.forEach((f, i) => {
+        // A gap marker opens each subsequent verse's fragments, so multi-verse
+        // sides read as distinct pieces, not one run-on sentence.
+        out.push(i === 0 && out.length > 0 ? { ...f, gapBefore: true } : f);
+      });
+    });
+    return out;
+  };
   const threadRows: ThreadRow[] = [];
+  // Refs already living inside a thread (per side) — they leave the waiting
+  // list below, so a threaded half can't be threaded twice.
+  const threadedLeft = new Set<string>();
+  const threadedRight = new Set<string>();
   if (!sameColor)
     threads.forEach((t, idx) => {
-      const left = fragmentsForRole(t.a, textByRef.get(t.a) || "", a);
-      const right = fragmentsForRole(t.b, textByRef.get(t.b) || "", b);
+      const aRefs = refsOf(t.a);
+      const bRefs = refsOf(t.b);
+      aRefs.forEach((r) => threadedLeft.add(r));
+      bRefs.forEach((r) => threadedRight.add(r));
+      const left = sideFrags(aRefs, a);
+      const right = sideFrags(bRefs, b);
       if (left.length && right.length)
-        threadRows.push({ idx, aRef: t.a, bRef: t.b, left, right });
+        threadRows.push({ idx, aRefs, bRefs, left, right });
     });
+  // The waiting list: only halves NOT already inside a thread.
+  const half: Half[] = halfAll.filter((h) =>
+    h.side === "left"
+      ? !threadedLeft.has(h.reference)
+      : !threadedRight.has(h.reference)
+  );
 
   const renderFrags = (frags: Frag[]) =>
     frags.map((f, i) => (
@@ -827,7 +865,7 @@ export default function Covenants(props: CovenantsProps) {
           {threadRows.map((tr) => (
             <div
               key={"thread_" + tr.idx}
-              data-vref={tr.aRef}
+              data-vref={tr.aRefs[0]}
               style={{
                 display: "flex",
                 gap: "12px",
@@ -859,40 +897,26 @@ export default function Covenants(props: CovenantsProps) {
                   alignSelf: "center",
                 }}
               >
-                <button
-                  onClick={() => onJumpToReference(tr.aRef)}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--muted)",
-                    fontSize: "11px",
-                    cursor: "pointer",
-                    textDecoration: "underline",
-                    textDecorationStyle: "dotted",
-                    padding: "2px 0",
-                    fontFamily: "inherit",
-                    textAlign: "left",
-                  }}
-                >
-                  {tr.aRef}
-                </button>
-                <button
-                  onClick={() => onJumpToReference(tr.bRef)}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--muted)",
-                    fontSize: "11px",
-                    cursor: "pointer",
-                    textDecoration: "underline",
-                    textDecorationStyle: "dotted",
-                    padding: "2px 0",
-                    fontFamily: "inherit",
-                    textAlign: "left",
-                  }}
-                >
-                  {tr.bRef}
-                </button>
+                {[...tr.aRefs, ...tr.bRefs].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => onJumpToReference(r)}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--muted)",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      textDecorationStyle: "dotted",
+                      padding: "2px 0",
+                      fontFamily: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    {r}
+                  </button>
+                ))}
                 <button
                   onClick={() => removeThread(tr.idx)}
                   aria-label="Unthread this pair"
@@ -913,6 +937,75 @@ export default function Covenants(props: CovenantsProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {threadSel.left.length + threadSel.right.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "calc(18px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            zIndex: 390,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: "999px",
+            padding: "8px 10px 8px 16px",
+            boxShadow: "0 14px 40px -12px rgba(0,0,0,.4)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "var(--text)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {threadSel.left.length} {cfg.leftHeader.toLowerCase()} ·{" "}
+            {threadSel.right.length} {cfg.rightHeader.toLowerCase()}
+          </span>
+          <button
+            onClick={() => setThreadSel({ left: [], right: [] })}
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "var(--muted)",
+              background: "transparent",
+              border: "none",
+              padding: "8px 6px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => addThread(threadSel.left, threadSel.right)}
+            disabled={!threadSel.left.length || !threadSel.right.length}
+            style={{
+              fontSize: "13.5px",
+              fontWeight: 700,
+              color: "var(--panel)",
+              background: "var(--text)",
+              border: "none",
+              borderRadius: "999px",
+              padding: "9px 18px",
+              opacity:
+                threadSel.left.length && threadSel.right.length ? 1 : 0.45,
+              cursor:
+                threadSel.left.length && threadSel.right.length
+                  ? "pointer"
+                  : "default",
+              fontFamily: "inherit",
+            }}
+          >
+            Create thread
+          </button>
         </div>
       )}
 
@@ -941,19 +1034,15 @@ export default function Covenants(props: CovenantsProps) {
                 marginBottom: "7px",
                 fontSize: "13.5px",
                 borderRadius: "10px",
-                outline:
-                  threadArm && threadArm.reference === h.reference
-                    ? "2px solid var(--text)"
-                    : threadArm && threadArm.side !== h.side
-                    ? "2px dashed var(--border)"
+                outline: threadSel[h.side].includes(h.reference)
+                  ? "2px solid var(--text)"
+                  : threadSel.left.length + threadSel.right.length > 0
+                  ? "2px dashed var(--border)"
+                  : undefined,
+                outlineOffset:
+                  threadSel.left.length + threadSel.right.length > 0
+                    ? 4
                     : undefined,
-                outlineOffset: threadArm ? 4 : undefined,
-                opacity:
-                  threadArm &&
-                  threadArm.side === h.side &&
-                  threadArm.reference !== h.reference
-                    ? 0.4
-                    : 1,
               }}
             >
               <button
@@ -994,24 +1083,7 @@ export default function Covenants(props: CovenantsProps) {
               <button
                 onClick={() => {
                   if (!props.onThreads) return;
-                  if (!threadArm) {
-                    setThreadArm({ side: h.side, reference: h.reference });
-                    return;
-                  }
-                  if (threadArm.reference === h.reference) {
-                    setThreadArm(null);
-                    return;
-                  }
-                  if (threadArm.side === h.side) {
-                    // Same side — switch the armed half instead.
-                    setThreadArm({ side: h.side, reference: h.reference });
-                    return;
-                  }
-                  const leftRef =
-                    h.side === "right" ? threadArm.reference : h.reference;
-                  const rightRef =
-                    h.side === "right" ? h.reference : threadArm.reference;
-                  addThread(leftRef, rightRef);
+                  toggleThreadSel(h.side, h.reference);
                 }}
                 style={{
                   marginLeft: "auto",
@@ -1019,18 +1091,15 @@ export default function Covenants(props: CovenantsProps) {
                   minHeight: "36px",
                   padding: "6px 13px",
                   borderRadius: "999px",
-                  border:
-                    threadArm && threadArm.reference === h.reference
-                      ? "1px solid var(--text)"
-                      : "1px solid var(--border)",
-                  background:
-                    threadArm && threadArm.side !== h.side
-                      ? "var(--text)"
-                      : "transparent",
-                  color:
-                    threadArm && threadArm.side !== h.side
-                      ? "var(--panel)"
-                      : "var(--muted)",
+                  border: threadSel[h.side].includes(h.reference)
+                    ? "1px solid var(--text)"
+                    : "1px solid var(--border)",
+                  background: threadSel[h.side].includes(h.reference)
+                    ? "var(--text)"
+                    : "transparent",
+                  color: threadSel[h.side].includes(h.reference)
+                    ? "var(--panel)"
+                    : "var(--muted)",
                   fontSize: "12px",
                   fontWeight: 700,
                   cursor: "pointer",
@@ -1038,10 +1107,8 @@ export default function Covenants(props: CovenantsProps) {
                   alignSelf: "center",
                 }}
               >
-                {threadArm && threadArm.reference === h.reference
-                  ? "Cancel"
-                  : threadArm && threadArm.side !== h.side
-                  ? "Connect"
+                {threadSel[h.side].includes(h.reference)
+                  ? "✓ Selected"
                   : "Thread"}
               </button>
             </div>
