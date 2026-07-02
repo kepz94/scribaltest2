@@ -89,7 +89,14 @@ const ACCENT = "#8b5cf6";
 
 // ── Resolve the demo chapter (1 Nephi 1) once from the same scripture data the
 // reading screen indexes, so the {v,b,c} we navigate to lines up exactly.
-const DEMO = (() => {
+// The demo chapter, resolved LAZILY — this must never run at module
+// scope, because scripture data loads at runtime (fetching it before the
+// bundle evaluates is exactly the crash that black-screened the app).
+type DemoData = { loc?: any; verses: { reference: string; verse: number; text: string }[] } | null;
+let DEMO_CACHE: DemoData | undefined;
+function getDemo(): DemoData {
+  if (DEMO_CACHE !== undefined) return DEMO_CACHE;
+  DEMO_CACHE = (() => {
   const vols = getScriptures().volumes as any[];
   for (let v = 0; v < vols.length; v++) {
     const books = vols[v].books || [];
@@ -109,6 +116,8 @@ const DEMO = (() => {
   }
   return null;
 })();
+  return DEMO_CACHE;
+}
 
 const DEMO_SCOPE = "1 Nephi 1";
 
@@ -405,6 +414,7 @@ export default function MobileWalkthrough({
   // throwaway book, drop in two demo marks + their theme names, open the demo
   // chapter — so the moment you tap Begin the reading screen is ready.
   useEffect(() => {
+    const DEMO = getDemo();
     if (!DEMO) {
       onClose();
       return;
