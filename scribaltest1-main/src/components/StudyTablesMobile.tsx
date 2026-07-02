@@ -34,6 +34,9 @@ interface Props {
   // Dictionary word-tags for card verses; tapping opens the definition sheet.
   wordTags?: WordTag[];
   onTagTap?: (tag: WordTag) => void;
+  // Open with the verse panel on Selected (used right after an import, so the
+  // imported themes are waiting on screen).
+  initialShelfOpen?: boolean;
   accent?: string;
 }
 
@@ -54,6 +57,7 @@ export default function StudyTablesMobile({
   chapterGroups,
   wordTags,
   onTagTap,
+  initialShelfOpen,
   accent = "#8b5cf6",
 }: Props) {
   // Save indicator: edits persist instantly; flash "Saved" when they do.
@@ -64,7 +68,7 @@ export default function StudyTablesMobile({
     const t = window.setTimeout(() => setSaveFlash(false), 1200);
     return () => window.clearTimeout(t);
   }, [table.updatedAt]);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(!!initialShelfOpen);
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   // "+ Verse" on a card: picked verses append to that card (one card, many
   // verses — they present together).
@@ -377,6 +381,7 @@ export default function StudyTablesMobile({
           }}
           accent={accent}
           defaultBookId={table.bookId}
+          initialTab={initialShelfOpen ? "shelf" : undefined}
           fullScreen
         />
       )}
