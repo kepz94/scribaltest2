@@ -9167,8 +9167,7 @@ export default function MobileApp() {
           const total =
             chapterRecs.length +
             linkedRecs.length +
-            liveSearch.length +
-            studyTables.length;
+            liveSearch.length;
 
           const row = (
             key: string,
@@ -9646,62 +9645,6 @@ export default function MobileApp() {
                               })
                           )
                         )
-                      )}
-                    {section(
-                        "Study tables",
-                        "#16a34a",
-                        <>
-                          {studyTables.map((t) =>
-                            row(
-                              "table:" + t.id,
-                              t.name || "Untitled table",
-                              (t.cards.length === 1
-                                ? "1 card"
-                                : t.cards.length + " cards") +
-                                ((t.shelf || []).length
-                                  ? " · " +
-                                    (t.shelf || []).length +
-                                    " set aside"
-                                  : "") +
-                                " · tap to open",
-                              "#16a34a",
-                              () => {
-                                setStudiesOpen(false);
-                                setEditTableId(t.id);
-                              },
-                              () => {
-                                if (
-                                  window.confirm(
-                                    "Delete this study table? This can't be undone."
-                                  )
-                                )
-                                  deleteStudyTable(t.id);
-                              }
-                            )
-                          )}
-                          <button
-                            onClick={() => {
-                              setStudiesOpen(false);
-                              setNewTableFlow("choose");
-                            }}
-                            style={{
-                              width: "100%",
-                              marginTop: "8px",
-                              padding: "11px 12px",
-                              borderRadius: "10px",
-                              border: "1.5px dashed " + C.border,
-                              background: "transparent",
-                              color: "#16a34a",
-                              fontSize: "13.5px",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              textAlign: "center",
-                            }}
-                          >
-                            + New study table
-                          </button>
-                        </>
                       )}
                   </>
                 )}
