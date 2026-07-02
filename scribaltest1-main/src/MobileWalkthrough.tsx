@@ -432,14 +432,22 @@ export default function MobileWalkthrough({
     measure();
     const onMove = () => {
       const el = document.querySelector(sel) as HTMLElement | null;
-      if (el) setRect(el.getBoundingClientRect());
+      // Once the user has tapped the ringed control (it's focused and the
+      // keyboard is up), the ring's pointing job is done — hide it instead of
+      // chasing the keyboard-shifted layout around the screen.
+      if (el && document.activeElement === el) setRect(null);
+      else if (el) setRect(el.getBoundingClientRect());
     };
     window.addEventListener("scroll", onMove, true);
     window.addEventListener("resize", onMove);
+    document.addEventListener("focusin", onMove);
+    document.addEventListener("focusout", onMove);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onMove, true);
       window.removeEventListener("resize", onMove);
+      document.removeEventListener("focusin", onMove);
+      document.removeEventListener("focusout", onMove);
     };
   }, [beat]);
 
