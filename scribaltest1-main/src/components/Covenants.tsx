@@ -1053,12 +1053,34 @@ export default function Covenants(props: CovenantsProps) {
                     <circle
                       cx={jx}
                       cy={jy}
+                      r={22}
+                      fill="transparent"
+                      stroke="none"
+                      strokeWidth={1.6}
+                      style={{ pointerEvents: "all", cursor: "pointer" }}
+                      onClick={() => removeThread(tr.idx)}
+                    >
+                      <title>Untie this thread</title>
+                    </circle>
+                    <path
+                      d={
+                        "M " + (jx - 3.4) + " " + (jy - 3.4) +
+                        " L " + (jx + 3.4) + " " + (jy + 3.4) +
+                        " M " + (jx + 3.4) + " " + (jy - 3.4) +
+                        " L " + (jx - 3.4) + " " + (jy + 3.4)
+                      }
+                      stroke="none"
+                      strokeWidth={1.4}
+                      style={{ pointerEvents: "none" }}
+                    />
+                    <circle pointerEvents="none"
+                      cx={jx}
+                      cy={jy}
                       r={10}
                       fill="var(--panel)"
                       stroke="var(--text)"
                       strokeWidth={1.6}
                       style={{ pointerEvents: "all", cursor: "pointer" }}
-                      onClick={() => removeThread(tr.idx)}
                     >
                       <title>Untie this thread</title>
                     </circle>
