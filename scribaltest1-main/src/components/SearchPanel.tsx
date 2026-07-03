@@ -14,6 +14,7 @@ export interface ThemeMark {
 }
 
 interface SearchPanelProps {
+  currentChapter?: string;
   currentVolume: number;
   currentBook: number;
   marks: Mark[];
@@ -60,6 +61,7 @@ interface IndexEntry {
 
 export default function SearchPanel(props: SearchPanelProps) {
   const {
+    currentChapter,
     marks,
     colorLabels,
     labelFor,
@@ -89,6 +91,7 @@ export default function SearchPanel(props: SearchPanelProps) {
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(
     () => new Set(props.initialSelected || [])
   );
+  const [chapterOnly, setChapterOnly] = useState(false);
   const [committed, setCommitted] = useState<{
     q: string;
     mode: Mode;
@@ -195,11 +198,18 @@ export default function SearchPanel(props: SearchPanelProps) {
     const test = matcher ? matcher.test : () => false;
     const terms = matcher ? matcher.terms : [];
 
-    const inScope = (e: IndexEntry) =>
-      committed.volIdx < 0
+    const inScope = (e: IndexEntry) => {
+      if (
+        chapterOnly &&
+        currentChapter &&
+        !e.reference.startsWith(currentChapter + ":")
+      )
+        return false;
+      return committed.volIdx < 0
         ? true
         : e.vol === committed.volIdx &&
-          (committed.bookIdx < 0 ? true : e.book === committed.bookIdx);
+            (committed.bookIdx < 0 ? true : e.book === committed.bookIdx);
+    };
 
     const items: {
       reference: string;
@@ -266,7 +276,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     }
 
     return { items, total: items.length, byVol, terms };
-  }, [committed, index, refLookup, marks, allMarks]);
+  }, [committed, index, refLookup, marks, allMarks, chapterOnly, currentChapter]);
 
   const renderHighlighted = (text: string, terms: string[]) => {
     if (!terms.length) return text;
@@ -510,6 +520,12 @@ export default function SearchPanel(props: SearchPanelProps) {
               {seg(source === "marks", "My marks", () => setSource("marks"))}
               {seg(source === "themes", "Themes", () => setSource("themes"))}
             </>
+          )}
+          {currentChapter && (
+            <label style={{ display: "inline-flex", alignItems: "center", gap: "7px", marginRight: "10px", fontSize: "12.5px", fontWeight: 600, color: chapterOnly ? "var(--text)" : "var(--muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={chapterOnly} onChange={(e) => setChapterOnly(e.target.checked)} style={{ accentColor: "#8b5cf6" }} />
+              Only {currentChapter}
+            </label>
           )}
           <select
             value={volIdx}
