@@ -118,7 +118,7 @@ export default function FeatureSlides({
   const slides: { title: string; body: string; visual: React.ReactNode }[] = [
     {
       title: "Your finger is the pen",
-      body: "Swipe straight across words to mark them — no press-and-hold, no menus. Five tools, ten colors, letter-level precision.",
+      body: "Swipe straight across words to mark them — no press-and-hold, no menus. Five tools, ten colors, letter-level precision. Slip of the finger? Tap anywhere with two fingers to undo.",
       visual: mockCard(
         <div style={{ fontFamily: serif, fontSize: "16px", lineHeight: 1.8, color: C.text }}>
           <span style={{ color: C.muted, fontSize: "12px", marginRight: "6px" }}>7</span>
