@@ -1634,6 +1634,19 @@ export default function MobileApp() {
   // in, sync is automatic + cross-device and the old Drive path stays dormant.
   const [cloudSignedIn, setCloudSignedIn] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
+  // A brief, tappable escape hatch after each fresh mark — undo on mobile is
+  // otherwise a hidden gesture (two-finger tap), which fat-fingered marks need.
+  const [undoFlash, setUndoFlash] = useState(false);
+  const undoFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevMarkCount = useRef(marks.length);
+  useEffect(() => {
+    if (marks.length > prevMarkCount.current) {
+      setUndoFlash(true);
+      if (undoFlashTimer.current) clearTimeout(undoFlashTimer.current);
+      undoFlashTimer.current = setTimeout(() => setUndoFlash(false), 4000);
+    }
+    prevMarkCount.current = marks.length;
+  }, [marks.length]);
   const [cloudEmail, setCloudEmail] = useState<string | null>(null);
   // Hide the legacy Google Drive sign-in UI while we run on Firebase. The Drive
   // code stays in place (so nothing breaks) but can't be triggered from the UI.
@@ -7704,6 +7717,7 @@ export default function MobileApp() {
             }}
           >
             <MobileSearch
+              currentChapter={title}
               C={C}
               marks={marks}
               markLabel={effLabel}
@@ -11750,6 +11764,38 @@ export default function MobileApp() {
           </div>
         </div>
       )}
+      {undoFlash && canUndo && !compileOpen && !mtourOpen && (
+        <button
+          onClick={() => {
+            undo();
+            setUndoFlash(false);
+          }}
+          style={{
+            position: "fixed",
+            left: "50%",
+            transform: "translateX(-50%)",
+            bottom: "calc(96px + env(safe-area-inset-bottom))",
+            zIndex: 260,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "7px",
+            minHeight: "44px",
+            padding: "10px 18px",
+            borderRadius: "999px",
+            border: "1px solid " + C.border,
+            background: C.panel,
+            color: C.text,
+            fontSize: "14px",
+            fontWeight: 700,
+            boxShadow: "0 10px 28px rgba(0,0,0,0.25)",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          ↺ Undo
+        </button>
+      )}
+
       {slidesOpen && (
         <FeatureSlides C={C} onClose={() => setSlidesOpen(false)} />
       )}
