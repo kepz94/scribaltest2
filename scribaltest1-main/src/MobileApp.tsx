@@ -386,7 +386,7 @@ interface SearchStudy {
   note?: string;
   // The compile view this keyword study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
-  view?: "outline" | "distilled" | "covenants";
+  view?: "outline" | "distilled" | "covenants" | "semantic";
   // When set, this keyword search is linked into a chapter study (that chapter's
   // scope). It then shares the chapter's book/themes and folds into its compile.
   linkedScope?: string;
@@ -410,7 +410,7 @@ interface Study {
   extraRefsAt?: number;
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
-  view?: "outline" | "charting" | "distilled" | "covenants";
+  view?: "outline" | "charting" | "distilled" | "covenants" | "semantic";
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
@@ -3332,7 +3332,7 @@ export default function MobileApp() {
     scopeRef: string,
     name: string,
     rename: boolean = true,
-    view?: "outline" | "charting" | "distilled" | "covenants"
+    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic"
   ) => {
     if (mtourOpen) return;
     const bookId = activeBookId;
