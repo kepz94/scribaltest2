@@ -41,7 +41,7 @@ import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
 import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
-import { getScriptures, volumesProxy } from "./data/scripturesStore";
+import { getScriptures, volumesProxy, registerOnLoaded } from "./data/scripturesStore";
 import {
   Mark,
   MarkColor,
@@ -269,13 +269,17 @@ const vols = volumesProxy;
 
 // Reference -> scripture order, so hand-picked study verses sort canonically.
 const refOrderIndex = new Map<string, number>();
-vols.forEach((v, vi) =>
-  v.books.forEach((b, bi) =>
-    b.chapters.forEach((c, ci) =>
-      c.verses.forEach((ve, vei) =>
-        refOrderIndex.set(
-          ve.reference,
-          ((vi * 1000 + bi) * 1000 + ci) * 1000 + vei
+// Filled after the runtime scripture load (module-scope access would crash
+// the bundle before React mounts — the black-screen bug).
+registerOnLoaded(() =>
+  vols.forEach((v, vi) =>
+    v.books.forEach((b, bi) =>
+      b.chapters.forEach((c, ci) =>
+        c.verses.forEach((ve, vei) =>
+          refOrderIndex.set(
+            ve.reference,
+            ((vi * 1000 + bi) * 1000 + ci) * 1000 + vei
+          )
         )
       )
     )
@@ -288,11 +292,13 @@ const refLoc = new Map<
   string,
   { volume: number; book: number; chapter: number }
 >();
-vols.forEach((v, vi) =>
-  v.books.forEach((b, bi) =>
-    b.chapters.forEach((c, ci) =>
-      c.verses.forEach((ve) =>
-        refLoc.set(ve.reference, { volume: vi, book: bi, chapter: ci })
+registerOnLoaded(() =>
+  vols.forEach((v, vi) =>
+    v.books.forEach((b, bi) =>
+      b.chapters.forEach((c, ci) =>
+        c.verses.forEach((ve) =>
+          refLoc.set(ve.reference, { volume: vi, book: bi, chapter: ci })
+        )
       )
     )
   )
@@ -304,12 +310,15 @@ const chapterLoc = new Map<
   string,
   { volume: number; book: number; chapter: number }
 >();
-vols.forEach((v, vi) =>
-  v.books.forEach((b, bi) =>
-    b.chapters.forEach((c, ci) => {
-      const ref = c.verses[0]?.reference;
-      if (ref) chapterLoc.set(scopeOfRef(ref), { volume: vi, book: bi, chapter: ci });
-    })
+registerOnLoaded(() =>
+  vols.forEach((v, vi) =>
+    v.books.forEach((b, bi) =>
+      b.chapters.forEach((c, ci) => {
+        const ref = c.verses[0]?.reference;
+        if (ref)
+          chapterLoc.set(scopeOfRef(ref), { volume: vi, book: bi, chapter: ci });
+      })
+    )
   )
 );
 
