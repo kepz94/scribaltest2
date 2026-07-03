@@ -175,7 +175,7 @@ const STEPS: Step[] = [
     coachPos: "near",
     ghost: "tap",
     title: "Your finger is the pen",
-    body: "Tap any word in the lit verse — it marks instantly in your color. No press-and-hold, no menus.",
+    body: "Tap any word in the lit verse — it marks instantly in your color. No press-and-hold, no menus. (Slip? Tap anywhere with TWO fingers to undo.)",
   },
   {
     id: "phrase",
