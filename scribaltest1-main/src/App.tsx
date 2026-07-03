@@ -5064,6 +5064,7 @@ export default function App() {
       )}
       {showSearch && (
         <SearchPanel
+          currentChapter={chapterScopeOf(activeTab)}
           currentVolume={activeTab.volume}
           currentBook={activeTab.book}
           marks={marks}
