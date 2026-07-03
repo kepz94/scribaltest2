@@ -1,6 +1,6 @@
 {
   "short_name": "Scribal",
-  "name": "Scribal — Scripture Study",
+  "name": "Scribal \u2014 Scripture Study",
   "description": "A quiet place to read scripture and study it by marking with intention.",
   "icons": [
     {
@@ -29,7 +29,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "theme_color": "#1d1c18",
   "background_color": "#f6f4ee"
 }
