@@ -18,7 +18,7 @@ export interface Study {
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational / Charting), so reopening it lands on the same tab instead of
   // resetting to Outline. Optional; studies without it open on Outline.
-  view?: "outline" | "charting" | "distilled" | "covenants";
+  view?: "outline" | "charting" | "distilled" | "covenants" | "semantic";
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync: on merge, the name from whichever device edited it most recently wins.
@@ -63,7 +63,7 @@ export function useStudies() {
     bookId: string,
     scopeRef: string,
     name: string,
-    view?: "outline" | "charting" | "distilled" | "covenants"
+    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic"
   ) => {
     setStudies((prev) => {
       const now = Date.now();
