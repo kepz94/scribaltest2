@@ -35,6 +35,7 @@ import {
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import FeatureSlides from "./FeatureSlides";
+import SemanticView from "./components/SemanticView";
 import DesktopWalkthrough from "./DesktopWalkthrough";
 
 import Shortcuts from "./components/Shortcuts";
@@ -378,7 +379,7 @@ const VIEW_NAMES: Record<string, string> = {
   covenants: "Relational",
 };
 
-type CompileView = "outline" | "charting" | "distilled" | "covenants";
+type CompileView = "outline" | "charting" | "distilled" | "covenants" | "semantic";
 
 type Mode = "read" | "compile" | "vault" | "table";
 
@@ -1085,7 +1086,8 @@ export default function App() {
     return saved === "outline" ||
       saved === "charting" ||
       saved === "distilled" ||
-      saved === "covenants"
+      saved === "covenants" ||
+      saved === "semantic"
       ? saved
       : "outline";
   });
@@ -11192,6 +11194,9 @@ export default function App() {
                   {viewTabButton(compileView === "covenants", "Relational", () =>
                     setCompileView("covenants")
                   )}
+                  {viewTabButton(compileView === "semantic", "Semantic", () =>
+                    setCompileView("semantic")
+                  )}
                 </div>
               </div>
             )}
@@ -11374,6 +11379,34 @@ export default function App() {
               />
             )}
             {compileView === "charting" && <Charting {...sharedCompileProps} />}
+            {compileView === "semantic" && (
+              <SemanticView
+                compileTabs={sharedCompileProps.compileTabs}
+                marks={sharedCompileProps.marks}
+                colorLabels={sharedCompileProps.colorLabels}
+                onJumpToReference={sharedCompileProps.onJumpToReference}
+                noteFor={(ref) => {
+                  // Desktop verse notes are per-color: "note|<chapterRef>|c<n>|<ref>".
+                  // Ground level shows them joined.
+                  const found: string[] = [];
+                  Object.keys(notes || {}).forEach((k) => {
+                    if (k.startsWith("note|") && k.endsWith("|" + ref)) {
+                      const v = (notes[k] || "").trim();
+                      if (v) found.push(v);
+                    }
+                  });
+                  return found.join(" · ");
+                }}
+                synthesisFor={() => {
+                  // Desktop keeps ONE synthesis per study (not per theme);
+                  // every doorway shows it.
+                  const k =
+                    "synthesis|" +
+                    sharedCompileProps.compileTabs.map(tabLabel).join("+");
+                  return notes[k] || "";
+                }}
+              />
+            )}
             {compileView === "distilled" && (
               <Distilled {...sharedCompileProps} />
             )}
