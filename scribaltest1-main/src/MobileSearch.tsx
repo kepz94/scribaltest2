@@ -5,6 +5,8 @@ import { buildSearchMatcher, SearchMode } from "./searchMatch";
 
 const vols = volumesProxy;
 
+const ACCENT = "#8b5cf6";
+
 interface Palette {
   bg: string;
   panel: string;
@@ -15,6 +17,9 @@ interface Palette {
 }
 
 interface Props {
+  // The chapter open behind the search (e.g. "1 Nephi 3") — enables the
+  // "This chapter" chip for find-on-this-page searches.
+  currentChapter?: string;
   C: Palette;
   marks: Mark[];
   // Resolves a mark's theme name the same way the rest of the app does
@@ -67,6 +72,7 @@ function highlight(text: string, terms: string[], hlColor: string) {
 }
 
 export default function MobileSearch({
+  currentChapter,
   C,
   marks,
   markLabel,
@@ -86,6 +92,7 @@ export default function MobileSearch({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
+  const [chapterOnly, setChapterOnly] = useState(false);
   const [bookIdx, setBookIdx] = useState(-1); // -1 = all books
   // Search-match controls, shared with the desktop search via one engine.
   // matchMode = how plain words combine. Whole-word matching is always on
@@ -125,6 +132,12 @@ export default function MobileSearch({
           const verses = bk.chapters[ci].verses as any[];
           for (let vj = 0; vj < verses.length; vj++) {
             const v = verses[vj];
+            if (
+              chapterOnly &&
+              currentChapter &&
+              !String(v.reference).startsWith(currentChapter + ":")
+            )
+              continue;
             if (matcher.test(v.text.toLowerCase())) {
               out.push({ reference: v.reference, text: v.text });
               if (out.length >= SCRIPTURE_CAP) {
@@ -137,7 +150,7 @@ export default function MobileSearch({
       }
     }
     return out;
-  }, [mode, matcher, volIdx, bookIdx]);
+  }, [mode, matcher, volIdx, bookIdx, chapterOnly, currentChapter]);
 
   const markResults = useMemo(() => {
     if (mode !== "marks" || !matcher) return [];
@@ -338,6 +351,29 @@ export default function MobileSearch({
         {seg(matchMode === "phrase", "Phrase", () => setMatchMode("phrase"))}
       </div>
 
+      {mode === "scripture" && currentChapter && (
+        <button
+          onClick={() => setChapterOnly((v) => !v)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            marginBottom: "10px",
+            minHeight: "40px",
+            padding: "8px 14px",
+            borderRadius: "999px",
+            border: "1.5px solid " + (chapterOnly ? ACCENT : C.border),
+            background: chapterOnly ? ACCENT + "1a" : "transparent",
+            color: chapterOnly ? ACCENT : C.muted,
+            fontSize: "13px",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {chapterOnly ? "✓ " : ""}Only {currentChapter}
+        </button>
+      )}
       {mode === "scripture" && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           <select
