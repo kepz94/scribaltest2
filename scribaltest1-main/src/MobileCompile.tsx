@@ -3,6 +3,7 @@ import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
+import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
 import SharePreview from "./SharePreview";
@@ -26,10 +27,10 @@ interface Props {
   onJump: (ref: string) => void;
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
-  onSave: (name: string, view: "outline" | "distilled" | "covenants") => void;
+  onSave: (name: string, view: "outline" | "distilled" | "covenants" | "semantic") => void;
   // The view to open in — a saved study reopens on the tab it was saved in.
   // Absent → Outline.
-  initialFormat?: "outline" | "distilled" | "covenants";
+  initialFormat?: "outline" | "distilled" | "covenants" | "semantic";
   // True when this compile is a saved study (opened from the Studies tab). Saved
   // studies open straight to their saved format with the format switcher tucked
   // behind a button, to keep the study itself the focus.
@@ -174,7 +175,7 @@ export default function MobileCompile({
   const [view, setView] = useState<"focused" | "full">("focused");
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
   // Distilled and Covenants are their own formats, each its own view.
-  const [format, setFormat] = useState<"outline" | "distilled" | "covenants">(
+  const [format, setFormat] = useState<"outline" | "distilled" | "covenants" | "semantic">(
     initialFormat || "outline"
   );
   // Whether the tucked-away view options (Focused/Full, In order/By points) are
@@ -953,6 +954,9 @@ export default function MobileCompile({
                   {seg(format === "covenants", "Relational", () =>
                     setFormat("covenants")
                   )}
+                  {seg(format === "semantic", "Semantic", () =>
+                    setFormat("semantic")
+                  )}
                 </div>
               )}
             {/* Quick-find — filters this study's marked verses live and jumps
@@ -1221,6 +1225,20 @@ export default function MobileCompile({
             savedThreads={relSavedThreads}
             onThreads={onRelThreads}
             shareSignal={covShareSignal}
+          />
+        )}
+        {format === "semantic" && (
+          <SemanticView
+            compileTabs={sharedCompileTabs}
+            marks={liveMarks}
+            colorLabels={colorLabels}
+            onJumpToReference={onJump}
+            noteFor={(ref) => notes[verseNoteKey(ref)] || ""}
+            synthesisFor={(c) => notes[synthKey(c)] || ""}
+            panel={C.panel}
+            border={C.border}
+            text={C.text}
+            muted={C.muted}
           />
         )}
         {format === "outline" &&
