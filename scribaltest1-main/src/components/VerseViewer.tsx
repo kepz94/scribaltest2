@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { getScriptures, volumesProxy } from "../data/scripturesStore";
+import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
@@ -135,18 +135,21 @@ const verseByRef = new Map<
   string,
   { verse: number; text: string; chapterTitle: string }
 >();
-vols.forEach((v) =>
-  v.books.forEach((b) =>
-    b.chapters.forEach((c) => {
-      const ct = b.book + " " + c.chapter;
-      c.verses.forEach((ve) =>
-        verseByRef.set(ve.reference, {
-          verse: ve.verse,
-          text: ve.text,
-          chapterTitle: ct,
-        })
-      );
-    })
+// Filled after the runtime scripture load lands (see scripturesStore).
+registerOnLoaded(() =>
+  vols.forEach((v) =>
+    v.books.forEach((b) =>
+      b.chapters.forEach((c) => {
+        const ct = b.book + " " + c.chapter;
+        c.verses.forEach((ve) =>
+          verseByRef.set(ve.reference, {
+            verse: ve.verse,
+            text: ve.text,
+            chapterTitle: ct,
+          })
+        );
+      })
+    )
   )
 );
 
