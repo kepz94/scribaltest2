@@ -58,7 +58,11 @@ const EXAMPLE_LABELS: Record<number, string> = {
   3: "The Witness",
 };
 
-const SAMPLE_VERSES = johnOneVerses();
+// Lazy: johnOneVerses reads the runtime-loaded scripture data, so this must
+// not run at module scope (it black-screens the whole app before React mounts).
+let _sampleVerses: VRow[] | null = null;
+const SAMPLE_VERSES_GET = (): VRow[] =>
+  _sampleVerses || (_sampleVerses = johnOneVerses());
 
 // The five marking styles, mirroring the reader's pen tray (eraser is left out
 // of the example since there is nothing to erase).
@@ -272,7 +276,7 @@ export default function ExampleStudy({ C, dark, onClose, onTryIt }: Props) {
             WebkitUserSelect: "none",
           }}
         >
-          {SAMPLE_VERSES.map((v) => (
+          {SAMPLE_VERSES_GET().map((v) => (
             <MobileVerse
               key={v.reference}
               reference={v.reference}
