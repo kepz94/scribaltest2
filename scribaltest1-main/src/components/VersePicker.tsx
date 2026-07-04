@@ -82,8 +82,10 @@ function hexToRgba(hex: string, a: number): string {
 }
 
 // One-time lowercased scripture text, so live matching stays fast over the whole
-// library (matches the app's own indexed search).
-const lowerText: string[] = verseList.map((v) => v.text.toLowerCase());
+// library. MUST be filled after the runtime scripture load — verseList is empty
+// at module-eval time (scriptures load at runtime now), so mapping it here would
+// permanently produce an empty index and every search would match nothing.
+const lowerText: string[] = [];
 
 // Per-verse volume/book indexes, built by walking scriptures.json in the SAME
 // canonical order verseIndex uses — so filtering is a parallel-array check.
@@ -97,6 +99,9 @@ const bookOf: number[] = [];
 // crash the bundle; registerOnLoaded runs strictly after the data exists).
 registerOnLoaded(() => {
   const vols: any[] = getScriptures().volumes || [];
+  // Fill the lowercased text index now that verseList is populated.
+  for (let i = 0; i < verseList.length; i++)
+    lowerText.push((verseList[i].text || "").toLowerCase());
   vols.forEach((vol: any, vi: number) => {
     const bookNames: string[] = [];
     (vol.books || []).forEach((book: any, bi: number) => {
@@ -886,7 +891,9 @@ export default function VersePicker({
             </div>
           )}
 
-          {/* marks source */}
+          {/* marks source — only meaningful when pulling from "My marks";
+              hidden on Scripture/Themes where it does nothing. */}
+          {source === "marks" && (
           <div
             style={{
               padding: "0 12px 10px",
@@ -932,6 +939,7 @@ export default function VersePicker({
               <option value="">Empty (no marks)</option>
             </select>
           </div>
+          )}
 
           {/* results */}
           <div style={{ flex: 1, overflowY: "auto", padding: "0 4px 8px" }}>
