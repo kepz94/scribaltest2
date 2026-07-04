@@ -1198,6 +1198,17 @@ export default function MobileApp() {
   }, [reading]);
 
   const readBg = reading.warm ? (dark ? "#1a1410" : "#f4ecd6") : C.bg;
+
+  // Keep the iOS status-bar tint (the <meta name="theme-color"> the browser
+  // paints behind the notch/clock during scroll) matched to the live theme.
+  // Hardcoded in index.html, it otherwise shows a stale/white strip when the
+  // user is in dark mode or warm tone.
+  useEffect(() => {
+    const meta = document.querySelector(
+      'meta[name="theme-color"]'
+    ) as HTMLMetaElement | null;
+    if (meta) meta.setAttribute("content", C.bg);
+  }, [C.bg]);
   const readText = reading.warm ? (dark ? "#e9ddc2" : "#53442c") : C.text;
   const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
   const verseSize = (19 * reading.fontScale).toFixed(1) + "px";
@@ -3853,8 +3864,11 @@ export default function MobileApp() {
       }}
     >
       <SplashScreen />
-      {/* Keep the iOS status-bar strip dark (and its white text readable) in
-          both themes, now that the app draws under the translucent status bar. */}
+      {/* The strip under the iOS status bar (notch/Dynamic Island area) must
+          track the LIVE theme — the app draws under the translucent status
+          bar, so a fixed color here shows through wrong in some themes. Match
+          whatever background sits behind it: the reader's (incl. warm tone)
+          while reading, the theme background otherwise. */}
       <div
         style={{
           position: "fixed",
@@ -3862,9 +3876,10 @@ export default function MobileApp() {
           left: 0,
           right: 0,
           height: "env(safe-area-inset-top)",
-          backgroundColor: "#131210",
+          backgroundColor: compileOpen ? C.bg : readBg,
           zIndex: 99999,
           pointerEvents: "none",
+          transition: "background-color .2s",
         }}
       />
       <style>{`
