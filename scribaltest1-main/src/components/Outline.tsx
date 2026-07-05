@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
-import NoteField from "./NoteField";
+import RichNoteField, { LinkableVerse } from "./RichNoteField";
 import {
   Mark,
   MarkColor,
@@ -144,6 +144,49 @@ export default function Outline(props: OutlineProps) {
   const selectedRefs = new Set(allEntries.map((e) => e.reference));
   const relevantMarks = marks.filter((m) => selectedRefs.has(m.reference));
   const noMarks = relevantMarks.length === 0;
+
+  // Verses available to link from a note: this study's verses, grouped by the
+  // theme (color) they're most heavily marked in. Feeds RichNoteField's picker.
+  const linkableVerses: LinkableVerse[] = allEntries.map((e) => {
+    const vMarks = relevantMarks.filter((m) => m.reference === e.reference);
+    let color: MarkColor | null = null;
+    let best = -1;
+    COLORS.forEach((c) => {
+      const w = vMarks
+        .filter((m) => m.color === c)
+        .reduce((sum, m) => sum + STYLE_POINTS[m.style], 0);
+      if (w > best && w > 0) {
+        best = w;
+        color = c;
+      }
+    });
+    const themeName =
+      color != null
+        ? (colorLabels[color] || "").trim() || "Color " + color
+        : "Unmarked";
+    return { reference: e.reference, text: e.text, color, themeName };
+  });
+
+  // The marked fragments of a verse, joined — the chip's "Focused" preview.
+  const focusedFor = (reference: string): string => {
+    const vMarks = relevantMarks
+      .filter((m) => m.reference === reference)
+      .sort((a, b) => a.startIndex - b.startIndex);
+    const entry = allEntries.find((e) => e.reference === reference);
+    if (!entry) return "";
+    const seen = new Set<string>();
+    const frags: string[] = [];
+    vMarks.forEach((m) => {
+      const t = entry.text.slice(m.startIndex, m.endIndex).trim();
+      if (t && !seen.has(t)) {
+        seen.add(t);
+        frags.push(t);
+      }
+    });
+    return frags.join(" · ");
+  };
+  const fullTextFor = (reference: string): string =>
+    allEntries.find((e) => e.reference === reference)?.text || reference;
 
   const pointsFor = (reference: string, colorMarks: Mark[]) =>
     colorMarks
@@ -397,11 +440,15 @@ export default function Outline(props: OutlineProps) {
             const synthKey =
               "synthesis|" + compileTabs.map(tabLabel).join("+");
             return (
-              <NoteField
+              <RichNoteField
                 value={(notes && notes[synthKey]) || ""}
                 onChange={(t) => setNote(synthKey, t)}
                 accent="var(--text)"
                 placeholder="State the main idea these verses support…"
+                linkableVerses={linkableVerses}
+                focusedFor={focusedFor}
+                fullTextFor={fullTextFor}
+                onJumpToReference={onJumpToReference}
                 addLabel="Add your synthesis"
               />
             );
@@ -675,12 +722,16 @@ export default function Outline(props: OutlineProps) {
                         )}
 
                         <div style={{ marginLeft: "30px", marginTop: "8px" }}>
-                          <NoteField
+                          <RichNoteField
                             value={(notes && notes[noteKey]) || ""}
                             onChange={(t) => setNote(noteKey, t)}
                             accent={COLOR_MAP[color]}
                             placeholder="Write a note…"
                             addLabel="Add a note about this verse"
+                            linkableVerses={linkableVerses}
+                            focusedFor={focusedFor}
+                            fullTextFor={fullTextFor}
+                            onJumpToReference={onJumpToReference}
                           />
                         </div>
                       </div>
