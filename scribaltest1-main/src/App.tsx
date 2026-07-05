@@ -516,6 +516,23 @@ const MergeSeam = ({
       .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
       .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
       .rt-li { margin-bottom: 4px; }
+      /* nested list indent */
+      .rt-ol .rt-ol, .rt-ul .rt-ul, .rt-ol .rt-ul, .rt-ul .rt-ol { margin-left: 20px; }
+      /* checklist items (Lexical adds __lexicalListType / checked via aria) */
+      .scribal-rich-editor li[role="checkbox"], .scribal-rich-view li[role="checkbox"] {
+        list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
+      }
+      .scribal-rich-editor li[role="checkbox"]:before, .scribal-rich-view li[role="checkbox"]:before {
+        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+        border-radius: 4px; border: 1.5px solid var(--muted);
+      }
+      .scribal-rich-editor li[role="checkbox"][aria-checked="true"], .scribal-rich-view li[role="checkbox"][aria-checked="true"] {
+        color: var(--muted); text-decoration: line-through;
+      }
+      .scribal-rich-editor li[role="checkbox"][aria-checked="true"]:before, .scribal-rich-view li[role="checkbox"][aria-checked="true"]:before {
+        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+      }
       .scribal-rich-editor h2, .scribal-rich-view h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
       .scribal-rich-editor p, .scribal-rich-view p { margin: 0 0 8px; }
       .scribal-rich-editor blockquote, .scribal-rich-view blockquote {
