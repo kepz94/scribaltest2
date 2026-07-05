@@ -2846,10 +2846,16 @@ export default function App() {
     setCompileAnim({ show: true, duration, flyers, colors });
   };
 
-  const startStudyCompile = (study: SearchStudy) => {
+  const startStudyCompile = (study: SearchStudy, animate = true) => {
     setCompileVirtualTabs(null);
     setCompileStudyId(study.id);
     setCompileName(study.name);
+    // Reopening from the Studies list jumps straight to the notes — the gather
+    // animation is only for the act of compiling while marking.
+    if (!animate) {
+      setMode("compile");
+      return;
+    }
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -2870,10 +2876,10 @@ export default function App() {
   // linked chapter (opening it if it isn't already in a tab) so the scope-based
   // fold pulls this search's verses in. Same combined result as compiling from
   // the chapter side, themed by the chapter.
-  const compileLinkedSearch = (st: SearchStudy) => {
+  const compileLinkedSearch = (st: SearchStudy, animate = true) => {
     const scope = st.linkedScope;
     if (!scope) {
-      startStudyCompile(st);
+      startStudyCompile(st, animate);
       return;
     }
     const target = resolveScope(scope);
@@ -2883,7 +2889,7 @@ export default function App() {
     if (chapterTabIds.length === 0) {
       const loc = chapterLoc.get(scope);
       if (!loc) {
-        startStudyCompile(st);
+        startStudyCompile(st, animate);
         return;
       }
       const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
@@ -2903,7 +2909,7 @@ export default function App() {
       );
       chapterTabIds = [id];
     }
-    runCompile(chapterTabIds);
+    runCompile(chapterTabIds, animate);
   };
   // resulting unit's chapters as tabs and recompile, so the notes reflect the
   // new link set. `groups` is the just-computed map (state isn't updated yet).
@@ -4735,8 +4741,9 @@ export default function App() {
             // combined (linked) search through its chapter, a standalone one
             // straight to its own compile.
             if (marked) {
-              if (ss.linkedScope) compileLinkedSearch(ss);
-              else startStudyCompile(ss);
+              // Reopening from the list → straight to notes, no gather anim.
+              if (ss.linkedScope) compileLinkedSearch(ss, false);
+              else startStudyCompile(ss, false);
             }
           },
           onAddVerses: () => {
@@ -4819,8 +4826,8 @@ export default function App() {
           );
           if (marked) {
             openStudyTab(primary);
-            if (primary.linkedScope) compileLinkedSearch(primary);
-            else startStudyCompile(primary);
+            if (primary.linkedScope) compileLinkedSearch(primary, false);
+            else startStudyCompile(primary, false);
           } else {
             openStudyTab(primary, true);
           }
