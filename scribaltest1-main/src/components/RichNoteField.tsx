@@ -159,6 +159,8 @@ function sanitize(html: string): string {
           el.tagName === "SPAN" ? el.getAttribute("data-ref") || "" : "";
         const keepChecked =
           el.tagName === "LI" ? el.getAttribute("data-checked") || "" : "";
+        const keepChecklist =
+          el.tagName === "UL" ? el.getAttribute("data-checklist") || "" : "";
         Array.from(el.attributes).forEach((a) => el.removeAttribute(a.name));
         // re-apply only safe style props (color / background / text-align / padding-left / font-*)
         if (keepStyle) {
@@ -176,6 +178,7 @@ function sanitize(html: string): string {
         if (keepClass) el.setAttribute("class", keepClass);
         if (keepRef) el.setAttribute("data-ref", keepRef);
         if (keepChecked) el.setAttribute("data-checked", keepChecked);
+        if (keepChecklist) el.setAttribute("data-checklist", keepChecklist);
         walk(el);
       } else if (child.nodeType === Node.COMMENT_NODE) {
         child.remove();
@@ -232,25 +235,64 @@ export default function RichNoteField({
   const commit = () => {
     if (editorRef.current) onChange(sanitize(editorRef.current.innerHTML));
   };
-  const exec = (cmd: string, arg?: string) => {
+
+  // Restore the selection we captured before the toolbar stole focus, so every
+  // command acts on the text the user had selected.
+  const restoreSelection = (): Selection | null => {
     editorRef.current?.focus();
-    if (savedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(savedRange.current);
+    const sel = window.getSelection();
+    if (savedRange.current && sel) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange.current);
     }
+    return sel;
+  };
+  const exec = (cmd: string, arg?: string) => {
+    restoreSelection();
     document.execCommand(cmd, false, arg);
     commit();
+    // re-capture, since the command may have moved the caret
+    rememberSelection();
   };
   const rememberSelection = () => {
     const sel = window.getSelection();
-    if (sel && sel.rangeCount) savedRange.current = sel.getRangeAt(0).cloneRange();
+    if (
+      sel &&
+      sel.rangeCount &&
+      editorRef.current?.contains(sel.anchorNode)
+    ) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  };
+
+  // Wrap the current selection in a styled <span> — reliable where
+  // execCommand('foreColor'/'hiliteColor') is not. prop is "color" or
+  // "backgroundColor".
+  const wrapStyle = (prop: "color" | "backgroundColor", value: string) => {
+    const sel = restoreSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) return; // nothing selected → nothing to color
+    const span = document.createElement("span");
+    (span.style as any)[prop] = value;
+    try {
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
+      // place caret after the new span
+      sel.removeAllRanges();
+      const r = document.createRange();
+      r.setStartAfter(span);
+      r.collapse(true);
+      sel.addRange(r);
+      rememberSelection();
+    } catch {
+      /* cross-block selection — ignore */
+    }
+    commit();
   };
 
   const [curBlock, setCurBlock] = useState("p");
   const setBlock = (tag: string) => {
-    // execCommand needs the tag in angle brackets on Chrome/Safari; a bare
-    // "h1" silently no-ops — the reason the Style dropdown "did nothing".
     exec("formatBlock", "<" + tag + ">");
     setCurBlock(tag);
   };
@@ -267,30 +309,113 @@ export default function RichNoteField({
     }
     setCurBlock("p");
   };
+  // Current text color under the caret — drives the swatch indicator.
+  const [curColor, setCurColor] = useState<string>(accent);
+  const syncColor = () => {
+    const sel = window.getSelection();
+    let n = sel?.anchorNode as HTMLElement | null;
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+    while (n && n !== editorRef.current) {
+      const c = (n as HTMLElement).style?.color;
+      if (c) {
+        setCurColor(c);
+        return;
+      }
+      n = n.parentElement;
+    }
+    setCurColor("var(--text)");
+  };
+
   const setColor = (c: string) => {
-    exec("foreColor", c);
+    wrapStyle("color", c);
+    setCurColor(c);
     setColorOpen(false);
   };
   const setHighlight = (c: string) => {
-    exec("hiliteColor", c);
+    wrapStyle("backgroundColor", c);
     setHlOpen(false);
   };
 
-  const insertVerseChip = (ref: string) => {
-    editorRef.current?.focus();
-    if (savedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(savedRange.current);
+  // Turn the list containing the caret into a checklist (or back).
+  const makeChecklist = () => {
+    restoreSelection();
+    document.execCommand("insertUnorderedList");
+    const sel = window.getSelection();
+    let n = sel?.anchorNode as HTMLElement | null;
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+    const ul = n?.closest?.("ul");
+    if (ul) ul.setAttribute("data-checklist", "1");
+    commit();
+    rememberSelection();
+  };
+
+  // Insert a divider followed by an empty paragraph, so the caret lands BELOW
+  // the rule and it can be backspaced away (the "can't delete the line" fix).
+  const insertDivider = () => {
+    const sel = restoreSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const hr = document.createElement("hr");
+    const p = document.createElement("p");
+    p.appendChild(document.createElement("br"));
+    range.insertNode(p);
+    range.insertNode(hr);
+    // caret into the new paragraph
+    const r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    rememberSelection();
+    commit();
+  };
+
+  // Real "clear formatting": strip inline styling AND lift the block back to a
+  // plain paragraph (execCommand('removeFormat') leaves headings/quotes/color).
+  const clearFormatting = () => {
+    const sel = restoreSelection();
+    document.execCommand("removeFormat");
+    document.execCommand("formatBlock", false, "<p>");
+    // strip lingering color/background spans in the selection's block
+    let n = sel?.anchorNode as HTMLElement | null;
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+    const block = n?.closest?.("p,h1,h2,blockquote,li,div");
+    if (block) {
+      block.querySelectorAll("span").forEach((sp) => {
+        const parent = sp.parentNode!;
+        while (sp.firstChild) parent.insertBefore(sp.firstChild, sp);
+        parent.removeChild(sp);
+      });
     }
-    // A chip is a styled, non-editable span carrying the reference.
-    const chip =
-      '<span data-ref="' +
-      ref.replace(/"/g, "") +
-      '" class="scribal-vchip" style="color: #8b5cf6; font-weight: 600;">\u2937\u00a0' +
-      ref +
-      "</span>\u00a0";
-    document.execCommand("insertHTML", false, chip);
+    setCurBlock("p");
+    commit();
+    rememberSelection();
+  };
+
+  const insertVerseChip = (ref: string) => {
+    const sel = restoreSelection();
+    // A chip is a styled, non-editable span carrying the reference; a trailing
+    // space lets you keep typing after it.
+    const chip = document.createElement("span");
+    chip.setAttribute("data-ref", ref);
+    chip.setAttribute("contenteditable", "false");
+    chip.className = "scribal-vchip";
+    chip.style.color = "#8b5cf6";
+    chip.style.fontWeight = "600";
+    chip.textContent = "\u2937\u00a0" + ref;
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode("\u00a0"));
+      range.insertNode(chip);
+      const r = document.createRange();
+      r.setStartAfter(chip);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      rememberSelection();
+    }
     commit();
     setLinkOpen(false);
     setLinkFilter("");
@@ -304,13 +429,29 @@ export default function RichNoteField({
   };
 
   // Clicks on verse chips (in the resting render) open a preview.
-  const onRestingClick = useCallback((e: React.MouseEvent) => {
-    const t = (e.target as HTMLElement).closest(".scribal-vchip");
-    if (t) {
-      const ref = t.getAttribute("data-ref");
-      if (ref) setPreview({ ref, focused: true });
-    }
-  }, []);
+  const onRestingClick = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const chip = target.closest(".scribal-vchip");
+      if (chip) {
+        const ref = chip.getAttribute("data-ref");
+        if (ref) setPreview({ ref, focused: true });
+        return;
+      }
+      // Tap a checklist item to toggle it done (only near the checkbox).
+      const li = target.closest("li");
+      if (li && li.closest("ul[data-checklist]")) {
+        const done = li.getAttribute("data-checked") === "1";
+        if (done) li.removeAttribute("data-checked");
+        else li.setAttribute("data-checked", "1");
+        // persist the toggle
+        const host = (e.currentTarget as HTMLElement);
+        onChange(sanitize(host.innerHTML));
+      }
+    },
+    // eslint-disable-next-line
+    []
+  );
 
   // ── palette (all 10 pen colors + neutral) ──
   const NEUTRAL = "var(--text)";
@@ -437,7 +578,7 @@ export default function RichNoteField({
             >
               <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
                 <span style={{ fontWeight: 800, fontSize: "13px", lineHeight: 1 }}>A</span>
-                <span style={{ width: "15px", height: "3px", borderRadius: "2px", background: accent, marginTop: "1px" }} />
+                <span style={{ width: "15px", height: "3px", borderRadius: "2px", background: curColor, marginTop: "1px" }} />
               </span>
               <span style={{ fontSize: "9px", color: "var(--muted)" }}>▾</span>
             </button>
@@ -480,14 +621,7 @@ export default function RichNoteField({
           {/* Lists */}
           <IcoBtn title="Numbered list" onClick={() => exec("insertOrderedList")}>{I.ol}</IcoBtn>
           <IcoBtn title="Bulleted list" onClick={() => exec("insertUnorderedList")}>{I.ul}</IcoBtn>
-          <IcoBtn title="Checklist" onClick={() => {
-            exec("insertUnorderedList");
-            const sel = window.getSelection();
-            const li = (sel?.anchorNode as HTMLElement | null)?.parentElement?.closest("li");
-            const ul = li?.closest("ul");
-            if (ul) ul.setAttribute("data-checklist", "1");
-            commit();
-          }}>{I.check}</IcoBtn>
+          <IcoBtn title="Checklist" onClick={makeChecklist}>{I.check}</IcoBtn>
           <IcoBtn title="Indent" onClick={() => exec("indent")}>{I.indent}</IcoBtn>
           <Divider />
 
@@ -498,14 +632,14 @@ export default function RichNoteField({
 
           {/* Insert */}
           <IcoBtn title="Block quote" onClick={() => setBlock("blockquote")}>{I.quote}</IcoBtn>
-          <IcoBtn title="Divider" onClick={() => exec("insertHorizontalRule")}>{I.divider}</IcoBtn>
+          <IcoBtn title="Divider" onClick={insertDivider}>{I.divider}</IcoBtn>
           {linkableVerses.length > 0 && (
             <IcoBtn title="Link a verse" wide onClick={() => { rememberSelection(); setLinkOpen((v) => !v); }}>
               {I.link}<span style={{ fontSize: "12px" }}>Link verse</span>
             </IcoBtn>
           )}
           <Divider />
-          <IcoBtn title="Clear formatting" onClick={() => exec("removeFormat")}>{I.clear}</IcoBtn>
+          <IcoBtn title="Clear formatting" onClick={clearFormatting}>{I.clear}</IcoBtn>
         </div>
 
         {/* the editable surface */}
@@ -516,8 +650,8 @@ export default function RichNoteField({
           onInput={commit}
           onBlur={commit}
           onPaste={handlePaste}
-          onKeyUp={() => { rememberSelection(); syncBlock(); }}
-          onMouseUp={() => { rememberSelection(); syncBlock(); }}
+          onKeyUp={() => { rememberSelection(); syncBlock(); syncColor(); }}
+          onMouseUp={() => { rememberSelection(); syncBlock(); syncColor(); }}
           data-placeholder={placeholder || "Write a note…"}
           className="scribal-rich-editor"
           style={{
