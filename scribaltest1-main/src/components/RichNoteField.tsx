@@ -1,5 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mark, MarkColor, COLOR_MAP } from "../types";
+import {
+  currentSelectionInside,
+  toggleInline,
+  applyInlineStyle,
+  setBlockTag,
+  makeList,
+  insertDividerNode,
+  insertChip,
+  clearBlockFormatting,
+  indentBlock,
+  alignBlock,
+} from "./richTextOps";
 
 // ── icon toolbar building blocks ──
 const IcoBtn = ({
@@ -247,58 +259,76 @@ export default function RichNoteField({
     }
     return sel;
   };
-  const exec = (cmd: string, arg?: string) => {
-    restoreSelection();
-    document.execCommand(cmd, false, arg);
-    commit();
-    // re-capture, since the command may have moved the caret
-    rememberSelection();
-  };
   const rememberSelection = () => {
     const sel = window.getSelection();
-    if (
-      sel &&
-      sel.rangeCount &&
-      editorRef.current?.contains(sel.anchorNode)
-    ) {
+    if (sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)) {
       savedRange.current = sel.getRangeAt(0).cloneRange();
     }
   };
-
-  // Wrap the current selection in a styled <span> — reliable where
-  // execCommand('foreColor'/'hiliteColor') is not. prop is "color" or
-  // "backgroundColor".
-  const wrapStyle = (prop: "color" | "backgroundColor", value: string) => {
-    const sel = restoreSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    if (range.collapsed) return; // nothing selected → nothing to color
-    const span = document.createElement("span");
-    (span.style as any)[prop] = value;
-    try {
-      span.appendChild(range.extractContents());
-      range.insertNode(span);
-      // place caret after the new span
+  // Restore the caret/selection we saved before the toolbar took focus, and
+  // return a live Range inside the editor (or null).
+  const activeRange = (): Range | null => {
+    const root = editorRef.current;
+    if (!root) return null;
+    root.focus();
+    const sel = window.getSelection();
+    if (savedRange.current && sel) {
       sel.removeAllRanges();
-      const r = document.createRange();
-      r.setStartAfter(span);
-      r.collapse(true);
-      sel.addRange(r);
-      rememberSelection();
-    } catch {
-      /* cross-block selection — ignore */
+      sel.addRange(savedRange.current);
     }
-    commit();
+    return currentSelectionInside(root);
   };
 
   const [curBlock, setCurBlock] = useState("p");
+  const [curColor, setCurColor] = useState<string>(accent);
+
+  const run = (fn: (root: HTMLElement, range: Range) => void) => {
+    const root = editorRef.current;
+    if (!root) return;
+    const range = activeRange();
+    if (!range) return;
+    fn(root, range);
+    commit();
+    rememberSelection();
+  };
+
+  const doInline = (kind: "bold" | "italic" | "underline") =>
+    run((root, range) => toggleInline(root, kind, range));
+
   const setBlock = (tag: string) => {
-    exec("formatBlock", "<" + tag + ">");
+    run((root, range) => setBlockTag(root, tag, range));
     setCurBlock(tag);
   };
+
+  const setColor = (c: string) => {
+    run((root, range) => applyInlineStyle(root, "color", c, range));
+    setCurColor(c);
+    setColorOpen(false);
+  };
+  const setHighlight = (c: string) => {
+    run((root, range) => applyInlineStyle(root, "backgroundColor", c, range));
+    setHlOpen(false);
+  };
+
+  const makeChecklist = () => run((root, range) => makeList(root, "checklist", range));
+  const makeOL = () => run((root, range) => makeList(root, "ol", range));
+  const makeUL = () => run((root, range) => makeList(root, "ul", range));
+  const insertDivider = () => run((root, range) => insertDividerNode(root, range));
+  const clearFormatting = () => {
+    run((root, range) => clearBlockFormatting(root, range));
+    setCurBlock("p");
+    setCurColor("var(--text)");
+  };
+  const insertVerseChip = (ref: string) => {
+    run((root, range) => insertChip(root, ref, range));
+    setLinkOpen(false);
+    setLinkFilter("");
+  };
+
   const syncBlock = () => {
     const sel = window.getSelection();
     let n = sel?.anchorNode as HTMLElement | null;
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
     while (n && n !== editorRef.current) {
       const tag = (n.tagName || "").toLowerCase();
       if (tag === "h1" || tag === "h2" || tag === "blockquote") {
@@ -309,8 +339,6 @@ export default function RichNoteField({
     }
     setCurBlock("p");
   };
-  // Current text color under the caret — drives the swatch indicator.
-  const [curColor, setCurColor] = useState<string>(accent);
   const syncColor = () => {
     const sel = window.getSelection();
     let n = sel?.anchorNode as HTMLElement | null;
@@ -326,106 +354,17 @@ export default function RichNoteField({
     setCurColor("var(--text)");
   };
 
-  const setColor = (c: string) => {
-    wrapStyle("color", c);
-    setCurColor(c);
-    setColorOpen(false);
-  };
-  const setHighlight = (c: string) => {
-    wrapStyle("backgroundColor", c);
-    setHlOpen(false);
-  };
-
-  // Turn the list containing the caret into a checklist (or back).
-  const makeChecklist = () => {
-    restoreSelection();
-    document.execCommand("insertUnorderedList");
-    const sel = window.getSelection();
-    let n = sel?.anchorNode as HTMLElement | null;
-    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
-    const ul = n?.closest?.("ul");
-    if (ul) ul.setAttribute("data-checklist", "1");
-    commit();
-    rememberSelection();
-  };
-
-  // Insert a divider followed by an empty paragraph, so the caret lands BELOW
-  // the rule and it can be backspaced away (the "can't delete the line" fix).
-  const insertDivider = () => {
-    const sel = restoreSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    const hr = document.createElement("hr");
-    const p = document.createElement("p");
-    p.appendChild(document.createElement("br"));
-    range.insertNode(p);
-    range.insertNode(hr);
-    // caret into the new paragraph
-    const r = document.createRange();
-    r.setStart(p, 0);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
-    rememberSelection();
-    commit();
-  };
-
-  // Real "clear formatting": strip inline styling AND lift the block back to a
-  // plain paragraph (execCommand('removeFormat') leaves headings/quotes/color).
-  const clearFormatting = () => {
-    const sel = restoreSelection();
-    document.execCommand("removeFormat");
-    document.execCommand("formatBlock", false, "<p>");
-    // strip lingering color/background spans in the selection's block
-    let n = sel?.anchorNode as HTMLElement | null;
-    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
-    const block = n?.closest?.("p,h1,h2,blockquote,li,div");
-    if (block) {
-      block.querySelectorAll("span").forEach((sp) => {
-        const parent = sp.parentNode!;
-        while (sp.firstChild) parent.insertBefore(sp.firstChild, sp);
-        parent.removeChild(sp);
-      });
-    }
-    setCurBlock("p");
-    commit();
-    rememberSelection();
-  };
-
-  const insertVerseChip = (ref: string) => {
-    const sel = restoreSelection();
-    // A chip is a styled, non-editable span carrying the reference; a trailing
-    // space lets you keep typing after it.
-    const chip = document.createElement("span");
-    chip.setAttribute("data-ref", ref);
-    chip.setAttribute("contenteditable", "false");
-    chip.className = "scribal-vchip";
-    chip.style.color = "#8b5cf6";
-    chip.style.fontWeight = "600";
-    chip.textContent = "\u2937\u00a0" + ref;
-    if (sel && sel.rangeCount) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(document.createTextNode("\u00a0"));
-      range.insertNode(chip);
-      const r = document.createRange();
-      r.setStartAfter(chip);
-      r.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(r);
-      rememberSelection();
-    }
-    commit();
-    setLinkOpen(false);
-    setLinkFilter("");
-  };
-
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData("text/plain");
-    document.execCommand("insertText", false, text);
+    const range = activeRange();
+    if (range) {
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      range.collapse(false);
+    }
     commit();
+    rememberSelection();
   };
 
   // Clicks on verse chips (in the resting render) open a preview.
@@ -559,9 +498,9 @@ export default function RichNoteField({
           <Divider />
 
           {/* Weight */}
-          <IcoBtn title="Bold" onClick={() => exec("bold")}>{I.bold}</IcoBtn>
-          <IcoBtn title="Italic" onClick={() => exec("italic")}>{I.italic}</IcoBtn>
-          <IcoBtn title="Underline" onClick={() => exec("underline")}>{I.underline}</IcoBtn>
+          <IcoBtn title="Bold" onClick={() => doInline("bold")}>{I.bold}</IcoBtn>
+          <IcoBtn title="Italic" onClick={() => doInline("italic")}>{I.italic}</IcoBtn>
+          <IcoBtn title="Underline" onClick={() => doInline("underline")}>{I.underline}</IcoBtn>
           <Divider />
 
           {/* Text color */}
@@ -619,15 +558,15 @@ export default function RichNoteField({
           <Divider />
 
           {/* Lists */}
-          <IcoBtn title="Numbered list" onClick={() => exec("insertOrderedList")}>{I.ol}</IcoBtn>
-          <IcoBtn title="Bulleted list" onClick={() => exec("insertUnorderedList")}>{I.ul}</IcoBtn>
+          <IcoBtn title="Numbered list" onClick={makeOL}>{I.ol}</IcoBtn>
+          <IcoBtn title="Bulleted list" onClick={makeUL}>{I.ul}</IcoBtn>
           <IcoBtn title="Checklist" onClick={makeChecklist}>{I.check}</IcoBtn>
-          <IcoBtn title="Indent" onClick={() => exec("indent")}>{I.indent}</IcoBtn>
+          <IcoBtn title="Indent" onClick={() => run((root, range) => indentBlock(root, range))}>{I.indent}</IcoBtn>
           <Divider />
 
           {/* Align */}
-          <IcoBtn title="Align left" onClick={() => exec("justifyLeft")}>{I.alignLeft}</IcoBtn>
-          <IcoBtn title="Align center" onClick={() => exec("justifyCenter")}>{I.alignCenter}</IcoBtn>
+          <IcoBtn title="Align left" onClick={() => run((root, range) => alignBlock(root, "left", range))}>{I.alignLeft}</IcoBtn>
+          <IcoBtn title="Align center" onClick={() => run((root, range) => alignBlock(root, "center", range))}>{I.alignCenter}</IcoBtn>
           <Divider />
 
           {/* Insert */}
