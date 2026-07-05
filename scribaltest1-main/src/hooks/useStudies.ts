@@ -15,6 +15,13 @@ export interface Study {
   // last-write via extraRefsAt, exactly like a keyword study's refs/updatedAt.
   extraRefs?: string[];
   extraRefsAt?: number;
+  // For linked studies: a SNAPSHOT of the chapter scopes in the group at save
+  // time (e.g. ["1 Nephi 1","1 Nephi 2"]). The study's membership no longer
+  // depends on rebuilding from live chapterGroups at open time — which broke
+  // when that map was incomplete (a device that hadn't synced the links) or
+  // when the group id drifted. Live chapterGroups is only a fallback for old
+  // studies saved before this field existed.
+  memberScopes?: string[];
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational / Charting), so reopening it lands on the same tab instead of
   // resetting to Outline. Optional; studies without it open on Outline.
@@ -63,7 +70,8 @@ export function useStudies() {
     bookId: string,
     scopeRef: string,
     name: string,
-    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic"
+    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic",
+    memberScopes?: string[]
   ) => {
     setStudies((prev) => {
       const now = Date.now();
@@ -84,6 +92,10 @@ export function useStudies() {
           // Remember the view it was saved in; keep the existing one when the
           // caller doesn't pass a view (e.g. a background re-compile).
           view: view !== undefined ? view : cur.view,
+          memberScopes:
+            memberScopes && memberScopes.length
+              ? memberScopes
+              : cur.memberScopes,
         };
         return next;
       }
@@ -97,6 +109,7 @@ export function useStudies() {
           compiledAt: now,
           nameAt: now,
           view,
+          memberScopes,
         },
         ...prev,
       ];
