@@ -524,6 +524,14 @@ const MergeSeam = ({
         content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
         border-radius: 4px; border: 1.5px solid var(--muted);
       }
+      .scribal-rich-view ul[data-checklist] li { cursor: pointer; }
+      .scribal-rich-editor ul[data-checklist] li[data-checked="1"], .scribal-rich-view ul[data-checklist] li[data-checked="1"] {
+        color: var(--muted); text-decoration: line-through;
+      }
+      .scribal-rich-editor ul[data-checklist] li[data-checked="1"]:before, .scribal-rich-view ul[data-checklist] li[data-checked="1"]:before {
+        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+      }
       .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
       .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     `}</style>
