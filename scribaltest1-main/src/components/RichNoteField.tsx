@@ -511,6 +511,20 @@ export default function RichNoteField({
           onMouseDown={(e) => e.preventDefault() /* keep selection */}
         >
           {/* Text style */}
+          <span
+            style={{
+              fontSize: "9px",
+              fontWeight: 800,
+              letterSpacing: "1px",
+              color: "#fff",
+              background: "#8b5cf6",
+              borderRadius: "4px",
+              padding: "2px 6px",
+              marginRight: "4px",
+            }}
+          >
+            RT-v2
+          </span>
           <select
             value={curBlock}
             onChange={(e) => setBlock(e.target.value)}
