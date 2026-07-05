@@ -407,7 +407,9 @@ interface Study {
   extraRefs?: string[];
   // When extraRefs was last edited. Drives last-write sync of the added-verse
   // set (add AND remove), exactly like a keyword study's refs/updatedAt.
-  extraRefsAt?: number;
+extraRefsAt?: number;
+  // Snapshot of a linked study's chapter scopes at save time — see useStudies.
+  memberScopes?: string[];
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
   view?: "outline" | "charting" | "distilled" | "covenants" | "semantic";
@@ -1038,8 +1040,12 @@ export default function MobileApp() {
       const gid = raw.startsWith("group:")
         ? raw.slice(6)
         : chapterGroups[raw] || raw;
+      // Prefer the snapshot saved with the study; live chapterGroups is only a
+      // fallback for old studies (incomplete on unsynced devices — the bug).
       const chapters = new Set(
-        Object.keys(chapterGroups).filter((cs) => chapterGroups[cs] === gid)
+        rec.memberScopes && rec.memberScopes.length
+          ? rec.memberScopes
+          : Object.keys(chapterGroups).filter((cs) => chapterGroups[cs] === gid)
       );
       if (chapterGroups[raw] || !raw.startsWith("group:")) chapters.add(raw);
       const extra = new Set(rec.extraRefs || []);
@@ -3343,7 +3349,8 @@ export default function MobileApp() {
     scopeRef: string,
     name: string,
     rename: boolean = true,
-    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic"
+    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic",
+    memberScopes?: string[]
   ) => {
     if (mtourOpen) return;
     const bookId = activeBookId;
@@ -3366,6 +3373,10 @@ export default function MobileApp() {
           // Remember the view it was saved in; keep the existing one when the
           // caller doesn't pass a view (e.g. a background re-compile).
           view: view !== undefined ? view : cur.view,
+          memberScopes:
+            memberScopes && memberScopes.length
+              ? memberScopes
+              : cur.memberScopes,
         };
         return next;
       }
@@ -3379,6 +3390,7 @@ export default function MobileApp() {
           compiledAt: now,
           nameAt: now,
           view,
+          memberScopes,
         },
         ...prev,
       ];
@@ -3395,13 +3407,14 @@ export default function MobileApp() {
     const gid = chapterGroups[title];
     const type: "chapter" | "linked" = gid ? "linked" : "chapter";
     const scopeRef = gid || title;
+    const members = gid ? groupMembers(title) : [title];
     const defName = gid
       ? groupMembers(title).map(displayOf).join("  +  ")
       : displayTitle;
     // Compiling lists the study, but must NOT rename one you've already named.
     // rename = false → the default name is only used when first creating it;
     // an existing study keeps whatever you called it.
-    recordStudy(type, scopeRef, defName, false);
+    recordStudy(type, scopeRef, defName, false, undefined, members);
     startCompile();
   };
   // Open a recorded study from the Studies screen — jump straight to its
@@ -10971,7 +10984,8 @@ export default function MobileApp() {
                     chapterGroups[title],
                     name || groupMembers(title).map(displayOf).join("  +  "),
                     true,
-                    view
+                    view,
+                    groupMembers(title)
                   );
                 } else {
                   recordStudy(
