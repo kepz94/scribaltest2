@@ -498,6 +498,34 @@ const MergeSeam = ({
       .scribal-merge-right { animation: scribal-merge-right 1.6s cubic-bezier(.4,0,.2,1) both; }
       .scribal-merge-pop { animation: scribal-merge-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
       .scribal-merge-label { animation: scribal-merge-label 1.6s ease both; }
+
+      /* Rich note editor + rendered notes */
+      .scribal-rich-editor:empty:before {
+        content: attr(data-placeholder);
+        color: var(--muted);
+        pointer-events: none;
+      }
+      .scribal-rich-editor h1, .scribal-rich-view h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
+      .scribal-rich-editor h2, .scribal-rich-view h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
+      .scribal-rich-editor p, .scribal-rich-view p { margin: 0 0 8px; }
+      .scribal-rich-editor blockquote, .scribal-rich-view blockquote {
+        border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px;
+        color: var(--muted); font-style: italic;
+      }
+      .scribal-rich-editor ol, .scribal-rich-view ol { margin: 0 0 10px 24px; }
+      .scribal-rich-editor ul, .scribal-rich-view ul { margin: 0 0 10px 22px; }
+      .scribal-rich-editor ul[data-checklist], .scribal-rich-view ul[data-checklist] {
+        list-style: none; margin-left: 2px; padding-left: 0;
+      }
+      .scribal-rich-editor ul[data-checklist] li, .scribal-rich-view ul[data-checklist] li {
+        position: relative; padding-left: 26px; margin-bottom: 6px;
+      }
+      .scribal-rich-editor ul[data-checklist] li:before, .scribal-rich-view ul[data-checklist] li:before {
+        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+        border-radius: 4px; border: 1.5px solid var(--muted);
+      }
+      .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
+      .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     `}</style>
     {/* soft localized dim, spilling into the two adjacent panels */}
     <div
