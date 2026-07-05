@@ -506,6 +506,16 @@ const MergeSeam = ({
         pointer-events: none;
       }
       .scribal-rich-editor h1, .scribal-rich-view h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
+      /* Lexical theme classes */
+      .rt-bold { font-weight: 800; }
+      .rt-italic { font-style: italic; }
+      .rt-underline { text-decoration: underline; }
+      .rt-h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
+      .rt-h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
+      .rt-quote { border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px; color: var(--muted); font-style: italic; }
+      .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
+      .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
+      .rt-li { margin-bottom: 4px; }
       .scribal-rich-editor h2, .scribal-rich-view h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
       .scribal-rich-editor p, .scribal-rich-view p { margin: 0 0 8px; }
       .scribal-rich-editor blockquote, .scribal-rich-view blockquote {
