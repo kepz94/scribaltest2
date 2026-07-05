@@ -1292,6 +1292,7 @@ export default function App() {
       bookId: string;
       scopeRef: string;
       refs: string[];
+      memberScopes?: string[];
       defaultName: string;
     };
     existing: Study;
@@ -3387,9 +3388,15 @@ export default function App() {
     setStudiesOpen(false);
     const scopes =
       s.type === "linked"
-        ? Object.keys(chapterGroups).filter(
-            (c) => chapterGroups[c] === s.scopeRef
-          )
+        ? // Prefer the snapshot saved WITH the study; only fall back to live
+          // chapterGroups for old studies saved before memberScopes existed.
+          // This is the fix for "opens with one chapter" and "nothing shows on
+          // another device" — both were live-chapterGroups being incomplete.
+          s.memberScopes && s.memberScopes.length
+          ? s.memberScopes
+          : Object.keys(chapterGroups).filter(
+              (c) => chapterGroups[c] === s.scopeRef
+            )
         : [s.scopeRef];
     const locs = (
       scopes.map((sc) => chapterLoc.get(sc)).filter(Boolean) as {
@@ -4451,11 +4458,24 @@ export default function App() {
         refs.push(v.reference)
       );
     });
+    // The study's true membership = every chapter being compiled (compileTabs
+    // includes the virtual tabs for a linked group, not just the one open tab).
+    // Snapshot it so the study can reopen without rebuilding from live
+    // chapterGroups — the source of the "only one chapter" / "nothing shows on
+    // my friend's device" bug.
+    const memberScopes = Array.from(
+      new Set(
+        (compileTabs.length ? compileTabs : unitTabs).map((t) =>
+          chapterScopeOf(t)
+        )
+      )
+    );
     return {
       type,
       bookId: activeBookId,
       scopeRef,
       refs,
+      memberScopes,
       defaultName: unitTabs.map((t) => tabLabel(t)).join("  +  "),
     };
   };
@@ -4478,7 +4498,7 @@ export default function App() {
     if (existing) {
       setSaveStudyPrompt({ info, existing });
     } else {
-      recordStudy(info.type, info.bookId, info.scopeRef, nm, compileView);
+      recordStudy(info.type, info.bookId, info.scopeRef, nm, compileView, info.memberScopes);
       flashSaved();
     }
   };
@@ -4494,7 +4514,8 @@ export default function App() {
       // Keep the name it already has unless the user typed a new one — never
       // silently reset a named study back to the default.
       compileName.trim() || existing.name,
-      compileView
+      compileView,
+      info.memberScopes
     );
     setSaveStudyPrompt(null);
     flashSaved();
@@ -4507,7 +4528,7 @@ export default function App() {
     const id = createSession(nm);
     absorb(id, info.bookId, info.refs); // copy the current marks into the new book
     setActiveBook(id);
-    recordStudy(info.type, id, info.scopeRef, nm, compileView);
+    recordStudy(info.type, id, info.scopeRef, nm, compileView, info.memberScopes);
     setSaveStudyPrompt(null);
     flashSaved();
   };
@@ -4518,7 +4539,7 @@ export default function App() {
     const nm = compileName.trim() || info.defaultName;
     const id = createSession(nm);
     setActiveBook(id);
-    recordStudy(info.type, id, info.scopeRef, nm, compileView);
+    recordStudy(info.type, id, info.scopeRef, nm, compileView, info.memberScopes);
     setSaveStudyPrompt(null);
     setMode("read");
     setCompileStudyId(null);
