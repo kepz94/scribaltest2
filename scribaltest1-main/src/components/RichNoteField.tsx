@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mark, MarkColor, COLOR_MAP } from "../types";
 import {
-  currentSelectionInside,
   toggleInline,
   applyInlineStyle,
   setBlockTag,
@@ -28,10 +27,16 @@ const IcoBtn = ({
   wide?: boolean;
 }) => (
   <button
+    type="button"
     title={title}
     aria-label={title}
-    onMouseDown={(e) => e.preventDefault()}
-    onClick={onClick}
+    onMouseDown={(e) => {
+      // Fire on mousedown AND preventDefault: this stops the button from
+      // stealing focus from the editor, so the user's text selection is still
+      // alive when the command runs. (onClick fires after focus already moved.)
+      e.preventDefault();
+      onClick();
+    }}
     style={{
       height: "32px",
       minWidth: wide ? undefined : "32px",
@@ -41,6 +46,8 @@ const IcoBtn = ({
       color: active ? "#b79df5" : "var(--text)",
       borderRadius: "6px",
       cursor: "pointer",
+      userSelect: "none",
+      WebkitUserSelect: "none",
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
@@ -48,6 +55,7 @@ const IcoBtn = ({
       fontFamily: "system-ui, sans-serif",
       fontSize: "12.5px",
       fontWeight: 600,
+      pointerEvents: "auto",
     }}
   >
     {children}
@@ -85,7 +93,7 @@ const I = {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke={barStroke} strokeWidth="1.8"/><path d="M4.5 7.5 6 9l2.5-3" stroke={barStroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke={barStroke} strokeWidth="1.8"/><path d="M13 7h8M13 17h8" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
   ),
   indent: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M10 12h10M10 18h10M4 10v4l3-2z" stroke={barStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M11 12h9M11 18h9" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/><path d="M3 9l4 3-4 3z" fill={barStroke}/></svg>
   ),
   alignLeft: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
@@ -265,22 +273,49 @@ export default function RichNoteField({
       savedRange.current = sel.getRangeAt(0).cloneRange();
     }
   };
-  // Restore the caret/selection we saved before the toolbar took focus, and
-  // return a live Range inside the editor (or null).
+  // Continuously mirror the live selection while it's inside the editor, so a
+  // toolbar mousedown (which we preventDefault, keeping focus in the editor)
+  // always has the user's real selection to act on.
+  useEffect(() => {
+    if (!editing) return;
+    const handler = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)) {
+        savedRange.current = sel.getRangeAt(0).cloneRange();
+        // keep indicators live
+        syncBlockRef.current?.();
+        syncColorRef.current?.();
+      }
+    };
+    document.addEventListener("selectionchange", handler);
+    return () => document.removeEventListener("selectionchange", handler);
+    // eslint-disable-next-line
+  }, [editing]);
+
+  // Return the saved live range WITHOUT calling focus() (focus collapses the
+  // selection). Because toolbar buttons preventDefault on mousedown, focus never
+  // left the editor, so the DOM selection is still valid.
   const activeRange = (): Range | null => {
     const root = editorRef.current;
     if (!root) return null;
-    root.focus();
     const sel = window.getSelection();
+    // prefer the currently-live selection if it's inside the editor
+    if (sel && sel.rangeCount && root.contains(sel.anchorNode)) {
+      return sel.getRangeAt(0);
+    }
+    // otherwise restore the last one we saw
     if (savedRange.current && sel) {
       sel.removeAllRanges();
       sel.addRange(savedRange.current);
+      return savedRange.current;
     }
-    return currentSelectionInside(root);
+    return null;
   };
 
   const [curBlock, setCurBlock] = useState("p");
   const [curColor, setCurColor] = useState<string>(accent);
+  const syncBlockRef = useRef<() => void>();
+  const syncColorRef = useRef<() => void>();
 
   const run = (fn: (root: HTMLElement, range: Range) => void) => {
     const root = editorRef.current;
@@ -353,6 +388,9 @@ export default function RichNoteField({
     }
     setCurColor("var(--text)");
   };
+
+  syncBlockRef.current = syncBlock;
+  syncColorRef.current = syncColor;
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -524,7 +562,7 @@ export default function RichNoteField({
             {colorOpen && (
               <div style={{ position: "absolute", top: "36px", left: 0, zIndex: 30, display: "flex", flexWrap: "wrap", gap: "6px", width: "168px", padding: "10px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "9px", boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
                 {penColors.map((c, i) => (
-                  <button key={i} onMouseDown={(e) => e.preventDefault()} onClick={() => setColor(c)} title="Set text color"
+                  <button key={i} onMouseDown={(e) => { e.preventDefault(); setColor(c); }} title="Set text color"
                     style={{ width: "24px", height: "24px", borderRadius: "50%", background: c, border: "1.5px solid rgba(255,255,255,.18)", cursor: "pointer" }} />
                 ))}
               </div>
@@ -549,7 +587,7 @@ export default function RichNoteField({
             {hlOpen && (
               <div style={{ position: "absolute", top: "36px", left: 0, zIndex: 30, display: "flex", flexWrap: "wrap", gap: "6px", width: "168px", padding: "10px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "9px", boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
                 {Array.from({ length: 10 }, (_, i) => COLOR_MAP[(i + 1) as MarkColor]).map((c, i) => (
-                  <button key={i} onMouseDown={(e) => e.preventDefault()} onClick={() => setHighlight(c)} title="Highlight color"
+                  <button key={i} onMouseDown={(e) => { e.preventDefault(); setHighlight(c); }} title="Highlight color"
                     style={{ width: "24px", height: "24px", borderRadius: "4px", background: c, border: "1.5px solid rgba(255,255,255,.18)", cursor: "pointer" }} />
                 ))}
               </div>
@@ -681,7 +719,7 @@ export default function RichNoteField({
                     vs.map((v) => (
                       <div
                         key={v.reference}
-                        onClick={() => insertVerseChip(v.reference)}
+                        onMouseDown={(e) => { e.preventDefault(); insertVerseChip(v.reference); }}
                         style={{
                           display: "flex",
                           gap: "9px",
