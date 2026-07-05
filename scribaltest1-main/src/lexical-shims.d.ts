@@ -12,6 +12,9 @@ declare module "lexical" {
   export const $createParagraphNode: any;
   export const $createTextNode: any;
   export const FORMAT_TEXT_COMMAND: any;
+  export const FORMAT_ELEMENT_COMMAND: any;
+  export const INDENT_CONTENT_COMMAND: any;
+  export const OUTDENT_CONTENT_COMMAND: any;
   export const ElementNode: any;
   export const TextNode: any;
   const _default: any;
@@ -38,6 +41,9 @@ declare module "@lexical/react/LexicalErrorBoundary" {
 declare module "@lexical/react/LexicalListPlugin" {
   export const ListPlugin: any;
 }
+declare module "@lexical/react/LexicalCheckListPlugin" {
+  export const CheckListPlugin: any;
+}
 declare module "@lexical/react/LexicalComposerContext" {
   export const useLexicalComposerContext: any;
 }
@@ -55,11 +61,13 @@ declare module "@lexical/list" {
   export const ListItemNode: any;
   export const INSERT_ORDERED_LIST_COMMAND: any;
   export const INSERT_UNORDERED_LIST_COMMAND: any;
+  export const INSERT_CHECK_LIST_COMMAND: any;
   export const $isListNode: any;
 }
 declare module "@lexical/selection" {
   export const $setBlocksType: any;
   export const $patchStyleText: any;
+  export const $getSelectionStyleValueForProperty: any;
 }
 declare module "@lexical/html" {
   export const $generateHtmlFromNodes: any;
