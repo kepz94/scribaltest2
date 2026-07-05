@@ -1,6 +1,101 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mark, MarkColor, COLOR_MAP } from "../types";
 
+// ── icon toolbar building blocks ──
+const IcoBtn = ({
+  title,
+  onClick,
+  active,
+  children,
+  wide,
+}: {
+  title: string;
+  onClick: () => void;
+  active?: boolean;
+  children: React.ReactNode;
+  wide?: boolean;
+}) => (
+  <button
+    title={title}
+    aria-label={title}
+    onMouseDown={(e) => e.preventDefault()}
+    onClick={onClick}
+    style={{
+      height: "32px",
+      minWidth: wide ? undefined : "32px",
+      padding: wide ? "0 9px" : 0,
+      border: "none",
+      background: active ? "rgba(139,92,246,.20)" : "transparent",
+      color: active ? "#b79df5" : "var(--text)",
+      borderRadius: "6px",
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "6px",
+      fontFamily: "system-ui, sans-serif",
+      fontSize: "12.5px",
+      fontWeight: 600,
+    }}
+  >
+    {children}
+  </button>
+);
+const Divider = () => (
+  <span
+    style={{
+      width: "1px",
+      height: "20px",
+      background: "var(--border)",
+      margin: "0 5px",
+      flexShrink: 0,
+    }}
+  />
+);
+const barStroke = "currentColor";
+const I = {
+  bold: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M7 5h6.5a3.5 3.5 0 0 1 0 7H7zM7 12h7.5a3.5 3.5 0 0 1 0 7H7z" stroke={barStroke} strokeWidth="2" strokeLinejoin="round"/></svg>
+  ),
+  italic: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M15 5h-5M14 19H9M14 5l-4 14" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  underline: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M7 5v6a5 5 0 0 0 10 0V5M6 21h12" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  ol: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M10 6h10M10 12h10M10 18h10" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/><text x="3" y="8" fontSize="7" fill={barStroke} fontFamily="system-ui">1</text><text x="3" y="14" fontSize="7" fill={barStroke} fontFamily="system-ui">2</text><text x="3" y="20" fontSize="7" fill={barStroke} fontFamily="system-ui">3</text></svg>
+  ),
+  ul: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6h11M9 12h11M9 18h11" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/><circle cx="4" cy="6" r="1.4" fill={barStroke}/><circle cx="4" cy="12" r="1.4" fill={barStroke}/><circle cx="4" cy="18" r="1.4" fill={barStroke}/></svg>
+  ),
+  check: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke={barStroke} strokeWidth="1.8"/><path d="M4.5 7.5 6 9l2.5-3" stroke={barStroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke={barStroke} strokeWidth="1.8"/><path d="M13 7h8M13 17h8" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  indent: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M10 12h10M10 18h10M4 10v4l3-2z" stroke={barStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  ),
+  alignLeft: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  alignCenter: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M6 18h12" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  quote: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 7c-2 .5-3 2-3 4v3h4v-4H5.5C5.5 8.5 6.2 8 7.5 7.7zM17 7c-2 .5-3 2-3 4v3h4v-4h-2.5C15.5 8.5 16.2 8 17.5 7.7z" fill={barStroke}/></svg>
+  ),
+  divider: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke={barStroke} strokeWidth="2" strokeLinecap="round"/></svg>
+  ),
+  link: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M10 14a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66L11 7M14 10a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 0 0 5.66 5.66L13 17" stroke={barStroke} strokeWidth="1.9" strokeLinecap="round"/></svg>
+  ),
+  clear: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M6 5h13M9 5l-1.5 9M13 5l-.5 3M5 21l14-14" stroke={barStroke} strokeWidth="1.9" strokeLinecap="round"/></svg>
+  ),
+};
+
+
 // ── RichNoteField ─────────────────────────────────────────────────────────────
 // The desktop Outline note editor. Stores a note as an HTML string (same
 // notes[key] slot as before — a plain-text note is just HTML with no tags, so
@@ -152,7 +247,26 @@ export default function RichNoteField({
     if (sel && sel.rangeCount) savedRange.current = sel.getRangeAt(0).cloneRange();
   };
 
-  const setBlock = (tag: string) => exec("formatBlock", tag);
+  const [curBlock, setCurBlock] = useState("p");
+  const setBlock = (tag: string) => {
+    // execCommand needs the tag in angle brackets on Chrome/Safari; a bare
+    // "h1" silently no-ops — the reason the Style dropdown "did nothing".
+    exec("formatBlock", "<" + tag + ">");
+    setCurBlock(tag);
+  };
+  const syncBlock = () => {
+    const sel = window.getSelection();
+    let n = sel?.anchorNode as HTMLElement | null;
+    while (n && n !== editorRef.current) {
+      const tag = (n.tagName || "").toLowerCase();
+      if (tag === "h1" || tag === "h2" || tag === "blockquote") {
+        setCurBlock(tag);
+        return;
+      }
+      n = n.parentElement;
+    }
+    setCurBlock("p");
+  };
   const setColor = (c: string) => {
     exec("foreColor", c);
     setColorOpen(false);
@@ -253,6 +367,8 @@ export default function RichNoteField({
             v.text.toLowerCase().includes(linkFilter.toLowerCase())
         );
 
+
+
   // ─────────────────────────────── EDITING ────────────────────────────────
   if (editing) {
     return (
@@ -276,226 +392,120 @@ export default function RichNoteField({
           }}
           onMouseDown={(e) => e.preventDefault() /* keep selection */}
         >
+          {/* Text style */}
           <select
-            onChange={(e) => {
-              setBlock(e.target.value);
-              e.target.selectedIndex = 0;
-            }}
+            value={curBlock}
+            onChange={(e) => setBlock(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Text style"
             style={{
-              height: "30px",
-              background: "transparent",
+              height: "32px",
+              background: "var(--soft)",
               color: "var(--text)",
               border: "1px solid var(--border)",
               borderRadius: "6px",
-              fontSize: "11.5px",
-              fontWeight: 700,
+              fontSize: "12.5px",
+              fontWeight: 600,
               cursor: "pointer",
-              fontFamily: "inherit",
+              fontFamily: "system-ui, sans-serif",
+              padding: "0 6px",
             }}
-            defaultValue=""
           >
-            <option value="" disabled>
-              Style
-            </option>
+            <option value="p">Normal text</option>
             <option value="h1">Heading 1</option>
             <option value="h2">Heading 2</option>
-            <option value="p">Body</option>
           </select>
-          {sep}
-          <button style={{ ...tb, fontWeight: 800 }} onClick={() => exec("bold")}>
-            B
-          </button>
-          <button style={{ ...tb, fontStyle: "italic" }} onClick={() => exec("italic")}>
-            I
-          </button>
-          <button
-            style={{ ...tb, textDecoration: "underline" }}
-            onClick={() => exec("underline")}
-          >
-            U
-          </button>
-          {sep}
-          {/* text color */}
+          <Divider />
+
+          {/* Weight */}
+          <IcoBtn title="Bold" onClick={() => exec("bold")}>{I.bold}</IcoBtn>
+          <IcoBtn title="Italic" onClick={() => exec("italic")}>{I.italic}</IcoBtn>
+          <IcoBtn title="Underline" onClick={() => exec("underline")}>{I.underline}</IcoBtn>
+          <Divider />
+
+          {/* Text color */}
           <div style={{ position: "relative" }}>
             <button
-              style={tb}
-              onClick={() => {
-                rememberSelection();
-                setColorOpen((v) => !v);
-                setHlOpen(false);
-              }}
               title="Text color"
+              onMouseDown={(e) => { e.preventDefault(); rememberSelection(); }}
+              onClick={() => { setColorOpen((v) => !v); setHlOpen(false); }}
+              style={{
+                height: "32px", padding: "0 6px", border: "none", background: "transparent",
+                cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px",
+                borderRadius: "6px", color: "var(--text)",
+              }}
             >
-              <span
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  borderRadius: "50%",
-                  background: accent,
-                  border: "1.5px solid rgba(255,255,255,.2)",
-                }}
-              />
-              <span style={{ fontSize: "9px" }}>▾</span>
+              <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
+                <span style={{ fontWeight: 800, fontSize: "13px", lineHeight: 1 }}>A</span>
+                <span style={{ width: "15px", height: "3px", borderRadius: "2px", background: accent, marginTop: "1px" }} />
+              </span>
+              <span style={{ fontSize: "9px", color: "var(--muted)" }}>▾</span>
             </button>
             {colorOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "34px",
-                  left: 0,
-                  zIndex: 30,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "6px",
-                  width: "160px",
-                  padding: "9px",
-                  background: "var(--panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "9px",
-                  boxShadow: "0 10px 30px rgba(0,0,0,.4)",
-                }}
-              >
+              <div style={{ position: "absolute", top: "36px", left: 0, zIndex: 30, display: "flex", flexWrap: "wrap", gap: "6px", width: "168px", padding: "10px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "9px", boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
                 {penColors.map((c, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setColor(c)}
-                    style={{
-                      width: "22px",
-                      height: "22px",
-                      borderRadius: "50%",
-                      background: c,
-                      border: "1.5px solid rgba(255,255,255,.18)",
-                      cursor: "pointer",
-                    }}
-                  />
+                  <button key={i} onMouseDown={(e) => e.preventDefault()} onClick={() => setColor(c)} title="Set text color"
+                    style={{ width: "24px", height: "24px", borderRadius: "50%", background: c, border: "1.5px solid rgba(255,255,255,.18)", cursor: "pointer" }} />
                 ))}
               </div>
             )}
           </div>
-          {/* highlight */}
+
+          {/* Highlight */}
           <div style={{ position: "relative" }}>
             <button
-              style={tb}
-              onClick={() => {
-                rememberSelection();
-                setHlOpen((v) => !v);
-                setColorOpen(false);
-              }}
               title="Highlight"
+              onMouseDown={(e) => { e.preventDefault(); rememberSelection(); }}
+              onClick={() => { setHlOpen((v) => !v); setColorOpen(false); }}
+              style={{
+                height: "32px", padding: "0 6px", border: "none", background: "transparent",
+                cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px",
+                borderRadius: "6px", color: "var(--text)",
+              }}
             >
-              <span
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  borderRadius: "3px",
-                  background: accent + "80",
-                }}
-              />
-              <span style={{ fontSize: "9px" }}>▾</span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 20h16" stroke={accent} strokeWidth="2.4" strokeLinecap="round"/><path d="M9 15l-2 .5.5-2 7-7 1.5 1.5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>
+              <span style={{ fontSize: "9px", color: "var(--muted)" }}>▾</span>
             </button>
             {hlOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "34px",
-                  left: 0,
-                  zIndex: 30,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "6px",
-                  width: "160px",
-                  padding: "9px",
-                  background: "var(--panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "9px",
-                  boxShadow: "0 10px 30px rgba(0,0,0,.4)",
-                }}
-              >
-                {Array.from({ length: 10 }, (_, i) => COLOR_MAP[(i + 1) as MarkColor]).map(
-                  (c, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setHighlight(c)}
-                      style={{
-                        width: "22px",
-                        height: "22px",
-                        borderRadius: "4px",
-                        background: c,
-                        border: "1.5px solid rgba(255,255,255,.18)",
-                        cursor: "pointer",
-                      }}
-                    />
-                  )
-                )}
+              <div style={{ position: "absolute", top: "36px", left: 0, zIndex: 30, display: "flex", flexWrap: "wrap", gap: "6px", width: "168px", padding: "10px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "9px", boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
+                {Array.from({ length: 10 }, (_, i) => COLOR_MAP[(i + 1) as MarkColor]).map((c, i) => (
+                  <button key={i} onMouseDown={(e) => e.preventDefault()} onClick={() => setHighlight(c)} title="Highlight color"
+                    style={{ width: "24px", height: "24px", borderRadius: "4px", background: c, border: "1.5px solid rgba(255,255,255,.18)", cursor: "pointer" }} />
+                ))}
               </div>
             )}
           </div>
-          {sep}
-          <button style={tb} onClick={() => exec("insertOrderedList")} title="Numbered list">
-            1.
-          </button>
-          <button
-            style={tb}
-            onClick={() => {
-              // checklist = unordered list flagged for checkbox styling
-              exec("insertUnorderedList");
-              // tag the nearest list as a checklist
-              const sel = window.getSelection();
-              const li = (sel?.anchorNode as HTMLElement | null)?.parentElement?.closest(
-                "li"
-              );
-              const ul = li?.closest("ul");
-              if (ul) ul.setAttribute("data-checklist", "1");
-              commit();
-            }}
-            title="Checklist"
-          >
-            ☑
-          </button>
-          <button style={tb} onClick={() => exec("insertUnorderedList")} title="Bullets">
-            •
-          </button>
-          <button style={tb} onClick={() => exec("indent")} title="Indent">
-            ⇥
-          </button>
-          {sep}
-          <button style={tb} onClick={() => exec("justifyLeft")} title="Align left">
-            ≡
-          </button>
-          <button style={tb} onClick={() => exec("justifyCenter")} title="Align center">
-            ≣
-          </button>
-          {sep}
-          <button
-            style={tb}
-            onClick={() => exec("formatBlock", "blockquote")}
-            title="Block quote"
-          >
-            ❝
-          </button>
-          <button style={tb} onClick={() => exec("insertHorizontalRule")} title="Divider">
-            —
-          </button>
-          {sep}
+          <Divider />
+
+          {/* Lists */}
+          <IcoBtn title="Numbered list" onClick={() => exec("insertOrderedList")}>{I.ol}</IcoBtn>
+          <IcoBtn title="Bulleted list" onClick={() => exec("insertUnorderedList")}>{I.ul}</IcoBtn>
+          <IcoBtn title="Checklist" onClick={() => {
+            exec("insertUnorderedList");
+            const sel = window.getSelection();
+            const li = (sel?.anchorNode as HTMLElement | null)?.parentElement?.closest("li");
+            const ul = li?.closest("ul");
+            if (ul) ul.setAttribute("data-checklist", "1");
+            commit();
+          }}>{I.check}</IcoBtn>
+          <IcoBtn title="Indent" onClick={() => exec("indent")}>{I.indent}</IcoBtn>
+          <Divider />
+
+          {/* Align */}
+          <IcoBtn title="Align left" onClick={() => exec("justifyLeft")}>{I.alignLeft}</IcoBtn>
+          <IcoBtn title="Align center" onClick={() => exec("justifyCenter")}>{I.alignCenter}</IcoBtn>
+          <Divider />
+
+          {/* Insert */}
+          <IcoBtn title="Block quote" onClick={() => setBlock("blockquote")}>{I.quote}</IcoBtn>
+          <IcoBtn title="Divider" onClick={() => exec("insertHorizontalRule")}>{I.divider}</IcoBtn>
           {linkableVerses.length > 0 && (
-            <button
-              style={tb}
-              onClick={() => {
-                rememberSelection();
-                setLinkOpen((v) => !v);
-              }}
-              title="Link a verse"
-            >
-              ⤷ <span style={{ fontSize: "10.5px" }}>Link verse</span>
-            </button>
+            <IcoBtn title="Link a verse" wide onClick={() => { rememberSelection(); setLinkOpen((v) => !v); }}>
+              {I.link}<span style={{ fontSize: "12px" }}>Link verse</span>
+            </IcoBtn>
           )}
-          <button
-            style={tb}
-            onClick={() => exec("removeFormat")}
-            title="Clear formatting"
-          >
-            ⌫
-          </button>
+          <Divider />
+          <IcoBtn title="Clear formatting" onClick={() => exec("removeFormat")}>{I.clear}</IcoBtn>
         </div>
 
         {/* the editable surface */}
@@ -506,8 +516,8 @@ export default function RichNoteField({
           onInput={commit}
           onBlur={commit}
           onPaste={handlePaste}
-          onKeyUp={rememberSelection}
-          onMouseUp={rememberSelection}
+          onKeyUp={() => { rememberSelection(); syncBlock(); }}
+          onMouseUp={() => { rememberSelection(); syncBlock(); }}
           data-placeholder={placeholder || "Write a note…"}
           className="scribal-rich-editor"
           style={{
