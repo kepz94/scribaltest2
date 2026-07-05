@@ -4729,7 +4729,15 @@ export default function App() {
               bk.marks.some((m) => m.reference === r)
             );
             openStudyTab(ss, !marked);
-            if (marked) setMode("compile");
+            // Compiling is what actually points the notes at THIS study. A bare
+            // setMode("compile") left compileStudyId on whatever was compiled
+            // last — the "opens a different study / blank notes" bug. Route a
+            // combined (linked) search through its chapter, a standalone one
+            // straight to its own compile.
+            if (marked) {
+              if (ss.linkedScope) compileLinkedSearch(ss);
+              else startStudyCompile(ss);
+            }
           },
           onAddVerses: () => {
             setAddToStudyId(ss.id);
@@ -4800,7 +4808,23 @@ export default function App() {
           " verses" +
           withBook(bookLabel(primary.bookId)),
         themes: themesFor(primary.bookId, "searchstudy:" + primary.id, refOk),
-        onOpen: () => openStudyTab(primary, true),
+        onOpen: () => {
+          // Same opening rule as standalone searches: marked → its notes
+          // (compiled through the chapter for a combined study), unmarked →
+          // reading. A bare openStudyTab left the notes on the last-compiled
+          // study.
+          const bk = getBook(primary.bookId);
+          const marked = primary.refs.some((r) =>
+            bk.marks.some((m) => m.reference === r)
+          );
+          if (marked) {
+            openStudyTab(primary);
+            if (primary.linkedScope) compileLinkedSearch(primary);
+            else startStudyCompile(primary);
+          } else {
+            openStudyTab(primary, true);
+          }
+        },
         onAddVerses: () => {
           setAddToStudyId(primary.id);
           setShowSearch(true);
