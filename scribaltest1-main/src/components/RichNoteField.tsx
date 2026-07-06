@@ -25,6 +25,8 @@ import {
   $createParagraphNode,
   $createTextNode,
   TextNode,
+  KEY_DOWN_COMMAND,
+  COMMAND_PRIORITY_LOW,
   ElementNode,
 } from "lexical";
 import {
@@ -43,7 +45,6 @@ import {
   ListItemNode,
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
-  INSERT_CHECK_LIST_COMMAND,
   REMOVE_LIST_COMMAND,
 } from "@lexical/list";
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
@@ -196,6 +197,8 @@ function Toolbar({
 }) {
   const [editor] = useLexicalComposerContext();
   const [pop, setPop] = useState<"" | "style" | "color" | "hl">("");
+  const hlRef = useRef("");
+  const lastHlRef = useRef(COLOR_MAP[3 as MarkColor] || accent);
   const [active, setActive] = useState({
     bold: false,
     italic: false,
@@ -238,7 +241,7 @@ function Toolbar({
           underline: sel.hasFormat("underline"),
           block,
           color: $getSelectionStyleValueForProperty(sel, "color", ""),
-          hl: $getSelectionStyleValueForProperty(sel, "background-color", ""),
+          hl: (hlRef.current = $getSelectionStyleValueForProperty(sel, "background-color", "")),
           align,
           list,
         });
@@ -252,6 +255,31 @@ function Toolbar({
     e.preventDefault();
     fn();
   };
+  // Hotkeys (Ctrl+B/I/U are native to Lexical): Ctrl/Cmd+Alt+0/1/2 = Normal/
+  // H1/H2, Ctrl/Cmd+Alt+Q = Quote, Ctrl/Cmd+Alt+H = toggle highlighter with
+  // the last-used color.
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (e: KeyboardEvent) => {
+        if (!(e.ctrlKey || e.metaKey) || !e.altKey) return false;
+        const k = e.key.toLowerCase();
+        if (k === "0") { e.preventDefault(); setBlock("p"); return true; }
+        if (k === "1") { e.preventDefault(); setBlock("h1"); return true; }
+        if (k === "2") { e.preventDefault(); setBlock("h2"); return true; }
+        if (k === "q") { e.preventDefault(); setBlock("quote"); return true; }
+        if (k === "h") {
+          e.preventDefault();
+          setHl(hlRef.current ? null : lastHlRef.current);
+          return true;
+        }
+        return false;
+      },
+      COMMAND_PRIORITY_LOW
+    );
+    // eslint-disable-next-line
+  }, [editor]);
+
   const fmt = (f: "bold" | "italic" | "underline") =>
     editor.dispatchCommand(FORMAT_TEXT_COMMAND, f);
   const setBlock = (kind: "p" | "h1" | "h2" | "quote") => {
@@ -272,6 +300,7 @@ function Toolbar({
     setPop("");
   };
   const setHl = (c: string | null) => {
+    if (c) lastHlRef.current = c;
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel))
@@ -299,11 +328,11 @@ function Toolbar({
     "var(--text)",
     ...Array.from({ length: 10 }, (_, i) => COLOR_MAP[(i + 1) as MarkColor]),
   ];
-  const styles: { label: string; kind: "p" | "h1" | "h2" | "quote" }[] = [
-    { label: "Normal text", kind: "p" },
-    { label: "Heading 1", kind: "h1" },
-    { label: "Heading 2", kind: "h2" },
-    { label: "Quote", kind: "quote" },
+  const styles: { label: string; kind: "p" | "h1" | "h2" | "quote"; key: string }[] = [
+    { label: "Normal text", kind: "p", key: "Ctrl+Alt+0" },
+    { label: "Heading 1", kind: "h1", key: "Ctrl+Alt+1" },
+    { label: "Heading 2", kind: "h2", key: "Ctrl+Alt+2" },
+    { label: "Quote", kind: "quote", key: "Ctrl+Alt+Q" },
   ];
 
   return (
@@ -367,20 +396,23 @@ function Toolbar({
                   fontFamily: "system-ui, sans-serif",
                 }}
               >
-                {o.label}
+                <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "10px" }}>
+                  <span>{o.label}</span>
+                  <span style={{ fontSize: "9px", color: "var(--muted)", fontWeight: 500 }}>{o.key}</span>
+                </span>
               </button>
             ))}
           </div>
         )}
       </div>
       <Sep />
-      <button style={BTN(active.bold)} title="Bold" onMouseDown={md(() => fmt("bold"))}>
+      <button style={BTN(active.bold)} title="Bold (Ctrl+B)" onMouseDown={md(() => fmt("bold"))}>
         <span style={{ fontWeight: 900 }}>B</span>
       </button>
-      <button style={BTN(active.italic)} title="Italic" onMouseDown={md(() => fmt("italic"))}>
+      <button style={BTN(active.italic)} title="Italic (Ctrl+I)" onMouseDown={md(() => fmt("italic"))}>
         <span style={{ fontStyle: "italic", fontFamily: "Georgia, serif" }}>I</span>
       </button>
-      <button style={BTN(active.underline)} title="Underline" onMouseDown={md(() => fmt("underline"))}>
+      <button style={BTN(active.underline)} title="Underline (Ctrl+U)" onMouseDown={md(() => fmt("underline"))}>
         <span style={{ textDecoration: "underline" }}>U</span>
       </button>
       <Sep />
@@ -426,7 +458,7 @@ function Toolbar({
       </div>
       {/* highlight */}
       <div style={{ position: "relative" }}>
-        <button style={BTN()} title="Highlight" onMouseDown={md(() => setPop(pop === "hl" ? "" : "hl"))}>
+        <button style={BTN()} title="Highlight (Ctrl+Alt+H)" onMouseDown={md(() => setPop(pop === "hl" ? "" : "hl"))}>
           <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
             <svg width="16" height="13" viewBox="0 0 24 18" fill="none">
               <path d="M9 15l-2 .5.5-2 7-7 1.5 1.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
@@ -470,9 +502,6 @@ function Toolbar({
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M6 18h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </button>
       <Sep />
-      <button style={BTN(active.list === "check")} title="Checklist" onMouseDown={md(() => editor.dispatchCommand(active.list === "check" ? REMOVE_LIST_COMMAND : INSERT_CHECK_LIST_COMMAND, undefined))}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M4.5 7.5 6 9l2.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M13 7h8M13 17h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-      </button>
       <button style={BTN(active.list === "bullet")} title="Bulleted list" onMouseDown={md(() => editor.dispatchCommand(active.list === "bullet" ? REMOVE_LIST_COMMAND : INSERT_UNORDERED_LIST_COMMAND, undefined))}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><circle cx="4" cy="6" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="4" cy="18" r="1.4" fill="currentColor"/></svg>
       </button>
