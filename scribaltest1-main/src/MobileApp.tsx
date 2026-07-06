@@ -1050,6 +1050,25 @@ export default function MobileApp() {
       if (chapterGroups[raw] || !raw.startsWith("group:")) chapters.add(raw);
       const extra = new Set(rec.extraRefs || []);
       inScope = (r) => chapters.has(scopeOf(r)) || extra.has(r);
+      // Auto-heal: old linked studies (saved before memberScopes existed) get
+      // their chapter snapshot stamped the first time they're opened while the
+      // group is still intact — so they keep opening correctly after group
+      // drift and on other devices, without a manual recompile+save.
+      // compiledAt bumps so the heal wins the sync merge and propagates.
+      if (
+        rec &&
+        (!rec.memberScopes || !rec.memberScopes.length) &&
+        chapters.size
+      ) {
+        const heal = Array.from(chapters);
+        setStudies((prev) =>
+          prev.map((x) =>
+            x.id === rec.id
+              ? { ...x, memberScopes: heal, compiledAt: Date.now() }
+              : x
+          )
+        );
+      }
     } else {
       const extra = new Set((rec && rec.extraRefs) || []);
       inScope = (r) =>
