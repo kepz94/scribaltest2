@@ -12,6 +12,8 @@ declare module "lexical" {
   export const $createParagraphNode: any;
   export const $createTextNode: any;
   export const FORMAT_TEXT_COMMAND: any;
+  export const KEY_DOWN_COMMAND: any;
+  export const COMMAND_PRIORITY_LOW: any;
   export const FORMAT_ELEMENT_COMMAND: any;
   export const INDENT_CONTENT_COMMAND: any;
   export const OUTDENT_CONTENT_COMMAND: any;
