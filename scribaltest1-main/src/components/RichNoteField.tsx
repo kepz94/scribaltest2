@@ -10,7 +10,7 @@ import { CheckListPlugin } from "@lexical/react/LexicalCheckListPlugin";
 import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin";
 import {
   HorizontalRuleNode,
-  INSERT_HORIZONTAL_RULE_COMMAND,
+  $createHorizontalRuleNode,
 } from "@lexical/react/LexicalHorizontalRuleNode";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
@@ -24,6 +24,7 @@ import {
   $getRoot,
   $createParagraphNode,
   $createTextNode,
+  TextNode,
   ElementNode,
 } from "lexical";
 import {
@@ -75,12 +76,74 @@ interface Props {
 const isPlainText = (v: string) => !/<[a-z][\s\S]*>/i.test(v);
 const ACCENT = "#8b5cf6";
 
+// ── Verse chip: an atomic (token) node that keeps its reference through the
+// save/load round trip, so the resting view can open its preview. Deletes as
+// one unit, exactly like a chip in Docs/Notion.
+class ChipNode extends TextNode {
+  __ref: string;
+  static getType(): string {
+    return "verse-chip";
+  }
+  static clone(node: any): any {
+    return new ChipNode(node.__ref, node.__text, node.__key);
+  }
+  constructor(ref: string, text: string, key?: any) {
+    super(text, key);
+    this.__ref = ref;
+  }
+  createDOM(config: any): any {
+    const el = super.createDOM(config);
+    el.classList.add("scribal-vchip");
+    el.setAttribute("data-ref", this.__ref);
+    el.style.color = ACCENT;
+    el.style.fontWeight = "600";
+    el.style.cursor = "pointer";
+    return el;
+  }
+  exportDOM(): any {
+    const el = document.createElement("span");
+    el.className = "scribal-vchip";
+    el.setAttribute("data-ref", this.__ref);
+    el.setAttribute("style", "color: " + ACCENT + "; font-weight: 600;");
+    el.textContent = this.getTextContent();
+    return { element: el };
+  }
+  static importDOM(): any {
+    return {
+      span: (node: any) =>
+        node.classList && node.classList.contains("scribal-vchip")
+          ? {
+              conversion: (el: any) => ({
+                node: $createChipNode(
+                  el.getAttribute("data-ref") || "",
+                  el.textContent || ""
+                ),
+              }),
+              priority: 3,
+            }
+          : null,
+    };
+  }
+  exportJSON(): any {
+    return { ...super.exportJSON(), type: "verse-chip", ref: this.__ref, version: 1 };
+  }
+  static importJSON(json: any): any {
+    return $createChipNode(json.ref || "", json.text || "");
+  }
+}
+function $createChipNode(ref: string, text: string) {
+  const n: any = new ChipNode(ref, text);
+  n.setMode("token");
+  return n;
+}
+
 const editorTheme = {
   heading: { h1: "rt-h1", h2: "rt-h2" },
   quote: "rt-quote",
   list: {
     ol: "rt-ol",
     ul: "rt-ul",
+    checklist: "rt-checklist",
     listitem: "rt-li",
     listitemChecked: "rt-li-checked",
     listitemUnchecked: "rt-li-unchecked",
@@ -201,14 +264,14 @@ function Toolbar({
     });
     setPop("");
   };
-  const setColor = (c: string) => {
+  const setColor = (c: string | null) => {
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel)) $patchStyleText(sel, { color: c });
     });
     setPop("");
   };
-  const setHl = (c: string) => {
+  const setHl = (c: string | null) => {
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel))
@@ -218,12 +281,17 @@ function Toolbar({
   };
   const clearFmt = () =>
     editor.update(() => {
-      const sel = $getSelection();
+      const sel: any = $getSelection();
       if (!$isRangeSelection(sel)) return;
+      $patchStyleText(sel, { color: null, "background-color": null });
       sel.getNodes().forEach((node: any) => {
+        if (node.getType && node.getType() === "verse-chip") return; // chips keep their look
         if (node.setFormat) node.setFormat(0);
         if (node.setStyle) node.setStyle("");
       });
+      // reset what the NEXT typed character inherits
+      sel.format = 0;
+      sel.style = "";
       $setBlocksType(sel, () => $createParagraphNode());
     });
 
@@ -338,8 +406,8 @@ function Toolbar({
             {penColors.map((c, i) => (
               <button
                 key={i}
-                title="Set color"
-                onMouseDown={md(() => setColor(c))}
+                title={i === 0 ? "Default color" : "Set color"}
+                onMouseDown={md(() => setColor(i === 0 ? null : c))}
                 style={{
                   width: "24px",
                   height: "24px",
@@ -369,6 +437,13 @@ function Toolbar({
         </button>
         {pop === "hl" && (
           <div style={{ ...POP, display: "flex", flexWrap: "wrap", gap: "6px", width: "170px", padding: "10px" }}>
+            <button
+              title="No highlight"
+              onMouseDown={md(() => setHl(null))}
+              style={{ width: "24px", height: "24px", borderRadius: "4px", background: "var(--soft)", border: "1.5px dashed var(--muted)", cursor: "pointer", color: "var(--muted)", fontSize: "11px", lineHeight: "1", fontFamily: "system-ui, sans-serif" }}
+            >
+              ✕
+            </button>
             {Array.from({ length: 10 }, (_, i) => COLOR_MAP[(i + 1) as MarkColor]).map((c, i) => (
               <button
                 key={i}
@@ -412,7 +487,13 @@ function Toolbar({
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M11 12h9M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M4 9l3 3-3 3z" fill="currentColor"/></svg>
       </button>
       <Sep />
-      <button style={BTN()} title="Divider line" onMouseDown={md(() => editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined))}>
+      <button style={BTN()} title="Divider line" onMouseDown={md(() =>
+          editor.update(() => {
+            const sel = $getSelection();
+            if ($isRangeSelection(sel))
+              sel.insertNodes([$createHorizontalRuleNode(), $createParagraphNode()]);
+          })
+        )}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </button>
       <Sep />
@@ -476,9 +557,10 @@ function VersePicker({
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel)) {
-        const node = $createTextNode("\u2937\u00a0" + ref + "\u00a0");
-        node.setStyle("color: " + ACCENT + "; font-weight: 600;");
-        sel.insertNodes([node]);
+        sel.insertNodes([
+          $createChipNode(ref, "\u2937\u00a0" + ref),
+          $createTextNode("\u00a0"),
+        ]);
       }
     });
     editor.focus();
@@ -594,7 +676,7 @@ export default function RichNoteField({
       namespace: "scribal-note",
       theme: editorTheme,
       onError: (e: Error) => console.error("Lexical:", e),
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
     };
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
