@@ -3481,6 +3481,25 @@ export default function App() {
               (c) => chapterGroups[c] === s.scopeRef
             )
         : [s.scopeRef];
+    // Auto-heal: old linked studies (saved before memberScopes existed) get
+    // their chapter snapshot stamped the first time they're opened while the
+    // group is still intact — so they keep opening correctly after group
+    // drift and on other devices, without a manual recompile+save.
+    // compiledAt bumps so the heal wins the sync merge and propagates.
+    if (
+      s.type === "linked" &&
+      (!s.memberScopes || !s.memberScopes.length) &&
+      scopes.length
+    ) {
+      const heal = scopes.slice();
+      setRecordedStudies((prev) =>
+        prev.map((x) =>
+          x.id === s.id
+            ? { ...x, memberScopes: heal, compiledAt: Date.now() }
+            : x
+        )
+      );
+    }
     const locs = (
       scopes.map((sc) => chapterLoc.get(sc)).filter(Boolean) as {
         volume: number;
