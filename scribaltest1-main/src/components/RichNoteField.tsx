@@ -43,6 +43,7 @@ import {
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
   INSERT_CHECK_LIST_COMMAND,
+  REMOVE_LIST_COMMAND,
 } from "@lexical/list";
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
 
@@ -138,6 +139,9 @@ function Toolbar({
     underline: false,
     block: "Normal text",
     color: "",
+    hl: "",
+    align: "left",
+    list: "",
   });
 
   // Live readback: the toolbar always shows what's under the caret.
@@ -153,12 +157,27 @@ function Toolbar({
         if (t === "heading")
           block = el.getTag() === "h1" ? "Heading 1" : "Heading 2";
         else if (t === "quote") block = "Quote";
+        // list type under the caret (the list is the top-level element)
+        let list = "";
+        if (t === "list" && el.getListType) list = el.getListType();
+        // alignment of the block (or the list item) under the caret
+        let align = "left";
+        let fmtEl: any = el;
+        if (t === "list") {
+          let li: any = n;
+          while (li && li.getType && li.getType() !== "listitem") li = li.getParent && li.getParent();
+          if (li) fmtEl = li;
+        }
+        if (fmtEl.getFormatType) align = fmtEl.getFormatType() || "left";
         setActive({
           bold: sel.hasFormat("bold"),
           italic: sel.hasFormat("italic"),
           underline: sel.hasFormat("underline"),
           block,
           color: $getSelectionStyleValueForProperty(sel, "color", ""),
+          hl: $getSelectionStyleValueForProperty(sel, "background-color", ""),
+          align,
+          list,
         });
       });
     });
@@ -340,10 +359,12 @@ function Toolbar({
       {/* highlight */}
       <div style={{ position: "relative" }}>
         <button style={BTN()} title="Highlight" onMouseDown={md(() => setPop(pop === "hl" ? "" : "hl"))}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-            <path d="M4 20h16" stroke={accent} strokeWidth="2.4" strokeLinecap="round" />
-            <path d="M9 15l-2 .5.5-2 7-7 1.5 1.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-          </svg>
+          <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
+            <svg width="16" height="13" viewBox="0 0 24 18" fill="none">
+              <path d="M9 15l-2 .5.5-2 7-7 1.5 1.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+            </svg>
+            <span style={{ width: "15px", height: "3px", borderRadius: "2px", background: active.hl || "var(--border)", marginTop: "1px" }} />
+          </span>
           <span style={{ fontSize: "9px", color: "var(--muted)" }}>▾</span>
         </button>
         {pop === "hl" && (
@@ -360,14 +381,28 @@ function Toolbar({
         )}
       </div>
       <Sep />
-      <button style={BTN()} title="Numbered list" onMouseDown={md(() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined))}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M10 6h10M10 12h10M10 18h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><text x="2" y="8" fontSize="7" fill="currentColor">1</text><text x="2" y="14" fontSize="7" fill="currentColor">2</text><text x="2" y="20" fontSize="7" fill="currentColor">3</text></svg>
+      {hasVerses && (
+        <button style={{ ...BTN(), minWidth: undefined, padding: "0 10px" }} title="Link a verse" onMouseDown={md(onLinkOpen)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M10 14a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66L11 7M14 10a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 0 0 5.66 5.66L13 17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"/></svg>
+          <span style={{ fontSize: "12px", fontWeight: 600 }}>Link verse</span>
+        </button>
+      )}
+      <Sep />
+      <button style={BTN(active.align === "left" || active.align === "")} title="Align left" onMouseDown={md(() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left"))}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </button>
-      <button style={BTN()} title="Bulleted list" onMouseDown={md(() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined))}>
+      <button style={BTN(active.align === "center")} title="Align center" onMouseDown={md(() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "center"))}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M6 18h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+      </button>
+      <Sep />
+      <button style={BTN(active.list === "check")} title="Checklist" onMouseDown={md(() => editor.dispatchCommand(active.list === "check" ? REMOVE_LIST_COMMAND : INSERT_CHECK_LIST_COMMAND, undefined))}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M4.5 7.5 6 9l2.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M13 7h8M13 17h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+      </button>
+      <button style={BTN(active.list === "bullet")} title="Bulleted list" onMouseDown={md(() => editor.dispatchCommand(active.list === "bullet" ? REMOVE_LIST_COMMAND : INSERT_UNORDERED_LIST_COMMAND, undefined))}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><circle cx="4" cy="6" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="4" cy="18" r="1.4" fill="currentColor"/></svg>
       </button>
-      <button style={BTN()} title="Checklist" onMouseDown={md(() => editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined))}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M4.5 7.5 6 9l2.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><path d="M13 7h8M13 17h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+      <button style={BTN(active.list === "number")} title="Numbered list" onMouseDown={md(() => editor.dispatchCommand(active.list === "number" ? REMOVE_LIST_COMMAND : INSERT_ORDERED_LIST_COMMAND, undefined))}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M10 6h10M10 12h10M10 18h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><text x="2" y="8" fontSize="7" fill="currentColor">1</text><text x="2" y="14" fontSize="7" fill="currentColor">2</text><text x="2" y="20" fontSize="7" fill="currentColor">3</text></svg>
       </button>
       <Sep />
       <button style={BTN()} title="Outdent" onMouseDown={md(() => editor.dispatchCommand(OUTDENT_CONTENT_COMMAND, undefined))}>
@@ -377,22 +412,10 @@ function Toolbar({
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M11 12h9M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M4 9l3 3-3 3z" fill="currentColor"/></svg>
       </button>
       <Sep />
-      <button style={BTN()} title="Align left" onMouseDown={md(() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left"))}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-      </button>
-      <button style={BTN()} title="Align center" onMouseDown={md(() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "center"))}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M6 18h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-      </button>
-      <Sep />
       <button style={BTN()} title="Divider line" onMouseDown={md(() => editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined))}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </button>
-      {hasVerses && (
-        <button style={{ ...BTN(), minWidth: undefined, padding: "0 10px" }} title="Link a verse" onMouseDown={md(onLinkOpen)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M10 14a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66L11 7M14 10a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 0 0 5.66 5.66L13 17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"/></svg>
-          <span style={{ fontSize: "12px", fontWeight: 600 }}>Link verse</span>
-        </button>
-      )}
+      <Sep />
       <button style={BTN()} title="Clear formatting" onMouseDown={md(clearFmt)}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M6 5h13M9 5l-1.5 9M13 5l-.5 3M5 21l14-14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"/></svg>
       </button>
