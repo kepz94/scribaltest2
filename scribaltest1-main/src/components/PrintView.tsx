@@ -190,6 +190,14 @@ export default function PrintView(props: PrintViewProps) {
       </span>
     ));
 
+  const isRichHtml = (v: string) => /<[a-z][\s\S]*>/i.test(v);
+  const RichNote = ({ html, style }: { html: string; style: React.CSSProperties }) =>
+    isRichHtml(html) ? (
+      <div className="print-richnote" style={style} dangerouslySetInnerHTML={{ __html: html }} />
+    ) : (
+      <div style={style}>{html}</div>
+    );
+
   const noteFor = (chapterRef: string, color: number, reference: string) =>
     notes["note|" + chapterRef + "|c" + color + "|" + reference] || "";
 
@@ -222,6 +230,14 @@ export default function PrintView(props: PrintViewProps) {
         @page { margin: 16mm; ${
           view === "charting" ? "size: A4 landscape;" : ""
         } }
+        .print-richnote p { margin: 0 0 6px; }
+        .print-richnote h1 { font-size: 17px; font-weight: 800; margin: 4px 0; }
+        .print-richnote h2 { font-size: 14.5px; font-weight: 800; margin: 4px 0; }
+        .print-richnote blockquote { border-left: 2px solid #bbb; padding-left: 10px; margin: 4px 0; color: #555; font-style: italic; }
+        .print-richnote ol { margin: 0 0 6px 22px; list-style: decimal; }
+        .print-richnote ul { margin: 0 0 6px 20px; list-style: disc; }
+        .print-richnote hr { border: none; border-top: 1px solid #ccc; margin: 8px 0; }
+        .print-richnote .scribal-vchip { color: #7c4fd8; font-weight: 600; }
         @media print {
           body * { visibility: hidden !important; }
           #scribal-print, #scribal-print * { visibility: visible !important; }
@@ -431,7 +447,7 @@ export default function PrintView(props: PrintViewProps) {
                           borderLeft: "2px solid #ddd",
                         }}
                       >
-                        {note}
+                        <RichNote html={note} style={{}} />
                       </div>
                     )}
                   </div>
@@ -546,7 +562,7 @@ export default function PrintView(props: PrintViewProps) {
                           marginTop: "3px",
                         }}
                       >
-                        — {note}
+                        {isRichHtml(note) ? <RichNote html={note} style={{}} /> : <>— {note}</>}
                       </div>
                     )}
                   </div>
@@ -657,12 +673,11 @@ export default function PrintView(props: PrintViewProps) {
             </h2>
             {reflectionKeys.map((k) =>
               (notes[k] || "").trim() ? (
-                <p
+                <RichNote
                   key={k}
+                  html={notes[k]}
                   style={{ fontSize: "15px", lineHeight: 1.7, color: "#222" }}
-                >
-                  {notes[k]}
-                </p>
+                />
               ) : null
             )}
           </section>
