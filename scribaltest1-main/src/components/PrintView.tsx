@@ -155,9 +155,19 @@ export default function PrintView(props: PrintViewProps) {
     total: number;
   }[];
 
-  const reflectionKeys = Object.keys(notes).filter((k) =>
-    /synth|summary|reflect/i.test(k)
-  );
+  const tabLabel = (t: Tab) =>
+    vols[t.volume].books[t.book].book +
+    " " +
+    vols[t.volume].books[t.book].chapters[t.chapter].chapter;
+  // This study's own synthesis key — built exactly the way Outline saves it.
+  const synthKey =
+    "synthesis|" + compileTabs.map((t) => tabLabel(t)).join("+");
+  const reflectionKeys = [
+    ...(notes[synthKey] ? [synthKey] : []),
+    ...Object.keys(notes).filter(
+      (k) => k !== synthKey && /synth|summary|reflect/i.test(k)
+    ),
+  ];
 
   const renderFullVerse = (text: string, vmarks: Mark[]) => {
     const out: React.ReactNode[] = [];
