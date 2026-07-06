@@ -155,6 +155,54 @@ export default function MobileCompile({
   // Per-verse notes live in the same store, keyed by the verse reference, so a
   // note follows its verse whether viewed alone or inside a linked study.
   const verseNoteKey = (ref: string) => "versenote:" + ref;
+  // ── Unified note model: mobile speaks desktop's keys natively ───────────
+  // Verse notes are per-theme (note|chapter|c<color>|verse) and the study has
+  // ONE synthesis (synthesis|<chapters>). Legacy mobile keys above are read
+  // as fallback only; the first edit re-homes a note under the shared key.
+  const chapterRefOf = (ref: string) => ref.replace(/:\d+$/, "");
+  const dVerseKey = (color: number, ref: string) =>
+    "note|" + chapterRefOf(ref) + "|c" + color + "|" + ref;
+  const flattenRich = (raw: string) => {
+    if (!/<[a-z]/i.test(raw)) return raw;
+    const el = document.createElement("div");
+    el.innerHTML = raw.replace(/<(br|\/p|\/li|\/h1|\/h2|\/blockquote)[^>]*>/gi, "\n");
+    return (el.textContent || "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  };
+  const compileChapters = () => {
+    const seen: string[] = [];
+    activeColors.forEach((c) =>
+      (byColor[c] || []).forEach((m: any) => {
+        const ch = chapterRefOf(m.reference || String(m));
+        if (!seen.includes(ch)) seen.push(ch);
+      })
+    );
+    return seen;
+  };
+  // Prefer an existing desktop synthesis key for these chapters (any order);
+  // otherwise mint one in reading order.
+  const dSynthKey = () => {
+    const chapters = compileChapters();
+    const want = chapters.slice().sort().join("+");
+    const hit = Object.keys(notes).find(
+      (k) =>
+        k.indexOf("synthesis|") === 0 &&
+        k.slice(10).split("+").sort().join("+") === want
+    );
+    return hit || "synthesis|" + chapters.join("+");
+  };
+  const readVerseNote = (color: number, ref: string) => {
+    const v = notes[dVerseKey(color, ref)];
+    if (v && v.trim()) return flattenRich(v);
+    return flattenRich(notes[verseNoteKey(ref)] || "");
+  };
+  const readSynth = () => {
+    const v = notes[dSynthKey()];
+    if (v && v.trim()) return flattenRich(v);
+    const legacy = activeColors
+      .map((c) => notes[synthKey(c)] || "")
+      .find((x) => x.trim());
+    return flattenRich(legacy || "");
+  };
   const [sortMode, setSortMode] = useState<SortMode>("order");
   // Lead verses (pins): user-chosen verses that always sit at a theme's top,
   // in the order they were pinned — above any automatic sort.
@@ -346,10 +394,11 @@ export default function MobileCompile({
       .map((c) => ({
         name: (colorLabels[c] || "Color " + c).trim(),
         color: c,
-        synthesis: (notes[synthKey(c)] || "").trim(),
+        synthesis: "",
         count: (byColor[c] || []).length,
       }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => b.count - a.count)
+      .map((t, i) => (i === 0 ? { ...t, synthesis: readSynth().trim() } : t));
 
     // Scripture scope — what was actually studied.
     const byBook = new Map<
@@ -532,7 +581,7 @@ export default function MobileCompile({
           theme: sv.theme,
           color: sv.color,
           phrases: sv.phrases,
-          note: (notes[verseNoteKey(sv.reference)] || "").trim() || undefined,
+          note: readVerseNote(sv.color, sv.reference).trim() || undefined,
           view,
           fullText: info ? info.text : undefined,
           verseNumber: info ? info.verse : undefined,
@@ -1233,8 +1282,14 @@ export default function MobileCompile({
             marks={liveMarks}
             colorLabels={colorLabels}
             onJumpToReference={onJump}
-            noteFor={(ref) => notes[verseNoteKey(ref)] || ""}
-            synthesisFor={(c) => notes[synthKey(c)] || ""}
+            noteFor={(ref) => {
+              for (const c of activeColors) {
+                const v = readVerseNote(c, ref);
+                if (v.trim()) return v;
+              }
+              return "";
+            }}
+            synthesisFor={() => readSynth()}
             panel={C.panel}
             border={C.border}
             text={C.text}
@@ -1507,8 +1562,8 @@ export default function MobileCompile({
                   {/* synthesis-first: the conclusion sits up top */}
                   <div style={{ padding: "0 14px 14px" }}>
                     {(() => {
-                      const sk = synthKey(c);
-                      const sVal = notes[sk] || "";
+                      const sk = dSynthKey();
+                      const sVal = notes[sk] && notes[sk].trim() ? notes[sk] : readSynth();
                       const sHas = sVal.trim().length > 0;
                       const sEditing = editSynth === sk;
                       const accent = COLOR_MAP[c as MarkColor];
@@ -1520,9 +1575,7 @@ export default function MobileCompile({
                               onChange={(e) => setNote(sk, e.target.value)}
                               autoFocus
                               placeholder={
-                                "What do these verses say together about " +
-                                name +
-                                "?"
+                                "What do these verses say together in this study?"
                               }
                               rows={3}
                               style={{
@@ -1692,8 +1745,8 @@ export default function MobileCompile({
                       >
                         {verseEntriesFor(list, c).map((ve) => {
                           const info = VI.get(ve.reference);
-                          const noteKey = verseNoteKey(ve.reference);
-                          const noteVal = notes[noteKey] || "";
+                          const noteKey = dVerseKey(c, ve.reference);
+                          const noteVal = readVerseNote(c, ve.reference);
                           const hasNote = noteVal.trim().length > 0;
                           const isFlipped = flippedRef === ve.reference;
                           const on = picked.includes(
@@ -2072,6 +2125,7 @@ export default function MobileCompile({
                                               <button
                                                 onClick={() => {
                                                   setNote(noteKey, "");
+                                                  setNote(verseNoteKey(ve.reference), "");
                                                   setEditNote(null);
                                                   setFlippedRef(null);
                                                 }}
