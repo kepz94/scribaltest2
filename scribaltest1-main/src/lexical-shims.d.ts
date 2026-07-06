@@ -44,6 +44,13 @@ declare module "@lexical/react/LexicalListPlugin" {
 declare module "@lexical/react/LexicalCheckListPlugin" {
   export const CheckListPlugin: any;
 }
+declare module "@lexical/react/LexicalTabIndentationPlugin" {
+  export const TabIndentationPlugin: any;
+}
+declare module "@lexical/react/LexicalHorizontalRuleNode" {
+  export const HorizontalRuleNode: any;
+  export const INSERT_HORIZONTAL_RULE_COMMAND: any;
+}
 declare module "@lexical/react/LexicalComposerContext" {
   export const useLexicalComposerContext: any;
 }
