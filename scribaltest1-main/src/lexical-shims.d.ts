@@ -69,6 +69,7 @@ declare module "@lexical/list" {
   export const INSERT_ORDERED_LIST_COMMAND: any;
   export const INSERT_UNORDERED_LIST_COMMAND: any;
   export const INSERT_CHECK_LIST_COMMAND: any;
+  export const REMOVE_LIST_COMMAND: any;
   export const $isListNode: any;
 }
 declare module "@lexical/selection" {
