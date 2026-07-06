@@ -516,6 +516,18 @@ const MergeSeam = ({
       .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
       .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
       .rt-li { margin-bottom: 4px; }
+      .rt-li-unchecked, .rt-li-checked {
+        list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
+      }
+      .rt-li-unchecked:before, .rt-li-checked:before {
+        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+        border-radius: 4px; border: 1.5px solid var(--muted);
+      }
+      .rt-li-checked { color: var(--muted); text-decoration: line-through; }
+      .rt-li-checked:before {
+        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+      }
       /* nested list indent */
       .rt-ol .rt-ol, .rt-ul .rt-ul, .rt-ol .rt-ul, .rt-ul .rt-ol { margin-left: 20px; }
       /* checklist items (Lexical adds __lexicalListType / checked via aria) */
