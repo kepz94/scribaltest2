@@ -138,6 +138,7 @@ function $createChipNode(ref: string, text: string) {
 }
 
 const editorTheme = {
+  text: { bold: "rt-bold", italic: "rt-italic", underline: "rt-underline" },
   heading: { h1: "rt-h1", h2: "rt-h2" },
   quote: "rt-quote",
   list: {
@@ -148,7 +149,6 @@ const editorTheme = {
     listitemChecked: "rt-li-checked",
     listitemUnchecked: "rt-li-unchecked",
   },
-  text: { bold: "rt-bold", italic: "rt-italic", underline: "rt-underline" },
 };
 
 // ═══ Toolbar ═════════════════════════════════════════════════════════════
@@ -680,6 +680,12 @@ export default function RichNoteField({
     };
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
+        <style>{`
+          .rt-bold { font-weight: 700 !important; }
+          .rt-italic { font-style: italic !important; }
+          .rt-underline { text-decoration: underline !important; }
+          .rt-underline.rt-bold, .rt-underline.rt-italic { text-decoration: underline !important; }
+        `}</style>
         <LexicalComposer initialConfig={initialConfig}>
           <Toolbar accent={accent} hasVerses={linkableVerses.length > 0} onLinkOpen={() => setLinkOpen((v) => !v)} />
           <div style={{ position: "relative" }}>
