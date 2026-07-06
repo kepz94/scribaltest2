@@ -108,7 +108,16 @@ export default function ShareVerses({
         if (!picked.includes(keyFor(g.color, v.reference))) return;
         const chRef = chapterRefOf.get(v.reference) || "";
         const noteKey = "note|" + chRef + "|c" + g.color + "|" + v.reference;
-        const note = (notes[noteKey] || "").trim();
+        const rawNote = notes[noteKey] || "";
+        // Rich (HTML) notes flatten to clean text for the share image.
+        const note = (/<[a-z]/i.test(rawNote)
+          ? (() => {
+              const el = document.createElement("div");
+              el.innerHTML = rawNote.replace(/<(br|\/p|\/li|\/h1|\/h2|\/blockquote)[^>]*>/gi, "\n");
+              return (el.textContent || "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n");
+            })()
+          : rawNote
+        ).trim();
         entries.push({
           reference: v.reference,
           theme: g.name,
