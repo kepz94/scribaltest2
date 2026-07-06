@@ -101,6 +101,27 @@ export default function ShareVerses({
     setOpen((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
 
   // Turn the chosen verses into share-card entries (with any per-verse note).
+  // Rich (HTML) notes flatten to clean text for the canvas card.
+  const flattenRich = (raw: string) => {
+    if (!/<[a-z]/i.test(raw)) return raw.trim();
+    const el = document.createElement("div");
+    el.innerHTML = raw.replace(/<(br|\/p|\/li|\/h1|\/h2|\/blockquote)[^>]*>/gi, "\n");
+    return (el.textContent || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  };
+  // The study's synthesis — the exact key Outline saves it under.
+  const synthKey =
+    "synthesis|" +
+    compileTabs
+      .map((t) => {
+        const book = vols[t.volume].books[t.book];
+        return book.book + " " + book.chapters[t.chapter].chapter;
+      })
+      .join("+");
+  const synthText = flattenRich(notes[synthKey] || "");
+
   const buildEntries = (): VersesCardEntry[] => {
     const entries: VersesCardEntry[] = [];
     groups.forEach((g) => {
@@ -137,7 +158,9 @@ export default function ShareVerses({
         appDark={dark}
         kind="verses"
         verses={buildEntries()}
-        syntheses={[]}
+        syntheses={
+          synthText ? [{ theme: "Synthesis", color: 6, text: synthText }] : []
+        }
         onClose={() => setPreviewing(false)}
         onFlash={onFlash}
       />
