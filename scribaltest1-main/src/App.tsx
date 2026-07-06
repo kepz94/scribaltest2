@@ -516,6 +516,8 @@ const MergeSeam = ({
       .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
       .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
       .rt-li { margin-bottom: 4px; }
+      .rt-checklist { list-style: none; margin: 0 0 10px 2px; padding-left: 0; }
+      .rt-checklist .rt-li { list-style: none; }
       .rt-li-unchecked, .rt-li-checked {
         list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
       }
