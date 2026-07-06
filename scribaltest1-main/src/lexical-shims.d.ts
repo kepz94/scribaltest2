@@ -16,7 +16,11 @@ declare module "lexical" {
   export const INDENT_CONTENT_COMMAND: any;
   export const OUTDENT_CONTENT_COMMAND: any;
   export const ElementNode: any;
-  export const TextNode: any;
+  export class TextNode {
+    constructor(...args: any[]);
+    [k: string]: any;
+    static [k: string]: any;
+  }
   const _default: any;
   export default _default;
   export = _default;
@@ -50,6 +54,7 @@ declare module "@lexical/react/LexicalTabIndentationPlugin" {
 declare module "@lexical/react/LexicalHorizontalRuleNode" {
   export const HorizontalRuleNode: any;
   export const INSERT_HORIZONTAL_RULE_COMMAND: any;
+  export const $createHorizontalRuleNode: any;
 }
 declare module "@lexical/react/LexicalComposerContext" {
   export const useLexicalComposerContext: any;
