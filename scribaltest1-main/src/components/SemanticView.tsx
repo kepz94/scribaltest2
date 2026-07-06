@@ -74,6 +74,9 @@ export default function SemanticView({
   const [selColor, setSelColor] = useState<MarkColor | null>(null);
   const [selRef, setSelRef] = useState<string | null>(null);
   const [gapsOpen, setGapsOpen] = useState(false);
+  // Altitude-1 layout: one continuous strip, or one row per chapter stacked
+  // on a SHARED weight scale so chapters compare honestly.
+  const [stacked, setStacked] = useState(false);
 
   const byRef = useMemo(() => {
     const m = new Map<string, Mark[]>();
@@ -321,10 +324,151 @@ export default function SemanticView({
     );
   }
 
+  const bar = (r: Row) => {
+    const h = r.colors.length
+      ? Math.max(14, Math.round((r.weight / maxW) * 100))
+      : 6;
+    const col = r.colors.length ? COLOR_MAP[dominant(r)] : border;
+    return (
+      <button
+        key={r.ref}
+        onClick={() => (r.colors.length ? goVerse(r.ref) : undefined)}
+        aria-label={r.ref}
+        title={r.ref}
+        style={{
+          flex: 1,
+          height: h + "%",
+          minWidth: "3px",
+          background: col,
+          opacity: r.colors.length ? 1 : 0.5,
+          border: "none",
+          borderRadius: "2px 2px 0 0",
+          padding: 0,
+          cursor: r.colors.length ? "pointer" : "default",
+          position: "relative",
+        }}
+      >
+        {r.colors.length > 1 && (
+          <span style={{ position: "absolute", top: "-13px", left: "50%", transform: "translateX(-50%)", fontSize: "9px", color: "#ffd76a" }}>✦</span>
+        )}
+        {r.colors.length === 1 && r.hasNote && (
+          <span style={{ position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)", fontSize: "8px", color: muted }}>▤</span>
+        )}
+      </button>
+    );
+  };
+
+  if (alt === 1 && stacked) {
+    const chapters = Array.from(new Set(rows.map((r) => r.chapterTitle)));
+    return (
+      <div style={card}>
+        {header("Chapters against each other — bars sit where the marks fall")}
+        <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
+          <button onClick={() => setStacked(false)} style={chipStyle}>
+            Flow
+          </button>
+          <button onClick={() => setStacked(true)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
+            Stacked ✓
+          </button>
+        </div>
+        {chapters.map((ct) => {
+          const chRows = rows.filter((r) => r.chapterTitle === ct);
+          const tally = new Map<MarkColor, number>();
+          chRows.forEach((r) =>
+            r.colors.forEach((c) => tally.set(c, (tally.get(c) || 0) + 1))
+          );
+          return (
+            <div key={ct} style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "14px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 800, color: text }}>
+                  {ct}
+                </span>
+                <span style={{ display: "flex", gap: "8px", fontSize: "10px", color: muted }}>
+                  {Array.from(tally.entries())
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([c, n]) => (
+                      <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                        <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: COLOR_MAP[c], display: "inline-block" }} />
+                        {n}
+                      </span>
+                    ))}
+                </span>
+              </div>
+              {(() => {
+                const n = chRows.length;
+                const lastV = chRows[n - 1] ? chRows[n - 1].verse : n;
+                return (
+                  <div>
+                    {/* the chapter as a track: start → end, marks at their true
+                        verse positions; faint quarter-guides line up across
+                        every chapter so the same x = the same relative spot */}
+                    <div style={{ position: "relative", height: "64px", borderBottom: "1px solid " + border }}>
+                      {[25, 50, 75].map((pct) => (
+                        <span key={pct} style={{ position: "absolute", left: pct + "%", top: 0, bottom: 0, width: "1px", background: border, opacity: 0.35 }} />
+                      ))}
+                      {chRows.map((r, i) =>
+                        r.colors.length ? (
+                          <button
+                            key={r.ref}
+                            onClick={() => goVerse(r.ref)}
+                            aria-label={r.ref}
+                            title={r.ref + " · v" + r.verse}
+                            style={{
+                              position: "absolute",
+                              left: (n > 1 ? (i / (n - 1)) * 100 : 50) + "%",
+                              transform: "translateX(-50%)",
+                              bottom: 0,
+                              width: Math.max(0.9, 100 / n) + "%",
+                              minWidth: "3px",
+                              height: Math.max(14, Math.round((r.weight / maxW) * 100)) + "%",
+                              background: COLOR_MAP[dominant(r)],
+                              border: "none",
+                              borderRadius: "2px 2px 0 0",
+                              padding: 0,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {r.colors.length > 1 && (
+                              <span style={{ position: "absolute", top: "-13px", left: "50%", transform: "translateX(-50%)", fontSize: "9px", color: "#ffd76a" }}>✦</span>
+                            )}
+                            {r.colors.length === 1 && r.hasNote && (
+                              <span style={{ position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)", fontSize: "8px", color: muted }}>▤</span>
+                            )}
+                          </button>
+                        ) : null
+                      )}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: muted, marginTop: "3px" }}>
+                      <span>v1</span>
+                      <span>v{lastV}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })}
+        <div style={{ fontSize: "10px", color: muted, fontStyle: "italic", lineHeight: 1.5 }}>
+          Every row runs the chapter start → end; bars stand where their verses
+          fall, so the same position lines up across chapters. Heights share one
+          scale — a tall bar means the same weight everywhere. Dots tally themes.
+        </div>
+      </div>
+    );
+  }
+
   if (alt === 1) {
     return (
       <div style={card}>
         {header("The study's shape — tap a bar to land on its verse")}
+        <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
+          <button onClick={() => setStacked(false)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
+            Flow ✓
+          </button>
+          <button onClick={() => setStacked(true)} style={chipStyle}>
+            Stacked
+          </button>
+        </div>
         <div
           style={{
             display: "flex",
