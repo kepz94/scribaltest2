@@ -426,10 +426,12 @@ export default function SemanticView({
                     <div
                       style={{
                         position: "relative",
-                        height: "44px",
-                        background: "rgba(127,127,127,0.07)",
-                        borderRadius: "6px",
+                        height: "58px",
+                        background:
+                          "linear-gradient(to top, rgba(127,127,127,0.14), rgba(127,127,127,0.03))",
+                        border: "1px solid " + border,
                         borderBottom: "2px solid " + border,
+                        borderRadius: "6px",
                         overflow: "visible",
                       }}
                     >
@@ -449,7 +451,10 @@ export default function SemanticView({
                               transform: "translateX(-50%)",
                               bottom: 0,
                               width: "clamp(4px, " + 100 / n + "%, 9px)",
-                              height: Math.max(18, Math.round((r.weight / maxW) * 88)) + "%",
+                              height:
+                                Math.round(
+                                  16 + Math.sqrt(r.weight / maxW) * 74
+                                ) + "%",
                               borderRadius: "3px 3px 0 0",
                               background: COLOR_MAP[dominant(r)],
                               border: "none",
