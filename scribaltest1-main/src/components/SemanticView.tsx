@@ -29,6 +29,7 @@ interface Props {
   // desktop keys differ — each shell hands us readers.
   noteFor: (ref: string) => string;
   synthesisFor: (color: number) => string;
+  onSaveSynthesis?: (text: string) => void;
   // Palette hooks (mobile passes its C; desktop CSS vars via defaults)
   panel?: string;
   border?: string;
@@ -65,6 +66,7 @@ export default function SemanticView({
   onJumpToReference,
   noteFor,
   synthesisFor,
+  onSaveSynthesis,
   panel = "var(--panel)",
   border = "var(--border)",
   text = "var(--text)",
@@ -77,6 +79,8 @@ export default function SemanticView({
   // Altitude-1 layout: one continuous strip, or one row per chapter stacked
   // on a SHARED weight scale so chapters compare honestly.
   const [stacked, setStacked] = useState(false);
+  const [doorEdit, setDoorEdit] = useState(false);
+  const [doorDraft, setDoorDraft] = useState("");
 
   const byRef = useMemo(() => {
     const m = new Map<string, Mark[]>();
@@ -651,10 +655,42 @@ export default function SemanticView({
           <div style={{ fontSize: "8.5px", letterSpacing: "1.5px", color: muted, fontWeight: 800, marginBottom: "3px" }}>
             {synth ? "YOUR SYNTHESIS — THE DOORWAY" : "THE DOORWAY IS EMPTY"}
           </div>
-          <div style={{ fontSize: "12.5px", fontStyle: "italic", color: synth ? text : muted, lineHeight: 1.55 }}>
-            {synth ||
-              "You haven't written what this theme means yet — its verses are below, waiting to be concluded."}
-          </div>
+          {doorEdit && onSaveSynthesis ? (
+            <div>
+              <textarea
+                value={doorDraft}
+                onChange={(e) => setDoorDraft(e.target.value)}
+                autoFocus
+                rows={3}
+                placeholder="What do these verses say together in this study?"
+                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: "12.5px", lineHeight: 1.55, borderRadius: "8px", border: "1px solid " + border, background: "transparent", color: text, fontFamily: "inherit", resize: "vertical" }}
+              />
+              <div style={{ display: "flex", gap: "7px", marginTop: "6px" }}>
+                <button
+                  onClick={() => { onSaveSynthesis(doorDraft); setDoorEdit(false); }}
+                  style={{ background: COLOR_MAP[selColor], color: "#fff", border: "none", borderRadius: "7px", padding: "5px 13px", fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Save
+                </button>
+                <button onClick={() => setDoorEdit(false)} style={{ background: "transparent", border: "1px solid " + border, borderRadius: "7px", padding: "5px 11px", fontSize: "11px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: muted }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: "12.5px", fontStyle: "italic", color: synth ? text : muted, lineHeight: 1.55 }}>
+              {synth ||
+                "You haven't written what this theme means yet — its verses are below, waiting to be concluded."}
+              {onSaveSynthesis && (
+                <button
+                  onClick={() => { setDoorDraft(synth); setDoorEdit(true); }}
+                  style={{ display: "inline-block", marginLeft: "8px", background: "transparent", border: "1px solid " + border, borderRadius: "6px", padding: "2px 9px", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: COLOR_MAP[selColor], fontStyle: "normal" }}
+                >
+                  {synth ? "Edit" : "Write it"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: "13.5px", lineHeight: 2.1 }}>
           {versesOf(selColor).map((r) => {
