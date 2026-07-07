@@ -371,6 +371,27 @@ export default function SemanticView({
             Stacked ✓
           </button>
         </div>
+        {/* one legend for all rows — the themes are the same themes in every
+            chapter, so their full names live up here once */}
+        {(() => {
+          const totals = new Map<MarkColor, number>();
+          marked.forEach((r) =>
+            r.colors.forEach((c) => totals.set(c, (totals.get(c) || 0) + 1))
+          );
+          return (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginBottom: "14px" }}>
+              {Array.from(totals.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([c, n]) => (
+                  <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700, color: text }}>
+                    <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: COLOR_MAP[c], display: "inline-block" }} />
+                    {nameOf(c)}
+                    <span style={{ color: muted, fontWeight: 500 }}>{n}</span>
+                  </span>
+                ))}
+            </div>
+          );
+        })()}
         {chapters.map((ct) => {
           const chRows = rows.filter((r) => r.chapterTitle === ct);
           const tally = new Map<MarkColor, number>();
