@@ -342,7 +342,7 @@ export default function SemanticView({
         style={{
           flex: 1,
           height: h + "%",
-          minWidth: "3px",
+          minWidth: "1px",
           background: col,
           opacity: r.colors.length ? 1 : 0.5,
           border: "none",
@@ -531,7 +531,7 @@ export default function SemanticView({
                 style={{
                   flex: 1,
                   height: h + "%",
-                  minWidth: "3px",
+                  minWidth: "1px",
                   background: col,
                   opacity: r.colors.length ? 1 : 0.5,
                   border: "none",
