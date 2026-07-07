@@ -3399,6 +3399,34 @@ export default function MobileApp() {
         };
         return next;
       }
+      // Linked studies: the group id drifts (regrouping, other devices), so an
+      // exact scopeRef miss doesn't mean the study is new. If a linked study
+      // already covers the SAME chapter set, update it — and re-key it to the
+      // current group id — instead of duplicating it in the list.
+      if (type === "linked" && memberScopes && memberScopes.length) {
+        const want = memberScopes.slice().sort().join("|");
+        const j = prev.findIndex(
+          (s) =>
+            s.type === "linked" &&
+            s.bookId === bookId &&
+            (s.memberScopes || []).slice().sort().join("|") === want
+        );
+        if (j >= 0) {
+          const next = prev.slice();
+          const cur = next[j];
+          const nameChanged = rename && name !== cur.name;
+          next[j] = {
+            ...cur,
+            scopeRef,
+            name: rename ? name : cur.name,
+            nameAt: nameChanged ? now : cur.nameAt || cur.compiledAt || now,
+            compiledAt: now,
+            view: view !== undefined ? view : cur.view,
+            memberScopes,
+          };
+          return next;
+        }
+      }
       return [
         {
           id: "study_" + now + "_" + Math.random().toString(36).slice(2, 7),
