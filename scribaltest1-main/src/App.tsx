@@ -11553,6 +11553,12 @@ export default function App() {
                     sharedCompileProps.compileTabs.map(tabLabel).join("+");
                   return notes[k] || "";
                 }}
+                onSaveSynthesis={(t) => {
+                  const k =
+                    "synthesis|" +
+                    sharedCompileProps.compileTabs.map(tabLabel).join("+");
+                  setNote(k, t);
+                }}
               />
             )}
             {compileView === "distilled" && (
