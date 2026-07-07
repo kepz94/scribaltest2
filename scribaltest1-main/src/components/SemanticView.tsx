@@ -399,8 +399,8 @@ export default function SemanticView({
             r.colors.forEach((c) => tally.set(c, (tally.get(c) || 0) + 1))
           );
           return (
-            <div key={ct} style={{ marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "14px" }}>
+            <div key={ct} style={{ marginBottom: "10px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "5px" }}>
                 <span style={{ fontSize: "11px", fontWeight: 800, color: text }}>
                   {ct}
                 </span>
@@ -423,9 +423,18 @@ export default function SemanticView({
                     {/* the chapter as a track: start → end, marks at their true
                         verse positions; faint quarter-guides line up across
                         every chapter so the same x = the same relative spot */}
-                    <div style={{ position: "relative", height: "64px", borderBottom: "1px solid " + border }}>
+                    <div
+                      style={{
+                        position: "relative",
+                        height: "44px",
+                        background: "rgba(127,127,127,0.07)",
+                        borderRadius: "6px",
+                        borderBottom: "2px solid " + border,
+                        overflow: "visible",
+                      }}
+                    >
                       {[25, 50, 75].map((pct) => (
-                        <span key={pct} style={{ position: "absolute", left: pct + "%", top: 0, bottom: 0, width: "1px", background: border, opacity: 0.35 }} />
+                        <span key={pct} style={{ position: "absolute", left: pct + "%", top: "6px", bottom: "0", width: "1px", background: border, opacity: 0.5 }} />
                       ))}
                       {chRows.map((r, i) =>
                         r.colors.length ? (
@@ -439,11 +448,11 @@ export default function SemanticView({
                               left: (n > 1 ? (i / (n - 1)) * 100 : 50) + "%",
                               transform: "translateX(-50%)",
                               bottom: 0,
-                              width: "clamp(3px, " + 100 / n + "%, 10px)",
-                              height: Math.max(14, Math.round((r.weight / maxW) * 100)) + "%",
+                              width: "clamp(4px, " + 100 / n + "%, 9px)",
+                              height: Math.max(18, Math.round((r.weight / maxW) * 88)) + "%",
+                              borderRadius: "3px 3px 0 0",
                               background: COLOR_MAP[dominant(r)],
                               border: "none",
-                              borderRadius: "2px 2px 0 0",
                               padding: 0,
                               cursor: "pointer",
                             }}
@@ -458,7 +467,7 @@ export default function SemanticView({
                         ) : null
                       )}
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: muted, marginTop: "3px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: muted, marginTop: "2px" }}>
                       <span>v1</span>
                       <span>v{lastV}</span>
                     </div>
