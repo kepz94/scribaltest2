@@ -439,6 +439,7 @@ export default function SemanticView({
                         overflow: "visible",
                       }}
                     >
+                      <div style={{ position: "absolute", left: "7px", right: "7px", top: 0, bottom: 0 }}>
                       {[25, 50, 75].map((pct) => (
                         <span key={pct} style={{ position: "absolute", left: pct + "%", top: "6px", bottom: "0", width: "1px", background: border, opacity: 0.5 }} />
                       ))}
@@ -475,6 +476,7 @@ export default function SemanticView({
                           </button>
                         ) : null
                       )}
+                      </div>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: muted, marginTop: "2px" }}>
                       <span>v1</span>
