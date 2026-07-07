@@ -1290,6 +1290,7 @@ export default function MobileCompile({
               return "";
             }}
             synthesisFor={() => readSynth()}
+            onSaveSynthesis={(t: string) => setNote(dSynthKey(), t)}
             panel={C.panel}
             border={C.border}
             text={C.text}
