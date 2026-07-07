@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { Mark, MarkColor, COLOR_MAP } from "../types";
 import { volumesProxy } from "../data/scripturesStore";
 
@@ -159,6 +159,90 @@ export default function SemanticView({
     setSelColor(c);
     setAlt(3);
   };
+  // ── pinch: two fingers move between altitudes ────────────────────────────
+  // iOS PWA notes: listeners are attached natively with { passive: false }
+  // because React registers touch handlers passively on iOS and a passive
+  // handler cannot preventDefault Safari's page zoom. gesturestart (Safari's
+  // proprietary zoom event) is also blocked inside the view. Single-finger
+  // touches are never intercepted, so scrolling stays native.
+  const pinchRef = useRef({ start: 0, fired: false });
+  const stateRef = useRef({ alt, selColor, selRef });
+  stateRef.current = { alt, selColor, selRef };
+  useEffect(() => {
+    const inView = (e: Event) =>
+      !!(e.target as HTMLElement | null)?.closest?.(".sem-pinch");
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const descendOne = () => {
+      const { alt: a, selColor: c, selRef: v } = stateRef.current;
+      if (a === 1) setAlt(2);
+      else if (a === 2) {
+        // no theme picked yet: descend into the heaviest one
+        let pick = c;
+        if (pick == null) {
+          const tally = new Map<MarkColor, number>();
+          marked.forEach((r) =>
+            r.colors.forEach((cc) => tally.set(cc, (tally.get(cc) || 0) + 1))
+          );
+          let best: MarkColor | null = null;
+          let bn = -1;
+          tally.forEach((nn, cc) => {
+            if (nn > bn) {
+              bn = nn;
+              best = cc;
+            }
+          });
+          pick = best;
+        }
+        if (pick == null) return;
+        setSelColor(pick);
+        setAlt(3);
+      } else if (a === 3) {
+        if (v) return setAlt(4);
+        const vs = c != null ? versesOf(c) : [];
+        if (vs.length) {
+          setSelRef(vs[0].ref);
+          setAlt(4);
+        }
+      }
+    };
+    const ts = (e: TouchEvent) => {
+      if (e.touches.length === 2 && inView(e))
+        pinchRef.current = { start: dist(e.touches), fired: false };
+    };
+    const tm = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || !pinchRef.current.start || !inView(e))
+        return;
+      e.preventDefault();
+      if (pinchRef.current.fired) return;
+      const r = dist(e.touches) / pinchRef.current.start;
+      if (r > 1.25) {
+        pinchRef.current.fired = true;
+        descendOne();
+      } else if (r < 0.8) {
+        pinchRef.current.fired = true;
+        up();
+      }
+    };
+    const te = () => {
+      pinchRef.current = { start: 0, fired: false };
+    };
+    const gs = (e: Event) => {
+      if (inView(e)) e.preventDefault();
+    };
+    document.addEventListener("touchstart", ts, { passive: true });
+    document.addEventListener("touchmove", tm, { passive: false });
+    document.addEventListener("touchend", te, { passive: true });
+    document.addEventListener("gesturestart", gs, { passive: false } as any);
+    return () => {
+      document.removeEventListener("touchstart", ts);
+      document.removeEventListener("touchmove", tm);
+      document.removeEventListener("touchend", te);
+      document.removeEventListener("gesturestart", gs);
+    };
+    // eslint-disable-next-line
+  }, []);
+
   const up = () => {
     if (gapsOpen) return setGapsOpen(false);
     if (alt === 4) setAlt(selColor ? 3 : 1);
@@ -235,6 +319,7 @@ export default function SemanticView({
   );
 
   const card: React.CSSProperties = {
+    touchAction: "pan-y",
     background: panel,
     border: "1px solid " + border,
     borderRadius: "13px",
@@ -286,7 +371,7 @@ export default function SemanticView({
   // ── altitudes ─────────────────────────────────────────────────────────────
   if (gapsOpen) {
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header(gaps.length + " verses you haven't marked")}
         <div style={{ maxHeight: "340px", overflowY: "auto" }}>
           {gaps.map((r) => (
@@ -365,7 +450,7 @@ export default function SemanticView({
   if (alt === 1 && stacked) {
     const chapters = Array.from(new Set(rows.map((r) => r.chapterTitle)));
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header("Chapters against each other — bars sit where the marks fall")}
         <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
           <button onClick={() => setStacked(false)} style={chipStyle}>
@@ -499,7 +584,7 @@ export default function SemanticView({
 
   if (alt === 1) {
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header("The study's shape — tap a bar to land on its verse")}
         <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
           <button onClick={() => setStacked(false)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
@@ -611,7 +696,7 @@ export default function SemanticView({
 
   if (alt === 2) {
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header("Your themes — tap one to enter it")}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
           {themeColors.map((c) => {
@@ -645,7 +730,7 @@ export default function SemanticView({
   if (alt === 3 && selColor != null) {
     const synth = synthesisFor(selColor).trim();
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header(nameOf(selColor) + " — tap a fragment for its verse")}
         <div
           style={{
@@ -729,7 +814,7 @@ export default function SemanticView({
     if (!r) return null;
     const note = noteFor(r.ref).trim();
     return (
-      <div style={card}>
+      <div className="sem-pinch" style={card}>
         {header(r.ref)}
         <div
           style={{
