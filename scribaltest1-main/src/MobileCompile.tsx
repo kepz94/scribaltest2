@@ -978,6 +978,8 @@ export default function MobileCompile({
                     ? "Relational"
                     : format === "distilled"
                     ? "Distilled"
+                    : format === "semantic"
+                    ? "Semantic"
                     : "Outline"}
                   <span style={{ fontSize: "11px", opacity: 0.6 }}>
                     {showFormats ? "▲" : "▼"}
@@ -1185,6 +1187,9 @@ export default function MobileCompile({
                 )}
                 {seg(format === "covenants", "Relational", () =>
                   setFormat("covenants")
+                )}
+                {seg(format === "semantic", "Semantic", () =>
+                  setFormat("semantic")
                 )}
               </div>
             )}
