@@ -408,6 +408,21 @@ export default function VerseViewer(props: VerseViewerProps) {
       if (!verse) return;
       const textSpan = el.querySelector("[data-verse-text]");
       if (!textSpan) return;
+      // Real-intersection guard: intersectsNode counts a mere boundary touch.
+      // A triple-click selection ends exactly AT the start of the next verse
+      // block — zero characters selected there — and the full-length endIndex
+      // default below used to mark that ENTIRE next verse (SCR-14).
+      try {
+        const spanRange = document.createRange();
+        spanRange.selectNodeContents(textSpan);
+        if (
+          spanRange.compareBoundaryPoints(Range.END_TO_START, range) >= 0 ||
+          spanRange.compareBoundaryPoints(Range.START_TO_END, range) <= 0
+        )
+          return;
+      } catch {
+        /* boundary comparison unavailable — keep the old permissive path */
+      }
       let startIndex = 0;
       let endIndex = verse.text.length;
       if (textSpan.contains(range.startContainer)) {
@@ -502,7 +517,35 @@ export default function VerseViewer(props: VerseViewerProps) {
     setDragging(true);
   };
 
-  const handleMouseUp = () => {
+  // One marking action per GESTURE, not per mouseup. A triple-click fires
+  // mouseup twice (double-click phase selects the word, triple-click phase the
+  // verse); marking on each created a stray word mark plus the verse mark, and
+  // undo needed multiple steps (SCR-14). Double-click marking waits a beat for
+  // a possible third click; drags (detail 1) still mark instantly.
+  const pendingMark = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (pendingMark.current !== null) clearTimeout(pendingMark.current);
+    },
+    []
+  );
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (pendingMark.current !== null) {
+      clearTimeout(pendingMark.current);
+      pendingMark.current = null;
+    }
+    if (e.detail === 2) {
+      pendingMark.current = window.setTimeout(() => {
+        pendingMark.current = null;
+        applySelection();
+      }, 350);
+      return;
+    }
+    applySelection();
+  };
+
+  const applySelection = () => {
     // In "send verses" mode the panel is for picking verses, not marking.
     if (sendMode) return;
     // Pointer tool (and eraser) leave the selection alone, so you can read and

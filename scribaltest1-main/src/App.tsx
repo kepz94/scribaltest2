@@ -4674,6 +4674,31 @@ export default function App() {
 
   // Build a row for every study (chapter, linked, keyword) with live counts and
   // theme names. Shared by the Studies hub and the books Vault.
+  // Badge for the header Studies pill. Mirrors buildStudyRows' row
+  // construction (chapter + linked + standalone keyword + combined) so the
+  // count matches what the hub actually lists — it used to count keyword
+  // searches only, showing 7 while the hub listed 9 (SCR-15). If the row
+  // rules in buildStudyRows change, change this with them.
+  const studyRowCount = useMemo(() => {
+    const combinedScopes = new Set(
+      searchStudies
+        .filter((ss) => ss.linkedScope && !isSearchStudyDeleted(ss))
+        .map((ss) => resolveScope(ss.linkedScope as string))
+    );
+    let n = combinedScopes.size;
+    recordedStudies.forEach((s) => {
+      if (s.type === "chapter") {
+        if (!combinedScopes.has(resolveScope(s.scopeRef))) n++;
+      } else if (s.type === "linked") {
+        if (!combinedScopes.has("group:" + s.scopeRef)) n++;
+      }
+    });
+    searchStudies.forEach((ss) => {
+      if (!ss.linkedScope) n++;
+    });
+    return n;
+  }, [searchStudies, recordedStudies, chapterGroups]);
+
   const buildStudyRows = (): StudyRow[] => {
     const bookMarksOf = (bid: string) =>
       allMarks.filter((m) => m.bookId === bid);
@@ -5226,6 +5251,7 @@ export default function App() {
             border: "var(--border)",
           }}
           onClose={() => setSlidesOpen(false)}
+          desktop
         />
       )}
 
@@ -9103,7 +9129,7 @@ export default function App() {
             >
               {purpleIcon(<IconStudies size={17} />)}
               Studies
-              {searchStudies.length > 0 && (
+              {studyRowCount > 0 && (
                 <span
                   style={{
                     fontSize: "10px",
@@ -9113,7 +9139,7 @@ export default function App() {
                     padding: "0 6px",
                   }}
                 >
-                  {searchStudies.length}
+                  {studyRowCount}
                 </span>
               )}
             </button>

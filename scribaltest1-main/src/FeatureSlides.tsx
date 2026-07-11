@@ -43,9 +43,13 @@ const Chain = ({ color, size = 15 }: { color: string; size?: number }) => (
 export default function FeatureSlides({
   C,
   onClose,
+  desktop,
 }: {
   C: Palette;
   onClose: () => void;
+  // Desktop swaps the touch copy (finger/swipe/two-finger) for the gestures
+  // that actually exist there: selection marking, toolbar, hotkeys (SCR-18).
+  desktop?: boolean;
 }) {
   const [i, setI] = useState(0);
   const [touchX, setTouchX] = useState<number | null>(null);
@@ -117,8 +121,10 @@ export default function FeatureSlides({
   // ── the slides ────────────────────────────────────────────────────────────
   const slides: { title: string; body: string; visual: React.ReactNode }[] = [
     {
-      title: "Your finger is the pen",
-      body: "Swipe straight across words to mark them — no press-and-hold, no menus. Five tools, ten colors, letter-level precision. Slip of the finger? Tap anywhere with two fingers to undo.",
+      title: desktop ? "Your cursor is the pen" : "Your finger is the pen",
+      body: desktop
+        ? "Select words with a quick drag (or double-click one word) — they mark instantly in your color. Five tools, ten colors, letter-level precision. Hotkeys: 1–0 pick colors, letters pick tools, Ctrl+Z undoes."
+        : "Swipe straight across words to mark them — no press-and-hold, no menus. Five tools, ten colors, letter-level precision. Slip of the finger? Tap anywhere with two fingers to undo.",
       visual: mockCard(
         <div style={{ fontFamily: serif, fontSize: "16px", lineHeight: 1.8, color: C.text }}>
           <span style={{ color: C.muted, fontSize: "12px", marginRight: "6px" }}>7</span>
@@ -142,7 +148,10 @@ export default function FeatureSlides({
     },
     {
       title: "Each color is a theme — you name it",
-      body: "In your compiled study, every color becomes a group. Tap the dashed title and call it what YOU see. Scribal never names a theme for you.",
+      body:
+        "In your compiled study, every color becomes a group. " +
+        (desktop ? "Click" : "Tap") +
+        " the dashed title and call it what YOU see. Scribal never names a theme for you.",
       visual: mockCard(
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
@@ -171,7 +180,10 @@ export default function FeatureSlides({
     },
     {
       title: "Compile — marking becomes notes",
-      body: "One tap gathers every mark into a study: your themes as headings, your verses beneath, your emphasis kept. Verse cards flip for per-verse notes; the dotted + holds each theme's conclusion.",
+      body:
+        "One " +
+        (desktop ? "click" : "tap") +
+        " gathers every mark into a study: your themes as headings, your verses beneath, your emphasis kept. Verse cards flip for per-verse notes; the dotted + holds each theme's conclusion.",
       visual: mockCard(
         <div>
           <div
@@ -223,14 +235,18 @@ export default function FeatureSlides({
     },
     {
       title: "Link chapters — study them as ONE",
-      body: "Tap Link and pick chapters: they compile together, themes carrying across. The sheet lists every member with the group's colored dot — tap a chapter there to JUMP straight to it.",
+      body:
+        (desktop ? "Click" : "Tap") +
+        " Link and pick chapters: they compile together, themes carrying across. The sheet lists every member with the group's colored dot — " +
+        (desktop ? "click" : "tap") +
+        " a chapter there to JUMP straight to it.",
       visual: mockCard(
         <div>
           <div style={{ fontSize: "12px", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "6px" }}>
             Linked chapters
           </div>
           {dotRow(PURPLE, "1 Nephi 1", "you are here")}
-          {dotRow(PURPLE, "1 Nephi 2", "tap to jump")}
+          {dotRow(PURPLE, "1 Nephi 2", desktop ? "click to jump" : "tap to jump")}
           <div style={{ ...{ padding: "10px 4px" }, fontSize: "13px", color: C.muted }}>
             + Link another chapter…
           </div>
@@ -304,8 +320,12 @@ export default function FeatureSlides({
       ),
     },
     {
-      title: "The dictionary lives under your finger",
-      body: "Tap any single word while reading to look it up — 1828 Webster's, the language of the text. Tag a definition and the word stays quietly marked wherever it appears in your study.",
+      title: desktop
+        ? "The dictionary lives under your cursor"
+        : "The dictionary lives under your finger",
+      body: desktop
+        ? "Pick the Define tool and select any word to look it up — 1828 Webster's, the language of the text. Tag a definition and the word stays quietly marked wherever it appears in your study."
+        : "Tap any single word while reading to look it up — 1828 Webster's, the language of the text. Tag a definition and the word stays quietly marked wherever it appears in your study.",
       visual: mockCard(
         <div>
           <div style={{ fontFamily: serif, fontSize: "16px", lineHeight: 1.8, color: C.text, marginBottom: "10px" }}>
@@ -343,7 +363,10 @@ export default function FeatureSlides({
     },
     {
       title: "Screens — up to 8 places at once",
-      body: "The tab row above the chapter title holds your open Screens. Each keeps its own book, chapter, and scroll — study in one, cross-reference in another. Tap + for a fresh one.",
+      body:
+        "The tab row above the chapter title holds your open Screens. Each keeps its own book, chapter, and scroll — study in one, cross-reference in another. " +
+        (desktop ? "Click" : "Tap") +
+        " + for a fresh one.",
       visual: mockCard(
         <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
           <span style={{ borderRadius: "999px", background: C.text, color: C.bg, fontSize: "12.5px", fontWeight: 700, padding: "6px 13px" }}>
