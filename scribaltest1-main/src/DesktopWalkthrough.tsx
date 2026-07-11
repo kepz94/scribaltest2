@@ -33,9 +33,11 @@ interface Props {
   scopedLabels: Record<string, Record<number, string>>;
   marks: Mark[];
   activeBookId: string;
-  // Navigation: open the demo chapter (jumpToReference under the hood) and the
-  // tab machinery so any tab the tour opens can be closed on exit.
-  openDemoChapter: () => void;
+  // Navigation: open the demo chapter as a NEW tab bound to the given
+  // (ephemeral) book, plus the tab machinery so any tab the tour opens can be
+  // closed on exit. Must never reuse/replace the user's tab — that is how the
+  // tour once marked the real Master Book (SCR-19).
+  openDemoChapter: (bookId: string) => void;
   tabIds: string[];
   activeTabId: string;
   setActiveTab: (id: string) => void;
@@ -136,7 +138,7 @@ const STEPS: Step[] = [
     target: "[data-verse-ref]",
     coachPos: "near",
     title: "Your cursor is the pen",
-    body: "Click any word in the lit verse — it marks instantly in your color. No selection menus, no right-clicks.",
+    body: "Double-click any word in the lit verse — it marks instantly in your color. (Selecting it with a quick drag works too.)",
   },
   {
     id: "phrase",
@@ -289,7 +291,7 @@ export default function DesktopWalkthrough({
     const DEMO = getDemo();
     if (!DEMO || !tempId.current || activeBookId !== tempId.current) return;
     seeded.current = true;
-    openDemoChapter();
+    openDemoChapter(tempId.current);
     SEEDS.forEach((sd) => {
       const verse = DEMO.verses[sd.verseIdx];
       if (!verse) return;

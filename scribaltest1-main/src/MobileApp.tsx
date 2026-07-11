@@ -7277,7 +7277,36 @@ export default function MobileApp() {
             );
             return (
               <div>
-                <div style={{ fontSize: "16px", fontWeight: 700 }}>Settings</div>
+                {/* Explicit close: on the installed PWA the backdrop strip
+                    above the sheet can't be relied on as the only way out
+                    (SCR-22 — users got trapped in Settings). */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                    Settings
+                  </div>
+                  <button
+                    onClick={() => setSettingsOpen(false)}
+                    aria-label="Close settings"
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: C.muted,
+                      fontSize: "22px",
+                      lineHeight: 1,
+                      padding: "4px 8px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
 
                 {label("Sync")}
                 {cloudSignedIn ? (

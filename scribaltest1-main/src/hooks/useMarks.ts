@@ -1581,6 +1581,10 @@ export function useMarks() {
     activeBookId: state.activeId,
     activeBookName: active.name,
     isMasterActive: state.activeId === "master",
+    // Ephemeral books (the guided tour's throwaway book) are fully isolated:
+    // never persisted, never synced — and shells use this flag to keep the
+    // user's real structures (like chapter-link groups) out of them (SCR-19).
+    isEphemeralActive: !!active.ephemeral,
     setActiveBook,
     createSession,
     renameBook,

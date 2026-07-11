@@ -1038,6 +1038,7 @@ export default function App() {
     activeBookId,
     activeBookName,
     isMasterActive,
+    isEphemeralActive,
     setActiveBook,
     createSession,
     renameBook,
@@ -2546,6 +2547,27 @@ export default function App() {
     setJumpTarget(reference);
   };
 
+  // Guided-tour navigation: open the demo chapter in a NEW tab bound to the
+  // tour's ephemeral book. jumpToReference must not be used here — it REPLACES
+  // the active tab and inherits that tab's bookId (usually "master"), which is
+  // exactly how the tour ended up marking the user's real Master Book (SCR-19).
+  const openTourChapter = (bookId: string) => {
+    const loc = locateReference("1 Nephi 1:1");
+    if (!loc) return;
+    const id = makeTabId(bookId, loc.v, loc.b, loc.c);
+    setTabs((prev) =>
+      prev.find((t) => t.id === id)
+        ? prev
+        : [
+            ...prev,
+            { id, volume: loc.v, book: loc.b, chapter: loc.c, bookId },
+          ]
+    );
+    setActiveTabId(id);
+    setMode("read");
+    setJumpTarget("1 Nephi 1:1");
+  };
+
   const openInNewTab = (reference: string) => {
     const loc = locateReference(reference);
     if (!loc) return;
@@ -3068,8 +3090,11 @@ export default function App() {
 
   const startCompile = () => {
     setCompileStudyId(null);
+    // Link groups belong to the user's real study data — inside an ephemeral
+    // book (the guided tour) compile just the open chapter, never the user's
+    // linked-study dialog (SCR-19).
     const gid =
-      activeTab && !activeTab.studyId
+      activeTab && !activeTab.studyId && !isEphemeralActive
         ? chapterGroups[chapterScopeOf(activeTab)]
         : undefined;
     if (gid) {
@@ -5173,7 +5198,7 @@ export default function App() {
           scopedLabels={getBook(activeBookId).scopedLabels || {}}
           marks={marks}
           activeBookId={activeBookId}
-          openDemoChapter={() => jumpToReference("1 Nephi 1:1")}
+          openDemoChapter={openTourChapter}
           tabIds={tabs.map((t) => t.id)}
           activeTabId={activeTabId}
           setActiveTab={setActiveTabId}
