@@ -167,17 +167,44 @@ export default function Outline(props: OutlineProps) {
     return { reference: e.reference, text: e.text, color, themeName };
   });
 
+  // Merge overlapping/adjacent ranges of the SAME style into clean runs
+  // (SCR-12). Stacked near-duplicate marks (the triple-click double-fire,
+  // off-by-one legacy boundaries) rendered as separate near-identical outline
+  // entries and double-counted points. Different styles stay separate runs so
+  // intentional layering (a bold word inside a highlighted phrase) keeps its
+  // own entry and its own points.
+  const mergedRunsFor = (
+    ms: Mark[]
+  ): { start: number; end: number; style: Mark["style"] }[] => {
+    const styles = Array.from(new Set(ms.map((m) => m.style)));
+    const out: { start: number; end: number; style: Mark["style"] }[] = [];
+    styles.forEach((style) => {
+      const runs: { start: number; end: number; style: Mark["style"] }[] = [];
+      ms.filter((m) => m.style === style)
+        .map((m) => ({ start: m.startIndex, end: m.endIndex, style }))
+        .filter((f) => f.end > f.start)
+        .sort((a, b) => a.start - b.start)
+        .forEach((f) => {
+          const last = runs[runs.length - 1];
+          if (last && f.start <= last.end) last.end = Math.max(last.end, f.end);
+          else runs.push(f);
+        });
+      out.push(...runs);
+    });
+    return out.sort((a, b) => a.start - b.start);
+  };
+
   // The marked fragments of a verse, joined — the chip's "Focused" preview.
   const focusedFor = (reference: string): string => {
-    const vMarks = relevantMarks
-      .filter((m) => m.reference === reference)
-      .sort((a, b) => a.startIndex - b.startIndex);
     const entry = allEntries.find((e) => e.reference === reference);
     if (!entry) return "";
+    const runs = mergedRunsFor(
+      relevantMarks.filter((m) => m.reference === reference)
+    );
     const seen = new Set<string>();
     const frags: string[] = [];
-    vMarks.forEach((m) => {
-      const t = entry.text.slice(m.startIndex, m.endIndex).trim();
+    runs.forEach((f) => {
+      const t = entry.text.slice(f.start, f.end).trim();
       if (t && !seen.has(t)) {
         seen.add(t);
         frags.push(t);
@@ -189,9 +216,9 @@ export default function Outline(props: OutlineProps) {
     allEntries.find((e) => e.reference === reference)?.text || reference;
 
   const pointsFor = (reference: string, colorMarks: Mark[]) =>
-    colorMarks
-      .filter((m) => m.reference === reference)
-      .reduce((s, m) => s + STYLE_POINTS[m.style], 0);
+    mergedRunsFor(
+      colorMarks.filter((m) => m.reference === reference)
+    ).reduce((s, f) => s + STYLE_POINTS[f.style], 0);
 
   const toggleCollapsed = (c: number) =>
     setCollapsed((prev) =>
@@ -489,8 +516,10 @@ export default function Outline(props: OutlineProps) {
               );
             }
 
-            const totalPts = colorMarks.reduce(
-              (s, m) => s + STYLE_POINTS[m.style],
+            // Sum per verse over merged runs so stacked duplicate marks don't
+            // inflate the theme total (SCR-12).
+            const totalPts = entries.reduce(
+              (s, e) => s + pointsFor(e.reference, colorMarks),
               0
             );
             const isCollapsed = collapsed.includes(color);
@@ -685,9 +714,9 @@ export default function Outline(props: OutlineProps) {
                           </div>
                         ) : (
                           <div style={{ marginTop: "4px" }}>
-                            {verseMarks.map((m, k) => (
+                            {mergedRunsFor(verseMarks).map((f, k) => (
                               <div
-                                key={m.id}
+                                key={entry.reference + ":" + f.style + ":" + f.start}
                                 style={{
                                   display: "flex",
                                   alignItems: "baseline",
@@ -711,10 +740,10 @@ export default function Outline(props: OutlineProps) {
                                       '"Times New Roman", Times, serif',
                                     fontSize: "16px",
                                     lineHeight: 1.7,
-                                    ...markStyleCSS(m.style, m.color),
+                                    ...markStyleCSS(f.style, color),
                                   }}
                                 >
-                                  {m.markedText}
+                                  {entry.text.slice(f.start, f.end)}
                                 </span>
                               </div>
                             ))}
