@@ -101,6 +101,22 @@ let onApplied: (() => void) | null = null;
 let lastRemoteMarks = -1;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressEcho = false;
+// The `data` portion of the last payload this device successfully wrote (or
+// saw echoed back from its own past write). buildBackupString stamps a fresh
+// exportedAt into every payload, so comparing whole payloads always says
+// "changed" — this holds just the data, letting doPush skip writes when
+// nothing real changed. That guard is what stops the idle write loop:
+// push → syncing state emit → re-render → effect → push → … (SCR-10).
+let lastPushedData: string | null = null;
+
+// Extract the comparable `data` object from a backup payload string.
+function dataPortion(payload: string): string {
+  try {
+    return JSON.stringify(JSON.parse(payload).data ?? null);
+  } catch {
+    return payload;
+  }
+}
 
 const state: CloudState = {
   ready: false,
@@ -185,7 +201,13 @@ function startListening(uid: string) {
         schedulePush(true);
         return;
       }
-      if (data.writer === deviceId) return;
+      if (data.writer === deviceId) {
+        // Our own past write echoing back (e.g. from the offline cache on a
+        // fresh page load). Seed the dirty-check baseline from it so boot
+        // doesn't immediately re-write identical data to the cloud.
+        if (lastPushedData === null) lastPushedData = dataPortion(data.payload);
+        return;
+      }
       const payload = data.payload;
       try {
         lastRemoteMarks = countBookMarksFromJson(booksFromBackup(payload));
@@ -243,6 +265,11 @@ async function doPush() {
   // one (mirrors the Drive safeguard so a blank device can't wipe the cloud).
   if (localMarks === 0 && lastRemoteMarks > 0) return;
   const payload = buildBackupString(backupKeys);
+  // Dirty check: only the data matters, not the exportedAt stamp. Skipping
+  // clean pushes (before the syncing emit) is what keeps the header indicator
+  // steady and the write count bounded.
+  const dataNow = dataPortion(payload);
+  if (dataNow === lastPushedData) return;
   state.syncing = true;
   emit();
   try {
@@ -251,6 +278,7 @@ async function doPush() {
       updatedAt: Date.now(),
       writer: deviceId,
     });
+    lastPushedData = dataNow;
     try {
       const p = JSON.parse(payload);
       if (p.exportedAt) localStorage.setItem("scribal_sync_seen", p.exportedAt);

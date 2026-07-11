@@ -1,6 +1,11 @@
 import { useReducer, useEffect, useCallback } from "react";
 import { Mark, MarkStyle, MarkColor } from "../types";
 
+// Stable fallback for books without scopedLabels. An inline `|| {}` mints a
+// new object identity every render, which the shells' syncData effects read
+// as "data changed" — one ingredient of the SCR-10 idle write loop.
+const EMPTY_SCOPED_LABELS: Record<string, Record<number, string>> = {};
+
 interface StudyBook {
   id: string;
   name: string;
@@ -1502,7 +1507,7 @@ export function useMarks() {
     setScopedLens,
     setScopedPins,
     setScopedThreads,
-    scopedLabels: active.scopedLabels || {},
+    scopedLabels: active.scopedLabels || EMPTY_SCOPED_LABELS,
     scopedRoles: (() => {
       const src = active.scopedRoles || {};
       const out: Record<string, Record<string, { a: number; b: number }>> = {};
