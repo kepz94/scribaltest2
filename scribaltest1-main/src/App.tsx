@@ -37,6 +37,7 @@ import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
 import DesktopWalkthrough from "./DesktopWalkthrough";
+import NewTabPanel from "./components/NewTabPanel";
 
 import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
@@ -1520,10 +1521,19 @@ export default function App() {
     setSearchPanelQueries((prev) =>
       prev[id] === q ? prev : { ...prev, [id]: q }
     );
+  // New-tab launchers (SCR-43): the + button opens a picker panel (Library /
+  // Search) instead of auto-opening a chapter. Each id sits in the reading
+  // row until the user picks — then it converts into a chapter tab or a
+  // search panel in place. Session-only, like search panels.
+  const [newTabPanels, setNewTabPanels] = useState<string[]>([]);
+  const newTabSeq = useRef(0);
+  const closeNewTabPanel = (id: string) =>
+    setNewTabPanels((prev) => prev.filter((x) => x !== id));
   // The reconciled row order: remembered arrangement first, then anything new.
   const rowIds = [
     ...tabs.map((t) => t.id),
     ...searchPanels.map((p) => p.id),
+    ...newTabPanels,
   ];
   const orderedRowIds = rowOrder
     .filter((id) => rowIds.includes(id))
@@ -1556,6 +1566,46 @@ export default function App() {
           block: "nearest",
         });
     });
+  };
+  // SCR-43: a launcher converts IN PLACE — the new panel inherits the
+  // launcher's row position and any width the user already dragged it to.
+  const convertLauncher = (fromId: string, toId: string) => {
+    setRowOrder(orderedRowIds.map((x) => (x === fromId ? toId : x)));
+    setPanelWidths((prev) => {
+      if (!(fromId in prev)) return prev;
+      const next = { ...prev };
+      if (!(toId in next)) next[toId] = next[fromId];
+      delete next[fromId];
+      return next;
+    });
+    setNewTabPanels((prev) => prev.filter((x) => x !== fromId));
+  };
+  const launcherPickChapter = (
+    launchId: string,
+    v: number,
+    b: number,
+    c: number
+  ) => {
+    const id = makeTabId("master", v, b, c);
+    if (tabs.some((t) => t.id === id)) {
+      // Chapter already open — drop the launcher and go to the existing panel.
+      closeNewTabPanel(launchId);
+      setActiveTabId(id);
+      focusRowPanel(id);
+      return;
+    }
+    setTabs((prev) => [
+      ...prev,
+      { id, volume: v, book: b, chapter: c, bookId: "master" },
+    ]);
+    convertLauncher(launchId, id);
+    setActiveTabId(id);
+  };
+  const launcherPickSearch = (launchId: string) => {
+    searchPanelSeq.current += 1;
+    const sid = "search_" + searchPanelSeq.current;
+    setSearchPanels((prev) => [...prev, { id: sid }]);
+    convertLauncher(launchId, sid);
   };
   // After adding verses to a recorded study, a banner offers to compile it once
   // the added verses are marked.
@@ -2248,24 +2298,13 @@ export default function App() {
     }
   }, [showTutorial, gateOpen]);
 
+  // SCR-43: + opens a launcher panel (Library / Search picker) instead of
+  // auto-opening the next unopened chapter. Launchers count toward the tab
+  // cap since each becomes a tab.
   const addNewTab = () => {
-    if (tabs.length >= MAX_TABS) return;
-    const openIds = new Set(tabs.map((t) => t.id));
-    for (let v = 0; v < vols.length; v++) {
-      for (let b = 0; b < vols[v].books.length; b++) {
-        for (let c = 0; c < vols[v].books[b].chapters.length; c++) {
-          const id = makeTabId("master", v, b, c);
-          if (!openIds.has(id)) {
-            setTabs((prev) => [
-              ...prev,
-              { id, volume: v, book: b, chapter: c, bookId: "master" },
-            ]);
-            setActiveTabId(id);
-            return;
-          }
-        }
-      }
-    }
+    if (tabs.length + newTabPanels.length >= MAX_TABS) return;
+    newTabSeq.current += 1;
+    setNewTabPanels((prev) => [...prev, "newtab_" + newTabSeq.current]);
   };
 
   const closeTab = (id: string) => {
@@ -10538,7 +10577,61 @@ export default function App() {
               </div>
             );
           })}
-          {tabs.length < MAX_TABS && (
+          {/* New-tab launcher pills (SCR-43): a picker panel waiting to become
+              a chapter tab or a search panel. */}
+          {newTabPanels.map((id) => (
+            <div
+              key={id}
+              className="scribal-tabpill"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "3px",
+                order: rowIndexOf(id),
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "11px",
+                  lineHeight: 1,
+                  color: "var(--muted)",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                New tab
+              </span>
+              <div
+                onClick={() => focusRowPanel(id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "7px 14px",
+                  borderRadius: "999px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: 400,
+                  backgroundColor: "var(--panel)",
+                  color: "var(--text)",
+                  border: "1px dashed var(--border)",
+                  transition: "all 0.15s",
+                }}
+              >
+                Choose…
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeNewTabPanel(id);
+                  }}
+                  style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                >
+                  ✕
+                </span>
+              </div>
+            </div>
+          ))}
+          {tabs.length + newTabPanels.length < MAX_TABS && (
             <button
               onClick={addNewTab}
               title="Open another tab"
@@ -10715,7 +10808,9 @@ export default function App() {
               minWidth: 0,
               display: "flex",
               overflowX:
-                tabs.length + searchPanels.length > 1 ? "auto" : "visible",
+                tabs.length + searchPanels.length + newTabPanels.length > 1
+                  ? "auto"
+                  : "visible",
             }}
           >
             {tabs.map((t) => {
@@ -10723,7 +10818,8 @@ export default function App() {
               // A panel holds a fixed width (SCR-29) whenever more than one
               // reading-row panel is open — chapters and search panels both
               // count, so a lone chapter next to a search panel sizes uniformly.
-              const multi = tabs.length + searchPanels.length > 1;
+              const multi =
+                tabs.length + searchPanels.length + newTabPanels.length > 1;
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
@@ -10997,6 +11093,44 @@ export default function App() {
                 </div>
               );
             })}
+            {/* New-tab launcher panels (SCR-43): the Library / Search picker.
+                Sits in the row like any panel until the choice converts it. */}
+            {newTabPanels.map((id) => (
+              <div
+                key={id}
+                data-row-panel={id}
+                style={{
+                  flex: "0 0 auto",
+                  width: panelWidths[id] || DEFAULT_PANEL_WIDTH,
+                  minWidth: 0,
+                  order: rowIndexOf(id),
+                  borderRight: "1px solid var(--border)",
+                  position: "relative",
+                  overflow: "hidden",
+                  height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                }}
+              >
+                <NewTabPanel
+                  vols={vols}
+                  onPickChapter={(v, b, c) => launcherPickChapter(id, v, b, c)}
+                  onSearch={() => launcherPickSearch(id)}
+                  onClose={() => closeNewTabPanel(id)}
+                />
+                <div
+                  onMouseDown={(e) => startPanelResize(id, e)}
+                  title="Drag to resize this panel"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: "9px",
+                    cursor: "col-resize",
+                    zIndex: 6,
+                  }}
+                />
+              </div>
+            ))}
           </div>
 
           {sidebarOpen && (
