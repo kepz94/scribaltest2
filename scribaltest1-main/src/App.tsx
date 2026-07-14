@@ -1999,6 +1999,15 @@ export default function App() {
     : neutralTheme;
   const theme = applyIntensityToTheme(baseTheme, colorIntensity);
 
+  // Cache the effective background so the next launch's splash (and the
+  // pre-React paint in index.html) opens in this same theme color.
+  const appBg = baseTheme["--bg"];
+  useEffect(() => {
+    try {
+      localStorage.setItem("scribal_bg", appBg);
+    } catch {}
+  }, [appBg]);
+
   const activeTab = tabs.find((t) => t.id === activeTabId) ||
     tabs[0] || {
       id: makeTabId("master", 0, 0, 0),
