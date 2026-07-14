@@ -7474,25 +7474,7 @@ export default function App() {
           colorLabels={effectiveScopedLabels}
           notes={notes}
           dark={dark}
-          C={
-            dark
-              ? {
-                  bg: "#131210",
-                  panel: "#1d1c19",
-                  soft: "#232220",
-                  text: "#eae7de",
-                  muted: "#8d8a82",
-                  border: "#343229",
-                }
-              : {
-                  bg: "#f6f4ee",
-                  panel: "#ffffff",
-                  soft: "#efece4",
-                  text: "#1d1c18",
-                  muted: "#8d8a80",
-                  border: "#e2dfd6",
-                }
-          }
+          C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}
           onClose={() => setSharingVerses(false)}
           onFlash={(m) => {
             setShareMsg(m);
