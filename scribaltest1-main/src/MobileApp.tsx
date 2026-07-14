@@ -4758,7 +4758,10 @@ export default function MobileApp() {
           bottom: 0,
           zIndex: 60,
           display: sendMode ? "none" : undefined,
-          padding: "0 14px calc(14px + env(safe-area-inset-bottom))",
+          // Dock the tray flush to the bottom edge (no gap): the safe-area inset
+          // is absorbed INSIDE the card below, so the tray fills that strip
+          // instead of leaving empty space beneath it.
+          padding: "0 14px 0",
           pointerEvents: "none",
         }}
       >
@@ -4767,13 +4770,17 @@ export default function MobileApp() {
           style={{
             pointerEvents: "auto",
             backgroundColor: C.panel,
-            border: "1px solid " + C.border,
-            borderRadius: "16px",
-            // A firmer, layered shadow so the tray reads as a floating card even
-            // when its fill is close to the page (warm/beige theme) — otherwise
-            // it blends into the paper and it's unclear where the toolbar ends.
-            boxShadow:
-              "0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.14)",
+            borderTop: "1px solid " + C.border,
+            borderLeft: "1px solid " + C.border,
+            borderRight: "1px solid " + C.border,
+            // Rounded top only — the tray sits on the bottom edge, so its base is
+            // square and its background runs down through the home-indicator
+            // (safe-area) strip instead of a beige gap sitting under it.
+            borderRadius: "16px 16px 0 0",
+            paddingBottom: "env(safe-area-inset-bottom)",
+            // Shadow lifts UP off the page (the tray is docked at the bottom),
+            // so it reads as a distinct card against the beige reading area.
+            boxShadow: "0 -6px 24px rgba(0,0,0,0.22)",
             overflow: "hidden",
           }}
         >
