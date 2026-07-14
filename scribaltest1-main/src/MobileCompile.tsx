@@ -2019,7 +2019,9 @@ export default function MobileCompile({
                 </div>
               );
             })}
-            {tags && tags.length > 0 && (
+            {/* Word Studies lives with the Outline only, not under every
+                format (SCR-13). */}
+            {format === "outline" && tags && tags.length > 0 && (
               <div style={{ marginTop: "18px" }}>
                 <WordStudies
                   tags={tags}

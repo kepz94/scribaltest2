@@ -12014,7 +12014,10 @@ export default function App() {
                 onThreads={(t) => setScopedThreads(effectiveScope, t)}
               />
             )}
-            {effectiveTags.length > 0 && (
+            {/* Word Studies renders in ONE place — the Outline (the study's
+                primary compiled output) — instead of trailing every view tab
+                (SCR-13). */}
+            {compileView === "outline" && effectiveTags.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <WordStudies
                   tags={effectiveTags}
