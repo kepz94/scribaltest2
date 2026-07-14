@@ -1255,6 +1255,37 @@ export default function MobileApp() {
       localStorage.setItem("scribal_bg", C.bg);
     } catch {}
   }, [C.bg]);
+
+  // Lock the document while the mobile shell is mounted: it's a fixed
+  // full-screen app that scrolls inside its own containers, so the page itself
+  // must never scroll or rubber-band. Without this, dragging on a non-scrolling
+  // spot (like the bottom tool tray) bounces the whole page and the tray looks
+  // like it's being pulled/stretched. Scoped here and restored on unmount so it
+  // can never affect the desktop shell, which does use page scrolling.
+  useEffect(() => {
+    const de = document.documentElement;
+    const bd = document.body;
+    const prev = {
+      htmlOverflow: de.style.overflow,
+      bodyOverflow: bd.style.overflow,
+      htmlHeight: de.style.height,
+      bodyHeight: bd.style.height,
+      overscroll: bd.style.overscrollBehavior,
+    };
+    de.style.overflow = "hidden";
+    bd.style.overflow = "hidden";
+    de.style.height = "100%";
+    bd.style.height = "100%";
+    bd.style.overscrollBehavior = "none";
+    return () => {
+      de.style.overflow = prev.htmlOverflow;
+      bd.style.overflow = prev.bodyOverflow;
+      de.style.height = prev.htmlHeight;
+      bd.style.height = prev.bodyHeight;
+      bd.style.overscrollBehavior = prev.overscroll;
+    };
+  }, []);
+
   const readText = reading.warm ? (dark ? "#e9ddc2" : "#53442c") : C.text;
   const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
   const verseSize = (19 * reading.fontScale).toFixed(1) + "px";
@@ -4738,7 +4769,11 @@ export default function MobileApp() {
             backgroundColor: C.panel,
             border: "1px solid " + C.border,
             borderRadius: "16px",
-            boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+            // A firmer, layered shadow so the tray reads as a floating card even
+            // when its fill is close to the page (warm/beige theme) — otherwise
+            // it blends into the paper and it's unclear where the toolbar ends.
+            boxShadow:
+              "0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.14)",
             overflow: "hidden",
           }}
         >
