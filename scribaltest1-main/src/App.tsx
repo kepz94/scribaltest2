@@ -4062,7 +4062,31 @@ export default function App() {
   // ONLY the additions — this MERGES with what the study already holds and can
   // never remove a verse (owner rule, Jul 14, after an update-replaces bug
   // wiped a study to a single verse). Removing verses lives in the study tab
-  // (onRemoveVerses), not here.
+  // (onRemoveVerses), not here. Because search picks its destination study at
+  // the END, results can't flag duplicates up front — so duplicates are
+  // reported here, at add time, in the toast (owner design, Jul 14).
+  const toastAdd = (added: number, dupeRefs: string[], name: string) => {
+    const nm = "“" + name + "”";
+    // Name the specific duplicates (owner design, Jul 14): list up to two
+    // references, then count the rest.
+    const dupList =
+      dupeRefs.slice(0, 2).join(", ") +
+      (dupeRefs.length > 2 ? " (+" + (dupeRefs.length - 2) + " more)" : "");
+    setShareMsg(
+      added === 0
+        ? (dupeRefs.length === 1
+            ? dupList + " is already in " + nm
+            : "Already in " + nm + ": " + dupList) + " — nothing changed"
+        : "Added " +
+            (added === 1 ? "1 verse" : added + " verses") +
+            " to " +
+            nm +
+            (dupeRefs.length > 0
+              ? " — already there: " + dupList
+              : "")
+    );
+    setTimeout(() => setShareMsg(null), 3200);
+  };
   const handleAddToStudy = (
     id: string,
     refs: string[],
@@ -4078,7 +4102,11 @@ export default function App() {
       const copy = addStudy(study.name + " (copy)", study.bookId, merged);
       openStudyTab(copy);
     } else {
-      updateStudy(study.id, { refs: merged });
+      const existing = new Set(study.refs);
+      const dupes = refs.filter((r) => existing.has(r));
+      const added = refs.length - dupes.length;
+      if (added > 0) updateStudy(study.id, { refs: merged });
+      toastAdd(added, dupes, study.name);
       openStudyTab(study);
     }
   };
@@ -4181,6 +4209,9 @@ export default function App() {
     const merged = Array.from(
       new Set([...(study.extraRefs || []), ...refs])
     ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const existing = new Set(study.extraRefs || []);
+    const dupes = refs.filter((r) => existing.has(r));
+    if (refs.length) toastAdd(refs.length - dupes.length, dupes, study.name);
     const at = Date.now();
     setRecordedStudies((prev) =>
       prev.map((s) =>
