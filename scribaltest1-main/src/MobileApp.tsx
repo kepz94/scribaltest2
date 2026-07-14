@@ -4367,6 +4367,9 @@ export default function MobileApp() {
             style={{
               display: "flex",
               alignItems: "center",
+              // Centered between the Send verses and Link pills so the row
+              // reads left · middle · right instead of lumping to the left.
+              justifyContent: "center",
               gap: "7px",
               flex: 1,
               minWidth: 0,

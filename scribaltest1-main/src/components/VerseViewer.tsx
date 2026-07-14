@@ -1274,13 +1274,14 @@ export default function VerseViewer(props: VerseViewerProps) {
         </div>
         )}
 
-        {/* Function buttons sit centered, matching the pills row above (the
-            row lost its right-side group when Find conditionals was removed,
-            so space-between would leave these hugging the left edge). */}
+        {/* Function buttons anchor the row's edges: Link scriptures far left,
+            Send/Remove verses far right (Kepu's pick after the Find
+            conditionals group left the middle empty). The empty spacer div
+            keeps Send verses pinned right even when no link button renders. */}
         <div
           style={{
             display: "flex",
-            justifyContent: "center",
+            justifyContent: "space-between",
             alignItems: "center",
             gap: "10px",
             marginBottom: "10px",
@@ -1323,6 +1324,8 @@ export default function VerseViewer(props: VerseViewerProps) {
               Link scriptures
             </button>
           )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {onSendVerses && !removeMode && (
             <button
               onClick={() => {
