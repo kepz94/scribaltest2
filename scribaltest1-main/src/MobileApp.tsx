@@ -1244,6 +1244,11 @@ export default function MobileApp() {
       'meta[name="theme-color"]'
     ) as HTMLMetaElement | null;
     if (meta) meta.setAttribute("content", C.bg);
+    // Keep the page background in sync with the live theme. The body fills the
+    // area behind the safe-area insets (the strip under the iOS home
+    // indicator); if it's left a different color a stray bar shows there.
+    document.documentElement.style.backgroundColor = C.bg;
+    document.body.style.backgroundColor = C.bg;
     // Cache the effective background so the next launch's splash (and the
     // pre-React paint in index.html) opens in this same theme color.
     try {

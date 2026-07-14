@@ -18,7 +18,7 @@
 
 	<title>Scribal</title>
 	<style>
-		html, body { margin: 0; padding: 0; background-color: #131210; }
+		html, body { margin: 0; padding: 0; }
 	</style>
 	<script>
 		// Paint the launch background in the LAST-USED theme color (warm / light /
@@ -26,6 +26,10 @@
 		// screen when the user is on a light or warm theme. `scribal_bg` is
 		// written by the app whenever its background changes; fall back to the
 		// saved dark/light choice, then the OS preference.
+		//
+		// Set it on BOTH <html> and <body>: the body fills the area behind the
+		// safe-area insets (the strip under the iOS home indicator), so leaving
+		// it a different color paints a stray bar there.
 		(function () {
 			try {
 				var bg = localStorage.getItem("scribal_bg");
@@ -36,6 +40,11 @@
 					bg = t === "dark" ? "#131210" : t === "light" ? "#f6f4ee" : (prefersDark ? "#131210" : "#f6f4ee");
 				}
 				document.documentElement.style.backgroundColor = bg;
+				var setBody = function () {
+					if (document.body) document.body.style.backgroundColor = bg;
+				};
+				setBody();
+				document.addEventListener("DOMContentLoaded", setBody);
 				var m = document.querySelector('meta[name="theme-color"]');
 				if (m) m.setAttribute("content", bg);
 			} catch (e) {}
