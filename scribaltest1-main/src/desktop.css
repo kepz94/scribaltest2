@@ -230,6 +230,22 @@ textarea:focus-visible {
   }
 }
 
+/* Tab-pill drag affordance (SCR-35): the grip dots signal that pills can be
+   dragged to rearrange the reading panels. Quiet at rest, clearer on hover;
+   the cursor flips to grabbing while a drag is underway. */
+.scribal-tabgrip {
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .scribal-tabpill:hover .scribal-tabgrip {
+    opacity: 0.85;
+  }
+}
+.scribal-tabpill:active {
+  cursor: grabbing;
+}
+
 /* Word-study footnote marker. The dagger is CSS-generated content so it never
    becomes part of the selectable verse text (which would shift mark/Define
    offsets). Color is inherited from the element's inline style. */

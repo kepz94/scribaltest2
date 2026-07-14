@@ -15,7 +15,7 @@ import { isSermonsVolume, sermonLabel } from "./sermons";
 import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
-import { NEUTRAL, ACCENT } from "./theme";
+import { NEUTRAL, WARM, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
 import SplashScreen from "./components/SplashScreen";
 import StyleGlyph from "./components/StyleGlyph";
@@ -1176,7 +1176,6 @@ export default function MobileApp() {
       window.matchMedia("(prefers-color-scheme: dark)").matches
     );
   });
-  const C = dark ? PALETTE.dark : PALETTE.light;
 
   // Per-chapter conditional lens (the "if" identifier) for the reading screen —
   // each chapter remembers its own on/off, not a global switch.
@@ -1222,6 +1221,18 @@ export default function MobileApp() {
     } catch {}
   }, [reading]);
 
+  // Warm tone is a full palette swap, mirroring dark mode: when it's on we
+  // hand the whole shell the WARM (paper/beige) palette instead of the neutral
+  // one, so every white surface — header, toolbars, cards, sheets — turns beige
+  // together, not just the reading pane.
+  const C = reading.warm
+    ? dark
+      ? WARM.dark
+      : WARM.light
+    : dark
+    ? PALETTE.dark
+    : PALETTE.light;
+
   const readBg = reading.warm ? (dark ? "#1a1410" : "#f4ecd6") : C.bg;
 
   // Keep the iOS status-bar tint (the <meta name="theme-color"> the browser
@@ -1233,7 +1244,48 @@ export default function MobileApp() {
       'meta[name="theme-color"]'
     ) as HTMLMetaElement | null;
     if (meta) meta.setAttribute("content", C.bg);
+    // Keep the page background in sync with the live theme. The body fills the
+    // area behind the safe-area insets (the strip under the iOS home
+    // indicator); if it's left a different color a stray bar shows there.
+    document.documentElement.style.backgroundColor = C.bg;
+    document.body.style.backgroundColor = C.bg;
+    // Cache the effective background so the next launch's splash (and the
+    // pre-React paint in index.html) opens in this same theme color.
+    try {
+      localStorage.setItem("scribal_bg", C.bg);
+    } catch {}
   }, [C.bg]);
+
+  // Lock the document while the mobile shell is mounted: it's a fixed
+  // full-screen app that scrolls inside its own containers, so the page itself
+  // must never scroll or rubber-band. Without this, dragging on a non-scrolling
+  // spot (like the bottom tool tray) bounces the whole page and the tray looks
+  // like it's being pulled/stretched. Scoped here and restored on unmount so it
+  // can never affect the desktop shell, which does use page scrolling.
+  useEffect(() => {
+    const de = document.documentElement;
+    const bd = document.body;
+    const prev = {
+      htmlOverflow: de.style.overflow,
+      bodyOverflow: bd.style.overflow,
+      htmlHeight: de.style.height,
+      bodyHeight: bd.style.height,
+      overscroll: bd.style.overscrollBehavior,
+    };
+    de.style.overflow = "hidden";
+    bd.style.overflow = "hidden";
+    de.style.height = "100%";
+    bd.style.height = "100%";
+    bd.style.overscrollBehavior = "none";
+    return () => {
+      de.style.overflow = prev.htmlOverflow;
+      bd.style.overflow = prev.bodyOverflow;
+      de.style.height = prev.htmlHeight;
+      bd.style.height = prev.bodyHeight;
+      bd.style.overscrollBehavior = prev.overscroll;
+    };
+  }, []);
+
   const readText = reading.warm ? (dark ? "#e9ddc2" : "#53442c") : C.text;
   const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
   const verseSize = (19 * reading.fontScale).toFixed(1) + "px";
@@ -2593,6 +2645,39 @@ export default function MobileApp() {
   // additions. The selection IS the full new verse set (the study's verses come
   // pre-selected). Refs edits + new copies sync across devices via the shared
   // studies store.
+  // The selection is ONLY the additions — merged into the study, never
+  // replacing it (owner rule, Jul 14, aligned with desktop after the
+  // update-replaces bug wiped a study; SCR-38). Removing verses lives in the
+  // study view's "Remove verses", not here. The flash names the specific
+  // verses that were already in the study, since search picks its destination
+  // study at the end and results can't flag duplicates up front.
+  const addFlash = (added: number, dupeRefs: string[], name: string) => {
+    const nm = "“" + name + "”";
+    const dupList =
+      dupeRefs.slice(0, 2).join(", ") +
+      (dupeRefs.length > 2 ? " (+" + (dupeRefs.length - 2) + " more)" : "");
+    flash(
+      added === 0
+        ? (dupeRefs.length === 1
+            ? dupList + " is already in " + nm
+            : "Already in " + nm + ": " + dupList) + " — nothing changed"
+        : "Added " +
+            (added === 1 ? "1 verse" : added + " verses") +
+            " to " +
+            nm +
+            (dupeRefs.length > 0 ? " — already there: " + dupList : "")
+    );
+  };
+  // iOS-PWA scroll-freeze guard: reopening the study screen in the same frame
+  // the search sheet unmounts — with the keyboard still up — can leave the
+  // study's scroller frozen until the screen is fully remounted (hit on
+  // device, Jul 15). Dismiss the keyboard first, then reopen a beat later so
+  // the sheet is gone and the keyboard has settled before the scroller mounts.
+  const closeSearchThen = (reopen: () => void) => {
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && typeof ae.blur === "function") ae.blur();
+    window.setTimeout(reopen, 300);
+  };
   const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
     const id = addToStudyId;
     setAddToStudyId(null);
@@ -2600,35 +2685,46 @@ export default function MobileApp() {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOf(a) - orderOf(b)
+    );
     if (mode === "copy") {
       const copy: SearchStudy = {
         id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         name: study.name + " (copy)",
         bookId: study.bookId,
-        refs: ordered,
+        refs: merged,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
       setSearchStudies((prev) => [copy, ...prev]);
       const scope = "searchstudy:" + copy.id;
-      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+      Array.from(new Set(merged.map((r) => scopeOf(r)))).forEach((ch) =>
         seedScopeLabels(scope, scopedLabels[ch] || {})
       );
-      openStudyTab(copy);
-      flash("Study created");
+      closeSearchThen(() => {
+        openStudyTab(copy);
+        flash("Study created");
+      });
     } else {
-      setSearchStudies((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, refs: ordered, updatedAt: Date.now() } : s
-        )
-      );
-      const scope = "searchstudy:" + id;
-      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
-        seedScopeLabels(scope, scopedLabels[ch] || {})
-      );
-      openStudyTab(study);
-      flash("Verses updated");
+      const existing = new Set(study.refs);
+      const dupes = refs.filter((r) => existing.has(r));
+      const added = refs.length - dupes.length;
+      if (added > 0) {
+        setSearchStudies((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, refs: merged, updatedAt: Date.now() } : s
+          )
+        );
+        const scope = "searchstudy:" + id;
+        Array.from(new Set(merged.map((r) => scopeOf(r)))).forEach((ch) =>
+          seedScopeLabels(scope, scopedLabels[ch] || {})
+        );
+      }
+      closeSearchThen(() => {
+        openStudyTab(study);
+        addFlash(added, dupes, study.name);
+      });
     }
   };
   // "Send verses" → merge picked refs into an existing study (union, book
@@ -3008,20 +3104,31 @@ export default function MobileApp() {
   };
 
   // Add loose verses (from keyword search) to a recorded chapter/linked study.
-  // The picker pre-loads the study's current extras, so the selection IS the
-  // full new set (supports adding and removing). Their marks then show in the
-  // study's compile alongside the chapter's own marks.
+  // The selection is only the ADDITIONS — merged into the study's extras,
+  // never replacing them (owner rule, Jul 14; SCR-38). Their marks then show
+  // in the study's compile alongside the chapter's own marks.
   const handleAddVersesToRec = (refs: string[]) => {
     const rid = addVersesRecId;
     setAddVersesRecId(null);
     setSearchOpen(false);
     if (!rid) return;
-    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const rec = studies.find((s) => s.id === rid);
+    if (!rec) return;
+    const existing = new Set(rec.extraRefs || []);
+    const dupes = refs.filter((r) => existing.has(r));
+    const added = refs.length - dupes.length;
+    if (added === 0) {
+      if (refs.length) addFlash(0, dupes, rec.name);
+      return;
+    }
+    const merged = Array.from(new Set([...(rec.extraRefs || []), ...refs])).sort(
+      (a, b) => orderOf(a) - orderOf(b)
+    );
     const at = Date.now();
     setStudies((prev) =>
       prev.map((s) =>
         s.id === rid
-          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          ? { ...s, extraRefs: merged, extraRefsAt: at, compiledAt: at }
           : s
       )
     );
@@ -3029,14 +3136,20 @@ export default function MobileApp() {
     // reading view shows the new verses.
     setCompileRec((prev) =>
       prev && prev.id === rid
-        ? { ...prev, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+        ? { ...prev, extraRefs: merged, extraRefsAt: at, compiledAt: at }
         : prev
     );
     // Land on the markable reading list (added verses first) so they can be
-    // marked, then compiled.
-    const rec = studies.find((s) => s.id === rid);
-    if (rec) setMarkRec({ ...rec, extraRefs: ordered, extraRefsAt: at });
-    flash(ordered.length ? "Added — mark, then compile" : "Verses updated");
+    // marked, then compiled — deferred past the sheet unmount (scroll-freeze
+    // guard, same as handleAddToStudy).
+    closeSearchThen(() => {
+      setMarkRec({ ...rec, extraRefs: merged, extraRefsAt: at });
+      flash(
+        "Added " +
+          (added === 1 ? "1 verse" : added + " verses") +
+          " — mark, then compile"
+      );
+    });
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -4645,7 +4758,12 @@ export default function MobileApp() {
           bottom: 0,
           zIndex: 60,
           display: sendMode ? "none" : undefined,
-          padding: "0 14px calc(14px + env(safe-area-inset-bottom))",
+          // Keep the compact floating card, but push the WHOLE tray low — down
+          // into the wasted strip above the home indicator — so it covers less
+          // of the reading area. The card itself stays its original size (it is
+          // NOT stretched to fill the strip); only its position moves. The tiny
+          // bottom margin sits just clear of the home-indicator gesture zone.
+          padding: "0 14px max(8px, calc(env(safe-area-inset-bottom) - 20px))",
           pointerEvents: "none",
         }}
       >
@@ -4656,7 +4774,9 @@ export default function MobileApp() {
             backgroundColor: C.panel,
             border: "1px solid " + C.border,
             borderRadius: "16px",
-            boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+            // A firm shadow so the compact card still reads as a distinct floating
+            // tray against the beige page.
+            boxShadow: "0 6px 24px rgba(0,0,0,0.22)",
             overflow: "hidden",
           }}
         >
@@ -7791,7 +7911,10 @@ export default function MobileApp() {
                 if (addToStudyId) {
                   const id = addToStudyId;
                   setAddToStudyId(null);
-                  openStudyTabById(id);
+                  // Same scroll-freeze guard as handleAddToStudy: let the
+                  // sheet unmount and the keyboard settle before the study
+                  // screen remounts.
+                  closeSearchThen(() => openStudyTabById(id));
                 }
                 setAddVersesRecId(null);
               }}
@@ -7829,14 +7952,6 @@ export default function MobileApp() {
               onJump={jumpToRef}
               onPickScripture={(ref) => setChooseRef(ref)}
               onLinkConfirm={onLinkConfirm}
-              initialPicked={
-                addToStudyId
-                  ? searchStudies.find((s) => s.id === addToStudyId)?.refs || []
-                  : addVersesRecId
-                  ? studies.find((s) => s.id === addVersesRecId)?.extraRefs ||
-                    []
-                  : undefined
-              }
               startLinking={
                 !!addToStudyId || !!addVersesRecId || !!linkToChapterScope
               }

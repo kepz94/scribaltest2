@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
-import MarkedVerse from "./MarkedVerse";
+import MarkedVerse, { findConditionals } from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 import { isSermonsVolume, sermonLabel } from "../sermons";
@@ -671,21 +671,23 @@ export default function VerseViewer(props: VerseViewerProps) {
     <button
       onClick={onClick}
       style={{
-        padding: "13px 24px",
+        // SCR-34: sized for the 380px default panel width — big enough to
+        // read and click, small enough that all three pills fit with air.
+        padding: "9px 16px",
         borderRadius: "999px",
         border: "1px solid var(--border)",
         backgroundColor: "var(--panel)",
         color: "var(--text)",
-        fontSize: "17px",
+        fontSize: "15px",
         fontWeight: 600,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        gap: "10px",
+        gap: "8px",
       }}
     >
       {label}
-      <span style={{ color: "var(--muted)", fontSize: "12px" }}>▼</span>
+      <span style={{ color: "var(--muted)", fontSize: "11px" }}>▼</span>
     </button>
   );
 
@@ -701,8 +703,9 @@ export default function VerseViewer(props: VerseViewerProps) {
       />
       <div
         style={{
+          // Sits just below the (SCR-34 smaller) pill button.
           position: "absolute",
-          top: "54px",
+          top: "44px",
           left: 0,
           width: width + "px",
           maxHeight: "340px",
@@ -1140,13 +1143,13 @@ export default function VerseViewer(props: VerseViewerProps) {
             zIndex: 20,
             backgroundColor: "var(--bg)",
             paddingTop: "6px",
-            marginBottom: "10px",
+            marginBottom: "8px",
             borderBottom: "1px solid var(--border)",
           }}
         >
         {studyRefs ? (
           hideStudyHeader ? null : (
-          <div style={{ marginBottom: "18px", textAlign: "center" }}>
+          <div style={{ marginBottom: "12px", textAlign: "center" }}>
             <span
               style={{
                 fontSize: "13px",
@@ -1183,7 +1186,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             justifyContent: "center",
             alignItems: "flex-start",
             gap: "10px",
-            marginBottom: "16px",
+            marginBottom: "12px",
             flexWrap: "wrap",
           }}
         >
@@ -1442,6 +1445,22 @@ export default function VerseViewer(props: VerseViewerProps) {
             </span>
             {showConditionals ? "Conditionals shown" : "Find conditionals"}
           </button>
+          {/* The toggle otherwise gives no feedback in a chapter with zero
+              matches — confirm it worked (SCR-16). */}
+          {showConditionals &&
+            !(currentChapter.verses || []).some(
+              (v: any) => findConditionals(v.text || "").length > 0
+            ) && (
+              <span
+                style={{
+                  fontSize: "11.5px",
+                  color: "var(--muted)",
+                  fontStyle: "italic",
+                }}
+              >
+                No conditional words in this chapter
+              </span>
+            )}
           <button
             onClick={() => setShowCondInfo(true)}
             title="What does this button do?"
@@ -1467,15 +1486,34 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         </div>
 
+        {/* Mode-banner OVERLAY (SCR-40, keeps SCR-20's guarantee): the strip
+            reserves no vertical space at rest — when a click-precision mode
+            (send / remove / eraser) is active, its bar floats just below the
+            pinned header, over the first verse lines. Verses still never
+            shift on mode toggle; the reclaimed 46px slot becomes reading
+            room. */}
+        {(sendMode || removeMode || erasing) && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            height: "46px",
+            display: "flex",
+            alignItems: "stretch",
+            filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.14))",
+          }}
+        >
         {sendMode && (
           <div
             style={{
+              flex: 1,
+              boxSizing: "border-box",
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              flexWrap: "wrap",
-              padding: "10px 12px",
-              marginBottom: "10px",
+              padding: "0 12px",
               borderRadius: "10px",
               border: "1px solid var(--border)",
               background: "var(--panel)",
@@ -1486,13 +1524,11 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontSize: "13px",
                 color: "var(--muted)",
                 fontFamily: "system-ui, sans-serif",
+                whiteSpace: "nowrap",
               }}
             >
               {sendSel.length
-                ? sendSel.length +
-                  (sendSel.length === 1
-                    ? " verse selected"
-                    : " verses selected")
+                ? sendSel.length + " selected"
                 : "Tap verses to select"}
             </span>
             <button
@@ -1580,12 +1616,12 @@ export default function VerseViewer(props: VerseViewerProps) {
         {removeMode && (
           <div
             style={{
+              flex: 1,
+              boxSizing: "border-box",
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              flexWrap: "wrap",
-              padding: "10px 12px",
-              marginBottom: "10px",
+              padding: "0 12px",
               borderRadius: "10px",
               border: "1px solid var(--border)",
               background: "var(--panel)",
@@ -1596,13 +1632,11 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontSize: "13px",
                 color: "var(--muted)",
                 fontFamily: "system-ui, sans-serif",
+                whiteSpace: "nowrap",
               }}
             >
               {removeSel.length
-                ? removeSel.length +
-                  (removeSel.length === 1
-                    ? " verse selected"
-                    : " verses selected")
+                ? removeSel.length + " selected"
                 : "Tap verses to remove"}
             </span>
             <button
@@ -1676,16 +1710,27 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         )}
 
-        {erasing && (
+        {!sendMode && !removeMode && erasing && (
           <p
             style={{
+              flex: 1,
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "center",
+              margin: 0,
+              padding: "0 12px",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
               fontSize: "13px",
               color: "var(--muted)",
-              margin: "0 0 12px 4px",
+              fontFamily: "system-ui, sans-serif",
             }}
           >
             Eraser active — click any marked text to remove that mark.
           </p>
+        )}
+        </div>
         )}
         </div>
 
@@ -1695,7 +1740,9 @@ export default function VerseViewer(props: VerseViewerProps) {
           style={{
             backgroundColor: readBg,
             color: readText,
-            padding: "36px 40px",
+            // SCR-40: top padding trimmed 36→20 for more reading room; sides
+            // and bottom keep the original breathing space.
+            padding: "20px 40px 36px",
             borderRadius: "16px",
             border: "1px solid var(--border)",
             lineHeight: lineScale,

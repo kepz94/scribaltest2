@@ -15,8 +15,11 @@ interface MarkedVerseProps {
 
 // Conditional / covenantal markers. Surfaced only as a reading lens — they are
 // never turned into actual marks. Longer phrases are listed first so the
-// alternation prefers them (e.g. "inasmuch as" over "inasmuch").
-function findConditionals(text: string): { start: number; end: number }[] {
+// alternation prefers them (e.g. "inasmuch as" over "inasmuch"). Exported so
+// the reader can tell the user when a chapter has no matches at all (SCR-16).
+export function findConditionals(
+  text: string
+): { start: number; end: number }[] {
   const re =
     /\b(inasmuch as|as many as|whosoever|whomsoever|whenever|inasmuch|whoso|except|unless|lest|when|if)\b/gi;
   const out: { start: number; end: number }[] = [];

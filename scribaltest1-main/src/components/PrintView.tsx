@@ -697,6 +697,8 @@ export default function PrintView(props: PrintViewProps) {
           <div style={{ marginTop: "32px" }}>
             <WordStudies
               tags={tags}
+              // Print carries the complete entries — nothing to tap on paper.
+              full
               colors={{
                 text: "#1a1a1a",
                 muted: "#666",

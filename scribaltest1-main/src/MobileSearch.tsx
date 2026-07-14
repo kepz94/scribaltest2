@@ -621,7 +621,7 @@ export default function MobileSearch({
                     fontFamily: "inherit",
                   }}
                 >
-                  Update study
+                  Add to study
                 </button>
                 <button
                   onClick={() => picked.length && onAddToStudy(picked, "copy")}

@@ -256,31 +256,22 @@ export function countStudiesFromJson(raw: string | null | undefined): number {
   }
 }
 
-// Run a Drive operation with a valid token, silently refreshing (no popup) when
-// the token is missing or has expired, then retrying once. Never throws.
+// Run a Drive operation with the CURRENT valid token, or skip it. Background
+// ops never attempt a token refresh: GIS's "silent" refresh (prompt: "")
+// still opens a popup window, so without a user gesture the browser blocks it
+// — that was SCR-11's blocked-popup console error on every load. When the
+// token is stale this resolves undefined and the caller's "Reconnect to sync"
+// nudge (a real click, which CAN open the popup) is the recovery path.
+// Never throws.
 export async function withFreshToken<T>(
   fn: (token: string) => Promise<T>
 ): Promise<T | undefined> {
-  const refresh = async (): Promise<string | null> => {
-    try {
-      return await drive.connectSilent(GOOGLE_CLIENT_ID);
-    } catch {
-      return null;
-    }
-  };
-  let token = drive.getToken();
-  if (!token) token = await refresh();
+  const token = drive.getToken();
   if (!token) return undefined;
   try {
     return await fn(token);
   } catch {
-    const t2 = await refresh();
-    if (!t2) return undefined;
-    try {
-      return await fn(t2);
-    } catch {
-      return undefined;
-    }
+    return undefined;
   }
 }
 

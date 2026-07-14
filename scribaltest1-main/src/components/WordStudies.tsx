@@ -15,6 +15,9 @@ interface WordStudiesProps {
   colors: WordStudiesColors;
   // Heading override; defaults to "Word Studies".
   heading?: string;
+  // Render complete entries with no expanders — for print/PDF, where there is
+  // nothing to tap and the exported study should carry the whole entry.
+  full?: boolean;
 }
 
 interface Entry {
@@ -24,15 +27,44 @@ interface Entry {
   refs: string[];
 }
 
+// Webster entries open with a header paragraph ("WILL, noun [etymology]")
+// followed by numbered senses as their own paragraphs ("1. …", "2. …").
+// Compact = header + the first sense; the rest stay behind the expander. The
+// system never judges which senses are "relevant" (Monastic rule) — it just
+// shows the first and lets the reader open the rest.
+function splitEntry(def: string): {
+  compact: string;
+  senseCount: number;
+  hasMore: boolean;
+} {
+  const paras = def.split(/\n\s*\n/).filter((p) => p.trim());
+  const senseIdx = paras.findIndex((p) => /^\s*1\.\s/.test(p));
+  const compactParas =
+    senseIdx >= 0
+      ? paras.slice(0, senseIdx + 1)
+      : paras.slice(0, Math.min(2, paras.length));
+  const compact = compactParas.join("\n\n");
+  const senseCount = paras.filter((p) => /^\s*\d+\.\s/.test(p)).length;
+  return {
+    compact,
+    senseCount,
+    hasMore: compact.trim().length < def.trim().length,
+  };
+}
+
 // A glossary of the words the reader tagged within a compiled study, gathered
 // at the bottom of the study. It only organizes — it pulls the 1828 entry for
-// each tagged word and lists it; it never interprets or summarizes.
+// each tagged word and lists it; it never interprets or summarizes. Entries
+// render compact (headword + first sense) with a per-word expander (SCR-13);
+// print passes `full` for complete entries.
 export default function WordStudies({
   tags,
   colors,
   heading = "Word Studies",
+  full = false,
 }: WordStudiesProps) {
   const [ready, setReady] = useState(isLoaded);
+  const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
   useEffect(() => {
     let alive = true;
     loadWebster().then(() => {
@@ -98,30 +130,70 @@ export default function WordStudies({
       >
         {heading}
       </div>
-      {entries.map((e) => (
-        <div key={e.key} style={{ marginBottom: "14px" }}>
-          <div
-            style={{
-              fontSize: "15px",
-              fontWeight: 700,
-              color: colors.text,
-              marginBottom: "3px",
-            }}
-          >
-            {e.headword}
+      {entries.map((e) => {
+        const { compact, senseCount, hasMore } = splitEntry(e.definition);
+        const open = full || !!openKeys[e.key] || !hasMore;
+        return (
+          <div key={e.key} style={{ marginBottom: "14px" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: "10px",
+                marginBottom: "3px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "15px",
+                  fontWeight: 700,
+                  color: colors.text,
+                }}
+              >
+                {e.headword}
+              </div>
+              <div style={{ fontSize: "11.5px", color: colors.muted }}>
+                {e.refs.join(" · ")}
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: "14px",
+                lineHeight: 1.5,
+                color: colors.text,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {open ? e.definition : compact}
+            </div>
+            {!full && hasMore && (
+              <button
+                onClick={() =>
+                  setOpenKeys((prev) => ({ ...prev, [e.key]: !prev[e.key] }))
+                }
+                style={{
+                  marginTop: "5px",
+                  background: "transparent",
+                  border: "1px solid " + colors.border,
+                  borderRadius: "999px",
+                  padding: "4px 12px",
+                  fontSize: "11.5px",
+                  fontWeight: 600,
+                  color: colors.muted,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {open
+                  ? "Show less"
+                  : senseCount > 1
+                  ? "Full entry — " + senseCount + " senses"
+                  : "Full entry"}
+              </button>
+            )}
           </div>
-          <div
-            style={{
-              fontSize: "14px",
-              lineHeight: 1.5,
-              color: colors.text,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {e.definition}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

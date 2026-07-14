@@ -30,16 +30,24 @@ interface SearchPanelProps {
   // button names that chapter (e.g. Link to "1 Nephi 1") instead of reading
   // generically, since the destination is already fixed.
   linkChapterLabel?: string;
-  // When set, the panel is adding verses to an existing keyword study: its
-  // verses come pre-selected, and the link bar offers update-vs-new-copy.
+  // When set, the panel is adding verses to an existing keyword study. The
+  // selection is only the ADDITIONS — the parent merges them into the study
+  // (add flows never remove; a replace-semantics bug once wiped a study).
   initialSelected?: string[];
   addToStudyName?: string;
   onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
   // When set, the panel is adding loose verses to a recorded chapter/linked
-  // study: its current extras come pre-selected, and the bar offers one button.
+  // study: the selection is only the additions, merged by the parent.
   addVersesName?: string;
   onAddVerses?: (refs: string[]) => void;
   onClose: () => void;
+  // When true, the panel renders inline as a reading-row panel (fills its
+  // container) instead of a centered fixed overlay. Desktop search uses this so
+  // it slots beside the chapter panels and stays open through result actions.
+  embedded?: boolean;
+  // Reports the live query upward so the panel's tab pill can be labeled by
+  // what it's searching (SCR-33).
+  onQueryChange?: (q: string) => void;
 }
 
 type Mode = "all" | "any" | "phrase";
@@ -77,9 +85,18 @@ export default function SearchPanel(props: SearchPanelProps) {
     addVersesName,
     onAddVerses,
     onClose,
+    embedded,
+    onQueryChange,
   } = props;
 
   const [query, setQuery] = useState("");
+  // Report the query via a ref so the effect fires only when the query text
+  // actually changes, not on every parent render (the callback is inline).
+  const onQueryChangeRef = useRef(onQueryChange);
+  onQueryChangeRef.current = onQueryChange;
+  useEffect(() => {
+    onQueryChangeRef.current && onQueryChangeRef.current(query);
+  }, [query]);
   const [mode, setMode] = useState<Mode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes
@@ -106,12 +123,15 @@ export default function SearchPanel(props: SearchPanelProps) {
     inputRef.current && inputRef.current.focus();
   }, []);
   useEffect(() => {
+    // Inline panels don't grab Escape — with several open, one Escape would
+    // otherwise close them all at once. They close via their own ✕.
+    if (embedded) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   const index = useMemo<IndexEntry[]>(() => {
     const arr: IndexEntry[] = [];
@@ -406,35 +426,57 @@ export default function SearchPanel(props: SearchPanelProps) {
 
   return (
     <div
-      className="scribal-fade"
-      onMouseDown={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 130,
-        backgroundColor: "rgba(0,0,0,0.45)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: "60px 20px 20px",
-      }}
+      className={embedded ? undefined : "scribal-fade"}
+      onMouseDown={embedded ? undefined : onClose}
+      style={
+        embedded
+          ? {
+              height: "100%",
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }
+          : {
+              position: "fixed",
+              inset: 0,
+              zIndex: 130,
+              backgroundColor: "rgba(0,0,0,0.45)",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+              padding: "60px 20px 20px",
+            }
+      }
     >
       <div
-        className="scribal-rise"
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          width: "100%",
-          maxWidth: "680px",
-          maxHeight: "calc(100vh - 90px)",
-          display: "flex",
-          flexDirection: "column",
-          backgroundColor: "var(--panel)",
-          color: "var(--text)",
-          borderRadius: "16px",
-          border: "1px solid var(--border)",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
-          overflow: "hidden",
-        }}
+        className={embedded ? undefined : "scribal-rise"}
+        onMouseDown={embedded ? undefined : (e) => e.stopPropagation()}
+        style={
+          embedded
+            ? {
+                width: "100%",
+                height: "100%",
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
+                overflow: "hidden",
+              }
+            : {
+                width: "100%",
+                maxWidth: "680px",
+                maxHeight: "calc(100vh - 90px)",
+                display: "flex",
+                flexDirection: "column",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
+                borderRadius: "16px",
+                border: "1px solid var(--border)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                overflow: "hidden",
+              }
+        }
       >
         {/* Search field */}
         <div
@@ -846,7 +888,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           fontFamily: "inherit",
                         }}
                       >
-                        Update “
+                        Add to “
                         {addToStudyName.length > 16
                           ? addToStudyName.slice(0, 15) + "…"
                           : addToStudyName}

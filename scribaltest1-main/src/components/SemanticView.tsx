@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { Mark, MarkColor, COLOR_MAP } from "../types";
 import { volumesProxy } from "../data/scripturesStore";
+import RichNoteField from "./RichNoteField";
 
 // ── Semantic view ────────────────────────────────────────────────────────────
 // One surface, four altitudes: the study as a color shape → named theme
@@ -35,6 +36,8 @@ interface Props {
   border?: string;
   text?: string;
   muted?: string;
+  // Synthesis editor text size — mobile must pass >= 16 (iOS sticky-zoom).
+  noteFontSize?: number;
 }
 
 interface Row {
@@ -71,6 +74,7 @@ export default function SemanticView({
   border = "var(--border)",
   text = "var(--text)",
   muted = "var(--muted)",
+  noteFontSize,
 }: Props) {
   const [alt, setAlt] = useState<1 | 2 | 3 | 4>(1);
   const [selColor, setSelColor] = useState<MarkColor | null>(null);
@@ -79,8 +83,6 @@ export default function SemanticView({
   // Altitude-1 layout: one continuous strip, or one row per chapter stacked
   // on a SHARED weight scale so chapters compare honestly.
   const [stacked, setStacked] = useState(false);
-  const [doorEdit, setDoorEdit] = useState(false);
-  const [doorDraft, setDoorDraft] = useState("");
 
   const byRef = useMemo(() => {
     const m = new Map<string, Mark[]>();
@@ -742,40 +744,22 @@ export default function SemanticView({
           <div style={{ fontSize: "8.5px", letterSpacing: "1.5px", color: muted, fontWeight: 800, marginBottom: "3px" }}>
             {synth ? "YOUR SYNTHESIS — THE DOORWAY" : "THE DOORWAY IS EMPTY"}
           </div>
-          {doorEdit && onSaveSynthesis ? (
-            <div>
-              <textarea
-                value={doorDraft}
-                onChange={(e) => setDoorDraft(e.target.value)}
-                autoFocus
-                rows={3}
-                placeholder="What do these verses say together in this study?"
-                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: "12.5px", lineHeight: 1.55, borderRadius: "8px", border: "1px solid " + border, background: "transparent", color: text, fontFamily: "inherit", resize: "vertical" }}
-              />
-              <div style={{ display: "flex", gap: "7px", marginTop: "6px" }}>
-                <button
-                  onClick={() => { onSaveSynthesis(doorDraft); setDoorEdit(false); }}
-                  style={{ background: COLOR_MAP[selColor], color: "#fff", border: "none", borderRadius: "7px", padding: "5px 13px", fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  Save
-                </button>
-                <button onClick={() => setDoorEdit(false)} style={{ background: "transparent", border: "1px solid " + border, borderRadius: "7px", padding: "5px 11px", fontSize: "11px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: muted }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
+          {onSaveSynthesis ? (
+            // The doorway is the same note the Outline synthesis box edits —
+            // one rich editor everywhere notes are taken (SCR-9), which also
+            // ends the plain-textarea/HTML clash between the two views.
+            <RichNoteField
+              value={synthesisFor(selColor)}
+              onChange={(t) => onSaveSynthesis(t)}
+              accent={COLOR_MAP[selColor]}
+              placeholder="What do these verses say together in this study?"
+              addLabel="Write what this theme means"
+              editorFontSize={noteFontSize}
+            />
           ) : (
             <div style={{ fontSize: "12.5px", fontStyle: "italic", color: synth ? text : muted, lineHeight: 1.55 }}>
               {synth ||
                 "You haven't written what this theme means yet — its verses are below, waiting to be concluded."}
-              {onSaveSynthesis && (
-                <button
-                  onClick={() => { setDoorDraft(synth); setDoorEdit(true); }}
-                  style={{ display: "inline-block", marginLeft: "8px", background: "transparent", border: "1px solid " + border, borderRadius: "6px", padding: "2px 9px", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: COLOR_MAP[selColor], fontStyle: "normal" }}
-                >
-                  {synth ? "Edit" : "Write it"}
-                </button>
-              )}
             </div>
           )}
         </div>

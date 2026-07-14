@@ -17,7 +17,7 @@ import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
-import { NEUTRAL, ACCENT } from "./theme";
+import { NEUTRAL, WARM, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -260,6 +260,18 @@ const makeTabId = (
   chapter: number
 ) => "tab_" + bookId + "_" + volume + "_" + book + "_" + chapter;
 
+// Reading-row panel sizing (SCR-29). Panels hold a user-set width instead of
+// growing to fill the row: DEFAULT is the width a panel opens at, MIN/MAX
+// clamp the drag handle. SCR-40: the default is the minimum width at which a
+// typical chapter's header settles at exactly TWO button rows — the pills row
+// (volume · book · ‹ chapter ›, one line up to ~496px of content; Genesis at
+// "Chapter 50" with both arrows measures 490) plus the function row (426px).
+// Books with extreme names (Sermons eras, PGP) still wrap — covering them
+// would take 900px+ panels, far wider than needed for everything else.
+const DEFAULT_PANEL_WIDTH = 540;
+const MIN_PANEL_WIDTH = 240;
+const MAX_PANEL_WIDTH = 900;
+
 // "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
 const scopeOfRef = (ref: string) => {
   const i = ref.indexOf(":");
@@ -429,16 +441,21 @@ const MergeSeam = ({
   rightColor,
   resultColor,
   combined,
+  order,
 }: {
   leftColor: string;
   rightColor: string;
   resultColor: string;
   combined: boolean;
+  // Flex order matching the source panel (SCR-33) — panels are arranged by
+  // CSS order, so the seam must carry its panel's order to stay in its gap.
+  order?: number;
 }) => (
   <div
     style={{
       flex: "0 0 0px",
       width: 0,
+      order,
       alignSelf: "stretch",
       position: "relative",
       overflow: "visible",
@@ -498,83 +515,6 @@ const MergeSeam = ({
       .scribal-merge-right { animation: scribal-merge-right 1.6s cubic-bezier(.4,0,.2,1) both; }
       .scribal-merge-pop { animation: scribal-merge-pop 1.6s cubic-bezier(.34,1.4,.5,1) both; }
       .scribal-merge-label { animation: scribal-merge-label 1.6s ease both; }
-
-      /* Rich note editor + rendered notes */
-      .scribal-rich-editor:empty:before {
-        content: attr(data-placeholder);
-        color: var(--muted);
-        pointer-events: none;
-      }
-      .scribal-rich-editor h1, .scribal-rich-view h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
-      /* Lexical theme classes */
-      .rt-bold { font-weight: 800; }
-      .rt-italic { font-style: italic; }
-      .rt-underline { text-decoration: underline; }
-      .rt-h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
-      .rt-h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
-      .rt-quote { border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px; color: var(--muted); font-style: italic; }
-      .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
-      .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
-      .rt-li { margin-bottom: 4px; }
-      .rt-checklist { list-style: none; margin: 0 0 10px 2px; padding-left: 0; }
-      .rt-checklist .rt-li { list-style: none; }
-      .rt-li-unchecked, .rt-li-checked {
-        list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
-      }
-      .rt-li-unchecked:before, .rt-li-checked:before {
-        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
-        border-radius: 4px; border: 1.5px solid var(--muted);
-      }
-      .rt-li-checked { color: var(--muted); text-decoration: line-through; }
-      .rt-li-checked:before {
-        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
-        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
-      }
-      /* nested list indent */
-      .rt-ol .rt-ol, .rt-ul .rt-ul, .rt-ol .rt-ul, .rt-ul .rt-ol { margin-left: 20px; }
-      /* checklist items (Lexical adds __lexicalListType / checked via aria) */
-      .scribal-rich-editor li[role="checkbox"], .scribal-rich-view li[role="checkbox"] {
-        list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
-      }
-      .scribal-rich-editor li[role="checkbox"]:before, .scribal-rich-view li[role="checkbox"]:before {
-        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
-        border-radius: 4px; border: 1.5px solid var(--muted);
-      }
-      .scribal-rich-editor li[role="checkbox"][aria-checked="true"], .scribal-rich-view li[role="checkbox"][aria-checked="true"] {
-        color: var(--muted); text-decoration: line-through;
-      }
-      .scribal-rich-editor li[role="checkbox"][aria-checked="true"]:before, .scribal-rich-view li[role="checkbox"][aria-checked="true"]:before {
-        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
-        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
-      }
-      .scribal-rich-editor h2, .scribal-rich-view h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
-      .scribal-rich-editor p, .scribal-rich-view p { margin: 0 0 8px; }
-      .scribal-rich-editor blockquote, .scribal-rich-view blockquote {
-        border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px;
-        color: var(--muted); font-style: italic;
-      }
-      .scribal-rich-editor ol, .scribal-rich-view ol { margin: 0 0 10px 24px; }
-      .scribal-rich-editor ul, .scribal-rich-view ul { margin: 0 0 10px 22px; }
-      .scribal-rich-editor ul[data-checklist], .scribal-rich-view ul[data-checklist] {
-        list-style: none; margin-left: 2px; padding-left: 0;
-      }
-      .scribal-rich-editor ul[data-checklist] li, .scribal-rich-view ul[data-checklist] li {
-        position: relative; padding-left: 26px; margin-bottom: 6px;
-      }
-      .scribal-rich-editor ul[data-checklist] li:before, .scribal-rich-view ul[data-checklist] li:before {
-        content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
-        border-radius: 4px; border: 1.5px solid var(--muted);
-      }
-      .scribal-rich-view ul[data-checklist] li { cursor: pointer; }
-      .scribal-rich-editor ul[data-checklist] li[data-checked="1"], .scribal-rich-view ul[data-checklist] li[data-checked="1"] {
-        color: var(--muted); text-decoration: line-through;
-      }
-      .scribal-rich-editor ul[data-checklist] li[data-checked="1"]:before, .scribal-rich-view ul[data-checklist] li[data-checked="1"]:before {
-        content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
-        font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
-      }
-      .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
-      .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     `}</style>
     {/* soft localized dim, spilling into the two adjacent panels */}
     <div
@@ -1222,17 +1162,62 @@ export default function App() {
   const dragTabRef = useRef<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
   const [draggingTab, setDraggingTab] = useState<string | null>(null);
-  const reorderTabs = (fromId: string | null, toId: string) => {
-    if (!fromId || fromId === toId) return;
-    setTabs((prev) => {
-      const fromIdx = prev.findIndex((t) => t.id === fromId);
-      const toIdx = prev.findIndex((t) => t.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      const next = prev.slice();
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next;
-    });
+  // SCR-33: one visual order across chapter tabs AND search panels, so a
+  // search panel can be dragged anywhere among the readers. rowOrder holds the
+  // arranged ids; ids it doesn't know yet (newly opened tabs/panels) append in
+  // natural order. Rendering maps this to flexbox `order` on pills and panels,
+  // so the tabs/searchPanels state arrays themselves stay untouched.
+  const [rowOrder, setRowOrder] = useState<string[]>([]);
+
+  // Per-panel widths (SCR-29). A reading-row panel holds the width the user
+  // drags it to instead of flex-growing to fill the row; the map is keyed by
+  // tab id and persisted so widths survive reloads. A tab with no entry opens
+  // at DEFAULT_PANEL_WIDTH.
+  const [panelWidths, setPanelWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem("scribal_panel_widths_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    } catch {}
+    return {};
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "scribal_panel_widths_v1",
+        JSON.stringify(panelWidths)
+      );
+    } catch {}
+  }, [panelWidths]);
+  // Drag the right-edge handle to set a panel's width. Listeners live on window
+  // so the drag keeps tracking even when the cursor outruns the handle; the
+  // functional setState captures the live delta with no stale-closure risk.
+  const startPanelResize = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = panelWidths[id] || DEFAULT_PANEL_WIDTH;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(
+        MIN_PANEL_WIDTH,
+        Math.min(MAX_PANEL_WIDTH, startW + (ev.clientX - startX))
+      );
+      setPanelWidths((prev) =>
+        prev[id] === w ? prev : { ...prev, [id]: w }
+      );
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
   };
 
   // The sticky tab-pill row must pin directly beneath the sticky header. The
@@ -1492,13 +1477,83 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState<boolean>(
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
-  const [showSearch, setShowSearch] = useState(false);
-  // When set, the search panel is in "add verses to this keyword study" mode:
-  // the study's verses are pre-selected and the link bar offers update-vs-copy.
-  const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
-  // When set, the search panel is adding loose verses to this recorded
-  // chapter/linked study (writing its extraRefs).
-  const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
+  // Desktop search is a set of persistent reading-row panels (SCR-28), not a
+  // toggled overlay. Each open panel carries its own context: a plain panel is
+  // general search; addToStudyId puts it in "add verses to this keyword study"
+  // mode (the selection is only the additions — they MERGE into the study,
+  // never replace); addVersesRecId adds loose verses to a recorded
+  // chapter/linked study (same merge rule); linkTabId means it was opened from
+  // that chapter's link prompt to gather verses to link into it. Multiple
+  // panels can be open at once.
+  interface SearchPanelInstance {
+    id: string;
+    addToStudyId?: string;
+    addVersesRecId?: string;
+    linkTabId?: string;
+  }
+  const [searchPanels, setSearchPanels] = useState<SearchPanelInstance[]>([]);
+  const searchPanelSeq = useRef(0);
+  const openSearchPanel = (ctx: Omit<SearchPanelInstance, "id"> = {}) => {
+    searchPanelSeq.current += 1;
+    const id = "search_" + searchPanelSeq.current;
+    setSearchPanels((prev) => [...prev, { id, ...ctx }]);
+    setMode("read");
+  };
+  const closeSearchPanel = (id: string) => {
+    setSearchPanels((prev) => prev.filter((p) => p.id !== id));
+    setSearchPanelQueries((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+  // Each panel reports its live query so its tab pill can be labeled by what
+  // it's searching (SCR-33). Session-only, like the panels themselves.
+  const [searchPanelQueries, setSearchPanelQueries] = useState<
+    Record<string, string>
+  >({});
+  const setSearchPanelQuery = (id: string, q: string) =>
+    setSearchPanelQueries((prev) =>
+      prev[id] === q ? prev : { ...prev, [id]: q }
+    );
+  // The reconciled row order: remembered arrangement first, then anything new.
+  const rowIds = [
+    ...tabs.map((t) => t.id),
+    ...searchPanels.map((p) => p.id),
+  ];
+  const orderedRowIds = rowOrder
+    .filter((id) => rowIds.includes(id))
+    .concat(rowIds.filter((id) => !rowOrder.includes(id)));
+  const rowIndexOf = (id: string) => orderedRowIds.indexOf(id);
+  const reorderRow = (fromId: string | null, toId: string) => {
+    if (!fromId || fromId === toId) return;
+    const fromIdx = orderedRowIds.indexOf(fromId);
+    const toIdx = orderedRowIds.indexOf(toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = orderedRowIds.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setRowOrder(next);
+    // Tab order persists (scribal_tabs_v2), so keep the tabs array in the same
+    // relative order the pills now show — the arrangement survives reload even
+    // though search panels don't.
+    setTabs((prev) =>
+      prev.slice().sort((a, b) => next.indexOf(a.id) - next.indexOf(b.id))
+    );
+  };
+  // A pill click brings its panel into view — open panels can overflow the
+  // row horizontally, so the pill is also the way back to a far-off panel.
+  const focusRowPanel = (id: string) => {
+    document.querySelectorAll("[data-row-panel]").forEach((el) => {
+      if (el.getAttribute("data-row-panel") === id)
+        el.scrollIntoView({
+          behavior: "smooth",
+          inline: "nearest",
+          block: "nearest",
+        });
+    });
+  };
   // After adding verses to a recorded study, a banner offers to compile it once
   // the added verses are marked.
   const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
@@ -1714,14 +1769,6 @@ export default function App() {
     refs: string[];
     label: string;
   } | null>(null);
-  // When the search is opened from a chapter's link prompt, this holds that
-  // chapter's tab so the gathered verses link straight to it (no "which chapter"
-  // step). Cleared whenever the search closes so it never leaks into a later,
-  // ordinary search.
-  const [linkSearchTab, setLinkSearchTab] = useState<Tab | null>(null);
-  useEffect(() => {
-    if (!showSearch) setLinkSearchTab(null);
-  }, [showSearch]);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
@@ -1736,11 +1783,14 @@ export default function App() {
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number }>(() => {
     try {
       const s = localStorage.getItem("scribal_toolbar_pos");
+      // Default y clears the header + tab row + legend (~190px at common
+      // desktop widths) instead of landing on top of them (SCR-20). Saved
+      // positions are the user's own and load untouched.
       return s
         ? JSON.parse(s)
-        : { x: Math.max(12, (window.innerWidth - 860) / 2 - 60), y: 200 };
+        : { x: Math.max(12, (window.innerWidth - 860) / 2 - 60), y: 248 };
     } catch {
-      return { x: 100, y: 200 };
+      return { x: 100, y: 248 };
     }
   });
   useEffect(() => {
@@ -1912,6 +1962,15 @@ export default function App() {
     } catch {}
   }, [reading]);
   const [readingOpen, setReadingOpen] = useState(false);
+  // The Aa dropdown closes on Escape like every other popover (SCR-16).
+  useEffect(() => {
+    if (!readingOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setReadingOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readingOpen]);
   const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
@@ -1924,8 +1983,37 @@ export default function App() {
     localStorage.setItem("scribal_compile_view", compileView);
   }, [compileView]);
 
-  const baseTheme = dark ? DARK_THEME : LIGHT_THEME;
+  // Warm tone is a full palette swap (mirroring dark mode): when it's on, every
+  // white surface across the whole shell — header, toolbars, panels, sheets —
+  // turns the same beige as the reading paper, not just the reading pane. We
+  // keep the neutral theme's mark colors (--pen*/--hl*) and swap only the
+  // surface variables for their WARM counterparts.
+  const neutralTheme = dark ? DARK_THEME : LIGHT_THEME;
+  const warmSurface = dark ? WARM.dark : WARM.light;
+  const baseTheme = reading.warm
+    ? {
+        ...neutralTheme,
+        "--bg": warmSurface.bg,
+        "--panel": warmSurface.panel,
+        "--soft": warmSurface.soft,
+        "--text": warmSurface.text,
+        "--muted": warmSurface.muted,
+        "--border": warmSurface.border,
+      }
+    : neutralTheme;
   const theme = applyIntensityToTheme(baseTheme, colorIntensity);
+
+  // Cache the effective background so the next launch's splash (and the
+  // pre-React paint in index.html) opens in this same theme color, and keep the
+  // page background in sync so overscroll never reveals a stale color.
+  const appBg = baseTheme["--bg"];
+  useEffect(() => {
+    document.documentElement.style.backgroundColor = appBg;
+    document.body.style.backgroundColor = appBg;
+    try {
+      localStorage.setItem("scribal_bg", appBg);
+    } catch {}
+  }, [appBg]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ||
     tabs[0] || {
@@ -2042,13 +2130,11 @@ export default function App() {
       if (GOOGLE_CLIENT_ID.indexOf("PASTE_") === 0) return;
       if (!localStorage.getItem("scribal_drive_enabled") && !drive.getToken())
         return;
-      // Keep the Google token warm so background syncs don't fail and nag.
-      // Best-effort + silent (no popup); if it can't refresh, ops just retry later.
-      try {
-        await drive.connectSilent(GOOGLE_CLIENT_ID);
-      } catch {
-        /* silent refresh unavailable right now — fine */
-      }
+      // No token warm-up here (SCR-11): GIS's "silent" refresh still opens a
+      // popup window, and without a user gesture the browser blocks it — that
+      // was the blocked-popup console error on every load. The pull below
+      // runs only while the stored token is valid; once it goes stale, the
+      // "Reconnect to sync" nudge (a real click) is the recovery path.
       const pulled = await syncPullIfNewer(
         mergeRemoteBooks,
         vaultMergeRemote,
@@ -2099,7 +2185,7 @@ export default function App() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setShowSearch(true);
+        openSearchPanel();
         return;
       }
 
@@ -2619,7 +2705,8 @@ export default function App() {
     setActiveTabId(newId);
     setMode("read");
     setJumpTarget(reference);
-    setShowSearch(false);
+    // Search panels persist through a jump (SCR-28): the mark opens in the
+    // active reading panel while the search stays open beside it.
   };
 
   // Resolve a chapter scope ("1 Nephi 1") to its canon location.
@@ -3660,7 +3747,6 @@ export default function App() {
     setStudyDraftName("");
     setStudyDraftBook(activeBookId);
     setStudyDraftNewName("");
-    setShowSearch(false);
   };
   const createStudyFromDraft = () => {
     const refs = studyDraftRefs;
@@ -3690,24 +3776,25 @@ export default function App() {
     const study = addStudy(label.trim() || "Search", ct.bookId, ordered);
     updateStudy(study.id, { linkedScope: scope });
     setLinkSearchDraft(null);
-    setShowSearch(false);
     openStudyTab(study);
   };
-  const onLinkSearchToChapter = (refs: string[], label: string) => {
+  // linkTabId, when set, is the chapter tab this search was opened to link into
+  // (from that chapter's link prompt) — link straight to it, no "which chapter"
+  // step. Otherwise open the gathered-draft dialog to pick a chapter.
+  const onLinkSearchToChapter = (
+    refs: string[],
+    label: string,
+    linkTabId?: string
+  ) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
-    // Launched from a chapter's link prompt: the destination chapter is already
-    // chosen, so link straight to it (after a mark-collision check) instead of
-    // asking which chapter. The standalone search path below is unchanged.
-    if (linkSearchTab) {
-      const ct = linkSearchTab;
-      setShowSearch(false);
+    const ct = linkTabId ? tabs.find((x) => x.id === linkTabId) : undefined;
+    if (ct) {
       linkGatheredToChapter(ordered, label, ct);
       return;
     }
     // Always confirm in a window — which chapter, even when only one is open.
     setLinkSearchDraft({ refs: ordered, label });
-    setShowSearch(false);
   };
 
   // Link verses gathered from a chapter's link prompt to that chapter. They
@@ -3937,19 +4024,55 @@ export default function App() {
   // additions. The selection IS the full new verse set (the study's verses are
   // pre-checked in the panel), so we just write it. Refs edits sync across
   // devices via updatedAt; a copy syncs as a brand-new study.
-  const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
-    const id = addToStudyId;
-    setAddToStudyId(null);
-    setShowSearch(false);
+  // Add panel-selected verses to an existing keyword study. The selection is
+  // ONLY the additions — this MERGES with what the study already holds and can
+  // never remove a verse (owner rule, Jul 14, after an update-replaces bug
+  // wiped a study to a single verse). Removing verses lives in the study tab
+  // (onRemoveVerses), not here. Because search picks its destination study at
+  // the END, results can't flag duplicates up front — so duplicates are
+  // reported here, at add time, in the toast (owner design, Jul 14).
+  const toastAdd = (added: number, dupeRefs: string[], name: string) => {
+    const nm = "“" + name + "”";
+    // Name the specific duplicates (owner design, Jul 14): list up to two
+    // references, then count the rest.
+    const dupList =
+      dupeRefs.slice(0, 2).join(", ") +
+      (dupeRefs.length > 2 ? " (+" + (dupeRefs.length - 2) + " more)" : "");
+    setShareMsg(
+      added === 0
+        ? (dupeRefs.length === 1
+            ? dupList + " is already in " + nm
+            : "Already in " + nm + ": " + dupList) + " — nothing changed"
+        : "Added " +
+            (added === 1 ? "1 verse" : added + " verses") +
+            " to " +
+            nm +
+            (dupeRefs.length > 0
+              ? " — already there: " + dupList
+              : "")
+    );
+    setTimeout(() => setShareMsg(null), 3200);
+  };
+  const handleAddToStudy = (
+    id: string,
+    refs: string[],
+    mode: "update" | "copy"
+  ) => {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOfRef(a) - orderOfRef(b)
+    );
     if (mode === "copy") {
-      const copy = addStudy(study.name + " (copy)", study.bookId, ordered);
+      const copy = addStudy(study.name + " (copy)", study.bookId, merged);
       openStudyTab(copy);
     } else {
-      updateStudy(study.id, { refs: ordered });
+      const existing = new Set(study.refs);
+      const dupes = refs.filter((r) => existing.has(r));
+      const added = refs.length - dupes.length;
+      if (added > 0) updateStudy(study.id, { refs: merged });
+      toastAdd(added, dupes, study.name);
       openStudyTab(study);
     }
   };
@@ -4043,23 +4166,27 @@ export default function App() {
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
   // jump to the first added verse in read mode so they can be marked. A banner
   // (rendered below) offers to compile the study once they're marked.
-  const handleAddVersesToRec = (refs: string[]) => {
-    const rid = addVersesRecId;
-    setAddVersesRecId(null);
-    setShowSearch(false);
+  const handleAddVersesToRec = (rid: string, refs: string[]) => {
     if (!rid) return;
     const study = recordedStudies.find((s) => s.id === rid);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    // Selection is only the additions — merge with the existing extras, never
+    // replace (same owner rule as handleAddToStudy: add flows can't remove).
+    const merged = Array.from(
+      new Set([...(study.extraRefs || []), ...refs])
+    ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const existing = new Set(study.extraRefs || []);
+    const dupes = refs.filter((r) => existing.has(r));
+    if (refs.length) toastAdd(refs.length - dupes.length, dupes, study.name);
     const at = Date.now();
     setRecordedStudies((prev) =>
       prev.map((s) =>
         s.id === rid
-          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          ? { ...s, extraRefs: merged, extraRefsAt: at, compiledAt: at }
           : s
       )
     );
-    if (ordered.length) {
+    if (merged.length) {
       if (study.bookId !== activeBookId) setActiveBook(study.bookId);
       setMarkVersesStudyId(rid);
     } else {
@@ -4893,8 +5020,7 @@ export default function App() {
             }
           },
           onAddVerses: () => {
-            setAddToStudyId(ss.id);
-            setShowSearch(true);
+            openSearchPanel({ addToStudyId: ss.id });
           },
           onMove: () =>
             setMoveTarget({
@@ -4979,8 +5105,7 @@ export default function App() {
           }
         },
         onAddVerses: () => {
-          setAddToStudyId(primary.id);
-          setShowSearch(true);
+          openSearchPanel({ addToStudyId: primary.id });
         },
         onDelete: () =>
           askConfirm({
@@ -5263,56 +5388,6 @@ export default function App() {
           defaults={DEFAULT_TOOL_HOTKEYS}
         />
       )}
-      {showSearch && (
-        <SearchPanel
-          currentChapter={chapterScopeOf(activeTab)}
-          currentVolume={activeTab.volume}
-          currentBook={activeTab.book}
-          marks={marks}
-          colorLabels={activeScopedLabels}
-          labelFor={labelFor}
-          allMarks={allMarks}
-          onJump={(ref) => {
-            jumpToReference(ref);
-            setShowSearch(false);
-          }}
-          onJumpToMark={jumpToMark}
-          onLinkStudy={linkSearchTab ? undefined : onLinkStudy}
-          onLinkSearchToChapter={onLinkSearchToChapter}
-          linkChapterLabel={
-            linkSearchTab ? tabLabel(linkSearchTab) : undefined
-          }
-          initialSelected={
-            addToStudyId
-              ? searchStudies.find((s) => s.id === addToStudyId)?.refs
-              : addVersesRecId
-              ? recordedStudies.find((s) => s.id === addVersesRecId)
-                  ?.extraRefs || []
-              : undefined
-          }
-          addToStudyName={
-            addToStudyId
-              ? searchStudies.find((s) => s.id === addToStudyId)?.name
-              : undefined
-          }
-          onAddToStudy={handleAddToStudy}
-          addVersesName={
-            addVersesRecId
-              ? recordedStudies.find((s) => s.id === addVersesRecId)?.name
-              : undefined
-          }
-          onAddVerses={handleAddVersesToRec}
-          onOpenNewTab={(ref) => {
-            openInNewTab(ref);
-            setShowSearch(false);
-          }}
-          onClose={() => {
-            setShowSearch(false);
-            setAddToStudyId(null);
-            setAddVersesRecId(null);
-          }}
-        />
-      )}
       {linkKwStudyId &&
         (() => {
           const ks = searchStudies.find((s) => s.id === linkKwStudyId);
@@ -5368,8 +5443,7 @@ export default function App() {
           };
           const addSearch = () => {
             setLinkKwStudyId(null);
-            setAddToStudyId(ks.id);
-            setShowSearch(true);
+            openSearchPanel({ addToStudyId: ks.id });
           };
           const pickRef =
             pickV >= 0 && pickB >= 0 && pickC >= 0
@@ -5867,6 +5941,57 @@ export default function App() {
       {linkSearchDraft &&
         (() => {
           const chapterTabs = tabs.filter((x) => !x.studyId);
+          const eyebrow: React.CSSProperties = {
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            marginBottom: "8px",
+          };
+          const selStyle: React.CSSProperties = {
+            boxSizing: "border-box",
+            width: "100%",
+            padding: "11px 10px",
+            borderRadius: "10px",
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            fontSize: "14px",
+            fontFamily: "inherit",
+          };
+          // The picked canon chapter (SCR-30): the same volume→book→chapter
+          // dropdowns as the other two link dialogs, so a gathered search can
+          // link to ANY chapter without opening a tab first. Downstream is the
+          // exact one-tap path — a synthetic master-book tab handed to
+          // linkSearchToChapterTab.
+          const pickRef =
+            pickV >= 0 && pickB >= 0 && pickC >= 0
+              ? vols[pickV].books[pickB].chapters[pickC].verses[0]
+                  ?.reference || ""
+              : "";
+          const linkPicked = () => {
+            if (!pickRef) return;
+            const ct: Tab = {
+              id: makeTabId("master", pickV, pickB, pickC),
+              volume: pickV,
+              book: pickB,
+              chapter: pickC,
+              bookId: "master",
+            };
+            setPickV(-1);
+            setPickB(-1);
+            setPickC(-1);
+            linkSearchToChapterTab(
+              linkSearchDraft.refs,
+              linkSearchDraft.label,
+              ct
+            );
+          };
+          const versesLabel =
+            linkSearchDraft.refs.length === 1
+              ? "verse"
+              : linkSearchDraft.refs.length + " verses";
           return (
             <div
               className="scribal-fade"
@@ -5899,173 +6024,176 @@ export default function App() {
                   flexDirection: "column",
                 }}
               >
-                {chapterTabs.length === 1 ? (
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Link this search to a chapter
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Your {versesLabel} open as their own tab, sharing the
+                  chapter&rsquo;s themes and compiling together with it.
+                </div>
+
+                {chapterTabs.length > 0 && (
                   <>
-                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                      Link to this chapter?
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginTop: "3px",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Your{" "}
-                      {linkSearchDraft.refs.length === 1
-                        ? "verse"
-                        : linkSearchDraft.refs.length + " verses"}{" "}
-                      will open as their own tab linked to{" "}
-                      <strong style={{ color: "var(--text)" }}>
-                        {tabLabel(chapterTabs[0])}
-                      </strong>
-                      , sharing its themes and compiling together with it.
+                    <div style={{ ...eyebrow, marginTop: "18px" }}>
+                      Open chapters
                     </div>
                     <div
                       style={{
                         display: "flex",
-                        gap: "10px",
-                        justifyContent: "flex-end",
-                        marginTop: "18px",
+                        flexDirection: "column",
+                        gap: "8px",
+                        overflowY: "auto",
                       }}
                     >
-                      <button
-                        onClick={() => setLinkSearchDraft(null)}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "10px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() =>
-                          linkSearchToChapterTab(
-                            linkSearchDraft.refs,
-                            linkSearchDraft.label,
-                            chapterTabs[0]
-                          )
-                        }
-                        style={{
-                          padding: "10px 18px",
-                          borderRadius: "10px",
-                          border: "none",
-                          background: TYPE_BLUE,
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 700,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Link to {tabLabel(chapterTabs[0])}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                      Link this search to a chapter
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginTop: "3px",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Your{" "}
-                      {linkSearchDraft.refs.length === 1
-                        ? "verse"
-                        : linkSearchDraft.refs.length + " verses"}{" "}
-                      open as their own tab, sharing the chapter&rsquo;s themes
-                      and compiling together with it.
-                    </div>
-                    {chapterTabs.length === 0 ? (
-                      <div
-                        style={{
-                          fontSize: "13.5px",
-                          color: "var(--muted)",
-                          padding: "18px 2px",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        Open a chapter in a tab first, then link this search to
-                        it.
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                          overflowY: "auto",
-                        }}
-                      >
-                        {chapterTabs.map((ct) => (
-                          <button
-                            key={ct.id}
-                            onClick={() =>
-                              linkSearchToChapterTab(
-                                linkSearchDraft.refs,
-                                linkSearchDraft.label,
-                                ct
-                              )
-                            }
-                            style={{
-                              textAlign: "left",
-                              padding: "11px 13px",
-                              borderRadius: "10px",
-                              border: "1px solid var(--border)",
-                              background: "var(--bg)",
-                              color: "var(--text)",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              fontSize: "14px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {tabLabel(ct)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        marginTop: "16px",
-                      }}
-                    >
-                      <button
-                        onClick={() => setLinkSearchDraft(null)}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "10px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Cancel
-                      </button>
+                      {chapterTabs.map((ct) => (
+                        <button
+                          key={ct.id}
+                          onClick={() =>
+                            linkSearchToChapterTab(
+                              linkSearchDraft.refs,
+                              linkSearchDraft.label,
+                              ct
+                            )
+                          }
+                          style={{
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid var(--border)",
+                            background: "var(--bg)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontSize: "14px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {tabLabel(ct)}
+                        </button>
+                      ))}
                     </div>
                   </>
                 )}
+
+                <div style={{ ...eyebrow, marginTop: "18px" }}>
+                  {chapterTabs.length > 0
+                    ? "Or link any chapter"
+                    : "Link a chapter"}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  <select
+                    value={pickV}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setPickV(v);
+                      const single = v >= 0 && vols[v].books.length === 1;
+                      setPickB(single ? 0 : -1);
+                      setPickC(-1);
+                    }}
+                    style={selStyle}
+                  >
+                    <option value={-1}>Choose a volume…</option>
+                    {vols.map((vol, v) => (
+                      <option key={v} value={v}>
+                        {vol.volume}
+                      </option>
+                    ))}
+                  </select>
+                  {pickV >= 0 && vols[pickV].books.length > 1 && (
+                    <select
+                      value={pickB}
+                      onChange={(e) => {
+                        setPickB(Number(e.target.value));
+                        setPickC(-1);
+                      }}
+                      style={selStyle}
+                    >
+                      <option value={-1}>Choose a book…</option>
+                      {vols[pickV].books.map((bk, b) => (
+                        <option key={b} value={b}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <select
+                    value={pickC}
+                    disabled={pickB < 0}
+                    onChange={(e) => setPickC(Number(e.target.value))}
+                    style={{ ...selStyle, opacity: pickB < 0 ? 0.5 : 1 }}
+                  >
+                    <option value={-1}>
+                      {pickV >= 0 && vols[pickV].books.length === 1
+                        ? "Choose a section…"
+                        : "Choose a chapter…"}
+                    </option>
+                    {(pickV >= 0 && pickB >= 0
+                      ? vols[pickV].books[pickB].chapters
+                      : []
+                    ).map((ch, c) => (
+                      <option key={c} value={c}>
+                        {ch.chapter}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={linkPicked}
+                  disabled={!pickRef}
+                  style={{
+                    marginTop: "10px",
+                    width: "100%",
+                    padding: "11px 14px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: pickRef ? TYPE_BLUE : "var(--border)",
+                    color: pickRef ? "#fff" : "var(--muted)",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: pickRef ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Link chapter
+                </button>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    onClick={() => setLinkSearchDraft(null)}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -6851,9 +6979,8 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setLinkSearchTab(t);
                       setLinkPromptTabId(null);
-                      setShowSearch(true);
+                      openSearchPanel({ linkTabId: t.id });
                     }}
                     style={{
                       marginTop: "10px",
@@ -7363,25 +7490,7 @@ export default function App() {
           colorLabels={effectiveScopedLabels}
           notes={notes}
           dark={dark}
-          C={
-            dark
-              ? {
-                  bg: "#131210",
-                  panel: "#1d1c19",
-                  soft: "#232220",
-                  text: "#eae7de",
-                  muted: "#8d8a82",
-                  border: "#343229",
-                }
-              : {
-                  bg: "#f6f4ee",
-                  panel: "#ffffff",
-                  soft: "#efece4",
-                  text: "#1d1c18",
-                  muted: "#8d8a80",
-                  border: "#e2dfd6",
-                }
-          }
+          C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}
           onClose={() => setSharingVerses(false)}
           onFlash={(m) => {
             setShareMsg(m);
@@ -9114,7 +9223,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
               data-tour="search"
-              onClick={() => setShowSearch(true)}
+              onClick={() => openSearchPanel()}
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
             >
@@ -9827,25 +9936,55 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() =>
-                        setReading((r) => ({ ...r, warm: !r.warm }))
-                      }
+                    {/* A labeled switch, like the other Aa rows — the old
+                        full-width dark bar read as a primary CTA (SCR-21). */}
+                    <div
                       style={{
-                        width: "100%",
-                        padding: "11px",
-                        borderRadius: "9px",
-                        border: "1px solid var(--border)",
-                        background: reading.warm ? "var(--text)" : "transparent",
-                        color: reading.warm ? "var(--bg)" : "var(--text)",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "2px 2px 0",
                       }}
                     >
-                      {reading.warm ? "Warm tone: on" : "Warm tone: off"}
-                    </button>
+                      <span style={{ fontSize: "13px", color: "var(--text)" }}>
+                        Warm tone
+                      </span>
+                      <button
+                        onClick={() =>
+                          setReading((r) => ({ ...r, warm: !r.warm }))
+                        }
+                        role="switch"
+                        aria-checked={reading.warm}
+                        aria-label="Warm tone"
+                        style={{
+                          position: "relative",
+                          width: "42px",
+                          height: "24px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: reading.warm
+                            ? "var(--text)"
+                            : "var(--soft)",
+                          cursor: "pointer",
+                          padding: 0,
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "2px",
+                            left: reading.warm ? "19px" : "2px",
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            background: "var(--bg)",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                            transition: "left 0.15s",
+                          }}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -10088,7 +10227,12 @@ export default function App() {
             return (
               <div
                 key={t.id}
-                draggable={tabs.length > 1}
+                draggable={orderedRowIds.length > 1}
+                title={
+                  orderedRowIds.length > 1
+                    ? "Drag to rearrange the reading panels"
+                    : undefined
+                }
                 onDragStart={(e) => {
                   dragTabRef.current = t.id;
                   setDraggingTab(t.id);
@@ -10114,7 +10258,7 @@ export default function App() {
                   // panels follow because both are driven by the same order).
                   if (dragOverTab !== t.id) {
                     setDragOverTab(t.id);
-                    reorderTabs(from, t.id);
+                    reorderRow(from, t.id);
                   }
                 }}
                 onDrop={(e) => {
@@ -10123,12 +10267,14 @@ export default function App() {
                   setDraggingTab(null);
                   setDragOverTab(null);
                 }}
+                className="scribal-tabpill"
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "3px",
-                  cursor: tabs.length > 1 ? "grab" : "default",
+                  order: rowIndexOf(t.id),
+                  cursor: orderedRowIds.length > 1 ? "grab" : "default",
                   opacity: draggingTab === t.id ? 0.4 : 1,
                   transform: draggingTab === t.id ? "scale(0.96)" : "scale(1)",
                   transition: "opacity 0.15s, transform 0.15s",
@@ -10137,7 +10283,7 @@ export default function App() {
                 <span
                   title={tabBookLabel}
                   style={{
-                    fontSize: "10px",
+                    fontSize: "11px",
                     lineHeight: 1,
                     color: "var(--muted)",
                     fontFamily: "system-ui, sans-serif",
@@ -10150,7 +10296,10 @@ export default function App() {
                   {tabBookLabel}
                 </span>
                 <div
-                  onClick={() => setActiveTabId(t.id)}
+                  onClick={() => {
+                    setActiveTabId(t.id);
+                    focusRowPanel(t.id);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -10174,6 +10323,31 @@ export default function App() {
                     transition: "all 0.15s",
                   }}
                 >
+                  {orderedRowIds.length > 1 && (
+                    <span
+                      className="scribal-tabgrip"
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-flex",
+                        flexShrink: 0,
+                        cursor: "grab",
+                      }}
+                    >
+                      <svg
+                        width="7"
+                        height="12"
+                        viewBox="0 0 7 12"
+                        fill="currentColor"
+                      >
+                        <circle cx="1.5" cy="2" r="1.2" />
+                        <circle cx="5.5" cy="2" r="1.2" />
+                        <circle cx="1.5" cy="6" r="1.2" />
+                        <circle cx="5.5" cy="6" r="1.2" />
+                        <circle cx="1.5" cy="10" r="1.2" />
+                        <circle cx="5.5" cy="10" r="1.2" />
+                      </svg>
+                    </span>
+                  )}
                   {t.studyId && (
                     <span style={{ display: "inline-flex", flexShrink: 0 }}>
                       <IconSearch size={14} />
@@ -10195,6 +10369,164 @@ export default function App() {
               </div>
             );
           })}
+          {/* Search-panel pills (SCR-33): every open search panel shows in the
+              tab row, so the pills reflect the actual reading row. Same drag
+              machinery as chapter pills — one order drives both rows. */}
+          {searchPanels.map((panel) => {
+            const q = (searchPanelQueries[panel.id] || "").trim();
+            const linkTab = panel.linkTabId
+              ? tabs.find((x) => x.id === panel.linkTabId)
+              : undefined;
+            const addStudy = panel.addToStudyId
+              ? searchStudies.find((s) => s.id === panel.addToStudyId)
+              : undefined;
+            const addRec = panel.addVersesRecId
+              ? recordedStudies.find((s) => s.id === panel.addVersesRecId)
+              : undefined;
+            const context = addStudy
+              ? "Add to " + addStudy.name
+              : addRec
+              ? "Add to " + addRec.name
+              : linkTab
+              ? "Gather for " + tabLabel(linkTab)
+              : "Search";
+            return (
+              <div
+                key={panel.id}
+                draggable={orderedRowIds.length > 1}
+                title={
+                  orderedRowIds.length > 1
+                    ? "Drag to rearrange the reading panels"
+                    : undefined
+                }
+                onDragStart={(e) => {
+                  dragTabRef.current = panel.id;
+                  setDraggingTab(panel.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  try {
+                    e.dataTransfer.setData("text/plain", panel.id);
+                  } catch (err) {
+                    /* some browsers require a payload; ignore if it throws */
+                  }
+                }}
+                onDragEnd={() => {
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                onDragOver={(e) => {
+                  const from = dragTabRef.current;
+                  if (!from || from === panel.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverTab !== panel.id) {
+                    setDragOverTab(panel.id);
+                    reorderRow(from, panel.id);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                className="scribal-tabpill"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "3px",
+                  order: rowIndexOf(panel.id),
+                  cursor: orderedRowIds.length > 1 ? "grab" : "default",
+                  opacity: draggingTab === panel.id ? 0.4 : 1,
+                  transform:
+                    draggingTab === panel.id ? "scale(0.96)" : "scale(1)",
+                  transition: "opacity 0.15s, transform 0.15s",
+                }}
+              >
+                <span
+                  title={context}
+                  style={{
+                    fontSize: "11px",
+                    lineHeight: 1,
+                    color: "var(--muted)",
+                    fontFamily: "system-ui, sans-serif",
+                    maxWidth: "170px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {context}
+                </span>
+                <div
+                  onClick={() => focusRowPanel(panel.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 400,
+                    backgroundColor: "var(--panel)",
+                    color: "var(--text)",
+                    border: "1px dashed var(--border)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {orderedRowIds.length > 1 && (
+                    <span
+                      className="scribal-tabgrip"
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-flex",
+                        flexShrink: 0,
+                        cursor: "grab",
+                      }}
+                    >
+                      <svg
+                        width="7"
+                        height="12"
+                        viewBox="0 0 7 12"
+                        fill="currentColor"
+                      >
+                        <circle cx="1.5" cy="2" r="1.2" />
+                        <circle cx="5.5" cy="2" r="1.2" />
+                        <circle cx="1.5" cy="6" r="1.2" />
+                        <circle cx="5.5" cy="6" r="1.2" />
+                        <circle cx="1.5" cy="10" r="1.2" />
+                        <circle cx="5.5" cy="10" r="1.2" />
+                      </svg>
+                    </span>
+                  )}
+                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                    <IconSearch size={14} />
+                  </span>
+                  <span
+                    style={{
+                      maxWidth: "140px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {q ? "“" + q + "”" : "Search"}
+                  </span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeSearchPanel(panel.id);
+                    }}
+                    style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                  >
+                    ✕
+                  </span>
+                </div>
+              </div>
+            );
+          })}
           {tabs.length < 5 && (
             <button
               onClick={addNewTab}
@@ -10209,6 +10541,7 @@ export default function App() {
                 cursor: "pointer",
                 fontSize: "18px",
                 lineHeight: 1,
+                order: 9999,
               }}
             >
               +
@@ -10239,20 +10572,21 @@ export default function App() {
           }}
         >
           {legendColors.length === 0 ? (
+            // Full-opacity and a slightly larger size — the faded version
+            // failed the legibility floor (SCR-21).
             <span
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "7px",
                 color: "var(--muted)",
-                opacity: 0.6,
+                fontSize: "12.5px",
               }}
             >
               <span
                 style={{
                   display: "inline-flex",
                   color: ACCENT,
-                  opacity: 0.75,
                 }}
               >
                 <IconDrop size={13} />
@@ -10369,12 +10703,16 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               display: "flex",
-              overflowX: tabs.length > 1 ? "auto" : "visible",
+              overflowX:
+                tabs.length + searchPanels.length > 1 ? "auto" : "visible",
             }}
           >
             {tabs.map((t) => {
               const isActive = t.id === activeTabId;
-              const multi = tabs.length > 1;
+              // A panel holds a fixed width (SCR-29) whenever more than one
+              // reading-row panel is open — chapters and search panels both
+              // count, so a lone chapter next to a search panel sizes uniformly.
+              const multi = tabs.length + searchPanels.length > 1;
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
@@ -10399,19 +10737,42 @@ export default function App() {
                 <div
                   key={t.id}
                   data-compile-tab={t.id}
+                  data-row-panel={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
                   style={{
-                    flex: multi ? "1 0 540px" : 1,
+                    // SCR-29: panels hold a set width (no flex-grow) when
+                    // several are open, so they don't balloon to fill the row
+                    // and empty space to the right stays empty. A single panel
+                    // still fills the reader.
+                    // SCR-33: panels render in the pill row's order.
+                    order: rowIndexOf(t.id),
+                    flex: multi ? "0 0 auto" : 1,
+                    width: multi
+                      ? panelWidths[t.id] || DEFAULT_PANEL_WIDTH
+                      : undefined,
                     minWidth: 0,
                     borderRight: multi ? "1px solid var(--border)" : "none",
-                    outline:
-                      multi && isActive ? "2px solid " + ICON_ACCENT : "none",
-                    outlineOffset: "-2px",
                     position: "relative",
                     overflow: "hidden",
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
                   }}
                 >
+                  {/* SCR-40: the active-tab border is an overlay div, not a CSS
+                      outline — the sticky reading header inside the scroller
+                      (zIndex 20) paints above the parent's outline and used to
+                      cover its top edge once scrolled. This sits above the
+                      header (25) and below dropdowns/toolbar (40+). */}
+                  {multi && isActive && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        border: "2px solid " + ICON_ACCENT,
+                        pointerEvents: "none",
+                        zIndex: 25,
+                      }}
+                    />
+                  )}
                   <div
                     style={{
                       height: "100%",
@@ -10511,6 +10872,21 @@ export default function App() {
                     }
                   />
                   </div>
+                  {multi && (
+                    <div
+                      onMouseDown={(e) => startPanelResize(t.id, e)}
+                      title="Drag to resize this panel"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: "9px",
+                        cursor: "col-resize",
+                        zIndex: 6,
+                      }}
+                    />
+                  )}
                   {growMoment &&
                     t.studyId &&
                     growMoment.studyId === t.studyId && (
@@ -10524,9 +10900,91 @@ export default function App() {
                     rightColor={mergeMoment.rightColor}
                     resultColor={mergeMoment.resultColor}
                     combined={mergeMoment.combined}
+                    order={rowIndexOf(t.id)}
                   />
                 ) : null,
               ];
+            })}
+            {/* Persistent search panels (SCR-28): each slots into the reading
+                row beside the chapter panels and holds its own width/resize
+                like any panel. A search panel NEVER closes itself — not on
+                jumping, creating a study, linking, or adding verses (owner
+                rule, Jul 14). It closes only from its own ✕ or its pill's ✕. */}
+            {searchPanels.map((panel) => {
+              const width = panelWidths[panel.id] || DEFAULT_PANEL_WIDTH;
+              const linkTab = panel.linkTabId
+                ? tabs.find((x) => x.id === panel.linkTabId)
+                : undefined;
+              const addStudy = panel.addToStudyId
+                ? searchStudies.find((s) => s.id === panel.addToStudyId)
+                : undefined;
+              const addRec = panel.addVersesRecId
+                ? recordedStudies.find((s) => s.id === panel.addVersesRecId)
+                : undefined;
+              return (
+                <div
+                  key={panel.id}
+                  data-row-panel={panel.id}
+                  style={{
+                    flex: "0 0 auto",
+                    width,
+                    minWidth: 0,
+                    order: rowIndexOf(panel.id),
+                    borderRight: "1px solid var(--border)",
+                    position: "relative",
+                    overflow: "hidden",
+                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                  }}
+                >
+                  <SearchPanel
+                    embedded
+                    onQueryChange={(q) => setSearchPanelQuery(panel.id, q)}
+                    currentChapter={chapterScopeOf(activeTab)}
+                    currentVolume={activeTab.volume}
+                    currentBook={activeTab.book}
+                    marks={marks}
+                    colorLabels={activeScopedLabels}
+                    labelFor={labelFor}
+                    allMarks={allMarks}
+                    onJump={(ref) => jumpToReference(ref)}
+                    onJumpToMark={jumpToMark}
+                    onLinkStudy={
+                      panel.linkTabId ? undefined : (refs) => onLinkStudy(refs)
+                    }
+                    onLinkSearchToChapter={(refs, label) => {
+                      onLinkSearchToChapter(refs, label, panel.linkTabId);
+                    }}
+                    linkChapterLabel={
+                      linkTab ? tabLabel(linkTab) : undefined
+                    }
+                    addToStudyName={addStudy ? addStudy.name : undefined}
+                    onAddToStudy={(refs, mode) => {
+                      if (panel.addToStudyId)
+                        handleAddToStudy(panel.addToStudyId, refs, mode);
+                    }}
+                    addVersesName={addRec ? addRec.name : undefined}
+                    onAddVerses={(refs) => {
+                      if (panel.addVersesRecId)
+                        handleAddVersesToRec(panel.addVersesRecId, refs);
+                    }}
+                    onOpenNewTab={(ref) => openInNewTab(ref)}
+                    onClose={() => closeSearchPanel(panel.id)}
+                  />
+                  <div
+                    onMouseDown={(e) => startPanelResize(panel.id, e)}
+                    title="Drag to resize this panel"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: "9px",
+                      cursor: "col-resize",
+                      zIndex: 6,
+                    }}
+                  />
+                </div>
+              );
             })}
           </div>
 
@@ -11495,69 +11953,106 @@ export default function App() {
                         No marked verses match “{compileFindQ.trim()}”.
                       </div>
                     ) : (
-                      compileFindResults.map((r, i) => {
-                        const snippet =
-                          r.texts.join("  ·  ") || r.themes.join(", ");
-                        return (
-                          <button
-                            key={r.reference}
-                            onClick={() => {
-                              compileScrollToVerse(r.reference);
-                              setCompileFindQ("");
-                            }}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "10px",
-                              width: "100%",
-                              textAlign: "left",
-                              background: "transparent",
-                              border: "none",
-                              borderBottom:
-                                i < compileFindResults.length - 1
-                                  ? "1px solid var(--border)"
-                                  : "none",
-                              padding: "11px 14px",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            <span
+                      // Grouped by chapter with word-boundary truncation
+                      // (SCR-21) — same grouping idea as renderRefGroups in
+                      // the study reader.
+                      (() => {
+                        const wordTrunc = (s: string, n: number) =>
+                          s.length <= n
+                            ? s
+                            : s.slice(0, n).replace(/\s+\S*$/, "") + " …";
+                        const groups: {
+                          title: string;
+                          rows: typeof compileFindResults;
+                        }[] = [];
+                        compileFindResults.forEach((r) => {
+                          const cut = r.reference.lastIndexOf(":");
+                          const title =
+                            cut > 0 ? r.reference.slice(0, cut) : r.reference;
+                          const last = groups[groups.length - 1];
+                          if (last && last.title === title) last.rows.push(r);
+                          else groups.push({ title, rows: [r] });
+                        });
+                        return groups.map((g) => (
+                          <div key={g.title}>
+                            <div
                               style={{
-                                width: "10px",
-                                height: "10px",
-                                borderRadius: "50%",
-                                backgroundColor: COLOR_MAP[r.color as MarkColor],
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span
-                              style={{
-                                flexShrink: 0,
+                                padding: "9px 14px 3px",
+                                fontSize: "10.5px",
                                 fontWeight: 700,
-                                fontSize: "12.5px",
-                                color: "var(--text)",
-                              }}
-                            >
-                              {r.reference}
-                            </span>
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                fontSize: "12.5px",
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
                                 color: "var(--muted)",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                fontFamily: '"Times New Roman", Times, serif',
                               }}
                             >
-                              {snippet}
-                            </span>
-                          </button>
-                        );
-                      })
+                              {g.title}
+                            </div>
+                            {g.rows.map((r) => {
+                              const snippet = wordTrunc(
+                                r.texts.join("  ·  ") || r.themes.join(", "),
+                                110
+                              );
+                              return (
+                                <button
+                                  key={r.reference}
+                                  onClick={() => {
+                                    compileScrollToVerse(r.reference);
+                                    setCompileFindQ("");
+                                  }}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                    width: "100%",
+                                    textAlign: "left",
+                                    background: "transparent",
+                                    border: "none",
+                                    borderBottom: "1px solid var(--border)",
+                                    padding: "11px 14px",
+                                    cursor: "pointer",
+                                    fontFamily: "inherit",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      width: "10px",
+                                      height: "10px",
+                                      borderRadius: "50%",
+                                      backgroundColor:
+                                        COLOR_MAP[r.color as MarkColor],
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      flexShrink: 0,
+                                      fontWeight: 700,
+                                      fontSize: "12.5px",
+                                      color: "var(--text)",
+                                    }}
+                                  >
+                                    {r.reference}
+                                  </span>
+                                  <span
+                                    style={{
+                                      flex: 1,
+                                      minWidth: 0,
+                                      fontSize: "12.5px",
+                                      color: "var(--muted)",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      fontFamily:
+                                        '"Times New Roman", Times, serif',
+                                    }}
+                                  >
+                                    {snippet}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()
                     )}
                   </div>
                 )}
@@ -11627,7 +12122,10 @@ export default function App() {
                 onThreads={(t) => setScopedThreads(effectiveScope, t)}
               />
             )}
-            {effectiveTags.length > 0 && (
+            {/* Word Studies renders in ONE place — the Outline (the study's
+                primary compiled output) — instead of trailing every view tab
+                (SCR-13). */}
+            {compileView === "outline" && effectiveTags.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <WordStudies
                   tags={effectiveTags}

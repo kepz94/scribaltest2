@@ -72,10 +72,105 @@ interface Props {
   focusedFor?: (reference: string) => string;
   fullTextFor?: (reference: string) => string;
   onJumpToReference?: (reference: string) => void;
+  // Editor/resting text size. Default suits desktop; MOBILE callers must pass
+  // >= 16 — iOS zooms (and the zoom can stick in installed PWAs) when any
+  // focused editable's font is under 16px.
+  editorFontSize?: number;
 }
 
 const isPlainText = (v: string) => !/<[a-z][\s\S]*>/i.test(v);
 const ACCENT = "#8b5cf6";
+
+// The editor/rendered-note CSS, injected once into <head> so rich notes are
+// styled wherever this component mounts — either shell, any view. (These
+// rules previously lived in a desktop-only <style> that mounted with the
+// MergeSeam animation, so checklists/placeholders rendered unstyled most of
+// the time.)
+let richCssInjected = false;
+const ensureRichNoteCss = () => {
+  if (richCssInjected || typeof document === "undefined") return;
+  richCssInjected = true;
+  if (document.getElementById("scribal-richnote-css")) return;
+  const el = document.createElement("style");
+  el.id = "scribal-richnote-css";
+  el.textContent = `
+    .scribal-rich-editor:empty:before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .rt-bold { font-weight: 800 !important; }
+    .rt-italic { font-style: italic !important; }
+    .rt-underline { text-decoration: underline !important; }
+    .rt-underline.rt-bold, .rt-underline.rt-italic { text-decoration: underline !important; }
+    .rt-h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
+    .rt-h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
+    .rt-quote { border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px; color: var(--muted); font-style: italic; }
+    .rt-ol { margin: 0 0 10px 24px; list-style: decimal; }
+    .rt-ul { margin: 0 0 10px 22px; list-style: disc; }
+    .rt-li { margin-bottom: 4px; }
+    .rt-checklist { list-style: none; margin: 0 0 10px 2px; padding-left: 0; }
+    .rt-checklist .rt-li { list-style: none; }
+    .rt-li-unchecked, .rt-li-checked {
+      list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
+    }
+    .rt-li-unchecked:before, .rt-li-checked:before {
+      content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+      border-radius: 4px; border: 1.5px solid var(--muted);
+    }
+    .rt-li-checked { color: var(--muted); text-decoration: line-through; }
+    .rt-li-checked:before {
+      content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+      font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+    .rt-ol .rt-ol, .rt-ul .rt-ul, .rt-ol .rt-ul, .rt-ul .rt-ol { margin-left: 20px; }
+    .scribal-rich-editor h1, .scribal-rich-view h1 { font-size: 19px; font-weight: 800; margin: 0 0 4px; }
+    .scribal-rich-editor h2, .scribal-rich-view h2 { font-size: 15.5px; font-weight: 800; margin: 12px 0 5px; }
+    .scribal-rich-editor p, .scribal-rich-view p { margin: 0 0 8px; }
+    .scribal-rich-editor blockquote, .scribal-rich-view blockquote {
+      border-left: 3px solid var(--border); padding: 2px 0 2px 12px; margin: 0 0 10px;
+      color: var(--muted); font-style: italic;
+    }
+    .scribal-rich-editor ol, .scribal-rich-view ol { margin: 0 0 10px 24px; }
+    .scribal-rich-editor ul, .scribal-rich-view ul { margin: 0 0 10px 22px; }
+    .scribal-rich-editor li[role="checkbox"], .scribal-rich-view li[role="checkbox"] {
+      list-style: none; position: relative; padding-left: 26px; cursor: pointer; outline: none;
+    }
+    .scribal-rich-editor li[role="checkbox"]:before, .scribal-rich-view li[role="checkbox"]:before {
+      content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+      border-radius: 4px; border: 1.5px solid var(--muted);
+    }
+    .scribal-rich-editor li[role="checkbox"][aria-checked="true"], .scribal-rich-view li[role="checkbox"][aria-checked="true"] {
+      color: var(--muted); text-decoration: line-through;
+    }
+    .scribal-rich-editor li[role="checkbox"][aria-checked="true"]:before, .scribal-rich-view li[role="checkbox"][aria-checked="true"]:before {
+      content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+      font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+    .scribal-rich-editor ul[data-checklist], .scribal-rich-view ul[data-checklist] {
+      list-style: none; margin-left: 2px; padding-left: 0;
+    }
+    .scribal-rich-editor ul[data-checklist] li, .scribal-rich-view ul[data-checklist] li {
+      position: relative; padding-left: 26px; margin-bottom: 6px;
+    }
+    .scribal-rich-editor ul[data-checklist] li:before, .scribal-rich-view ul[data-checklist] li:before {
+      content: ""; position: absolute; left: 0; top: 2px; width: 16px; height: 16px;
+      border-radius: 4px; border: 1.5px solid var(--muted);
+    }
+    .scribal-rich-view ul[data-checklist] li { cursor: pointer; }
+    .scribal-rich-editor ul[data-checklist] li[data-checked="1"], .scribal-rich-view ul[data-checklist] li[data-checked="1"] {
+      color: var(--muted); text-decoration: line-through;
+    }
+    .scribal-rich-editor ul[data-checklist] li[data-checked="1"]:before, .scribal-rich-view ul[data-checklist] li[data-checked="1"]:before {
+      content: "\\2713"; background: #4caf7d; border-color: #4caf7d; color: #0c1a10;
+      font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+    .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
+    .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  `;
+  document.head.appendChild(el);
+};
+if (typeof document !== "undefined") ensureRichNoteCss();
 
 // ── Verse chip: an atomic (token) node that keeps its reference through the
 // save/load round trip, so the resting view can open its preview. Deletes as
@@ -673,6 +768,7 @@ export default function RichNoteField({
   focusedFor,
   fullTextFor,
   onJumpToReference,
+  editorFontSize = 13.5,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -709,12 +805,6 @@ export default function RichNoteField({
     };
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
-        <style>{`
-          .rt-bold { font-weight: 700 !important; }
-          .rt-italic { font-style: italic !important; }
-          .rt-underline { text-decoration: underline !important; }
-          .rt-underline.rt-bold, .rt-underline.rt-italic { text-decoration: underline !important; }
-        `}</style>
         <LexicalComposer initialConfig={initialConfig}>
           <Toolbar accent={accent} hasVerses={linkableVerses.length > 0} onLinkOpen={() => setLinkOpen((v) => !v)} />
           <div style={{ position: "relative" }}>
@@ -722,11 +812,11 @@ export default function RichNoteField({
               contentEditable={
                 <ContentEditable
                   className="scribal-rich-editor"
-                  style={{ padding: "11px 12px", minHeight: "96px", fontSize: "13.5px", lineHeight: 1.7, color: "var(--text)", outline: "none", fontFamily: "system-ui, sans-serif" }}
+                  style={{ padding: "11px 12px", minHeight: "96px", fontSize: editorFontSize + "px", lineHeight: 1.7, color: "var(--text)", outline: "none", fontFamily: "system-ui, sans-serif" }}
                 />
               }
               placeholder={
-                <div style={{ position: "absolute", top: "11px", left: "12px", color: "var(--muted)", fontSize: "13.5px", pointerEvents: "none" }}>
+                <div style={{ position: "absolute", top: "11px", left: "12px", color: "var(--muted)", fontSize: editorFontSize + "px", pointerEvents: "none" }}>
                   {placeholder || "Write a note…"}
                 </div>
               }
@@ -795,7 +885,7 @@ export default function RichNoteField({
           <div
             className="scribal-rich-view"
             onClick={onRestingClick}
-            style={{ flex: 1, fontSize: "13.5px", lineHeight: 1.6, color: "var(--text)", fontFamily: "system-ui, sans-serif", overflowWrap: "anywhere" }}
+            style={{ flex: 1, fontSize: editorFontSize + "px", lineHeight: 1.6, color: "var(--text)", fontFamily: "system-ui, sans-serif", overflowWrap: "anywhere" }}
             dangerouslySetInnerHTML={{
               __html: isPlainText(value)
                 ? value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")

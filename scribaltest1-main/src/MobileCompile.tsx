@@ -3,6 +3,7 @@ import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
+import RichNoteField from "./components/RichNoteField";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
@@ -1300,6 +1301,7 @@ export default function MobileCompile({
             border={C.border}
             text={C.text}
             muted={C.muted}
+            noteFontSize={16}
           />
         )}
         {format === "outline" &&
@@ -1565,159 +1567,24 @@ export default function MobileCompile({
                         </div>
                       );
                     })()}
-                  {/* synthesis-first: the conclusion sits up top */}
+                  {/* synthesis-first: the conclusion sits up top. One rich
+                      editor everywhere notes are taken (SCR-9) — same
+                      component as the desktop Outline synthesis box, sized
+                      ≥16px for iOS. */}
                   <div style={{ padding: "0 14px 14px" }}>
                     {(() => {
                       const sk = dSynthKey();
                       const sVal = notes[sk] && notes[sk].trim() ? notes[sk] : readSynth();
-                      const sHas = sVal.trim().length > 0;
-                      const sEditing = editSynth === sk;
                       const accent = COLOR_MAP[c as MarkColor];
-                      if (sEditing) {
-                        return (
-                          <div>
-                            <textarea
-                              value={sVal}
-                              onChange={(e) => setNote(sk, e.target.value)}
-                              autoFocus
-                              placeholder={
-                                "What do these verses say together in this study?"
-                              }
-                              rows={3}
-                              style={{
-                                width: "100%",
-                                boxSizing: "border-box",
-                                padding: "10px 12px",
-                                fontSize: "16px",
-                                lineHeight: 1.5,
-                                borderRadius: "10px",
-                                border: "1px solid " + C.border,
-                                backgroundColor: C.bg,
-                                color: C.text,
-                                fontFamily: "inherit",
-                                resize: "vertical",
-                              }}
-                            />
-                            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                              <button
-                                onClick={() => setEditSynth(null)}
-                                style={{
-                                  background: C.text,
-                                  color: C.bg,
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "13px",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  fontFamily: "inherit",
-                                }}
-                              >
-                                Done
-                              </button>
-                              {sHas && (
-                                <button
-                                  onClick={() => {
-                                    setNote(sk, "");
-                                    setEditSynth(null);
-                                  }}
-                                  style={{
-                                    background: "transparent",
-                                    border: "1px solid " + C.border,
-                                    borderRadius: "8px",
-                                    padding: "8px 14px",
-                                    fontSize: "13px",
-                                    fontWeight: 600,
-                                    cursor: "pointer",
-                                    fontFamily: "inherit",
-                                    color: C.muted,
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (sHas) {
-                        return (
-                          <div
-                            style={{
-                              borderLeft: "3px solid " + accent,
-                              background: C.bg,
-                              borderRadius: "0 10px 10px 0",
-                              padding: "11px 14px",
-                              display: "flex",
-                              alignItems: "flex-start",
-                              gap: "10px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                flex: 1,
-                                fontSize: "16px",
-                                lineHeight: 1.6,
-                                color: C.text,
-                                whiteSpace: "pre-wrap",
-                              }}
-                            >
-                              {sVal}
-                            </div>
-                            <button
-                              onClick={() => setEditSynth(sk)}
-                              aria-label="Edit note"
-                              style={{
-                                flexShrink: 0,
-                                background: "transparent",
-                                border: "1px solid " + C.border,
-                                borderRadius: "8px",
-                                padding: "5px 12px",
-                                fontSize: "12.5px",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                                color: C.muted,
-                              }}
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        );
-                      }
                       return (
-                        <button
-                          onClick={() => setEditSynth(sk)}
-                          aria-label={"Add a thought about " + name}
-                          style={{
-                            width: "100%",
-                            textAlign: "center",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "8px",
-                            background: "transparent",
-                            border: "1px dashed " + C.border,
-                            borderRadius: "10px",
-                            padding: "12px",
-                            fontSize: "13.5px",
-                            fontWeight: 600,
-                            color: C.muted,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: "18px",
-                              fontWeight: 700,
-                              color: accent,
-                              lineHeight: 1,
-                            }}
-                          >
-                            +
-                          </span>
-                        </button>
+                        <RichNoteField
+                          value={sVal}
+                          onChange={(t) => setNote(sk, t)}
+                          accent={accent}
+                          placeholder="What do these verses say together in this study?"
+                          addLabel={"Add a thought about " + name}
+                          editorFontSize={16}
+                        />
                       );
                     })()}
 
@@ -2084,155 +1951,45 @@ export default function MobileCompile({
                                     Note · {ve.reference}
                                   </div>
                                   {(() => {
-                                    const editing = editNote === noteKey;
-                                    if (editing) {
-                                      return (
-                                        <>
-                                          <textarea
-                                            value={noteVal}
-                                            onChange={(e) =>
-                                              setNote(noteKey, e.target.value)
-                                            }
-                                            autoFocus
-                                            placeholder="Write a note for this verse…"
-                                            style={{
-                                              flex: 1,
-                                              minHeight: "72px",
-                                              resize: "none",
-                                              border: "1px solid " + C.border,
-                                              borderRadius: "8px",
-                                              padding: "8px 10px",
-                                              fontFamily: "inherit",
-                                              fontSize: "16px",
-                                              lineHeight: 1.5,
-                                              background: C.bg,
-                                              color: C.text,
-                                            }}
-                                          />
-                                          <div style={{ display: "flex", gap: "8px" }}>
-                                            <button
-                                              onClick={() => setEditNote(null)}
-                                              style={{
-                                                flex: 1,
-                                                background: C.text,
-                                                color: C.bg,
-                                                border: "none",
-                                                borderRadius: "8px",
-                                                padding: "8px",
-                                                fontSize: "13px",
-                                                fontWeight: 700,
-                                                cursor: "pointer",
-                                                fontFamily: "inherit",
-                                              }}
-                                            >
-                                              Save
-                                            </button>
-                                            {hasNote && (
-                                              <button
-                                                onClick={() => {
-                                                  setNote(noteKey, "");
-                                                  setNote(verseNoteKey(ve.reference), "");
-                                                  setEditNote(null);
-                                                  setFlippedRef(null);
-                                                }}
-                                                style={{
-                                                  background: "transparent",
-                                                  border: "1px solid " + C.border,
-                                                  borderRadius: "8px",
-                                                  padding: "8px 14px",
-                                                  fontSize: "13px",
-                                                  fontWeight: 600,
-                                                  cursor: "pointer",
-                                                  fontFamily: "inherit",
-                                                  color: C.muted,
-                                                }}
-                                              >
-                                                Delete
-                                              </button>
-                                            )}
-                                          </div>
-                                        </>
-                                      );
-                                    }
-                                    if (hasNote) {
-                                      return (
-                                        <>
-                                          <div
-                                            style={{
-                                              flex: 1,
-                                              overflowY: "auto",
-                                              fontSize: "16px",
-                                              lineHeight: 1.6,
-                                              color: C.text,
-                                              whiteSpace: "pre-wrap",
-                                              fontFamily: "inherit",
-                                            }}
-                                          >
-                                            {noteVal}
-                                          </div>
-                                          <div style={{ display: "flex", gap: "8px" }}>
-                                            <button
-                                              onClick={() => setEditNote(noteKey)}
-                                              style={{
-                                                background: "transparent",
-                                                border: "1px solid " + C.border,
-                                                borderRadius: "8px",
-                                                padding: "8px 16px",
-                                                fontSize: "13px",
-                                                fontWeight: 600,
-                                                cursor: "pointer",
-                                                fontFamily: "inherit",
-                                                color: C.muted,
-                                              }}
-                                            >
-                                              Edit
-                                            </button>
-                                            <button
-                                              onClick={() => setFlippedRef(null)}
-                                              style={{
-                                                flex: 1,
-                                                background: C.text,
-                                                color: C.bg,
-                                                border: "none",
-                                                borderRadius: "8px",
-                                                padding: "8px",
-                                                fontSize: "13px",
-                                                fontWeight: 700,
-                                                cursor: "pointer",
-                                                fontFamily: "inherit",
-                                              }}
-                                            >
-                                              Done
-                                            </button>
-                                          </div>
-                                        </>
-                                      );
-                                    }
+                                    // The editor round-trips the RAW stored
+                                    // note (rich HTML preserved) — flattening
+                                    // is only for the front-face preview.
+                                    // Same rich editor as desktop (SCR-9).
+                                    const noteRaw =
+                                      (notes[noteKey] && notes[noteKey].trim()
+                                        ? notes[noteKey]
+                                        : "") ||
+                                      notes[verseNoteKey(ve.reference)] ||
+                                      "";
                                     return (
                                       <>
-                                        <button
-                                          onClick={() => setEditNote(noteKey)}
+                                        <div
                                           style={{
                                             flex: 1,
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: "7px",
-                                            background: "transparent",
-                                            border: "1px dashed " + C.border,
-                                            borderRadius: "8px",
-                                            padding: "10px",
-                                            fontSize: "13.5px",
-                                            fontWeight: 600,
-                                            color: C.muted,
-                                            cursor: "pointer",
-                                            fontFamily: "inherit",
+                                            minHeight: 0,
+                                            overflowY: "auto",
                                           }}
                                         >
-                                          <span style={{ fontSize: "22px", fontWeight: 700, lineHeight: 1 }}>
-                                            +
-                                          </span>
-                                        </button>
+                                          <RichNoteField
+                                            value={noteRaw}
+                                            onChange={(t) => {
+                                              setNote(noteKey, t);
+                                              // A cleared note also clears
+                                              // its legacy mobile twin.
+                                              if (!t)
+                                                setNote(
+                                                  verseNoteKey(ve.reference),
+                                                  ""
+                                                );
+                                            }}
+                                            accent={COLOR_MAP[c as MarkColor]}
+                                            placeholder="Write a note for this verse…"
+                                            addLabel={
+                                              "Add a note for " + ve.reference
+                                            }
+                                            editorFontSize={16}
+                                          />
+                                        </div>
                                         <button
                                           onClick={() => setFlippedRef(null)}
                                           style={{
@@ -2262,7 +2019,9 @@ export default function MobileCompile({
                 </div>
               );
             })}
-            {tags && tags.length > 0 && (
+            {/* Word Studies lives with the Outline only, not under every
+                format (SCR-13). */}
+            {format === "outline" && tags && tags.length > 0 && (
               <div style={{ marginTop: "18px" }}>
                 <WordStudies
                   tags={tags}
