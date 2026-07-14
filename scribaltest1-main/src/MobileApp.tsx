@@ -4758,10 +4758,12 @@ export default function MobileApp() {
           bottom: 0,
           zIndex: 60,
           display: sendMode ? "none" : undefined,
-          // Dock the tray flush to the bottom edge (no gap): the safe-area inset
-          // is absorbed INSIDE the card below, so the tray fills that strip
-          // instead of leaving empty space beneath it.
-          padding: "0 14px 0",
+          // Keep the compact floating card, but push the WHOLE tray low — down
+          // into the wasted strip above the home indicator — so it covers less
+          // of the reading area. The card itself stays its original size (it is
+          // NOT stretched to fill the strip); only its position moves. The tiny
+          // bottom margin sits just clear of the home-indicator gesture zone.
+          padding: "0 14px max(8px, calc(env(safe-area-inset-bottom) - 20px))",
           pointerEvents: "none",
         }}
       >
@@ -4770,17 +4772,11 @@ export default function MobileApp() {
           style={{
             pointerEvents: "auto",
             backgroundColor: C.panel,
-            borderTop: "1px solid " + C.border,
-            borderLeft: "1px solid " + C.border,
-            borderRight: "1px solid " + C.border,
-            // Rounded top only — the tray sits on the bottom edge, so its base is
-            // square and its background runs down through the home-indicator
-            // (safe-area) strip instead of a beige gap sitting under it.
-            borderRadius: "16px 16px 0 0",
-            paddingBottom: "env(safe-area-inset-bottom)",
-            // Shadow lifts UP off the page (the tray is docked at the bottom),
-            // so it reads as a distinct card against the beige reading area.
-            boxShadow: "0 -6px 24px rgba(0,0,0,0.22)",
+            border: "1px solid " + C.border,
+            borderRadius: "16px",
+            // A firm shadow so the compact card still reads as a distinct floating
+            // tray against the beige page.
+            boxShadow: "0 6px 24px rgba(0,0,0,0.22)",
             overflow: "hidden",
           }}
         >
