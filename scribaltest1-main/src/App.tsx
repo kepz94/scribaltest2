@@ -10871,10 +10871,10 @@ export default function App() {
               ];
             })}
             {/* Persistent search panels (SCR-28): each slots into the reading
-                row beside the chapter panels, holds its own width/resize like
-                any panel, and stays open through result actions — jumping,
-                opening in a tab, gathering — closing only when its purpose
-                (link / add-to-study) is genuinely consumed. */}
+                row beside the chapter panels and holds its own width/resize
+                like any panel. A search panel NEVER closes itself — not on
+                jumping, creating a study, linking, or adding verses (owner
+                rule, Jul 14). It closes only from its own ✕ or its pill's ✕. */}
             {searchPanels.map((panel) => {
               const width = panelWidths[panel.id] || DEFAULT_PANEL_WIDTH;
               const linkTab = panel.linkTabId
@@ -10914,16 +10914,10 @@ export default function App() {
                     onJump={(ref) => jumpToReference(ref)}
                     onJumpToMark={jumpToMark}
                     onLinkStudy={
-                      panel.linkTabId
-                        ? undefined
-                        : (refs) => {
-                            onLinkStudy(refs);
-                            closeSearchPanel(panel.id);
-                          }
+                      panel.linkTabId ? undefined : (refs) => onLinkStudy(refs)
                     }
                     onLinkSearchToChapter={(refs, label) => {
                       onLinkSearchToChapter(refs, label, panel.linkTabId);
-                      closeSearchPanel(panel.id);
                     }}
                     linkChapterLabel={
                       linkTab ? tabLabel(linkTab) : undefined
@@ -10939,13 +10933,11 @@ export default function App() {
                     onAddToStudy={(refs, mode) => {
                       if (panel.addToStudyId)
                         handleAddToStudy(panel.addToStudyId, refs, mode);
-                      closeSearchPanel(panel.id);
                     }}
                     addVersesName={addRec ? addRec.name : undefined}
                     onAddVerses={(refs) => {
                       if (panel.addVersesRecId)
                         handleAddVersesToRec(panel.addVersesRecId, refs);
-                      closeSearchPanel(panel.id);
                     }}
                     onOpenNewTab={(ref) => openInNewTab(ref)}
                     onClose={() => closeSearchPanel(panel.id)}
