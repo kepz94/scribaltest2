@@ -1244,6 +1244,11 @@ export default function MobileApp() {
       'meta[name="theme-color"]'
     ) as HTMLMetaElement | null;
     if (meta) meta.setAttribute("content", C.bg);
+    // Cache the effective background so the next launch's splash (and the
+    // pre-React paint in index.html) opens in this same theme color.
+    try {
+      localStorage.setItem("scribal_bg", C.bg);
+    } catch {}
   }, [C.bg]);
   const readText = reading.warm ? (dark ? "#e9ddc2" : "#53442c") : C.text;
   const titleSize = (20 * reading.fontScale).toFixed(1) + "px";
