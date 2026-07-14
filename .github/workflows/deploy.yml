@@ -37,13 +37,6 @@ jobs:
           cache: npm
           cache-dependency-path: scribaltest1-main/package-lock.json
 
-      # Turns on GitHub Pages (Actions source) for the repo if it isn't already,
-      # so the deploy works without anyone flipping a setting by hand.
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       # The lexical packages have peer-dependency conflicts that strict npm ci
       # rejects, so install with --legacy-peer-deps (matches how the lockfile
       # resolves).
