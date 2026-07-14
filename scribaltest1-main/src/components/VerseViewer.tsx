@@ -1274,10 +1274,13 @@ export default function VerseViewer(props: VerseViewerProps) {
         </div>
         )}
 
+        {/* Function buttons sit centered, matching the pills row above (the
+            row lost its right-side group when Find conditionals was removed,
+            so space-between would leave these hugging the left edge). */}
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "center",
             alignItems: "center",
             gap: "10px",
             marginBottom: "10px",
