@@ -2000,9 +2000,12 @@ export default function App() {
   const theme = applyIntensityToTheme(baseTheme, colorIntensity);
 
   // Cache the effective background so the next launch's splash (and the
-  // pre-React paint in index.html) opens in this same theme color.
+  // pre-React paint in index.html) opens in this same theme color, and keep the
+  // page background in sync so overscroll never reveals a stale color.
   const appBg = baseTheme["--bg"];
   useEffect(() => {
+    document.documentElement.style.backgroundColor = appBg;
+    document.body.style.backgroundColor = appBg;
     try {
       localStorage.setItem("scribal_bg", appBg);
     } catch {}
