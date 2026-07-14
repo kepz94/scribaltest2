@@ -18,7 +18,11 @@
 
 	<title>Scribal</title>
 	<style>
-		html, body { margin: 0; padding: 0; }
+		/* Stop the page from rubber-banding at the scroll edges (pull-to-refresh /
+		   elastic bounce). Safe on desktop — it doesn't block normal scrolling.
+		   The mobile shell additionally locks the document (see MobileApp), which
+		   is why dragging on the tool tray no longer bounces the whole page. */
+		html, body { margin: 0; padding: 0; overscroll-behavior: none; }
 	</style>
 	<script>
 		// Paint the launch background in the LAST-USED theme color (warm / light /
