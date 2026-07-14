@@ -291,7 +291,6 @@ export default function ExampleStudy({ C, dark, onClose, onTryIt }: Props) {
               editingActive={false}
               onEnterEdit={() => {}}
               onAdjust={() => {}}
-              showConditionals={false}
               dark={dark}
             />
           ))}
