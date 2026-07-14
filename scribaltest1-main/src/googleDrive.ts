@@ -140,38 +140,12 @@ export function disconnect(): void {
   } catch {}
 }
 
-// Try to get a token silently (no popup). Used by auto-save.
-// Resolves to the token if successful, rejects if user isn't signed in or token is too old.
-export async function connectSilent(clientId: string): Promise<string> {
-  if (!clientId) throw new Error("Missing Google client ID");
-  await loadGis();
-  const google = (window as any).google;
-  return new Promise<string>((resolve, reject) => {
-    try {
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SCOPE,
-        callback: (resp: any) => {
-          if (resp && resp.access_token) {
-            setToken(resp.access_token, resp.expires_in);
-            resolve(resp.access_token);
-          } else {
-            reject(
-              new Error(resp && resp.error ? resp.error : "Silent refresh failed")
-            );
-          }
-        },
-        error_callback: (err: any) => {
-          reject(new Error(err && err.type ? err.type : "Silent refresh failed"));
-        },
-      });
-      // prompt: "" means "refresh silently; don't show a popup"
-      tokenClient.requestAccessToken({ prompt: "" });
-    } catch (e) {
-      reject(e as Error);
-    }
-  });
-}
+// NOTE (SCR-11): there is deliberately no "silent" refresh here. GIS's
+// requestAccessToken({ prompt: "" }) still opens a popup window (it only
+// skips the consent UI), so calling it without a user gesture gets the popup
+// blocked — the "Failed to open popup window" console error on every load.
+// Token refresh happens only through connect() from a real click (the
+// "Reconnect to sync" nudge); background ops use getToken() or skip.
 
 async function findFileId(token: string): Promise<string | null> {
   const q = encodeURIComponent("name='" + FILE_NAME + "'");

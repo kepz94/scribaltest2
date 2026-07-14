@@ -2085,13 +2085,11 @@ export default function App() {
       if (GOOGLE_CLIENT_ID.indexOf("PASTE_") === 0) return;
       if (!localStorage.getItem("scribal_drive_enabled") && !drive.getToken())
         return;
-      // Keep the Google token warm so background syncs don't fail and nag.
-      // Best-effort + silent (no popup); if it can't refresh, ops just retry later.
-      try {
-        await drive.connectSilent(GOOGLE_CLIENT_ID);
-      } catch {
-        /* silent refresh unavailable right now — fine */
-      }
+      // No token warm-up here (SCR-11): GIS's "silent" refresh still opens a
+      // popup window, and without a user gesture the browser blocks it — that
+      // was the blocked-popup console error on every load. The pull below
+      // runs only while the stored token is valid; once it goes stale, the
+      // "Reconnect to sync" nudge (a real click) is the recovery path.
       const pulled = await syncPullIfNewer(
         mergeRemoteBooks,
         vaultMergeRemote,
