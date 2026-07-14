@@ -44,6 +44,9 @@ interface SearchPanelProps {
   // container) instead of a centered fixed overlay. Desktop search uses this so
   // it slots beside the chapter panels and stays open through result actions.
   embedded?: boolean;
+  // Reports the live query upward so the panel's tab pill can be labeled by
+  // what it's searching (SCR-33).
+  onQueryChange?: (q: string) => void;
 }
 
 type Mode = "all" | "any" | "phrase";
@@ -82,9 +85,17 @@ export default function SearchPanel(props: SearchPanelProps) {
     onAddVerses,
     onClose,
     embedded,
+    onQueryChange,
   } = props;
 
   const [query, setQuery] = useState("");
+  // Report the query via a ref so the effect fires only when the query text
+  // actually changes, not on every parent render (the callback is inline).
+  const onQueryChangeRef = useRef(onQueryChange);
+  onQueryChangeRef.current = onQueryChange;
+  useEffect(() => {
+    onQueryChangeRef.current && onQueryChangeRef.current(query);
+  }, [query]);
   const [mode, setMode] = useState<Mode>("phrase");
   const [source, setSource] = useState<Source>("scripture");
   const [volIdx, setVolIdx] = useState(-1); // -1 = all volumes

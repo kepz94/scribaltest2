@@ -437,16 +437,21 @@ const MergeSeam = ({
   rightColor,
   resultColor,
   combined,
+  order,
 }: {
   leftColor: string;
   rightColor: string;
   resultColor: string;
   combined: boolean;
+  // Flex order matching the source panel (SCR-33) — panels are arranged by
+  // CSS order, so the seam must carry its panel's order to stay in its gap.
+  order?: number;
 }) => (
   <div
     style={{
       flex: "0 0 0px",
       width: 0,
+      order,
       alignSelf: "stretch",
       position: "relative",
       overflow: "visible",
@@ -1230,18 +1235,12 @@ export default function App() {
   const dragTabRef = useRef<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
   const [draggingTab, setDraggingTab] = useState<string | null>(null);
-  const reorderTabs = (fromId: string | null, toId: string) => {
-    if (!fromId || fromId === toId) return;
-    setTabs((prev) => {
-      const fromIdx = prev.findIndex((t) => t.id === fromId);
-      const toIdx = prev.findIndex((t) => t.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      const next = prev.slice();
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next;
-    });
-  };
+  // SCR-33: one visual order across chapter tabs AND search panels, so a
+  // search panel can be dragged anywhere among the readers. rowOrder holds the
+  // arranged ids; ids it doesn't know yet (newly opened tabs/panels) append in
+  // natural order. Rendering maps this to flexbox `order` on pills and panels,
+  // so the tabs/searchPanels state arrays themselves stay untouched.
+  const [rowOrder, setRowOrder] = useState<string[]>([]);
 
   // Per-panel widths (SCR-29). A reading-row panel holds the width the user
   // drags it to instead of flex-growing to fill the row; the map is keyed by
@@ -1572,8 +1571,61 @@ export default function App() {
     setSearchPanels((prev) => [...prev, { id, ...ctx }]);
     setMode("read");
   };
-  const closeSearchPanel = (id: string) =>
+  const closeSearchPanel = (id: string) => {
     setSearchPanels((prev) => prev.filter((p) => p.id !== id));
+    setSearchPanelQueries((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+  // Each panel reports its live query so its tab pill can be labeled by what
+  // it's searching (SCR-33). Session-only, like the panels themselves.
+  const [searchPanelQueries, setSearchPanelQueries] = useState<
+    Record<string, string>
+  >({});
+  const setSearchPanelQuery = (id: string, q: string) =>
+    setSearchPanelQueries((prev) =>
+      prev[id] === q ? prev : { ...prev, [id]: q }
+    );
+  // The reconciled row order: remembered arrangement first, then anything new.
+  const rowIds = [
+    ...tabs.map((t) => t.id),
+    ...searchPanels.map((p) => p.id),
+  ];
+  const orderedRowIds = rowOrder
+    .filter((id) => rowIds.includes(id))
+    .concat(rowIds.filter((id) => !rowOrder.includes(id)));
+  const rowIndexOf = (id: string) => orderedRowIds.indexOf(id);
+  const reorderRow = (fromId: string | null, toId: string) => {
+    if (!fromId || fromId === toId) return;
+    const fromIdx = orderedRowIds.indexOf(fromId);
+    const toIdx = orderedRowIds.indexOf(toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = orderedRowIds.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setRowOrder(next);
+    // Tab order persists (scribal_tabs_v2), so keep the tabs array in the same
+    // relative order the pills now show — the arrangement survives reload even
+    // though search panels don't.
+    setTabs((prev) =>
+      prev.slice().sort((a, b) => next.indexOf(a.id) - next.indexOf(b.id))
+    );
+  };
+  // A pill click brings its panel into view — open panels can overflow the
+  // row horizontally, so the pill is also the way back to a far-off panel.
+  const focusRowPanel = (id: string) => {
+    document.querySelectorAll("[data-row-panel]").forEach((el) => {
+      if (el.getAttribute("data-row-panel") === id)
+        el.scrollIntoView({
+          behavior: "smooth",
+          inline: "nearest",
+          block: "nearest",
+        });
+    });
+  };
   // After adding verses to a recorded study, a banner offers to compile it once
   // the added verses are marked.
   const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
@@ -10154,7 +10206,12 @@ export default function App() {
             return (
               <div
                 key={t.id}
-                draggable={tabs.length > 1}
+                draggable={orderedRowIds.length > 1}
+                title={
+                  orderedRowIds.length > 1
+                    ? "Drag to rearrange the reading panels"
+                    : undefined
+                }
                 onDragStart={(e) => {
                   dragTabRef.current = t.id;
                   setDraggingTab(t.id);
@@ -10180,7 +10237,7 @@ export default function App() {
                   // panels follow because both are driven by the same order).
                   if (dragOverTab !== t.id) {
                     setDragOverTab(t.id);
-                    reorderTabs(from, t.id);
+                    reorderRow(from, t.id);
                   }
                 }}
                 onDrop={(e) => {
@@ -10189,12 +10246,14 @@ export default function App() {
                   setDraggingTab(null);
                   setDragOverTab(null);
                 }}
+                className="scribal-tabpill"
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "3px",
-                  cursor: tabs.length > 1 ? "grab" : "default",
+                  order: rowIndexOf(t.id),
+                  cursor: orderedRowIds.length > 1 ? "grab" : "default",
                   opacity: draggingTab === t.id ? 0.4 : 1,
                   transform: draggingTab === t.id ? "scale(0.96)" : "scale(1)",
                   transition: "opacity 0.15s, transform 0.15s",
@@ -10216,7 +10275,10 @@ export default function App() {
                   {tabBookLabel}
                 </span>
                 <div
-                  onClick={() => setActiveTabId(t.id)}
+                  onClick={() => {
+                    setActiveTabId(t.id);
+                    focusRowPanel(t.id);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -10240,6 +10302,31 @@ export default function App() {
                     transition: "all 0.15s",
                   }}
                 >
+                  {orderedRowIds.length > 1 && (
+                    <span
+                      className="scribal-tabgrip"
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-flex",
+                        flexShrink: 0,
+                        cursor: "grab",
+                      }}
+                    >
+                      <svg
+                        width="7"
+                        height="12"
+                        viewBox="0 0 7 12"
+                        fill="currentColor"
+                      >
+                        <circle cx="1.5" cy="2" r="1.2" />
+                        <circle cx="5.5" cy="2" r="1.2" />
+                        <circle cx="1.5" cy="6" r="1.2" />
+                        <circle cx="5.5" cy="6" r="1.2" />
+                        <circle cx="1.5" cy="10" r="1.2" />
+                        <circle cx="5.5" cy="10" r="1.2" />
+                      </svg>
+                    </span>
+                  )}
                   {t.studyId && (
                     <span style={{ display: "inline-flex", flexShrink: 0 }}>
                       <IconSearch size={14} />
@@ -10261,6 +10348,164 @@ export default function App() {
               </div>
             );
           })}
+          {/* Search-panel pills (SCR-33): every open search panel shows in the
+              tab row, so the pills reflect the actual reading row. Same drag
+              machinery as chapter pills — one order drives both rows. */}
+          {searchPanels.map((panel) => {
+            const q = (searchPanelQueries[panel.id] || "").trim();
+            const linkTab = panel.linkTabId
+              ? tabs.find((x) => x.id === panel.linkTabId)
+              : undefined;
+            const addStudy = panel.addToStudyId
+              ? searchStudies.find((s) => s.id === panel.addToStudyId)
+              : undefined;
+            const addRec = panel.addVersesRecId
+              ? recordedStudies.find((s) => s.id === panel.addVersesRecId)
+              : undefined;
+            const context = addStudy
+              ? "Add to " + addStudy.name
+              : addRec
+              ? "Add to " + addRec.name
+              : linkTab
+              ? "Gather for " + tabLabel(linkTab)
+              : "Search";
+            return (
+              <div
+                key={panel.id}
+                draggable={orderedRowIds.length > 1}
+                title={
+                  orderedRowIds.length > 1
+                    ? "Drag to rearrange the reading panels"
+                    : undefined
+                }
+                onDragStart={(e) => {
+                  dragTabRef.current = panel.id;
+                  setDraggingTab(panel.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  try {
+                    e.dataTransfer.setData("text/plain", panel.id);
+                  } catch (err) {
+                    /* some browsers require a payload; ignore if it throws */
+                  }
+                }}
+                onDragEnd={() => {
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                onDragOver={(e) => {
+                  const from = dragTabRef.current;
+                  if (!from || from === panel.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverTab !== panel.id) {
+                    setDragOverTab(panel.id);
+                    reorderRow(from, panel.id);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                className="scribal-tabpill"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "3px",
+                  order: rowIndexOf(panel.id),
+                  cursor: orderedRowIds.length > 1 ? "grab" : "default",
+                  opacity: draggingTab === panel.id ? 0.4 : 1,
+                  transform:
+                    draggingTab === panel.id ? "scale(0.96)" : "scale(1)",
+                  transition: "opacity 0.15s, transform 0.15s",
+                }}
+              >
+                <span
+                  title={context}
+                  style={{
+                    fontSize: "10px",
+                    lineHeight: 1,
+                    color: "var(--muted)",
+                    fontFamily: "system-ui, sans-serif",
+                    maxWidth: "170px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {context}
+                </span>
+                <div
+                  onClick={() => focusRowPanel(panel.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 400,
+                    backgroundColor: "var(--panel)",
+                    color: "var(--text)",
+                    border: "1px dashed var(--border)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {orderedRowIds.length > 1 && (
+                    <span
+                      className="scribal-tabgrip"
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-flex",
+                        flexShrink: 0,
+                        cursor: "grab",
+                      }}
+                    >
+                      <svg
+                        width="7"
+                        height="12"
+                        viewBox="0 0 7 12"
+                        fill="currentColor"
+                      >
+                        <circle cx="1.5" cy="2" r="1.2" />
+                        <circle cx="5.5" cy="2" r="1.2" />
+                        <circle cx="1.5" cy="6" r="1.2" />
+                        <circle cx="5.5" cy="6" r="1.2" />
+                        <circle cx="1.5" cy="10" r="1.2" />
+                        <circle cx="5.5" cy="10" r="1.2" />
+                      </svg>
+                    </span>
+                  )}
+                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                    <IconSearch size={14} />
+                  </span>
+                  <span
+                    style={{
+                      maxWidth: "140px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {q ? "“" + q + "”" : "Search"}
+                  </span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeSearchPanel(panel.id);
+                    }}
+                    style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                  >
+                    ✕
+                  </span>
+                </div>
+              </div>
+            );
+          })}
           {tabs.length < 5 && (
             <button
               onClick={addNewTab}
@@ -10275,6 +10520,7 @@ export default function App() {
                 cursor: "pointer",
                 fontSize: "18px",
                 lineHeight: 1,
+                order: 9999,
               }}
             >
               +
@@ -10469,12 +10715,15 @@ export default function App() {
                 <div
                   key={t.id}
                   data-compile-tab={t.id}
+                  data-row-panel={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
                   style={{
                     // SCR-29: panels hold a set width (no flex-grow) when
                     // several are open, so they don't balloon to fill the row
                     // and empty space to the right stays empty. A single panel
                     // still fills the reader.
+                    // SCR-33: panels render in the pill row's order.
+                    order: rowIndexOf(t.id),
                     flex: multi ? "0 0 auto" : 1,
                     width: multi
                       ? panelWidths[t.id] || DEFAULT_PANEL_WIDTH
@@ -10616,6 +10865,7 @@ export default function App() {
                     rightColor={mergeMoment.rightColor}
                     resultColor={mergeMoment.resultColor}
                     combined={mergeMoment.combined}
+                    order={rowIndexOf(t.id)}
                   />
                 ) : null,
               ];
@@ -10639,10 +10889,12 @@ export default function App() {
               return (
                 <div
                   key={panel.id}
+                  data-row-panel={panel.id}
                   style={{
                     flex: "0 0 auto",
                     width,
                     minWidth: 0,
+                    order: rowIndexOf(panel.id),
                     borderRight: "1px solid var(--border)",
                     position: "relative",
                     overflow: "hidden",
@@ -10651,6 +10903,7 @@ export default function App() {
                 >
                   <SearchPanel
                     embedded
+                    onQueryChange={(q) => setSearchPanelQuery(panel.id, q)}
                     currentChapter={chapterScopeOf(activeTab)}
                     currentVolume={activeTab.volume}
                     currentBook={activeTab.book}

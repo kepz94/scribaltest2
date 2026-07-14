@@ -671,21 +671,23 @@ export default function VerseViewer(props: VerseViewerProps) {
     <button
       onClick={onClick}
       style={{
-        padding: "13px 24px",
+        // SCR-34: sized for the 380px default panel width — big enough to
+        // read and click, small enough that all three pills fit with air.
+        padding: "9px 16px",
         borderRadius: "999px",
         border: "1px solid var(--border)",
         backgroundColor: "var(--panel)",
         color: "var(--text)",
-        fontSize: "17px",
+        fontSize: "15px",
         fontWeight: 600,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        gap: "10px",
+        gap: "8px",
       }}
     >
       {label}
-      <span style={{ color: "var(--muted)", fontSize: "12px" }}>▼</span>
+      <span style={{ color: "var(--muted)", fontSize: "11px" }}>▼</span>
     </button>
   );
 
@@ -701,8 +703,9 @@ export default function VerseViewer(props: VerseViewerProps) {
       />
       <div
         style={{
+          // Sits just below the (SCR-34 smaller) pill button.
           position: "absolute",
-          top: "54px",
+          top: "44px",
           left: 0,
           width: width + "px",
           maxHeight: "340px",
