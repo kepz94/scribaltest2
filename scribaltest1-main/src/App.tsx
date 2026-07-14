@@ -1779,11 +1779,14 @@ export default function App() {
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number }>(() => {
     try {
       const s = localStorage.getItem("scribal_toolbar_pos");
+      // Default y clears the header + tab row + legend (~190px at common
+      // desktop widths) instead of landing on top of them (SCR-20). Saved
+      // positions are the user's own and load untouched.
       return s
         ? JSON.parse(s)
-        : { x: Math.max(12, (window.innerWidth - 860) / 2 - 60), y: 200 };
+        : { x: Math.max(12, (window.innerWidth - 860) / 2 - 60), y: 248 };
     } catch {
-      return { x: 100, y: 200 };
+      return { x: 100, y: 248 };
     }
   });
   useEffect(() => {

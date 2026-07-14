@@ -1486,15 +1486,26 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         </div>
 
+        {/* Mode-banner SLOT (SCR-20): a constant-height strip hosts whichever
+            mode bar is active (send / remove / eraser), so toggling a
+            click-precision mode never shifts the verse text below it. */}
+        <div
+          style={{
+            height: "46px",
+            marginBottom: "10px",
+            display: "flex",
+            alignItems: "stretch",
+          }}
+        >
         {sendMode && (
           <div
             style={{
+              flex: 1,
+              boxSizing: "border-box",
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              flexWrap: "wrap",
-              padding: "10px 12px",
-              marginBottom: "10px",
+              padding: "0 12px",
               borderRadius: "10px",
               border: "1px solid var(--border)",
               background: "var(--panel)",
@@ -1505,13 +1516,11 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontSize: "13px",
                 color: "var(--muted)",
                 fontFamily: "system-ui, sans-serif",
+                whiteSpace: "nowrap",
               }}
             >
               {sendSel.length
-                ? sendSel.length +
-                  (sendSel.length === 1
-                    ? " verse selected"
-                    : " verses selected")
+                ? sendSel.length + " selected"
                 : "Tap verses to select"}
             </span>
             <button
@@ -1599,12 +1608,12 @@ export default function VerseViewer(props: VerseViewerProps) {
         {removeMode && (
           <div
             style={{
+              flex: 1,
+              boxSizing: "border-box",
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              flexWrap: "wrap",
-              padding: "10px 12px",
-              marginBottom: "10px",
+              padding: "0 12px",
               borderRadius: "10px",
               border: "1px solid var(--border)",
               background: "var(--panel)",
@@ -1615,13 +1624,11 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontSize: "13px",
                 color: "var(--muted)",
                 fontFamily: "system-ui, sans-serif",
+                whiteSpace: "nowrap",
               }}
             >
               {removeSel.length
-                ? removeSel.length +
-                  (removeSel.length === 1
-                    ? " verse selected"
-                    : " verses selected")
+                ? removeSel.length + " selected"
                 : "Tap verses to remove"}
             </span>
             <button
@@ -1695,17 +1702,20 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         )}
 
-        {erasing && (
+        {!sendMode && !removeMode && erasing && (
           <p
             style={{
               fontSize: "13px",
               color: "var(--muted)",
-              margin: "0 0 12px 4px",
+              margin: 0,
+              alignSelf: "center",
+              paddingLeft: "4px",
             }}
           >
             Eraser active — click any marked text to remove that mark.
           </p>
         )}
+        </div>
         </div>
 
         <div
