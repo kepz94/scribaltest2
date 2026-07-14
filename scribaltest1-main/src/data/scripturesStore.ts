@@ -36,9 +36,10 @@ export function scripturesReady(): boolean {
 export function loadScriptures(): Promise<any> {
   if (DATA) return Promise.resolve(DATA);
   if (loadPromise) return loadPromise;
-  // Root-relative path (the app deploys at the domain root on Vercel /
-  // Cloudflare). Avoids build-environment differences around process typings.
-  loadPromise = fetch("/scriptures.json")
+  // Resolve against the deploy base path: PUBLIC_URL is "" at a domain root
+  // (Vercel / Cloudflare) and the repo subpath on GitHub Pages, so the fetch
+  // works in both without hardcoding "/".
+  loadPromise = fetch((process.env.PUBLIC_URL || "") + "/scriptures.json")
     .then((r) => {
       if (!r.ok) throw new Error("scriptures fetch failed: " + r.status);
       return r.json();

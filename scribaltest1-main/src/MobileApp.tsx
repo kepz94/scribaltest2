@@ -15,7 +15,7 @@ import { isSermonsVolume, sermonLabel } from "./sermons";
 import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
 import MobileCompile from "./MobileCompile";
-import { NEUTRAL, ACCENT } from "./theme";
+import { NEUTRAL, WARM, ACCENT } from "./theme";
 import ScribalWordmark from "./components/ScribalWordmark";
 import SplashScreen from "./components/SplashScreen";
 import StyleGlyph from "./components/StyleGlyph";
@@ -1176,7 +1176,6 @@ export default function MobileApp() {
       window.matchMedia("(prefers-color-scheme: dark)").matches
     );
   });
-  const C = dark ? PALETTE.dark : PALETTE.light;
 
   // Per-chapter conditional lens (the "if" identifier) for the reading screen —
   // each chapter remembers its own on/off, not a global switch.
@@ -1221,6 +1220,18 @@ export default function MobileApp() {
       localStorage.setItem("scribal_mobile_reading", JSON.stringify(reading));
     } catch {}
   }, [reading]);
+
+  // Warm tone is a full palette swap, mirroring dark mode: when it's on we
+  // hand the whole shell the WARM (paper/beige) palette instead of the neutral
+  // one, so every white surface — header, toolbars, cards, sheets — turns beige
+  // together, not just the reading pane.
+  const C = reading.warm
+    ? dark
+      ? WARM.dark
+      : WARM.light
+    : dark
+    ? PALETTE.dark
+    : PALETTE.light;
 
   const readBg = reading.warm ? (dark ? "#1a1410" : "#f4ecd6") : C.bg;
 

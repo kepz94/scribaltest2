@@ -68,7 +68,9 @@ function candidateKeys(raw: string): string[] {
   return out;
 }
 
-const DICT_URL = "/webster1828.json";
+// Resolve against the deploy base path (PUBLIC_URL is "" at a domain root and
+// the repo subpath on GitHub Pages) so the dictionary loads in both.
+const DICT_URL = (process.env.PUBLIC_URL || "") + "/webster1828.json";
 let dict: Record<string, string> | null = null;
 let loadPromise: Promise<Record<string, string>> | null = null;
 

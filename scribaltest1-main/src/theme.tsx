@@ -27,5 +27,32 @@ export const NEUTRAL = {
   },
 };
 
+// Warm ("paper") palette — the beige counterpart to NEUTRAL. When warm tone is
+// on, the shell swaps its whole neutral palette for this one, exactly the way
+// dark mode swaps light↔dark. That way every surface that would otherwise be
+// white (header, toolbars, cards, sheets) turns the same beige as the reading
+// paper — instead of only the reading pane going warm while the chrome stays
+// white. The light values are anchored on the reading paper tone (#f4ecd6) so
+// the bar under the reader flows seamlessly into the page; panel is a touch
+// lighter so cards/sheets still read as elevated (as pure white did before).
+export const WARM = {
+  light: {
+    bg: "#f4ecd6",
+    panel: "#fbf4e2",
+    soft: "#eadfc2",
+    text: "#1d1c18",
+    muted: "#8a8268",
+    border: "#ddd0b0",
+  },
+  dark: {
+    bg: "#1a1410",
+    panel: "#241d14",
+    soft: "#2b2318",
+    text: "#e9ddc2",
+    muted: "#9a8f78",
+    border: "#39301f",
+  },
+};
+
 // Primary accent — links, primary actions, active/selected states.
 export const ACCENT = "#8b5cf6";

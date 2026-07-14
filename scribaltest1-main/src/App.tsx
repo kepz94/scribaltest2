@@ -17,7 +17,7 @@ import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
-import { NEUTRAL, ACCENT } from "./theme";
+import { NEUTRAL, WARM, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -1979,7 +1979,24 @@ export default function App() {
     localStorage.setItem("scribal_compile_view", compileView);
   }, [compileView]);
 
-  const baseTheme = dark ? DARK_THEME : LIGHT_THEME;
+  // Warm tone is a full palette swap (mirroring dark mode): when it's on, every
+  // white surface across the whole shell — header, toolbars, panels, sheets —
+  // turns the same beige as the reading paper, not just the reading pane. We
+  // keep the neutral theme's mark colors (--pen*/--hl*) and swap only the
+  // surface variables for their WARM counterparts.
+  const neutralTheme = dark ? DARK_THEME : LIGHT_THEME;
+  const warmSurface = dark ? WARM.dark : WARM.light;
+  const baseTheme = reading.warm
+    ? {
+        ...neutralTheme,
+        "--bg": warmSurface.bg,
+        "--panel": warmSurface.panel,
+        "--soft": warmSurface.soft,
+        "--text": warmSurface.text,
+        "--muted": warmSurface.muted,
+        "--border": warmSurface.border,
+      }
+    : neutralTheme;
   const theme = applyIntensityToTheme(baseTheme, colorIntensity);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ||
@@ -7457,25 +7474,7 @@ export default function App() {
           colorLabels={effectiveScopedLabels}
           notes={notes}
           dark={dark}
-          C={
-            dark
-              ? {
-                  bg: "#131210",
-                  panel: "#1d1c19",
-                  soft: "#232220",
-                  text: "#eae7de",
-                  muted: "#8d8a82",
-                  border: "#343229",
-                }
-              : {
-                  bg: "#f6f4ee",
-                  panel: "#ffffff",
-                  soft: "#efece4",
-                  text: "#1d1c18",
-                  muted: "#8d8a80",
-                  border: "#e2dfd6",
-                }
-          }
+          C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}
           onClose={() => setSharingVerses(false)}
           onFlash={(m) => {
             setShareMsg(m);
