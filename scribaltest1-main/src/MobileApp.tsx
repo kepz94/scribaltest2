@@ -2593,6 +2593,29 @@ export default function MobileApp() {
   // additions. The selection IS the full new verse set (the study's verses come
   // pre-selected). Refs edits + new copies sync across devices via the shared
   // studies store.
+  // The selection is ONLY the additions — merged into the study, never
+  // replacing it (owner rule, Jul 14, aligned with desktop after the
+  // update-replaces bug wiped a study; SCR-38). Removing verses lives in the
+  // study view's "Remove verses", not here. The flash names the specific
+  // verses that were already in the study, since search picks its destination
+  // study at the end and results can't flag duplicates up front.
+  const addFlash = (added: number, dupeRefs: string[], name: string) => {
+    const nm = "“" + name + "”";
+    const dupList =
+      dupeRefs.slice(0, 2).join(", ") +
+      (dupeRefs.length > 2 ? " (+" + (dupeRefs.length - 2) + " more)" : "");
+    flash(
+      added === 0
+        ? (dupeRefs.length === 1
+            ? dupList + " is already in " + nm
+            : "Already in " + nm + ": " + dupList) + " — nothing changed"
+        : "Added " +
+            (added === 1 ? "1 verse" : added + " verses") +
+            " to " +
+            nm +
+            (dupeRefs.length > 0 ? " — already there: " + dupList : "")
+    );
+  };
   const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
     const id = addToStudyId;
     setAddToStudyId(null);
@@ -2600,35 +2623,42 @@ export default function MobileApp() {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOf(a) - orderOf(b)
+    );
     if (mode === "copy") {
       const copy: SearchStudy = {
         id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         name: study.name + " (copy)",
         bookId: study.bookId,
-        refs: ordered,
+        refs: merged,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
       setSearchStudies((prev) => [copy, ...prev]);
       const scope = "searchstudy:" + copy.id;
-      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
+      Array.from(new Set(merged.map((r) => scopeOf(r)))).forEach((ch) =>
         seedScopeLabels(scope, scopedLabels[ch] || {})
       );
       openStudyTab(copy);
       flash("Study created");
     } else {
-      setSearchStudies((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, refs: ordered, updatedAt: Date.now() } : s
-        )
-      );
-      const scope = "searchstudy:" + id;
-      Array.from(new Set(ordered.map((r) => scopeOf(r)))).forEach((ch) =>
-        seedScopeLabels(scope, scopedLabels[ch] || {})
-      );
+      const existing = new Set(study.refs);
+      const dupes = refs.filter((r) => existing.has(r));
+      const added = refs.length - dupes.length;
+      if (added > 0) {
+        setSearchStudies((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, refs: merged, updatedAt: Date.now() } : s
+          )
+        );
+        const scope = "searchstudy:" + id;
+        Array.from(new Set(merged.map((r) => scopeOf(r)))).forEach((ch) =>
+          seedScopeLabels(scope, scopedLabels[ch] || {})
+        );
+      }
       openStudyTab(study);
-      flash("Verses updated");
+      addFlash(added, dupes, study.name);
     }
   };
   // "Send verses" → merge picked refs into an existing study (union, book
@@ -3008,20 +3038,31 @@ export default function MobileApp() {
   };
 
   // Add loose verses (from keyword search) to a recorded chapter/linked study.
-  // The picker pre-loads the study's current extras, so the selection IS the
-  // full new set (supports adding and removing). Their marks then show in the
-  // study's compile alongside the chapter's own marks.
+  // The selection is only the ADDITIONS — merged into the study's extras,
+  // never replacing them (owner rule, Jul 14; SCR-38). Their marks then show
+  // in the study's compile alongside the chapter's own marks.
   const handleAddVersesToRec = (refs: string[]) => {
     const rid = addVersesRecId;
     setAddVersesRecId(null);
     setSearchOpen(false);
     if (!rid) return;
-    const ordered = refs.slice().sort((a, b) => orderOf(a) - orderOf(b));
+    const rec = studies.find((s) => s.id === rid);
+    if (!rec) return;
+    const existing = new Set(rec.extraRefs || []);
+    const dupes = refs.filter((r) => existing.has(r));
+    const added = refs.length - dupes.length;
+    if (added === 0) {
+      if (refs.length) addFlash(0, dupes, rec.name);
+      return;
+    }
+    const merged = Array.from(new Set([...(rec.extraRefs || []), ...refs])).sort(
+      (a, b) => orderOf(a) - orderOf(b)
+    );
     const at = Date.now();
     setStudies((prev) =>
       prev.map((s) =>
         s.id === rid
-          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          ? { ...s, extraRefs: merged, extraRefsAt: at, compiledAt: at }
           : s
       )
     );
@@ -3029,14 +3070,17 @@ export default function MobileApp() {
     // reading view shows the new verses.
     setCompileRec((prev) =>
       prev && prev.id === rid
-        ? { ...prev, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+        ? { ...prev, extraRefs: merged, extraRefsAt: at, compiledAt: at }
         : prev
     );
     // Land on the markable reading list (added verses first) so they can be
     // marked, then compiled.
-    const rec = studies.find((s) => s.id === rid);
-    if (rec) setMarkRec({ ...rec, extraRefs: ordered, extraRefsAt: at });
-    flash(ordered.length ? "Added — mark, then compile" : "Verses updated");
+    setMarkRec({ ...rec, extraRefs: merged, extraRefsAt: at });
+    flash(
+      "Added " +
+        (added === 1 ? "1 verse" : added + " verses") +
+        " — mark, then compile"
+    );
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -7829,14 +7873,6 @@ export default function MobileApp() {
               onJump={jumpToRef}
               onPickScripture={(ref) => setChooseRef(ref)}
               onLinkConfirm={onLinkConfirm}
-              initialPicked={
-                addToStudyId
-                  ? searchStudies.find((s) => s.id === addToStudyId)?.refs || []
-                  : addVersesRecId
-                  ? studies.find((s) => s.id === addVersesRecId)?.extraRefs ||
-                    []
-                  : undefined
-              }
               startLinking={
                 !!addToStudyId || !!addVersesRecId || !!linkToChapterScope
               }
