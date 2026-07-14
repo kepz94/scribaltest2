@@ -9921,25 +9921,55 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() =>
-                        setReading((r) => ({ ...r, warm: !r.warm }))
-                      }
+                    {/* A labeled switch, like the other Aa rows — the old
+                        full-width dark bar read as a primary CTA (SCR-21). */}
+                    <div
                       style={{
-                        width: "100%",
-                        padding: "11px",
-                        borderRadius: "9px",
-                        border: "1px solid var(--border)",
-                        background: reading.warm ? "var(--text)" : "transparent",
-                        color: reading.warm ? "var(--bg)" : "var(--text)",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "2px 2px 0",
                       }}
                     >
-                      {reading.warm ? "Warm tone: on" : "Warm tone: off"}
-                    </button>
+                      <span style={{ fontSize: "13px", color: "var(--text)" }}>
+                        Warm tone
+                      </span>
+                      <button
+                        onClick={() =>
+                          setReading((r) => ({ ...r, warm: !r.warm }))
+                        }
+                        role="switch"
+                        aria-checked={reading.warm}
+                        aria-label="Warm tone"
+                        style={{
+                          position: "relative",
+                          width: "42px",
+                          height: "24px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: reading.warm
+                            ? "var(--text)"
+                            : "var(--soft)",
+                          cursor: "pointer",
+                          padding: 0,
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "2px",
+                            left: reading.warm ? "19px" : "2px",
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            background: "var(--bg)",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                            transition: "left 0.15s",
+                          }}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -10238,7 +10268,7 @@ export default function App() {
                 <span
                   title={tabBookLabel}
                   style={{
-                    fontSize: "10px",
+                    fontSize: "11px",
                     lineHeight: 1,
                     color: "var(--muted)",
                     fontFamily: "system-ui, sans-serif",
@@ -10402,7 +10432,7 @@ export default function App() {
                 <span
                   title={context}
                   style={{
-                    fontSize: "10px",
+                    fontSize: "11px",
                     lineHeight: 1,
                     color: "var(--muted)",
                     fontFamily: "system-ui, sans-serif",
@@ -10527,20 +10557,21 @@ export default function App() {
           }}
         >
           {legendColors.length === 0 ? (
+            // Full-opacity and a slightly larger size — the faded version
+            // failed the legibility floor (SCR-21).
             <span
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "7px",
                 color: "var(--muted)",
-                opacity: 0.6,
+                fontSize: "12.5px",
               }}
             >
               <span
                 style={{
                   display: "inline-flex",
                   color: ACCENT,
-                  opacity: 0.75,
                 }}
               >
                 <IconDrop size={13} />
@@ -11894,69 +11925,106 @@ export default function App() {
                         No marked verses match “{compileFindQ.trim()}”.
                       </div>
                     ) : (
-                      compileFindResults.map((r, i) => {
-                        const snippet =
-                          r.texts.join("  ·  ") || r.themes.join(", ");
-                        return (
-                          <button
-                            key={r.reference}
-                            onClick={() => {
-                              compileScrollToVerse(r.reference);
-                              setCompileFindQ("");
-                            }}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "10px",
-                              width: "100%",
-                              textAlign: "left",
-                              background: "transparent",
-                              border: "none",
-                              borderBottom:
-                                i < compileFindResults.length - 1
-                                  ? "1px solid var(--border)"
-                                  : "none",
-                              padding: "11px 14px",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            <span
+                      // Grouped by chapter with word-boundary truncation
+                      // (SCR-21) — same grouping idea as renderRefGroups in
+                      // the study reader.
+                      (() => {
+                        const wordTrunc = (s: string, n: number) =>
+                          s.length <= n
+                            ? s
+                            : s.slice(0, n).replace(/\s+\S*$/, "") + " …";
+                        const groups: {
+                          title: string;
+                          rows: typeof compileFindResults;
+                        }[] = [];
+                        compileFindResults.forEach((r) => {
+                          const cut = r.reference.lastIndexOf(":");
+                          const title =
+                            cut > 0 ? r.reference.slice(0, cut) : r.reference;
+                          const last = groups[groups.length - 1];
+                          if (last && last.title === title) last.rows.push(r);
+                          else groups.push({ title, rows: [r] });
+                        });
+                        return groups.map((g) => (
+                          <div key={g.title}>
+                            <div
                               style={{
-                                width: "10px",
-                                height: "10px",
-                                borderRadius: "50%",
-                                backgroundColor: COLOR_MAP[r.color as MarkColor],
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span
-                              style={{
-                                flexShrink: 0,
+                                padding: "9px 14px 3px",
+                                fontSize: "10.5px",
                                 fontWeight: 700,
-                                fontSize: "12.5px",
-                                color: "var(--text)",
-                              }}
-                            >
-                              {r.reference}
-                            </span>
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                fontSize: "12.5px",
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
                                 color: "var(--muted)",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                fontFamily: '"Times New Roman", Times, serif',
                               }}
                             >
-                              {snippet}
-                            </span>
-                          </button>
-                        );
-                      })
+                              {g.title}
+                            </div>
+                            {g.rows.map((r) => {
+                              const snippet = wordTrunc(
+                                r.texts.join("  ·  ") || r.themes.join(", "),
+                                110
+                              );
+                              return (
+                                <button
+                                  key={r.reference}
+                                  onClick={() => {
+                                    compileScrollToVerse(r.reference);
+                                    setCompileFindQ("");
+                                  }}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                    width: "100%",
+                                    textAlign: "left",
+                                    background: "transparent",
+                                    border: "none",
+                                    borderBottom: "1px solid var(--border)",
+                                    padding: "11px 14px",
+                                    cursor: "pointer",
+                                    fontFamily: "inherit",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      width: "10px",
+                                      height: "10px",
+                                      borderRadius: "50%",
+                                      backgroundColor:
+                                        COLOR_MAP[r.color as MarkColor],
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      flexShrink: 0,
+                                      fontWeight: 700,
+                                      fontSize: "12.5px",
+                                      color: "var(--text)",
+                                    }}
+                                  >
+                                    {r.reference}
+                                  </span>
+                                  <span
+                                    style={{
+                                      flex: 1,
+                                      minWidth: 0,
+                                      fontSize: "12.5px",
+                                      color: "var(--muted)",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      fontFamily:
+                                        '"Times New Roman", Times, serif',
+                                    }}
+                                  >
+                                    {snippet}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()
                     )}
                   </div>
                 )}
