@@ -2616,6 +2616,16 @@ export default function MobileApp() {
             (dupeRefs.length > 0 ? " — already there: " + dupList : "")
     );
   };
+  // iOS-PWA scroll-freeze guard: reopening the study screen in the same frame
+  // the search sheet unmounts — with the keyboard still up — can leave the
+  // study's scroller frozen until the screen is fully remounted (hit on
+  // device, Jul 15). Dismiss the keyboard first, then reopen a beat later so
+  // the sheet is gone and the keyboard has settled before the scroller mounts.
+  const closeSearchThen = (reopen: () => void) => {
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && typeof ae.blur === "function") ae.blur();
+    window.setTimeout(reopen, 300);
+  };
   const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
     const id = addToStudyId;
     setAddToStudyId(null);
@@ -2640,8 +2650,10 @@ export default function MobileApp() {
       Array.from(new Set(merged.map((r) => scopeOf(r)))).forEach((ch) =>
         seedScopeLabels(scope, scopedLabels[ch] || {})
       );
-      openStudyTab(copy);
-      flash("Study created");
+      closeSearchThen(() => {
+        openStudyTab(copy);
+        flash("Study created");
+      });
     } else {
       const existing = new Set(study.refs);
       const dupes = refs.filter((r) => existing.has(r));
@@ -2657,8 +2669,10 @@ export default function MobileApp() {
           seedScopeLabels(scope, scopedLabels[ch] || {})
         );
       }
-      openStudyTab(study);
-      addFlash(added, dupes, study.name);
+      closeSearchThen(() => {
+        openStudyTab(study);
+        addFlash(added, dupes, study.name);
+      });
     }
   };
   // "Send verses" → merge picked refs into an existing study (union, book
@@ -3074,13 +3088,16 @@ export default function MobileApp() {
         : prev
     );
     // Land on the markable reading list (added verses first) so they can be
-    // marked, then compiled.
-    setMarkRec({ ...rec, extraRefs: merged, extraRefsAt: at });
-    flash(
-      "Added " +
-        (added === 1 ? "1 verse" : added + " verses") +
-        " — mark, then compile"
-    );
+    // marked, then compiled — deferred past the sheet unmount (scroll-freeze
+    // guard, same as handleAddToStudy).
+    closeSearchThen(() => {
+      setMarkRec({ ...rec, extraRefs: merged, extraRefsAt: at });
+      flash(
+        "Added " +
+          (added === 1 ? "1 verse" : added + " verses") +
+          " — mark, then compile"
+      );
+    });
   };
 
   const updateProgress = (el: HTMLDivElement) => {
@@ -7835,7 +7852,10 @@ export default function MobileApp() {
                 if (addToStudyId) {
                   const id = addToStudyId;
                   setAddToStudyId(null);
-                  openStudyTabById(id);
+                  // Same scroll-freeze guard as handleAddToStudy: let the
+                  // sheet unmount and the keyboard settle before the study
+                  // screen remounts.
+                  closeSearchThen(() => openStudyTabById(id));
                 }
                 setAddVersesRecId(null);
               }}
