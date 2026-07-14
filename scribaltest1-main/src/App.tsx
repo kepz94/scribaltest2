@@ -272,6 +272,9 @@ const DEFAULT_PANEL_WIDTH = 540;
 const MIN_PANEL_WIDTH = 240;
 const MAX_PANEL_WIDTH = 900;
 
+// Cap on open reading tabs (matches mobile's MAX_TABS).
+const MAX_TABS = 8;
+
 // "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
 const scopeOfRef = (ref: string) => {
   const i = ref.indexOf(":");
@@ -2246,7 +2249,7 @@ export default function App() {
   }, [showTutorial, gateOpen]);
 
   const addNewTab = () => {
-    if (tabs.length >= 7) return; // up to 7 panels
+    if (tabs.length >= MAX_TABS) return;
     const openIds = new Set(tabs.map((t) => t.id));
     for (let v = 0; v < vols.length; v++) {
       for (let b = 0; b < vols[v].books.length; b++) {
@@ -2658,6 +2661,13 @@ export default function App() {
     const loc = locateReference(reference);
     if (!loc) return;
     const id = makeTabId("master", loc.v, loc.b, loc.c);
+    // At the tab cap the jump still works — it lands in the active tab
+    // instead of opening a tab past MAX_TABS.
+    const exists = tabs.some((t) => t.id === id);
+    if (!exists && tabs.length >= MAX_TABS) {
+      jumpToReference(reference);
+      return;
+    }
     setTabs((prev) =>
       prev.find((t) => t.id === id)
         ? prev
@@ -3641,11 +3651,12 @@ export default function App() {
       firstLoc.book,
       firstLoc.chapter
     );
-    const roomForRep = tabs.some((t) => t.id === repId) || tabs.length < 7;
+    const roomForRep =
+      tabs.some((t) => t.id === repId) || tabs.length < MAX_TABS;
     setTabs((prev) => {
       let next = prev;
       const add = (tab: Tab) => {
-        if (!next.some((t) => t.id === tab.id) && next.length < 7)
+        if (!next.some((t) => t.id === tab.id) && next.length < MAX_TABS)
           next = [...next, tab];
       };
       add({
@@ -3720,11 +3731,11 @@ export default function App() {
       bookId: study.bookId,
       studyId: study.id,
     };
-    const room = tabs.some((t) => t.id === tabId) || tabs.length < 7;
+    const room = tabs.some((t) => t.id === tabId) || tabs.length < MAX_TABS;
     setTabs((prev) =>
       prev.some((t) => t.id === tabId)
         ? prev
-        : prev.length < 7
+        : prev.length < MAX_TABS
         ? [...prev, tab]
         : prev
     );
@@ -10527,7 +10538,7 @@ export default function App() {
               </div>
             );
           })}
-          {tabs.length < 5 && (
+          {tabs.length < MAX_TABS && (
             <button
               onClick={addNewTab}
               title="Open another tab"
