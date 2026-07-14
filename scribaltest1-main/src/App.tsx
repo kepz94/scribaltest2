@@ -17,7 +17,7 @@ import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
-import { NEUTRAL, ACCENT } from "./theme";
+import { NEUTRAL, WARM, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
@@ -1979,7 +1979,24 @@ export default function App() {
     localStorage.setItem("scribal_compile_view", compileView);
   }, [compileView]);
 
-  const baseTheme = dark ? DARK_THEME : LIGHT_THEME;
+  // Warm tone is a full palette swap (mirroring dark mode): when it's on, every
+  // white surface across the whole shell — header, toolbars, panels, sheets —
+  // turns the same beige as the reading paper, not just the reading pane. We
+  // keep the neutral theme's mark colors (--pen*/--hl*) and swap only the
+  // surface variables for their WARM counterparts.
+  const neutralTheme = dark ? DARK_THEME : LIGHT_THEME;
+  const warmSurface = dark ? WARM.dark : WARM.light;
+  const baseTheme = reading.warm
+    ? {
+        ...neutralTheme,
+        "--bg": warmSurface.bg,
+        "--panel": warmSurface.panel,
+        "--soft": warmSurface.soft,
+        "--text": warmSurface.text,
+        "--muted": warmSurface.muted,
+        "--border": warmSurface.border,
+      }
+    : neutralTheme;
   const theme = applyIntensityToTheme(baseTheme, colorIntensity);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ||
