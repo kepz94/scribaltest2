@@ -261,10 +261,14 @@ const makeTabId = (
 ) => "tab_" + bookId + "_" + volume + "_" + book + "_" + chapter;
 
 // Reading-row panel sizing (SCR-29). Panels hold a user-set width instead of
-// growing to fill the row: DEFAULT is the width a panel opens at (noticeably
-// smaller than the old 540px flex-basis so more panels fit), MIN/MAX clamp the
-// drag handle.
-const DEFAULT_PANEL_WIDTH = 380;
+// growing to fill the row: DEFAULT is the width a panel opens at, MIN/MAX
+// clamp the drag handle. SCR-40: the default is the minimum width at which a
+// typical chapter's header settles at exactly TWO button rows — the pills row
+// (volume · book · ‹ chapter ›, one line up to ~496px of content; Genesis at
+// "Chapter 50" with both arrows measures 490) plus the function row (426px).
+// Books with extreme names (Sermons eras, PGP) still wrap — covering them
+// would take 900px+ panels, far wider than needed for everything else.
+const DEFAULT_PANEL_WIDTH = 540;
 const MIN_PANEL_WIDTH = 240;
 const MAX_PANEL_WIDTH = 900;
 
@@ -10748,14 +10752,27 @@ export default function App() {
                       : undefined,
                     minWidth: 0,
                     borderRight: multi ? "1px solid var(--border)" : "none",
-                    outline:
-                      multi && isActive ? "2px solid " + ICON_ACCENT : "none",
-                    outlineOffset: "-2px",
                     position: "relative",
                     overflow: "hidden",
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
                   }}
                 >
+                  {/* SCR-40: the active-tab border is an overlay div, not a CSS
+                      outline — the sticky reading header inside the scroller
+                      (zIndex 20) paints above the parent's outline and used to
+                      cover its top edge once scrolled. This sits above the
+                      header (25) and below dropdowns/toolbar (40+). */}
+                  {multi && isActive && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        border: "2px solid " + ICON_ACCENT,
+                        pointerEvents: "none",
+                        zIndex: 25,
+                      }}
+                    />
+                  )}
                   <div
                     style={{
                       height: "100%",

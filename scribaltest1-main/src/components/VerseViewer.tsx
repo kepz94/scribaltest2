@@ -1143,13 +1143,13 @@ export default function VerseViewer(props: VerseViewerProps) {
             zIndex: 20,
             backgroundColor: "var(--bg)",
             paddingTop: "6px",
-            marginBottom: "10px",
+            marginBottom: "8px",
             borderBottom: "1px solid var(--border)",
           }}
         >
         {studyRefs ? (
           hideStudyHeader ? null : (
-          <div style={{ marginBottom: "18px", textAlign: "center" }}>
+          <div style={{ marginBottom: "12px", textAlign: "center" }}>
             <span
               style={{
                 fontSize: "13px",
@@ -1186,7 +1186,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             justifyContent: "center",
             alignItems: "flex-start",
             gap: "10px",
-            marginBottom: "16px",
+            marginBottom: "12px",
             flexWrap: "wrap",
           }}
         >
@@ -1486,15 +1486,23 @@ export default function VerseViewer(props: VerseViewerProps) {
           </div>
         </div>
 
-        {/* Mode-banner SLOT (SCR-20): a constant-height strip hosts whichever
-            mode bar is active (send / remove / eraser), so toggling a
-            click-precision mode never shifts the verse text below it. */}
+        {/* Mode-banner OVERLAY (SCR-40, keeps SCR-20's guarantee): the strip
+            reserves no vertical space at rest — when a click-precision mode
+            (send / remove / eraser) is active, its bar floats just below the
+            pinned header, over the first verse lines. Verses still never
+            shift on mode toggle; the reclaimed 46px slot becomes reading
+            room. */}
+        {(sendMode || removeMode || erasing) && (
         <div
           style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
             height: "46px",
-            marginBottom: "10px",
             display: "flex",
             alignItems: "stretch",
+            filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.14))",
           }}
         >
         {sendMode && (
@@ -1705,17 +1713,25 @@ export default function VerseViewer(props: VerseViewerProps) {
         {!sendMode && !removeMode && erasing && (
           <p
             style={{
+              flex: 1,
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "center",
+              margin: 0,
+              padding: "0 12px",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
               fontSize: "13px",
               color: "var(--muted)",
-              margin: 0,
-              alignSelf: "center",
-              paddingLeft: "4px",
+              fontFamily: "system-ui, sans-serif",
             }}
           >
             Eraser active — click any marked text to remove that mark.
           </p>
         )}
         </div>
+        )}
         </div>
 
         <div
@@ -1724,7 +1740,9 @@ export default function VerseViewer(props: VerseViewerProps) {
           style={{
             backgroundColor: readBg,
             color: readText,
-            padding: "36px 40px",
+            // SCR-40: top padding trimmed 36→20 for more reading room; sides
+            // and bottom keep the original breathing space.
+            padding: "20px 40px 36px",
             borderRadius: "16px",
             border: "1px solid var(--border)",
             lineHeight: lineScale,
