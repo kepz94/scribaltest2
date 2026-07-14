@@ -1,7 +1,6 @@
 {
   "name": "react-typescript",
   "version": "1.0.0",
-  "homepage": "/scribaltest2",
   "engines": {
     "node": "24.x"
   },
