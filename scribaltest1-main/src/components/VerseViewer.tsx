@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
-import MarkedVerse from "./MarkedVerse";
+import MarkedVerse, { findConditionals } from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 import { isSermonsVolume, sermonLabel } from "../sermons";
@@ -1445,6 +1445,22 @@ export default function VerseViewer(props: VerseViewerProps) {
             </span>
             {showConditionals ? "Conditionals shown" : "Find conditionals"}
           </button>
+          {/* The toggle otherwise gives no feedback in a chapter with zero
+              matches — confirm it worked (SCR-16). */}
+          {showConditionals &&
+            !(currentChapter.verses || []).some(
+              (v: any) => findConditionals(v.text || "").length > 0
+            ) && (
+              <span
+                style={{
+                  fontSize: "11.5px",
+                  color: "var(--muted)",
+                  fontStyle: "italic",
+                }}
+              >
+                No conditional words in this chapter
+              </span>
+            )}
           <button
             onClick={() => setShowCondInfo(true)}
             title="What does this button do?"

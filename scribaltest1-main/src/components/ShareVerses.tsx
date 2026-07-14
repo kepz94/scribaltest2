@@ -224,7 +224,9 @@ export default function ShareVerses({
               Choose verses to share
             </div>
             <div style={{ fontSize: "12px", color: C.muted }}>
-              {picked.length} of 4 selected
+              {/* "4" is the verse cap for one card — say so, or it reads as a
+                  wrong group count (SCR-16). */}
+              Pick up to 4 verses · {picked.length} picked
             </div>
           </div>
           <button

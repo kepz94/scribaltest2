@@ -1955,6 +1955,15 @@ export default function App() {
     } catch {}
   }, [reading]);
   const [readingOpen, setReadingOpen] = useState(false);
+  // The Aa dropdown closes on Escape like every other popover (SCR-16).
+  useEffect(() => {
+    if (!readingOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setReadingOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readingOpen]);
   const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {

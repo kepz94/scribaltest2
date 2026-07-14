@@ -785,9 +785,19 @@ export default function StudyTablesDesktop({
           )}
           {onOpenReader && (
             <button
-              onClick={() =>
-                onOpenReader(open.id, open.bookId || "master")
-              }
+              onClick={() => {
+                // Open at the table's own scripture — the first scripture
+                // card (column, then shelf) — instead of the reader's
+                // Genesis 1 default (SCR-16).
+                const sc = [...open.cards, ...(open.shelf || [])].find(
+                  (cd) => cd.kind === "scripture" && (cd.refs || []).length
+                );
+                onOpenReader(
+                  open.id,
+                  open.bookId || "master",
+                  sc ? (sc.refs || [])[0] : undefined
+                );
+              }}
               title="Open a reading panel beside the table — browse, mark, and send verses"
               style={{
                 display: "inline-flex",
