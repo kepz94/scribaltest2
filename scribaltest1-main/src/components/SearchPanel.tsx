@@ -30,13 +30,14 @@ interface SearchPanelProps {
   // button names that chapter (e.g. Link to "1 Nephi 1") instead of reading
   // generically, since the destination is already fixed.
   linkChapterLabel?: string;
-  // When set, the panel is adding verses to an existing keyword study: its
-  // verses come pre-selected, and the link bar offers update-vs-new-copy.
+  // When set, the panel is adding verses to an existing keyword study. The
+  // selection is only the ADDITIONS — the parent merges them into the study
+  // (add flows never remove; a replace-semantics bug once wiped a study).
   initialSelected?: string[];
   addToStudyName?: string;
   onAddToStudy?: (refs: string[], mode: "update" | "copy") => void;
   // When set, the panel is adding loose verses to a recorded chapter/linked
-  // study: its current extras come pre-selected, and the bar offers one button.
+  // study: the selection is only the additions, merged by the parent.
   addVersesName?: string;
   onAddVerses?: (refs: string[]) => void;
   onClose: () => void;
@@ -887,7 +888,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                           fontFamily: "inherit",
                         }}
                       >
-                        Update “
+                        Add to “
                         {addToStudyName.length > 16
                           ? addToStudyName.slice(0, 15) + "…"
                           : addToStudyName}

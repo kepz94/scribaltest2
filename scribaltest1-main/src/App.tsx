@@ -1553,10 +1553,11 @@ export default function App() {
   // Desktop search is a set of persistent reading-row panels (SCR-28), not a
   // toggled overlay. Each open panel carries its own context: a plain panel is
   // general search; addToStudyId puts it in "add verses to this keyword study"
-  // mode (study verses pre-selected, link bar offers update-vs-copy);
-  // addVersesRecId adds loose verses to a recorded chapter/linked study;
-  // linkTabId means it was opened from that chapter's link prompt to gather
-  // verses to link into it. Multiple panels can be open at once.
+  // mode (the selection is only the additions — they MERGE into the study,
+  // never replace); addVersesRecId adds loose verses to a recorded
+  // chapter/linked study (same merge rule); linkTabId means it was opened from
+  // that chapter's link prompt to gather verses to link into it. Multiple
+  // panels can be open at once.
   interface SearchPanelInstance {
     id: string;
     addToStudyId?: string;
@@ -4057,6 +4058,11 @@ export default function App() {
   // additions. The selection IS the full new verse set (the study's verses are
   // pre-checked in the panel), so we just write it. Refs edits sync across
   // devices via updatedAt; a copy syncs as a brand-new study.
+  // Add panel-selected verses to an existing keyword study. The selection is
+  // ONLY the additions — this MERGES with what the study already holds and can
+  // never remove a verse (owner rule, Jul 14, after an update-replaces bug
+  // wiped a study to a single verse). Removing verses lives in the study tab
+  // (onRemoveVerses), not here.
   const handleAddToStudy = (
     id: string,
     refs: string[],
@@ -4065,12 +4071,14 @@ export default function App() {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
+      (a, b) => orderOfRef(a) - orderOfRef(b)
+    );
     if (mode === "copy") {
-      const copy = addStudy(study.name + " (copy)", study.bookId, ordered);
+      const copy = addStudy(study.name + " (copy)", study.bookId, merged);
       openStudyTab(copy);
     } else {
-      updateStudy(study.id, { refs: ordered });
+      updateStudy(study.id, { refs: merged });
       openStudyTab(study);
     }
   };
@@ -4168,16 +4176,20 @@ export default function App() {
     if (!rid) return;
     const study = recordedStudies.find((s) => s.id === rid);
     if (!study) return;
-    const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    // Selection is only the additions — merge with the existing extras, never
+    // replace (same owner rule as handleAddToStudy: add flows can't remove).
+    const merged = Array.from(
+      new Set([...(study.extraRefs || []), ...refs])
+    ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
     const at = Date.now();
     setRecordedStudies((prev) =>
       prev.map((s) =>
         s.id === rid
-          ? { ...s, extraRefs: ordered, extraRefsAt: at, compiledAt: at }
+          ? { ...s, extraRefs: merged, extraRefsAt: at, compiledAt: at }
           : s
       )
     );
-    if (ordered.length) {
+    if (merged.length) {
       if (study.bookId !== activeBookId) setActiveBook(study.bookId);
       setMarkVersesStudyId(rid);
     } else {
@@ -10921,13 +10933,6 @@ export default function App() {
                     }}
                     linkChapterLabel={
                       linkTab ? tabLabel(linkTab) : undefined
-                    }
-                    initialSelected={
-                      addStudy
-                        ? addStudy.refs
-                        : addRec
-                        ? addRec.extraRefs || []
-                        : undefined
                     }
                     addToStudyName={addStudy ? addStudy.name : undefined}
                     onAddToStudy={(refs, mode) => {
