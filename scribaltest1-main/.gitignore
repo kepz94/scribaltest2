@@ -1,0 +1,10 @@
+# Dependencies
+/node_modules
+
+# Production build (Vercel builds this from main; not committed)
+/build
+
+# Misc
+.DS_Store
+*.local
+npm-debug.log*

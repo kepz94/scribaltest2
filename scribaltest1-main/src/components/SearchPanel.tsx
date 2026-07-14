@@ -40,6 +40,10 @@ interface SearchPanelProps {
   addVersesName?: string;
   onAddVerses?: (refs: string[]) => void;
   onClose: () => void;
+  // When true, the panel renders inline as a reading-row panel (fills its
+  // container) instead of a centered fixed overlay. Desktop search uses this so
+  // it slots beside the chapter panels and stays open through result actions.
+  embedded?: boolean;
 }
 
 type Mode = "all" | "any" | "phrase";
@@ -77,6 +81,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     addVersesName,
     onAddVerses,
     onClose,
+    embedded,
   } = props;
 
   const [query, setQuery] = useState("");
@@ -106,12 +111,15 @@ export default function SearchPanel(props: SearchPanelProps) {
     inputRef.current && inputRef.current.focus();
   }, []);
   useEffect(() => {
+    // Inline panels don't grab Escape — with several open, one Escape would
+    // otherwise close them all at once. They close via their own ✕.
+    if (embedded) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   const index = useMemo<IndexEntry[]>(() => {
     const arr: IndexEntry[] = [];
@@ -406,35 +414,57 @@ export default function SearchPanel(props: SearchPanelProps) {
 
   return (
     <div
-      className="scribal-fade"
-      onMouseDown={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 130,
-        backgroundColor: "rgba(0,0,0,0.45)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: "60px 20px 20px",
-      }}
+      className={embedded ? undefined : "scribal-fade"}
+      onMouseDown={embedded ? undefined : onClose}
+      style={
+        embedded
+          ? {
+              height: "100%",
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }
+          : {
+              position: "fixed",
+              inset: 0,
+              zIndex: 130,
+              backgroundColor: "rgba(0,0,0,0.45)",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+              padding: "60px 20px 20px",
+            }
+      }
     >
       <div
-        className="scribal-rise"
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          width: "100%",
-          maxWidth: "680px",
-          maxHeight: "calc(100vh - 90px)",
-          display: "flex",
-          flexDirection: "column",
-          backgroundColor: "var(--panel)",
-          color: "var(--text)",
-          borderRadius: "16px",
-          border: "1px solid var(--border)",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
-          overflow: "hidden",
-        }}
+        className={embedded ? undefined : "scribal-rise"}
+        onMouseDown={embedded ? undefined : (e) => e.stopPropagation()}
+        style={
+          embedded
+            ? {
+                width: "100%",
+                height: "100%",
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
+                overflow: "hidden",
+              }
+            : {
+                width: "100%",
+                maxWidth: "680px",
+                maxHeight: "calc(100vh - 90px)",
+                display: "flex",
+                flexDirection: "column",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
+                borderRadius: "16px",
+                border: "1px solid var(--border)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                overflow: "hidden",
+              }
+        }
       >
         {/* Search field */}
         <div

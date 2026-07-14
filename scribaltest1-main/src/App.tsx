@@ -260,6 +260,14 @@ const makeTabId = (
   chapter: number
 ) => "tab_" + bookId + "_" + volume + "_" + book + "_" + chapter;
 
+// Reading-row panel sizing (SCR-29). Panels hold a user-set width instead of
+// growing to fill the row: DEFAULT is the width a panel opens at (noticeably
+// smaller than the old 540px flex-basis so more panels fit), MIN/MAX clamp the
+// drag handle.
+const DEFAULT_PANEL_WIDTH = 380;
+const MIN_PANEL_WIDTH = 240;
+const MAX_PANEL_WIDTH = 900;
+
 // "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
 const scopeOfRef = (ref: string) => {
   const i = ref.indexOf(":");
@@ -1235,6 +1243,57 @@ export default function App() {
     });
   };
 
+  // Per-panel widths (SCR-29). A reading-row panel holds the width the user
+  // drags it to instead of flex-growing to fill the row; the map is keyed by
+  // tab id and persisted so widths survive reloads. A tab with no entry opens
+  // at DEFAULT_PANEL_WIDTH.
+  const [panelWidths, setPanelWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem("scribal_panel_widths_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    } catch {}
+    return {};
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "scribal_panel_widths_v1",
+        JSON.stringify(panelWidths)
+      );
+    } catch {}
+  }, [panelWidths]);
+  // Drag the right-edge handle to set a panel's width. Listeners live on window
+  // so the drag keeps tracking even when the cursor outruns the handle; the
+  // functional setState captures the live delta with no stale-closure risk.
+  const startPanelResize = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = panelWidths[id] || DEFAULT_PANEL_WIDTH;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(
+        MIN_PANEL_WIDTH,
+        Math.min(MAX_PANEL_WIDTH, startW + (ev.clientX - startX))
+      );
+      setPanelWidths((prev) =>
+        prev[id] === w ? prev : { ...prev, [id]: w }
+      );
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
   // The sticky tab-pill row must pin directly beneath the sticky header. The
   // header height is not fixed (it reflows/wraps at narrow widths), so measure
   // it and pin the pill row at exactly that offset — otherwise the header
@@ -1492,13 +1551,29 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState<boolean>(
     () => !localStorage.getItem("scribal_tutorial_seen")
   );
-  const [showSearch, setShowSearch] = useState(false);
-  // When set, the search panel is in "add verses to this keyword study" mode:
-  // the study's verses are pre-selected and the link bar offers update-vs-copy.
-  const [addToStudyId, setAddToStudyId] = useState<string | null>(null);
-  // When set, the search panel is adding loose verses to this recorded
-  // chapter/linked study (writing its extraRefs).
-  const [addVersesRecId, setAddVersesRecId] = useState<string | null>(null);
+  // Desktop search is a set of persistent reading-row panels (SCR-28), not a
+  // toggled overlay. Each open panel carries its own context: a plain panel is
+  // general search; addToStudyId puts it in "add verses to this keyword study"
+  // mode (study verses pre-selected, link bar offers update-vs-copy);
+  // addVersesRecId adds loose verses to a recorded chapter/linked study;
+  // linkTabId means it was opened from that chapter's link prompt to gather
+  // verses to link into it. Multiple panels can be open at once.
+  interface SearchPanelInstance {
+    id: string;
+    addToStudyId?: string;
+    addVersesRecId?: string;
+    linkTabId?: string;
+  }
+  const [searchPanels, setSearchPanels] = useState<SearchPanelInstance[]>([]);
+  const searchPanelSeq = useRef(0);
+  const openSearchPanel = (ctx: Omit<SearchPanelInstance, "id"> = {}) => {
+    searchPanelSeq.current += 1;
+    const id = "search_" + searchPanelSeq.current;
+    setSearchPanels((prev) => [...prev, { id, ...ctx }]);
+    setMode("read");
+  };
+  const closeSearchPanel = (id: string) =>
+    setSearchPanels((prev) => prev.filter((p) => p.id !== id));
   // After adding verses to a recorded study, a banner offers to compile it once
   // the added verses are marked.
   const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
@@ -1714,14 +1789,6 @@ export default function App() {
     refs: string[];
     label: string;
   } | null>(null);
-  // When the search is opened from a chapter's link prompt, this holds that
-  // chapter's tab so the gathered verses link straight to it (no "which chapter"
-  // step). Cleared whenever the search closes so it never leaks into a later,
-  // ordinary search.
-  const [linkSearchTab, setLinkSearchTab] = useState<Tab | null>(null);
-  useEffect(() => {
-    if (!showSearch) setLinkSearchTab(null);
-  }, [showSearch]);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [pickV, setPickV] = useState(-1);
   const [pickB, setPickB] = useState(-1);
@@ -2099,7 +2166,7 @@ export default function App() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setShowSearch(true);
+        openSearchPanel();
         return;
       }
 
@@ -2619,7 +2686,8 @@ export default function App() {
     setActiveTabId(newId);
     setMode("read");
     setJumpTarget(reference);
-    setShowSearch(false);
+    // Search panels persist through a jump (SCR-28): the mark opens in the
+    // active reading panel while the search stays open beside it.
   };
 
   // Resolve a chapter scope ("1 Nephi 1") to its canon location.
@@ -3660,7 +3728,6 @@ export default function App() {
     setStudyDraftName("");
     setStudyDraftBook(activeBookId);
     setStudyDraftNewName("");
-    setShowSearch(false);
   };
   const createStudyFromDraft = () => {
     const refs = studyDraftRefs;
@@ -3690,24 +3757,25 @@ export default function App() {
     const study = addStudy(label.trim() || "Search", ct.bookId, ordered);
     updateStudy(study.id, { linkedScope: scope });
     setLinkSearchDraft(null);
-    setShowSearch(false);
     openStudyTab(study);
   };
-  const onLinkSearchToChapter = (refs: string[], label: string) => {
+  // linkTabId, when set, is the chapter tab this search was opened to link into
+  // (from that chapter's link prompt) — link straight to it, no "which chapter"
+  // step. Otherwise open the gathered-draft dialog to pick a chapter.
+  const onLinkSearchToChapter = (
+    refs: string[],
+    label: string,
+    linkTabId?: string
+  ) => {
     if (!refs.length) return;
     const ordered = refs.slice().sort((a, b) => orderOfRef(a) - orderOfRef(b));
-    // Launched from a chapter's link prompt: the destination chapter is already
-    // chosen, so link straight to it (after a mark-collision check) instead of
-    // asking which chapter. The standalone search path below is unchanged.
-    if (linkSearchTab) {
-      const ct = linkSearchTab;
-      setShowSearch(false);
+    const ct = linkTabId ? tabs.find((x) => x.id === linkTabId) : undefined;
+    if (ct) {
       linkGatheredToChapter(ordered, label, ct);
       return;
     }
     // Always confirm in a window — which chapter, even when only one is open.
     setLinkSearchDraft({ refs: ordered, label });
-    setShowSearch(false);
   };
 
   // Link verses gathered from a chapter's link prompt to that chapter. They
@@ -3937,10 +4005,11 @@ export default function App() {
   // additions. The selection IS the full new verse set (the study's verses are
   // pre-checked in the panel), so we just write it. Refs edits sync across
   // devices via updatedAt; a copy syncs as a brand-new study.
-  const handleAddToStudy = (refs: string[], mode: "update" | "copy") => {
-    const id = addToStudyId;
-    setAddToStudyId(null);
-    setShowSearch(false);
+  const handleAddToStudy = (
+    id: string,
+    refs: string[],
+    mode: "update" | "copy"
+  ) => {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
@@ -4043,10 +4112,7 @@ export default function App() {
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
   // jump to the first added verse in read mode so they can be marked. A banner
   // (rendered below) offers to compile the study once they're marked.
-  const handleAddVersesToRec = (refs: string[]) => {
-    const rid = addVersesRecId;
-    setAddVersesRecId(null);
-    setShowSearch(false);
+  const handleAddVersesToRec = (rid: string, refs: string[]) => {
     if (!rid) return;
     const study = recordedStudies.find((s) => s.id === rid);
     if (!study) return;
@@ -4893,8 +4959,7 @@ export default function App() {
             }
           },
           onAddVerses: () => {
-            setAddToStudyId(ss.id);
-            setShowSearch(true);
+            openSearchPanel({ addToStudyId: ss.id });
           },
           onMove: () =>
             setMoveTarget({
@@ -4979,8 +5044,7 @@ export default function App() {
           }
         },
         onAddVerses: () => {
-          setAddToStudyId(primary.id);
-          setShowSearch(true);
+          openSearchPanel({ addToStudyId: primary.id });
         },
         onDelete: () =>
           askConfirm({
@@ -5263,56 +5327,6 @@ export default function App() {
           defaults={DEFAULT_TOOL_HOTKEYS}
         />
       )}
-      {showSearch && (
-        <SearchPanel
-          currentChapter={chapterScopeOf(activeTab)}
-          currentVolume={activeTab.volume}
-          currentBook={activeTab.book}
-          marks={marks}
-          colorLabels={activeScopedLabels}
-          labelFor={labelFor}
-          allMarks={allMarks}
-          onJump={(ref) => {
-            jumpToReference(ref);
-            setShowSearch(false);
-          }}
-          onJumpToMark={jumpToMark}
-          onLinkStudy={linkSearchTab ? undefined : onLinkStudy}
-          onLinkSearchToChapter={onLinkSearchToChapter}
-          linkChapterLabel={
-            linkSearchTab ? tabLabel(linkSearchTab) : undefined
-          }
-          initialSelected={
-            addToStudyId
-              ? searchStudies.find((s) => s.id === addToStudyId)?.refs
-              : addVersesRecId
-              ? recordedStudies.find((s) => s.id === addVersesRecId)
-                  ?.extraRefs || []
-              : undefined
-          }
-          addToStudyName={
-            addToStudyId
-              ? searchStudies.find((s) => s.id === addToStudyId)?.name
-              : undefined
-          }
-          onAddToStudy={handleAddToStudy}
-          addVersesName={
-            addVersesRecId
-              ? recordedStudies.find((s) => s.id === addVersesRecId)?.name
-              : undefined
-          }
-          onAddVerses={handleAddVersesToRec}
-          onOpenNewTab={(ref) => {
-            openInNewTab(ref);
-            setShowSearch(false);
-          }}
-          onClose={() => {
-            setShowSearch(false);
-            setAddToStudyId(null);
-            setAddVersesRecId(null);
-          }}
-        />
-      )}
       {linkKwStudyId &&
         (() => {
           const ks = searchStudies.find((s) => s.id === linkKwStudyId);
@@ -5368,8 +5382,7 @@ export default function App() {
           };
           const addSearch = () => {
             setLinkKwStudyId(null);
-            setAddToStudyId(ks.id);
-            setShowSearch(true);
+            openSearchPanel({ addToStudyId: ks.id });
           };
           const pickRef =
             pickV >= 0 && pickB >= 0 && pickC >= 0
@@ -5867,6 +5880,57 @@ export default function App() {
       {linkSearchDraft &&
         (() => {
           const chapterTabs = tabs.filter((x) => !x.studyId);
+          const eyebrow: React.CSSProperties = {
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            marginBottom: "8px",
+          };
+          const selStyle: React.CSSProperties = {
+            boxSizing: "border-box",
+            width: "100%",
+            padding: "11px 10px",
+            borderRadius: "10px",
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            fontSize: "14px",
+            fontFamily: "inherit",
+          };
+          // The picked canon chapter (SCR-30): the same volume→book→chapter
+          // dropdowns as the other two link dialogs, so a gathered search can
+          // link to ANY chapter without opening a tab first. Downstream is the
+          // exact one-tap path — a synthetic master-book tab handed to
+          // linkSearchToChapterTab.
+          const pickRef =
+            pickV >= 0 && pickB >= 0 && pickC >= 0
+              ? vols[pickV].books[pickB].chapters[pickC].verses[0]
+                  ?.reference || ""
+              : "";
+          const linkPicked = () => {
+            if (!pickRef) return;
+            const ct: Tab = {
+              id: makeTabId("master", pickV, pickB, pickC),
+              volume: pickV,
+              book: pickB,
+              chapter: pickC,
+              bookId: "master",
+            };
+            setPickV(-1);
+            setPickB(-1);
+            setPickC(-1);
+            linkSearchToChapterTab(
+              linkSearchDraft.refs,
+              linkSearchDraft.label,
+              ct
+            );
+          };
+          const versesLabel =
+            linkSearchDraft.refs.length === 1
+              ? "verse"
+              : linkSearchDraft.refs.length + " verses";
           return (
             <div
               className="scribal-fade"
@@ -5899,173 +5963,176 @@ export default function App() {
                   flexDirection: "column",
                 }}
               >
-                {chapterTabs.length === 1 ? (
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Link this search to a chapter
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Your {versesLabel} open as their own tab, sharing the
+                  chapter&rsquo;s themes and compiling together with it.
+                </div>
+
+                {chapterTabs.length > 0 && (
                   <>
-                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                      Link to this chapter?
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginTop: "3px",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Your{" "}
-                      {linkSearchDraft.refs.length === 1
-                        ? "verse"
-                        : linkSearchDraft.refs.length + " verses"}{" "}
-                      will open as their own tab linked to{" "}
-                      <strong style={{ color: "var(--text)" }}>
-                        {tabLabel(chapterTabs[0])}
-                      </strong>
-                      , sharing its themes and compiling together with it.
+                    <div style={{ ...eyebrow, marginTop: "18px" }}>
+                      Open chapters
                     </div>
                     <div
                       style={{
                         display: "flex",
-                        gap: "10px",
-                        justifyContent: "flex-end",
-                        marginTop: "18px",
+                        flexDirection: "column",
+                        gap: "8px",
+                        overflowY: "auto",
                       }}
                     >
-                      <button
-                        onClick={() => setLinkSearchDraft(null)}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "10px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() =>
-                          linkSearchToChapterTab(
-                            linkSearchDraft.refs,
-                            linkSearchDraft.label,
-                            chapterTabs[0]
-                          )
-                        }
-                        style={{
-                          padding: "10px 18px",
-                          borderRadius: "10px",
-                          border: "none",
-                          background: TYPE_BLUE,
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 700,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Link to {tabLabel(chapterTabs[0])}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                      Link this search to a chapter
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        marginTop: "3px",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Your{" "}
-                      {linkSearchDraft.refs.length === 1
-                        ? "verse"
-                        : linkSearchDraft.refs.length + " verses"}{" "}
-                      open as their own tab, sharing the chapter&rsquo;s themes
-                      and compiling together with it.
-                    </div>
-                    {chapterTabs.length === 0 ? (
-                      <div
-                        style={{
-                          fontSize: "13.5px",
-                          color: "var(--muted)",
-                          padding: "18px 2px",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        Open a chapter in a tab first, then link this search to
-                        it.
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                          overflowY: "auto",
-                        }}
-                      >
-                        {chapterTabs.map((ct) => (
-                          <button
-                            key={ct.id}
-                            onClick={() =>
-                              linkSearchToChapterTab(
-                                linkSearchDraft.refs,
-                                linkSearchDraft.label,
-                                ct
-                              )
-                            }
-                            style={{
-                              textAlign: "left",
-                              padding: "11px 13px",
-                              borderRadius: "10px",
-                              border: "1px solid var(--border)",
-                              background: "var(--bg)",
-                              color: "var(--text)",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              fontSize: "14px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {tabLabel(ct)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        marginTop: "16px",
-                      }}
-                    >
-                      <button
-                        onClick={() => setLinkSearchDraft(null)}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "10px",
-                          border: "1px solid var(--border)",
-                          background: "transparent",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: 600,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        Cancel
-                      </button>
+                      {chapterTabs.map((ct) => (
+                        <button
+                          key={ct.id}
+                          onClick={() =>
+                            linkSearchToChapterTab(
+                              linkSearchDraft.refs,
+                              linkSearchDraft.label,
+                              ct
+                            )
+                          }
+                          style={{
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: "10px",
+                            border: "1px solid var(--border)",
+                            background: "var(--bg)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontSize: "14px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {tabLabel(ct)}
+                        </button>
+                      ))}
                     </div>
                   </>
                 )}
+
+                <div style={{ ...eyebrow, marginTop: "18px" }}>
+                  {chapterTabs.length > 0
+                    ? "Or link any chapter"
+                    : "Link a chapter"}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  <select
+                    value={pickV}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setPickV(v);
+                      const single = v >= 0 && vols[v].books.length === 1;
+                      setPickB(single ? 0 : -1);
+                      setPickC(-1);
+                    }}
+                    style={selStyle}
+                  >
+                    <option value={-1}>Choose a volume…</option>
+                    {vols.map((vol, v) => (
+                      <option key={v} value={v}>
+                        {vol.volume}
+                      </option>
+                    ))}
+                  </select>
+                  {pickV >= 0 && vols[pickV].books.length > 1 && (
+                    <select
+                      value={pickB}
+                      onChange={(e) => {
+                        setPickB(Number(e.target.value));
+                        setPickC(-1);
+                      }}
+                      style={selStyle}
+                    >
+                      <option value={-1}>Choose a book…</option>
+                      {vols[pickV].books.map((bk, b) => (
+                        <option key={b} value={b}>
+                          {bk.book}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <select
+                    value={pickC}
+                    disabled={pickB < 0}
+                    onChange={(e) => setPickC(Number(e.target.value))}
+                    style={{ ...selStyle, opacity: pickB < 0 ? 0.5 : 1 }}
+                  >
+                    <option value={-1}>
+                      {pickV >= 0 && vols[pickV].books.length === 1
+                        ? "Choose a section…"
+                        : "Choose a chapter…"}
+                    </option>
+                    {(pickV >= 0 && pickB >= 0
+                      ? vols[pickV].books[pickB].chapters
+                      : []
+                    ).map((ch, c) => (
+                      <option key={c} value={c}>
+                        {ch.chapter}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={linkPicked}
+                  disabled={!pickRef}
+                  style={{
+                    marginTop: "10px",
+                    width: "100%",
+                    padding: "11px 14px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: pickRef ? TYPE_BLUE : "var(--border)",
+                    color: pickRef ? "#fff" : "var(--muted)",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    cursor: pickRef ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Link chapter
+                </button>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    onClick={() => setLinkSearchDraft(null)}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -6851,9 +6918,8 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setLinkSearchTab(t);
                       setLinkPromptTabId(null);
-                      setShowSearch(true);
+                      openSearchPanel({ linkTabId: t.id });
                     }}
                     style={{
                       marginTop: "10px",
@@ -9114,7 +9180,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
               data-tour="search"
-              onClick={() => setShowSearch(true)}
+              onClick={() => openSearchPanel()}
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
             >
@@ -10369,12 +10435,16 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               display: "flex",
-              overflowX: tabs.length > 1 ? "auto" : "visible",
+              overflowX:
+                tabs.length + searchPanels.length > 1 ? "auto" : "visible",
             }}
           >
             {tabs.map((t) => {
               const isActive = t.id === activeTabId;
-              const multi = tabs.length > 1;
+              // A panel holds a fixed width (SCR-29) whenever more than one
+              // reading-row panel is open — chapters and search panels both
+              // count, so a lone chapter next to a search panel sizes uniformly.
+              const multi = tabs.length + searchPanels.length > 1;
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
@@ -10401,7 +10471,14 @@ export default function App() {
                   data-compile-tab={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
                   style={{
-                    flex: multi ? "1 0 540px" : 1,
+                    // SCR-29: panels hold a set width (no flex-grow) when
+                    // several are open, so they don't balloon to fill the row
+                    // and empty space to the right stays empty. A single panel
+                    // still fills the reader.
+                    flex: multi ? "0 0 auto" : 1,
+                    width: multi
+                      ? panelWidths[t.id] || DEFAULT_PANEL_WIDTH
+                      : undefined,
                     minWidth: 0,
                     borderRight: multi ? "1px solid var(--border)" : "none",
                     outline:
@@ -10511,6 +10588,21 @@ export default function App() {
                     }
                   />
                   </div>
+                  {multi && (
+                    <div
+                      onMouseDown={(e) => startPanelResize(t.id, e)}
+                      title="Drag to resize this panel"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: "9px",
+                        cursor: "col-resize",
+                        zIndex: 6,
+                      }}
+                    />
+                  )}
                   {growMoment &&
                     t.studyId &&
                     growMoment.studyId === t.studyId && (
@@ -10527,6 +10619,99 @@ export default function App() {
                   />
                 ) : null,
               ];
+            })}
+            {/* Persistent search panels (SCR-28): each slots into the reading
+                row beside the chapter panels, holds its own width/resize like
+                any panel, and stays open through result actions — jumping,
+                opening in a tab, gathering — closing only when its purpose
+                (link / add-to-study) is genuinely consumed. */}
+            {searchPanels.map((panel) => {
+              const width = panelWidths[panel.id] || DEFAULT_PANEL_WIDTH;
+              const linkTab = panel.linkTabId
+                ? tabs.find((x) => x.id === panel.linkTabId)
+                : undefined;
+              const addStudy = panel.addToStudyId
+                ? searchStudies.find((s) => s.id === panel.addToStudyId)
+                : undefined;
+              const addRec = panel.addVersesRecId
+                ? recordedStudies.find((s) => s.id === panel.addVersesRecId)
+                : undefined;
+              return (
+                <div
+                  key={panel.id}
+                  style={{
+                    flex: "0 0 auto",
+                    width,
+                    minWidth: 0,
+                    borderRight: "1px solid var(--border)",
+                    position: "relative",
+                    overflow: "hidden",
+                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                  }}
+                >
+                  <SearchPanel
+                    embedded
+                    currentChapter={chapterScopeOf(activeTab)}
+                    currentVolume={activeTab.volume}
+                    currentBook={activeTab.book}
+                    marks={marks}
+                    colorLabels={activeScopedLabels}
+                    labelFor={labelFor}
+                    allMarks={allMarks}
+                    onJump={(ref) => jumpToReference(ref)}
+                    onJumpToMark={jumpToMark}
+                    onLinkStudy={
+                      panel.linkTabId
+                        ? undefined
+                        : (refs) => {
+                            onLinkStudy(refs);
+                            closeSearchPanel(panel.id);
+                          }
+                    }
+                    onLinkSearchToChapter={(refs, label) => {
+                      onLinkSearchToChapter(refs, label, panel.linkTabId);
+                      closeSearchPanel(panel.id);
+                    }}
+                    linkChapterLabel={
+                      linkTab ? tabLabel(linkTab) : undefined
+                    }
+                    initialSelected={
+                      addStudy
+                        ? addStudy.refs
+                        : addRec
+                        ? addRec.extraRefs || []
+                        : undefined
+                    }
+                    addToStudyName={addStudy ? addStudy.name : undefined}
+                    onAddToStudy={(refs, mode) => {
+                      if (panel.addToStudyId)
+                        handleAddToStudy(panel.addToStudyId, refs, mode);
+                      closeSearchPanel(panel.id);
+                    }}
+                    addVersesName={addRec ? addRec.name : undefined}
+                    onAddVerses={(refs) => {
+                      if (panel.addVersesRecId)
+                        handleAddVersesToRec(panel.addVersesRecId, refs);
+                      closeSearchPanel(panel.id);
+                    }}
+                    onOpenNewTab={(ref) => openInNewTab(ref)}
+                    onClose={() => closeSearchPanel(panel.id)}
+                  />
+                  <div
+                    onMouseDown={(e) => startPanelResize(panel.id, e)}
+                    title="Drag to resize this panel"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: "9px",
+                      cursor: "col-resize",
+                      zIndex: 6,
+                    }}
+                  />
+                </div>
+              );
             })}
           </div>
 
