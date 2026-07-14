@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
-import MarkedVerse, { findConditionals } from "./MarkedVerse";
+import MarkedVerse from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 import { isSermonsVolume, sermonLabel } from "../sermons";
@@ -110,7 +110,7 @@ interface VerseViewerProps {
     title: string;
   };
   // How far from the top of the scroll area the function-button row (Link
-  // scriptures / Send verses / Find conditionals) pins while reading. Defaults to
+  // scriptures / Send verses) pins while reading. Defaults to
   // 0, which is right when the row's own scroll container starts at the panel
   // top; the main single-pane reading view passes the fixed header + legend
   // height so the pinned row clears them.
@@ -208,20 +208,15 @@ export default function VerseViewer(props: VerseViewerProps) {
     }
   }, [selectedTool]);
 
-  // Per-tab conditional lens — each open chapter / study remembers its own
-  // on/off state, instead of one switch applying to the whole screen.
+  // Identity of the open chapter/study — per-tab UI state (like the remove
+  // selection) resets when this changes.
   const tabKey = studyRefs
     ? "study:" + (studyTitle || studyRefs.join(","))
     : selectedVolume + ":" + selectedBook + ":" + selectedChapter;
-  const [condByTab, setCondByTab] = useState<Record<string, boolean>>({});
-  const showConditionals = !!condByTab[tabKey];
-  const toggleConditionals = () =>
-    setCondByTab((m) => ({ ...m, [tabKey]: !m[tabKey] }));
 
   // "Send verses": check off verses on this tab to send to a study (new or
   // existing). The selection lives here; the parent runs the send UI.
   const [sendMode, setSendMode] = useState(false);
-  const [showCondInfo, setShowCondInfo] = useState(false);
   const [sendSel, setSendSel] = useState<string[]>([]);
   const toggleSend = (ref: string) =>
     setSendSel((p) =>
@@ -776,7 +771,6 @@ export default function VerseViewer(props: VerseViewerProps) {
                 text={info.text}
                 marks={marks}
                 onEraseMark={erasing && !removeMode ? onEraseMark : undefined}
-                showConditionals={showConditionals}
                 dark={dark}
                 tags={tags}
                 onTagTap={onTagTap}
@@ -1393,97 +1387,6 @@ export default function VerseViewer(props: VerseViewerProps) {
             </button>
           )}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <button
-            onClick={toggleConditionals}
-            title={
-              showConditionals
-                ? "Hide conditional words on this tab"
-                : "Find conditional words on this tab (if, when, whoso…) to mark yourself"
-            }
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "6px 12px",
-              borderRadius: "999px",
-              border:
-                "1px solid " +
-                (showConditionals
-                  ? dark
-                    ? "#a5b4fc"
-                    : "#4f46e5"
-                  : "var(--border)"),
-              backgroundColor: showConditionals
-                ? dark
-                  ? "rgba(165,180,252,0.16)"
-                  : "rgba(79,70,229,0.10)"
-                : "var(--panel)",
-              color: showConditionals
-                ? dark
-                  ? "#a5b4fc"
-                  : "#4f46e5"
-                : "var(--muted)",
-              fontSize: "12.5px",
-              fontWeight: 600,
-              fontFamily: "system-ui, sans-serif",
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            <span
-              style={{
-                fontStyle: "italic",
-                fontFamily: '"Times New Roman", Times, serif',
-                fontWeight: 700,
-                borderBottom: "2px dashed currentColor",
-                lineHeight: 1,
-                paddingBottom: "1px",
-              }}
-            >
-              if
-            </span>
-            {showConditionals ? "Conditionals shown" : "Find conditionals"}
-          </button>
-          {/* The toggle otherwise gives no feedback in a chapter with zero
-              matches — confirm it worked (SCR-16). */}
-          {showConditionals &&
-            !(currentChapter.verses || []).some(
-              (v: any) => findConditionals(v.text || "").length > 0
-            ) && (
-              <span
-                style={{
-                  fontSize: "11.5px",
-                  color: "var(--muted)",
-                  fontStyle: "italic",
-                }}
-              >
-                No conditional words in this chapter
-              </span>
-            )}
-          <button
-            onClick={() => setShowCondInfo(true)}
-            title="What does this button do?"
-            style={{
-              width: "22px",
-              height: "22px",
-              borderRadius: "999px",
-              border: "1px solid var(--border)",
-              background: "var(--panel)",
-              color: "var(--muted)",
-              fontSize: "13px",
-              fontWeight: 700,
-              fontStyle: "italic",
-              fontFamily: "Georgia, 'Times New Roman', serif",
-              cursor: "pointer",
-              flexShrink: 0,
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            i
-          </button>
-          </div>
         </div>
 
         {/* Mode-banner OVERLAY (SCR-40, keeps SCR-20's guarantee): the strip
@@ -1821,7 +1724,6 @@ export default function VerseViewer(props: VerseViewerProps) {
                   text={verse.text}
                   marks={marks}
                   onEraseMark={erasing ? onEraseMark : undefined}
-                  showConditionals={showConditionals}
                   dark={dark}
                   tags={tags}
                   onTagTap={onTagTap}
@@ -1867,157 +1769,6 @@ export default function VerseViewer(props: VerseViewerProps) {
         >
           ›
         </button>
-      )}
-
-      {showCondInfo && (
-        <div
-          onClick={() => setShowCondInfo(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "var(--panel)",
-              color: "var(--text)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "22px",
-              width: "100%",
-              maxWidth: "440px",
-              maxHeight: "82vh",
-              overflowY: "auto",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-              fontFamily: "system-ui, sans-serif",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "9px",
-                marginBottom: "8px",
-              }}
-            >
-              <span
-                style={{
-                  fontStyle: "italic",
-                  fontFamily: '"Times New Roman", Times, serif',
-                  fontWeight: 700,
-                  fontSize: "19px",
-                  lineHeight: 1,
-                  borderBottom: "2px dashed " + (dark ? "#a5b4fc" : "#4f46e5"),
-                  color: dark ? "#a5b4fc" : "#4f46e5",
-                  paddingBottom: "1px",
-                }}
-              >
-                if
-              </span>
-              <span style={{ fontSize: "17px", fontWeight: 700 }}>
-                Find conditionals
-              </span>
-            </div>
-            <p
-              style={{
-                fontSize: "13.5px",
-                lineHeight: 1.6,
-                color: "var(--muted)",
-                margin: "0 0 14px",
-              }}
-            >
-              Scripture promises often turn on a hinge - a word that sets the
-              condition for the blessing. Turn this on and those conditional
-              words get a dashed underline so they're easy to spot. It's only a
-              reading lens: it highlights them for you to see and never marks
-              anything itself, so you stay free to mark them your own way.
-            </p>
-            <div
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                marginBottom: "7px",
-              }}
-            >
-              Words it catches
-            </div>
-            <p
-              style={{
-                fontSize: "13.5px",
-                lineHeight: 1.7,
-                color: dark ? "#a5b4fc" : "#4f46e5",
-                fontWeight: 600,
-                margin: "0 0 16px",
-              }}
-            >
-              if, when, unless, except, lest, whenever, whoso, whosoever,
-              whomsoever, inasmuch, inasmuch as, as many as
-            </p>
-            <div
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                marginBottom: "8px",
-              }}
-            >
-              How it looks
-            </div>
-            <div
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "10px",
-                background: "var(--bg)",
-                padding: "14px 16px 2px",
-                fontFamily: "Georgia, 'Times New Roman', serif",
-                fontSize: "16px",
-                lineHeight: 1.75,
-                marginBottom: "18px",
-              }}
-            >
-              <MarkedVerse
-                reference="__cond_example__"
-                verseNumber={41}
-                text="And it shall come to pass, that if ye keep my commandments, and inasmuch as ye endure, whoso cometh unto me when he is tried, except he deny the faith, the same shall be saved."
-                marks={[]}
-                showConditionals
-                dark={dark}
-              />
-            </div>
-            <div
-              style={{ display: "flex", justifyContent: "flex-end" }}
-            >
-              <button
-                onClick={() => setShowCondInfo(false)}
-                style={{
-                  padding: "9px 18px",
-                  borderRadius: "9px",
-                  border: "none",
-                  background: dark ? "#a5b4fc" : "#4f46e5",
-                  color: dark ? "#1a1410" : "#fff",
-                  fontSize: "13.5px",
-                  fontWeight: 700,
-                  fontFamily: "system-ui, sans-serif",
-                  cursor: "pointer",
-                }}
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
