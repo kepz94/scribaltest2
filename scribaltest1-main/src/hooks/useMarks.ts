@@ -339,6 +339,7 @@ function makeMasterTopic(): StudyBook {
     marks: [],
     colorLabels: defaultLabels(),
     notes: {},
+    tombstones: {},
     scopedLabels: {},
     scopedMigrated: true,
     scopedRoles: {},
