@@ -37,7 +37,7 @@ import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
 import DesktopWalkthrough from "./DesktopWalkthrough";
-import NewTabPanel from "./components/NewTabPanel";
+import NewTabPanel, { NewTabStudyChoice } from "./components/NewTabPanel";
 import StudyPanel from "./components/StudyPanel";
 
 import Shortcuts from "./components/Shortcuts";
@@ -5245,47 +5245,114 @@ export default function App() {
     return n;
   }, [searchStudies, recordedStudies, chapterGroups]);
 
-  // SCR-27: what the new-tab launcher's Studies step offers. Open chapters
+  // The distinct theme colors (with their contextual names) among the marks a
+  // predicate accepts — the chips shown on hub rows and launcher study rows.
+  // Hoisted from buildStudyRows so both surfaces share it.
+  const themesFor = (
+    bid: string,
+    repScope: string,
+    refOk: (ref: string) => boolean
+  ) => {
+    const bk = getBook(bid);
+    const scoped = bk.scopedLabels[resolveScope(repScope)];
+    const nameFor = (c: MarkColor) =>
+      scoped && c in scoped
+        ? (scoped[c] || "").trim()
+        : (bk.colorLabels[c] || "").trim();
+    const cols: number[] = [];
+    allMarks.forEach((m) => {
+      if (m.bookId === bid && refOk(m.reference) && cols.indexOf(m.color) < 0)
+        cols.push(m.color);
+    });
+    return cols
+      .sort((a, b) => a - b)
+      .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
+  };
+
+  // SCR-27/44: what the new-tab launcher's Studies step offers. Open chapters
   // first (a live lens on what you're reading now), then every saved study —
-  // mirroring buildStudyRows' combining rules but as encoded descriptors the
-  // launcher hands back to launcherPickStudy.
-  const buildStudyPanelChoices = (): {
-    id: string;
-    label: string;
-    meta?: string;
-  }[] => {
-    const out: { id: string; label: string; meta?: string }[] = [];
+  // mirroring buildStudyRows' combining rules, styled like the hub rows (theme
+  // chips + kind accents) for quick identification.
+  const buildStudyPanelChoices = (): NewTabStudyChoice[] => {
+    const CHAPTER_ACCENT = "#ef4444";
+    const COMBINED_ACCENT = "#8b5cf6";
+    const KEYWORD_ACCENT = "#3b82f6";
+    const out: NewTabStudyChoice[] = [];
     const seen = new Set<string>();
-    const push = (id: string, label: string, meta?: string) => {
-      if (!seen.has(id)) {
-        seen.add(id);
-        out.push({ id, label, meta });
+    const push = (c: NewTabStudyChoice) => {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        out.push(c);
       }
     };
     tabs
       .filter((t) => !t.studyId && !t.looseRefs)
       .forEach((t) => {
         const scope = resolveScope(chapterScopeOf(t));
-        push("scope|" + t.bookId + "|" + scope, tabLabel(t), "Open now");
+        push({
+          id: "scope|" + t.bookId + "|" + scope,
+          label: tabLabel(t),
+          meta: "Open now",
+          accent: CHAPTER_ACCENT,
+          themes: themesFor(
+            t.bookId,
+            scope,
+            (ref) => resolveScope(scopeOfRef(ref)) === scope
+          ),
+        });
       });
     recordedStudies.forEach((s) => {
-      const scope =
-        s.type === "linked" ? "group:" + s.scopeRef : resolveScope(s.scopeRef);
-      push(
-        "scope|" + s.bookId + "|" + scope,
-        s.name,
-        s.type === "linked" ? "Linked study" : "Chapter study"
-      );
+      if (s.type === "linked") {
+        const chs = Object.keys(chapterGroups).filter(
+          (sc) => chapterGroups[sc] === s.scopeRef
+        );
+        const members = chs.length ? chs : s.memberScopes || [];
+        push({
+          id: "scope|" + s.bookId + "|group:" + s.scopeRef,
+          label: s.name,
+          meta: "Linked study",
+          accent: CHAPTER_ACCENT,
+          themes: themesFor(s.bookId, members[0] || s.scopeRef, (ref) =>
+            members.includes(scopeOfRef(ref))
+          ),
+        });
+      } else {
+        push({
+          id: "scope|" + s.bookId + "|" + resolveScope(s.scopeRef),
+          label: s.name,
+          meta: "Chapter study",
+          accent: CHAPTER_ACCENT,
+          themes: themesFor(
+            s.bookId,
+            s.scopeRef,
+            (ref) => scopeOfRef(ref) === s.scopeRef
+          ),
+        });
+      }
     });
     searchStudies.forEach((ss) => {
       if (isSearchStudyDeleted(ss)) return;
+      const refSet = new Set(ss.refs);
       if (ss.linkedScope)
-        push(
-          "scope|" + ss.bookId + "|" + resolveScope(ss.linkedScope),
-          ss.name,
-          "Combined study"
-        );
-      else push("kw|" + ss.id, ss.name, "Keyword study");
+        push({
+          id: "scope|" + ss.bookId + "|" + resolveScope(ss.linkedScope),
+          label: ss.name,
+          meta: "Combined study",
+          accent: COMBINED_ACCENT,
+          themes: themesFor(ss.bookId, "searchstudy:" + ss.id, (ref) =>
+            refSet.has(ref)
+          ),
+        });
+      else
+        push({
+          id: "kw|" + ss.id,
+          label: ss.name,
+          meta: "Keyword study",
+          accent: KEYWORD_ACCENT,
+          themes: themesFor(ss.bookId, "searchstudy:" + ss.id, (ref) =>
+            refSet.has(ref)
+          ),
+        });
     });
     return out;
   };
@@ -5322,30 +5389,6 @@ export default function App() {
         day: "numeric",
         year: "numeric",
       });
-    const themesFor = (
-      bid: string,
-      repScope: string,
-      refOk: (ref: string) => boolean
-    ) => {
-      const bk = getBook(bid);
-      const scoped = bk.scopedLabels[resolveScope(repScope)];
-      const nameFor = (c: MarkColor) =>
-        scoped && c in scoped
-          ? (scoped[c] || "").trim()
-          : (bk.colorLabels[c] || "").trim();
-      const cols: number[] = [];
-      allMarks.forEach((m) => {
-        if (
-          m.bookId === bid &&
-          refOk(m.reference) &&
-          cols.indexOf(m.color) < 0
-        )
-          cols.push(m.color);
-      });
-      return cols
-        .sort((a, b) => a - b)
-        .map((c) => ({ color: c, name: nameFor(c as MarkColor) }));
-    };
     const markWord = (n: number) => (n === 1 ? " mark" : " marks");
     const withBook = (bl: string) => (bl ? " · " + bl : "");
     const rows: StudyRow[] = [];
@@ -11527,13 +11570,19 @@ export default function App() {
                     }
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
-                    onSendVerses={(refs) => {
-                      if (refs.length) {
-                        setSendRefs(refs);
-                        setSendPicking(false);
-                        setSendTablesPicking(false);
-                      }
-                    }}
+                    onSendVerses={
+                      // A "Mark these" loose tab is purely a marking surface —
+                      // no send flow (owner call, SCR-44 round).
+                      t.looseRefs
+                        ? undefined
+                        : (refs) => {
+                            if (refs.length) {
+                              setSendRefs(refs);
+                              setSendPicking(false);
+                              setSendTablesPicking(false);
+                            }
+                          }
+                    }
                     linkScriptures={
                       t.looseRefs
                         ? undefined
