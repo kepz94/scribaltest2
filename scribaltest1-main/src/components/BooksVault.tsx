@@ -8,6 +8,9 @@ export type VaultBook = {
   name: string;
   isMaster: boolean;
   active: boolean;
+  // Two-canvas book type (SCR-54): shown on the book row. Undefined =
+  // pre-migration book (no tag).
+  type?: "chapter" | "topic";
   rows: StudyRow[];
 };
 
@@ -20,14 +23,16 @@ interface Props {
   onClose: () => void;
 }
 
+// Two-canvas model (SCR-54): the Vault groups studies two ways — Chapter
+// studies and Topic studies. Combined no longer exists as a category; any
+// legacy combined rows (pre-migration data) list under Topic studies.
 const SECTIONS: {
   kinds: StudyRow["kind"][];
   label: string;
   color: string;
 }[] = [
   { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
-  { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
-  { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
+  { kinds: ["keyword", "combined"], label: "Topic studies", color: "#3b82f6" },
 ];
 
 export default function BooksVault({
@@ -212,6 +217,23 @@ export default function BooksVault({
                       >
                         {b.name}
                       </span>
+                      {b.type && (
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            letterSpacing: "1px",
+                            color: b.type === "chapter" ? "#ef4444" : "#3b82f6",
+                            border:
+                              "1px solid " +
+                              (b.type === "chapter" ? "#ef4444" : "#3b82f6"),
+                            borderRadius: "999px",
+                            padding: "1px 6px",
+                            marginRight: "6px",
+                          }}
+                        >
+                          {b.type === "chapter" ? "CHAPTER" : "TOPIC"}
+                        </span>
+                      )}
                       {b.active && (
                         <span
                           style={{
@@ -287,7 +309,7 @@ export default function BooksVault({
                         }}
                       >
                         Compile a chapter or linked group while this book is
-                        active, or bundle a keyword study, to fill it in.
+                        active, or gather a topic study, to fill it in.
                       </div>
                     )}
                     {SECTIONS.map((sec) => {

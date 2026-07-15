@@ -11975,6 +11975,7 @@ export default function App() {
               name: b.name,
               isMaster: !!b.isMaster,
               active: b.id === activeBookId,
+              type: b.type,
               rows: all.filter((r) => r.bookId === b.id),
             }));
           return (

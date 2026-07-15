@@ -21,14 +21,16 @@ interface Props {
   onImport?: () => void;
 }
 
+// Two-canvas model (SCR-54): every study is a Chapter study or a Topic study.
+// Combined disappears as a category — any legacy combined rows (pre-migration
+// data) list under Topic studies until the migration pass converts them.
 const SECTIONS: {
   kinds: StudyRow["kind"][];
   label: string;
   color: string;
 }[] = [
   { kinds: ["chapter", "linked"], label: "Chapter studies", color: "#ef4444" },
-  { kinds: ["combined"], label: "Combined studies", color: "#8b5cf6" },
-  { kinds: ["keyword"], label: "Keyword studies", color: "#3b82f6" },
+  { kinds: ["keyword", "combined"], label: "Topic studies", color: "#3b82f6" },
 ];
 
 export default function StudiesList({ rows, onClose, onImport }: Props) {
