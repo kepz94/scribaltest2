@@ -389,7 +389,7 @@ export default function NewTabPanel({
                     lineHeight: 1.45,
                   }}
                 >
-                  A live view of a study's verses by theme
+                  Open a study — topic studies as live panels
                 </span>
               </span>
               <span
@@ -633,10 +633,11 @@ export default function NewTabPanel({
                 margin: "0 0 12px",
               }}
             >
-              Opening a study here adds a live panel to your reading row — a
-              running view of that chapter's or study's verses, grouped by
-              theme. Unmarked verses sit at the top; as you mark, each verse
-              moves into its color's theme.
+              Opening a topic study here adds a live panel to your reading row
+              — its gathered verses, grouped by theme and markable right in
+              the panel. Unmarked verses sit at the top; as you mark, each
+              verse moves into its color's theme. A chapter study opens its
+              chapter in the reader instead.
             </p>
             <p
               style={{

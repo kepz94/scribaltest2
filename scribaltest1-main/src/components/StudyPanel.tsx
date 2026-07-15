@@ -1,24 +1,55 @@
-import React, { useMemo, useState } from "react";
-import { Mark, MarkColor, COLORS, COLOR_MAP, STYLE_POINTS } from "../types";
+import React, { useMemo, useRef, useState } from "react";
+import {
+  Mark,
+  MarkColor,
+  MarkStyle,
+  Tool,
+  WordTag,
+  COLORS,
+  COLOR_MAP,
+  STYLE_POINTS,
+} from "../types";
+import MarkedVerse from "./MarkedVerse";
 
-// Live study panel (SCR-27): a reading-row panel that shows what's going into
-// a study — its verses grouped by theme — as a quick, live reference while
-// the user marks in the reader beside it. It is a LENS, not a mirror: the
-// title renames the study and the theme labels write the shared scopedLabels
-// store, so edits here propagate everywhere those names appear. The panel is
-// dumb — the parent derives verses/marks/labels from the live stores and this
-// component only groups and renders them, so mark changes re-render it free.
+// Topic study panel (SCR-47, retargeting the SCR-27 chassis): the container
+// for a topic study — its verses grouped by theme, markable in place. It is a
+// LENS, not a mirror: the title renames the study and the theme labels write
+// the shared scopedLabels store (searchstudy:<id> scope), so edits here
+// propagate everywhere those names appear. The panel is dumb — the parent
+// derives verses/marks/labels from the live stores and this component only
+// groups and renders them, so mark changes re-render (and regroup) it free.
 
 export interface StudyPanelVerse {
   reference: string;
   text: string;
 }
 
+// In-panel marking (SCR-47): the parent passes the global tool state and
+// book-targeted mark writers; the panel turns text selections over its verses
+// into marks with the same range math the reader uses. Marks land in the
+// study's book, themed under its searchstudy:<id> scope.
+export interface StudyPanelMarking {
+  tool: Tool;
+  color: MarkColor;
+  onMarkMany: (
+    items: {
+      reference: string;
+      verseText: string;
+      markedText: string;
+      startIndex: number;
+      endIndex: number;
+      style: MarkStyle;
+      color: MarkColor;
+    }[]
+  ) => void;
+  onEraseMark: (markId: string) => void;
+  tags?: WordTag[];
+  onTagTap?: (tag: WordTag) => void;
+  dark?: boolean;
+}
+
 interface StudyPanelProps {
   title: string;
-  // Shown muted under the title when the scope has no recorded study yet —
-  // the rename is a session draft until Compile records it.
-  titleHint?: string;
   subtitle?: string;
   verses: StudyPanelVerse[];
   marks: Mark[];
@@ -31,7 +62,11 @@ interface StudyPanelProps {
   onClose: () => void;
   // Opens the Unmarked verses as a markable surface beside the panel.
   onMarkUnmarked?: () => void;
-  // Set when the panel's study no longer exists (deleted keyword study):
+  // Drops one verse from the study (its marks stay in the book — the existing
+  // onRemoveVerses semantics, one verse at a time).
+  onRemoveVerse?: (reference: string) => void;
+  marking?: StudyPanelMarking;
+  // Set when the panel's study no longer exists (deleted topic study):
   // render only the message + close.
   missing?: string;
 }
@@ -39,15 +74,32 @@ interface StudyPanelProps {
 interface VerseRow {
   reference: string;
   // "Focused" = the dominant color's marked fragments (or the verse text when
-  // nothing is marked); "full" = the whole verse. Which one shows is the
-  // panel-level Focused / Full verse toggle (the Outline's vocabulary).
+  // nothing is marked); "full" = the whole verse, rendered markable. Which one
+  // shows is the panel-level Focused / Full verse toggle.
   focused: string;
   full: string;
 }
 
+// "1 Nephi 2:5" -> 5, for MarkedVerse's verse-number gutter.
+const verseNumOf = (ref: string): number => {
+  const i = ref.lastIndexOf(":");
+  const n = i >= 0 ? Number(ref.slice(i + 1)) : NaN;
+  return Number.isFinite(n) ? n : 0;
+};
+
+const MARK_STYLES: MarkStyle[] = [
+  "bold",
+  "circle",
+  "box",
+  "underline",
+  "dashed",
+  "squiggly",
+  "italic",
+  "highlight",
+];
+
 export default function StudyPanel({
   title,
-  titleHint,
   subtitle,
   verses,
   marks,
@@ -59,6 +111,8 @@ export default function StudyPanel({
   onJump,
   onClose,
   onMarkUnmarked,
+  onRemoveVerse,
+  marking,
   missing,
 }: StudyPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -70,10 +124,15 @@ export default function StudyPanel({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  const [view, setView] = useState<"focused" | "full">("focused");
+  // SCR-47: full verse is the default (the panel is a marking surface);
+  // Focused remains as the overview.
+  const [view, setView] = useState<"focused" | "full">("full");
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // Group each verse under its dominant color (summed STYLE_POINTS across its
   // marks — the Outline's assignment rule), or Unmarked when it has no marks.
+  // New arrivals have no marks, so they land in Unmarked and disperse into
+  // their color's group as they're marked — live, since marks are props.
   const grouped = useMemo(() => {
     const byRef = new Map<string, Mark[]>();
     marks.forEach((m) => {
@@ -130,6 +189,100 @@ export default function StudyPanel({
       })),
     };
   }, [verses, marks]);
+
+  const textByRef = useMemo(() => {
+    const m = new Map<string, string>();
+    verses.forEach((v) => m.set(v.reference, v.text));
+    return m;
+  }, [verses]);
+
+  // Selection → marks, the reader's range math scoped to this panel: walk
+  // every verse block the selection touches and mark the covered character
+  // range in each. Fires only when a mark style is the active tool.
+  const handleMouseUp = () => {
+    if (!marking) return;
+    if (!MARK_STYLES.includes(marking.tool as MarkStyle)) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const body = bodyRef.current;
+    if (!body || !body.contains(range.commonAncestorContainer)) return;
+    const items: {
+      reference: string;
+      verseText: string;
+      markedText: string;
+      startIndex: number;
+      endIndex: number;
+      style: MarkStyle;
+      color: MarkColor;
+    }[] = [];
+    const els = Array.from(body.querySelectorAll("[data-verse-ref]"));
+    els.forEach((el) => {
+      if (
+        typeof range.intersectsNode !== "function" ||
+        !range.intersectsNode(el)
+      )
+        return;
+      const reference = el.getAttribute("data-verse-ref");
+      if (!reference) return;
+      const text = textByRef.get(reference);
+      if (text == null) return;
+      const textSpan = el.querySelector("[data-verse-text]");
+      if (!textSpan) return;
+      // Real-intersection guard (SCR-14): a triple-click selection ends
+      // exactly AT the start of the next verse block — skip boundary touches.
+      try {
+        const spanRange = document.createRange();
+        spanRange.selectNodeContents(textSpan);
+        if (
+          spanRange.compareBoundaryPoints(Range.END_TO_START, range) >= 0 ||
+          spanRange.compareBoundaryPoints(Range.START_TO_END, range) <= 0
+        )
+          return;
+      } catch {
+        /* boundary comparison unavailable — keep the permissive path */
+      }
+      let startIndex = 0;
+      let endIndex = text.length;
+      if (textSpan.contains(range.startContainer)) {
+        const r = document.createRange();
+        r.selectNodeContents(textSpan);
+        try {
+          r.setEnd(range.startContainer, range.startOffset);
+        } catch {
+          return;
+        }
+        startIndex = r.toString().length;
+      }
+      if (textSpan.contains(range.endContainer)) {
+        const r = document.createRange();
+        r.selectNodeContents(textSpan);
+        try {
+          r.setEnd(range.endContainer, range.endOffset);
+        } catch {
+          return;
+        }
+        endIndex = r.toString().length;
+      }
+      startIndex = Math.max(0, Math.min(startIndex, text.length));
+      endIndex = Math.max(0, Math.min(endIndex, text.length));
+      if (endIndex > startIndex) {
+        items.push({
+          reference,
+          verseText: text,
+          markedText: text.slice(startIndex, endIndex),
+          startIndex,
+          endIndex,
+          style: marking.tool as MarkStyle,
+          color: marking.color,
+        });
+      }
+    });
+    if (items.length) {
+      marking.onMarkMany(items);
+      sel.removeAllRanges();
+    }
+  };
 
   const commitTitle = () => {
     setEditingTitle(false);
@@ -211,58 +364,99 @@ export default function StudyPanel({
     </div>
   );
 
-  const verseRow = (row: VerseRow) => (
-    <button
-      key={row.reference}
-      onClick={() => onJump(row.reference)}
-      title={"Go to " + row.reference}
+  // Reference caption above each verse: jump on click, with a quiet per-verse
+  // remove (drops the verse from the study; marks stay in the book).
+  const refCaption = (row: VerseRow) => (
+    <span
       style={{
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        padding: "6px 8px",
-        borderRadius: "8px",
-        border: "none",
-        background: "transparent",
-        cursor: "pointer",
-        fontFamily: "system-ui, sans-serif",
+        display: "flex",
+        alignItems: "center",
+        gap: "7px",
+        marginBottom: "2px",
       }}
     >
-      <span
+      <button
+        onClick={() => onJump(row.reference)}
+        title={"Go to " + row.reference}
         style={{
-          display: "block",
+          border: "none",
+          background: "transparent",
+          padding: 0,
           fontSize: "12.5px",
           fontWeight: 600,
           color: "var(--text)",
-          marginBottom: "2px",
+          cursor: "pointer",
+          fontFamily: "system-ui, sans-serif",
         }}
       >
         {row.reference}
-      </span>
-      <span
-        style={
-          view === "focused"
-            ? {
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical" as any,
-                overflow: "hidden",
-                fontSize: "12.5px",
-                lineHeight: 1.45,
-                color: "var(--muted)",
-              }
-            : {
-                display: "block",
-                fontSize: "12.5px",
-                lineHeight: 1.5,
-                color: "var(--muted)",
-              }
-        }
-      >
-        {view === "focused" ? row.focused : row.full}
-      </span>
-    </button>
+      </button>
+      {onRemoveVerse && (
+        <button
+          onClick={() => onRemoveVerse(row.reference)}
+          title={"Remove " + row.reference + " from this study (marks stay)"}
+          aria-label={"Remove " + row.reference + " from this study"}
+          style={{
+            border: "none",
+            background: "transparent",
+            padding: "0 2px",
+            fontSize: "11px",
+            lineHeight: 1,
+            color: "var(--muted)",
+            cursor: "pointer",
+            opacity: 0.7,
+          }}
+        >
+          ✕
+        </button>
+      )}
+    </span>
   );
+
+  const verseRow = (row: VerseRow) =>
+    view === "full" ? (
+      // Full verse: the marking surface. MarkedVerse is the reader's renderer,
+      // so marks layer identically; selections become marks via handleMouseUp.
+      <div key={row.reference} style={{ padding: "6px 8px" }}>
+        {refCaption(row)}
+        <div style={{ fontSize: "14px", lineHeight: 1.6 }}>
+          <MarkedVerse
+            reference={row.reference}
+            verseNumber={verseNumOf(row.reference)}
+            text={row.full}
+            marks={marks}
+            onEraseMark={
+              marking && marking.tool === "eraser"
+                ? marking.onEraseMark
+                : undefined
+            }
+            dark={marking?.dark}
+            tags={marking?.tags}
+            onTagTap={marking?.onTagTap}
+          />
+        </div>
+      </div>
+    ) : (
+      <div key={row.reference} style={{ padding: "6px 8px" }}>
+        {refCaption(row)}
+        <span
+          onClick={() => onJump(row.reference)}
+          style={{
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical" as any,
+            overflow: "hidden",
+            fontSize: "12.5px",
+            lineHeight: 1.45,
+            color: "var(--muted)",
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          {row.focused}
+        </span>
+      </div>
+    );
 
   if (missing) {
     return (
@@ -316,7 +510,7 @@ export default function StudyPanel({
             display: "flex",
             alignItems: "flex-start",
             gap: "10px",
-            marginBottom: subtitle || titleHint ? "4px" : "16px",
+            marginBottom: subtitle ? "4px" : "16px",
           }}
         >
           {editingTitle ? (
@@ -420,37 +614,21 @@ export default function StudyPanel({
             ✕
           </button>
         </div>
-        {(subtitle || titleHint) && (
+        {subtitle && (
           <div style={{ marginBottom: "16px" }}>
-            {subtitle && (
-              <span
-                style={{
-                  display: "block",
-                  fontSize: "12px",
-                  color: "var(--muted)",
-                }}
-              >
-                {subtitle}
-              </span>
-            )}
-            {titleHint && (
-              <span
-                style={{
-                  display: "block",
-                  fontSize: "11px",
-                  fontStyle: "italic",
-                  color: "var(--muted)",
-                  marginTop: "2px",
-                }}
-              >
-                {titleHint}
-              </span>
-            )}
+            <span
+              style={{
+                display: "block",
+                fontSize: "12px",
+                color: "var(--muted)",
+              }}
+            >
+              {subtitle}
+            </span>
           </div>
         )}
 
-        {/* Focused / Full verse toggle (Outline's vocabulary) — governs what
-            the expanded verse rows show. */}
+        {/* Full verse (default — the marking surface) / Focused overview. */}
         {(grouped.unmarked.length > 0 || grouped.groups.length > 0) && (
           <div
             style={{
@@ -490,143 +668,146 @@ export default function StudyPanel({
           </div>
         )}
 
-        {/* Unmarked group first — the verses still waiting for a theme. */}
-        {grouped.unmarked.length > 0 && (
-          <div style={{ marginBottom: "18px" }}>
-            {sectionHeader(
-              "unmarked",
-              <span
-                style={{
-                  flexShrink: 0,
-                  width: "9px",
-                  height: "9px",
-                  borderRadius: "50%",
-                  border: "1.5px solid var(--muted)",
-                  background: "transparent",
-                }}
-              />,
-              <span
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  color: "var(--muted)",
-                  letterSpacing: "0.03em",
-                }}
-              >
-                Unmarked
-              </span>,
-              grouped.unmarked.length,
-              onMarkUnmarked ? (
-                <button
-                  onClick={onMarkUnmarked}
-                  title="Open these verses beside the panel to mark them"
-                  style={{
-                    flexShrink: 0,
-                    padding: "3px 10px",
-                    borderRadius: "999px",
-                    border: "1px solid var(--border)",
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    fontFamily: "system-ui, sans-serif",
-                    cursor: "pointer",
-                  }}
-                >
-                  Mark these
-                </button>
-              ) : undefined
-            )}
-            {expanded["unmarked"] && grouped.unmarked.map(verseRow)}
-          </div>
-        )}
-
-        {/* Themed groups, by color. Labels edit the shared scopedLabels
-            store, so a rename here shows up in the legend, Outline, and
-            Studies hub instantly. */}
-        {grouped.groups.map((g) => {
-          const label = labels[g.color] || fallbackLabels[g.color] || "";
-          return (
-            <div key={g.color} style={{ marginBottom: "18px" }}>
+        <div ref={bodyRef} onMouseUp={handleMouseUp}>
+          {/* Unmarked group first — gathered-but-unthemed verses waiting to
+              disperse into their theme groups as they're marked. */}
+          {grouped.unmarked.length > 0 && (
+            <div style={{ marginBottom: "18px" }}>
               {sectionHeader(
-                "c" + g.color,
+                "unmarked",
                 <span
                   style={{
                     flexShrink: 0,
                     width: "9px",
                     height: "9px",
                     borderRadius: "50%",
-                    background: COLOR_MAP[g.color],
+                    border: "1.5px solid var(--muted)",
+                    background: "transparent",
                   }}
                 />,
-                editingColor === g.color ? (
-                  <input
-                    autoFocus
-                    value={colorDraft}
-                    onChange={(e) => setColorDraft(e.target.value)}
-                    onBlur={() => commitLabel(g.color)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitLabel(g.color);
-                      if (e.key === "Escape") setEditingColor(null);
-                    }}
-                    placeholder="Name this color"
-                    style={{
-                      width: "100%",
-                      fontSize: "12.5px",
-                      fontWeight: 700,
-                      color: "var(--text)",
-                      background: "var(--panel)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "6px",
-                      padding: "3px 7px",
-                      fontFamily: "system-ui, sans-serif",
-                    }}
-                  />
-                ) : (
+                <span
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "var(--muted)",
+                    letterSpacing: "0.03em",
+                  }}
+                >
+                  Unmarked
+                </span>,
+                grouped.unmarked.length,
+                onMarkUnmarked ? (
                   <button
-                    onClick={() => {
-                      setColorDraft(label);
-                      setEditingColor(g.color);
-                    }}
-                    title="Rename this theme"
+                    onClick={onMarkUnmarked}
+                    title="Open these verses beside the panel to mark them"
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      maxWidth: "100%",
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "text",
-                      fontSize: "12.5px",
+                      flexShrink: 0,
+                      padding: "3px 10px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border)",
+                      background: "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: "11px",
                       fontWeight: 700,
                       fontFamily: "system-ui, sans-serif",
-                      color: label ? "var(--text)" : "var(--muted)",
-                      fontStyle: label ? "normal" : "italic",
+                      cursor: "pointer",
                     }}
                   >
-                    <span
+                    Mark these
+                  </button>
+                ) : undefined
+              )}
+              {expanded["unmarked"] && grouped.unmarked.map(verseRow)}
+            </div>
+          )}
+
+          {/* Themed groups, by color. Labels edit the shared scopedLabels
+              store, so a rename here shows up in the legend, Outline, and
+              Studies hub instantly. */}
+          {grouped.groups.map((g) => {
+            const label = labels[g.color] || fallbackLabels[g.color] || "";
+            return (
+              <div key={g.color} style={{ marginBottom: "18px" }}>
+                {sectionHeader(
+                  "c" + g.color,
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      width: "9px",
+                      height: "9px",
+                      borderRadius: "50%",
+                      background: COLOR_MAP[g.color],
+                    }}
+                  />,
+                  editingColor === g.color ? (
+                    <input
+                      autoFocus
+                      value={colorDraft}
+                      onChange={(e) => setColorDraft(e.target.value)}
+                      onBlur={() => commitLabel(g.color)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitLabel(g.color);
+                        if (e.key === "Escape") setEditingColor(null);
+                      }}
+                      placeholder="Name this color"
                       style={{
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        borderBottom: "1px dashed var(--border)",
-                        paddingBottom: "1px",
+                        width: "100%",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        background: "var(--panel)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "6px",
+                        padding: "3px 7px",
+                        fontFamily: "system-ui, sans-serif",
+                      }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setColorDraft(label);
+                        setEditingColor(g.color);
+                      }}
+                      title="Rename this theme"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        maxWidth: "100%",
+                        textAlign: "left",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "text",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        fontFamily: "system-ui, sans-serif",
+                        color: label ? "var(--text)" : "var(--muted)",
+                        fontStyle: label ? "normal" : "italic",
                       }}
                     >
-                      {label || "Name this color"}
-                    </span>
-                    {pencil}
-                  </button>
-                ),
-                g.rows.length
-              )}
-              {expanded["c" + g.color] && g.rows.map(verseRow)}
-            </div>
-          );
-        })}
+                      <span
+                        style={{
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          borderBottom: "1px dashed var(--border)",
+                          paddingBottom: "1px",
+                        }}
+                      >
+                        {label || "Name this color"}
+                      </span>
+                      {pencil}
+                    </button>
+                  ),
+                  g.rows.length
+                )}
+                {expanded["c" + g.color] && g.rows.map(verseRow)}
+              </div>
+            );
+          })}
+        </div>
 
         {grouped.unmarked.length === 0 && grouped.groups.length === 0 && (
           <p
