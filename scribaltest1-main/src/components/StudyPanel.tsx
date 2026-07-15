@@ -29,6 +29,8 @@ interface StudyPanelProps {
   onCompile: () => void;
   onJump: (reference: string) => void;
   onClose: () => void;
+  // Opens the Unmarked verses as a markable surface beside the panel.
+  onMarkUnmarked?: () => void;
   // Set when the panel's study no longer exists (deleted keyword study):
   // render only the message + close.
   missing?: string;
@@ -52,6 +54,7 @@ export default function StudyPanel({
   onCompile,
   onJump,
   onClose,
+  onMarkUnmarked,
   missing,
 }: StudyPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -130,7 +133,8 @@ export default function StudyPanel({
   const sectionHeader = (
     dot: React.ReactNode,
     body: React.ReactNode,
-    count: number
+    count: number,
+    action?: React.ReactNode
   ) => (
     <div
       style={{
@@ -144,6 +148,7 @@ export default function StudyPanel({
     >
       {dot}
       <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+      {action}
       <span
         style={{
           flexShrink: 0,
@@ -397,7 +402,27 @@ export default function StudyPanel({
               >
                 Unmarked
               </span>,
-              grouped.unmarked.length
+              grouped.unmarked.length,
+              onMarkUnmarked ? (
+                <button
+                  onClick={onMarkUnmarked}
+                  title="Open these verses beside the panel to mark them"
+                  style={{
+                    flexShrink: 0,
+                    padding: "3px 10px",
+                    borderRadius: "999px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    fontFamily: "system-ui, sans-serif",
+                    cursor: "pointer",
+                  }}
+                >
+                  Mark these
+                </button>
+              ) : undefined
             )}
             {grouped.unmarked.map(verseRow)}
           </div>
