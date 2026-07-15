@@ -191,12 +191,20 @@ export default function StudyPanel({
       if (list) list.push(row);
       else groups.set(best, [row]);
     });
+    // Which group (theme color or "unmarked") each verse sits in — reorder
+    // drags are constrained WITHIN a group (SCR-51).
+    const groupOf = new Map<string, string>();
+    unmarked.forEach((r) => groupOf.set(r.reference, "unmarked"));
+    groups.forEach((rows, c) =>
+      rows.forEach((r) => groupOf.set(r.reference, "c" + c))
+    );
     return {
       unmarked,
       groups: COLORS.filter((c) => groups.has(c)).map((c) => ({
         color: c,
         rows: groups.get(c) as VerseRow[],
       })),
+      groupOf,
     };
   }, [verses, marks]);
 
@@ -492,7 +500,13 @@ export default function StudyPanel({
       e.preventDefault();
       e.stopPropagation();
       if (p.fromSelf) {
-        if (p.ref !== row.reference && onReorderVerse)
+        // Reorder stays WITHIN a theme group: a drop on a row in another
+        // group is ignored (grouping is meaning — marks decide it, not drag).
+        if (
+          p.ref !== row.reference &&
+          onReorderVerse &&
+          grouped.groupOf.get(p.ref) === grouped.groupOf.get(row.reference)
+        )
           onReorderVerse(p.ref, row.reference);
       } else if (onDropVerse) onDropVerse(p.ref);
     },

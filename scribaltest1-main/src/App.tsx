@@ -3904,9 +3904,9 @@ export default function App() {
         refs.push(ref);
       }
     });
-    return refs
-      .sort((a, b) => orderOfRef(a) - orderOfRef(b))
-      .map((r) => ({ reference: r, text: textOf(r) }));
+    // The study's SAVED order, not canon (SCR-51): refs default to canon at
+    // creation, and the user's rearrangement within theme groups persists.
+    return refs.map((r) => ({ reference: r, text: textOf(r) }));
   };
   // The label scope whose scopedLabels name the panel's themes — a topic
   // study's own searchstudy:<id> scope, mirroring the reading legend.
@@ -4321,9 +4321,10 @@ export default function App() {
     if (!refs.length) return;
     const study = searchStudies.find((s) => s.id === id);
     if (!study) return;
-    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
-      (a, b) => orderOfRef(a) - orderOfRef(b)
-    );
+    // Additions APPEND (SCR-51): merging never re-sorts the study's saved
+    // verse order back to canon.
+    const have = new Set(study.refs);
+    const merged = [...study.refs, ...refs.filter((r) => !have.has(r))];
     if (mode === "copy") {
       const copy = addStudy(study.name + " (copy)", study.bookId, merged);
       openStudyTab(copy);
@@ -4385,9 +4386,9 @@ export default function App() {
     migrate: boolean
   ) => {
     if (!refs.length) return;
-    const merged = Array.from(new Set([...study.refs, ...refs])).sort(
-      (a, b) => orderOfRef(a) - orderOfRef(b)
-    );
+    // Additions APPEND (SCR-51): a send never destroys the saved custom order.
+    const have = new Set(study.refs);
+    const merged = [...study.refs, ...refs.filter((r) => !have.has(r))];
     if (migrate) {
       const newBook = createSession(
         study.name.trim() || "Session \u00b7 " + fmtShortDate(Date.now()),
@@ -10689,6 +10690,25 @@ export default function App() {
                       removeVersesFromStudy(p.searchStudyId, [ref])
                     }
                     dragId={p.searchStudyId}
+                    onReorderVerse={(ref, beforeRef) => {
+                      // SCR-51: rearrange within the study's saved refs order
+                      // — persisted (localStorage) and synced (updatedAt).
+                      const cur = searchStudies.find(
+                        (s) => s.id === p.searchStudyId
+                      );
+                      if (!cur || !cur.refs.includes(ref)) return;
+                      const without = cur.refs.filter((r) => r !== ref);
+                      const at = beforeRef ? without.indexOf(beforeRef) : -1;
+                      const next =
+                        at < 0
+                          ? [...without, ref]
+                          : [
+                              ...without.slice(0, at),
+                              ref,
+                              ...without.slice(at),
+                            ];
+                      updateStudy(cur.id, { refs: next });
+                    }}
                     onDropVerse={(ref) => {
                       // A grabber drop from outside adds the verse (it lands
                       // in Unmarked until marked here). Appended, not
@@ -11854,6 +11874,19 @@ export default function App() {
                 setNote={setNote}
                 collapsed={compileCollapsed}
                 onCollapsedChange={setCompileCollapsed}
+                refOrder={
+                  // SCR-51: a topic study's compile respects its saved verse
+                  // order within each theme group.
+                  compileStudy
+                    ? compileStudy.refs.reduce<Record<string, number>>(
+                        (acc, r, i) => {
+                          acc[r] = i;
+                          return acc;
+                        },
+                        {}
+                      )
+                    : undefined
+                }
               />
             )}
             {compileView === "charting" && <Charting {...sharedCompileProps} />}

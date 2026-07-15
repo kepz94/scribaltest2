@@ -35,6 +35,10 @@ interface OutlineProps {
   // to local state when omitted, so the view still works on its own.
   collapsed?: number[];
   onCollapsedChange?: Dispatch<SetStateAction<number[]>>;
+  // SCR-51: a topic study's saved (user-arranged) verse order, ref → index.
+  // When present it overrides the canonical order inside each theme group, so
+  // "In order" means the user's order. Chapter compiles never pass it.
+  refOrder?: Record<string, number>;
 }
 
 type SortMode = "points" | "order";
@@ -136,7 +140,11 @@ export default function Outline(props: OutlineProps) {
         reference: v.reference,
         verse: v.verse,
         text: v.text,
-        order: ti * 100000 + i,
+        // A topic study's saved order wins over the canonical position.
+        order:
+          props.refOrder && v.reference in props.refOrder
+            ? props.refOrder[v.reference]
+            : ti * 100000 + i,
       });
     });
   });
