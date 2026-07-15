@@ -9,6 +9,12 @@ export type BookType = "chapter" | "topic";
 const asBookType = (v: unknown): BookType | undefined =>
   v === "chapter" || v === "topic" ? v : undefined;
 
+// The two default canvases: the Master Book (chapter) and the Master Topic
+// Book (topic). Both exist from first run, and neither can be deleted.
+export const MASTER_TOPIC_ID = "mastertopic";
+export const isBuiltinBook = (id: string) =>
+  id === "master" || id === MASTER_TOPIC_ID;
+
 // Stable fallback for books without scopedLabels. An inline `|| {}` mints a
 // new object identity every render, which the shells' syncData effects read
 // as "data changed" — one ingredient of the SCR-10 idle write loop.
@@ -322,6 +328,25 @@ function migrateMaster(): StudyBook {
   };
 }
 
+// The built-in Master Topic Book: the default topic canvas, present from
+// first run (and healed into older saves). Deterministic id, so two devices
+// creating it independently merge cleanly.
+function makeMasterTopic(): StudyBook {
+  return {
+    id: MASTER_TOPIC_ID,
+    name: "Master Topic Book",
+    type: "topic",
+    marks: [],
+    colorLabels: defaultLabels(),
+    notes: {},
+    scopedLabels: {},
+    scopedMigrated: true,
+    scopedRoles: {},
+    createdAt: Date.now(),
+    lastStudiedAt: Date.now(),
+  };
+}
+
 function initState(): State {
   const saved = safeParse<any>(safeGet("scribal_books_v1"), null);
   if (saved && saved.books && saved.books.master) {
@@ -363,20 +388,29 @@ function initState(): State {
             : Date.now(),
       };
     });
+    // Heal the built-in Master Topic Book into older saves; its type is
+    // always topic even if a stale copy lost it.
+    if (!books[MASTER_TOPIC_ID]) books[MASTER_TOPIC_ID] = makeMasterTopic();
+    else if (books[MASTER_TOPIC_ID].type !== "topic")
+      books[MASTER_TOPIC_ID] = { ...books[MASTER_TOPIC_ID], type: "topic" };
     let order: string[] = Array.isArray(saved.order)
       ? saved.order.filter((id: string) => books[id])
       : [];
     Object.keys(books).forEach((id) => {
       if (!order.includes(id)) order.push(id);
     });
-    order = ["master", ...order.filter((id) => id !== "master")];
+    order = [
+      "master",
+      MASTER_TOPIC_ID,
+      ...order.filter((id) => !isBuiltinBook(id)),
+    ];
     const activeId = books[saved.activeId] ? saved.activeId : "master";
     return { books, order, activeId, past: [], future: [] };
   }
   const master = migrateMaster();
   return {
-    books: { master },
-    order: ["master"],
+    books: { master, [MASTER_TOPIC_ID]: makeMasterTopic() },
+    order: ["master", MASTER_TOPIC_ID],
     activeId: "master",
     past: [],
     future: [],
@@ -868,8 +902,9 @@ function reducer(state: State, action: Action): State {
 
     case "setBookType": {
       const bk = state.books[action.id];
-      // Master is implicitly chapter-typed and can never be retyped.
-      if (!bk || action.id === "master" || bk.type === action.bookType)
+      // The built-in canvases can never be retyped (master is chapter, the
+      // Master Topic Book is topic).
+      if (!bk || isBuiltinBook(action.id) || bk.type === action.bookType)
         return state;
       return {
         ...state,
@@ -881,7 +916,7 @@ function reducer(state: State, action: Action): State {
     }
 
     case "deleteBook": {
-      if (action.id === "master" || !state.books[action.id]) return state;
+      if (isBuiltinBook(action.id) || !state.books[action.id]) return state;
       const books = { ...state.books };
       delete books[action.id];
       const order = state.order.filter((x) => x !== action.id);

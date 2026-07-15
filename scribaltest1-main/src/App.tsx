@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./desktop.css";
-import { useMarks } from "./hooks/useMarks";
+import {
+  useMarks,
+  MASTER_TOPIC_ID,
+  isBuiltinBook,
+} from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
 import VerseViewer from "./components/VerseViewer";
@@ -1937,7 +1941,9 @@ export default function App() {
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
   const [studyDraftName, setStudyDraftName] = useState("");
-  const [studyDraftBook, setStudyDraftBook] = useState<string>("__new__");
+  const [studyDraftBook, setStudyDraftBook] = useState<string>(
+    MASTER_TOPIC_ID
+  );
   const [studyDraftNewName, setStudyDraftNewName] = useState("");
   // "Send verses" from a reading panel: the captured verse refs (dialog open when
   // non-null), and whether the dialog is on its second step (picking an existing
@@ -2462,12 +2468,9 @@ export default function App() {
   // topic book, or a fresh one when none exists. Untyped pre-migration books
   // stay selectable; chapter books and master never host keyword studies.
   const bookTypeOf = (id: string) => books.find((b) => b.id === id)?.type;
-  const defaultTopicBookId = () => {
-    const topics = books.filter((b) => b.type === "topic");
-    if (!topics.length) return "__new__";
-    return topics.reduce((a, b) => (b.lastStudiedAt > a.lastStudiedAt ? b : a))
-      .id;
-  };
+  // The Master Topic Book always exists, so it is THE default home for new
+  // topic studies.
+  const defaultTopicBookId = () => MASTER_TOPIC_ID;
 
   const newSessionForActiveTab = (bookType?: "chapter" | "topic") => {
     const id = createSession(
@@ -2708,7 +2711,22 @@ export default function App() {
     ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
     if (!refs.length) return;
     const name = query.trim() || gt.label + " topic";
-    const bookId = createSession(name, false, "topic");
+    // Default home: the Master Topic Book. Carrying marks onto a verse that
+    // is ALREADY marked there would merge two studies' marks on one verse
+    // (one-set-per-verse-per-book invariant), so that case gets its own
+    // fresh topic book instead.
+    const wouldCollide =
+      gt.carryMarks &&
+      gt.pulledRefs.length > 0 &&
+      (() => {
+        const targetMarked = new Set(
+          getBook(defaultTopicBookId()).marks.map((m) => m.reference)
+        );
+        return gt.pulledRefs.some((r) => targetMarked.has(r));
+      })();
+    const bookId = wouldCollide
+      ? createSession(name, false, "topic")
+      : defaultTopicBookId();
     if (gt.carryMarks && gt.pulledRefs.length)
       absorb(bookId, gt.sourceBookId, gt.pulledRefs);
     const study = addStudy(name, bookId, refs);
@@ -4156,7 +4174,7 @@ export default function App() {
     }
     const study = addStudy(studyDraftName, bookId, refs);
     setStudyDraftRefs(null);
-    setStudyDraftBook("__new__");
+    setStudyDraftBook(MASTER_TOPIC_ID);
     setStudyDraftNewName("");
     openStudyTab(study);
   };
@@ -4807,19 +4825,31 @@ export default function App() {
   };
 
   // SCR-45: every new session book is a chapter canvas or a topic canvas —
-  // a plain choice at creation (the two intents, not skill levels). The new
-  // book starts blank either way.
+  // a plain choice at creation (the two intents, not skill levels), asked in
+  // its own properly laid-out dialog (rendered below). The new book starts
+  // blank either way. attach: "tab" points the active tab at it; "vault"
+  // makes it the active book (the Vault's + New session).
+  const [newBookPrompt, setNewBookPrompt] = useState<{
+    attach: "tab" | "vault";
+  } | null>(null);
+  const pickNewBookType = (bookType: "chapter" | "topic") => {
+    if (!newBookPrompt) return;
+    setNewBookPrompt(null);
+    if (newBookPrompt.attach === "tab") {
+      newSessionForActiveTab(bookType);
+    } else {
+      setActiveBook(
+        createSession(
+          "Session · " + fmtShortDate(Date.now()),
+          false,
+          bookType
+        )
+      );
+    }
+  };
   const handleNewSession = () => {
     setBookMenuOpen(false);
-    askConfirm({
-      title: "What kind of study book?",
-      body:
-        "A Chapter study book is for marking chapters — meaning drives membership: mark, name your colors, compile, link chapters to carry themes. A Topic study book is for gathering specific verses — membership drives meaning: collect verses, then impose meaning on them.",
-      confirmLabel: "Chapter study book",
-      onConfirm: () => newSessionForActiveTab("chapter"),
-      secondaryLabel: "Topic study book",
-      onSecondary: () => newSessionForActiveTab("topic"),
-    });
+    setNewBookPrompt({ attach: "tab" });
   };
   const startEditBook = (id: string, name: string) => {
     setEditingBookId(id);
@@ -7259,6 +7289,143 @@ export default function App() {
         </div>
       )}
 
+      {/* New study book: the two-canvas choice as two aligned option cards. */}
+      {newBookPrompt && (
+        <div
+          className="scribal-fade"
+          onClick={() => setNewBookPrompt(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 380,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="scribal-rise"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "440px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: "16px",
+              border: "1px solid var(--border)",
+              padding: "20px",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div style={{ fontSize: "16px", fontWeight: 700 }}>
+              New study book
+            </div>
+            <div
+              style={{
+                fontSize: "12.5px",
+                color: "var(--muted)",
+                marginTop: "3px",
+                marginBottom: "16px",
+              }}
+            >
+              Every book is one of two canvases. It starts blank either way.
+            </div>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            >
+              {(
+                [
+                  {
+                    type: "chapter" as const,
+                    color: "#ef4444",
+                    title: "Chapter study book",
+                    body:
+                      "For marking chapters — meaning drives membership. Mark, name your colors, compile, link chapters to carry themes.",
+                  },
+                  {
+                    type: "topic" as const,
+                    color: "#3b82f6",
+                    title: "Topic study book",
+                    body:
+                      "For gathering specific verses — membership drives meaning. Collect verses from anywhere, then impose meaning on them.",
+                  },
+                ]
+              ).map((opt) => (
+                <button
+                  key={opt.type}
+                  onClick={() => pickNewBookType(opt.type)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "14px 15px",
+                    borderRadius: "12px",
+                    border: "1px solid var(--border)",
+                    borderLeft: "3px solid " + opt.color,
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "14.5px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {opt.title}
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "12.5px",
+                        color: "var(--muted)",
+                        marginTop: "3px",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {opt.body}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                onClick={() => setNewBookPrompt(null)}
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SCR-49: the one Add-keyword-search dialog — notice + two plain
           choices, no second confirmation. */}
       {addKwDraft &&
@@ -8584,7 +8751,7 @@ export default function App() {
                           {b.markCount}
                         </span>
 
-                        {!b.isMaster && !editing && (
+                        {!isBuiltinBook(b.id) && !editing && (
                           <button
                             onClick={() => startEditBook(b.id, b.name)}
                             title="Rename"
@@ -8600,7 +8767,7 @@ export default function App() {
                             ✎
                           </button>
                         )}
-                        {!b.isMaster && !editing && (
+                        {!isBuiltinBook(b.id) && !editing && (
                           <button
                             onClick={() => handleDeleteBook(b)}
                             title="Delete session"
@@ -11971,19 +12138,21 @@ export default function App() {
       {mode === "vault" &&
         (() => {
           const all = buildStudyRows();
+          // Built-ins pinned first: Master Book, then Master Topic Book.
+          const builtinRank = (id: string) =>
+            id === "master" ? 0 : id === MASTER_TOPIC_ID ? 1 : 2;
           const vaultBooks: VaultBook[] = [...books]
-            .sort((a, b) =>
-              a.isMaster
-                ? -1
-                : b.isMaster
-                ? 1
-                : (b.lastStudiedAt || 0) - (a.lastStudiedAt || 0)
+            .sort(
+              (a, b) =>
+                builtinRank(a.id) - builtinRank(b.id) ||
+                (b.lastStudiedAt || 0) - (a.lastStudiedAt || 0)
             )
             .map((b) => ({
               id: b.id,
               name: b.name,
               isMaster: !!b.isMaster,
               active: b.id === activeBookId,
+              builtin: isBuiltinBook(b.id),
               type: b.type,
               rows: all.filter((r) => r.bookId === b.id),
             }));
@@ -11991,32 +12160,7 @@ export default function App() {
             <BooksVault
               books={vaultBooks}
               onSetActive={setActiveBook}
-              onNewSession={() => {
-                // Same plain type choice as the header's New Session (SCR-45).
-                askConfirm({
-                  title: "What kind of study book?",
-                  body:
-                    "A Chapter study book is for marking chapters — meaning drives membership. A Topic study book is for gathering specific verses — membership drives meaning.",
-                  confirmLabel: "Chapter study book",
-                  onConfirm: () =>
-                    setActiveBook(
-                      createSession(
-                        "Session · " + fmtShortDate(Date.now()),
-                        false,
-                        "chapter"
-                      )
-                    ),
-                  secondaryLabel: "Topic study book",
-                  onSecondary: () =>
-                    setActiveBook(
-                      createSession(
-                        "Session · " + fmtShortDate(Date.now()),
-                        false,
-                        "topic"
-                      )
-                    ),
-                });
-              }}
+              onNewSession={() => setNewBookPrompt({ attach: "vault" })}
               onRename={(id, name) => renameBook(id, name)}
               onDelete={(id) =>
                 askConfirm({

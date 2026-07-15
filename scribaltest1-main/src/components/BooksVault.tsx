@@ -8,6 +8,8 @@ export type VaultBook = {
   name: string;
   isMaster: boolean;
   active: boolean;
+  // Built-in canvases (Master Book, Master Topic Book): no rename/delete.
+  builtin?: boolean;
   // Two-canvas book type (SCR-54): shown on the book row. Undefined =
   // pre-migration book (no tag).
   type?: "chapter" | "topic";
@@ -273,12 +275,12 @@ export default function BooksVault({
                   ) : (
                     <div style={{ display: "flex", gap: "6px" }}>
                       {!b.active && pill("Switch to", () => onSetActive(b.id), true)}
-                      {!b.isMaster &&
+                      {!(b.builtin ?? b.isMaster) &&
                         pill("Rename", () => {
                           setDraft(b.name);
                           setEditingId(b.id);
                         })}
-                      {!b.isMaster &&
+                      {!(b.builtin ?? b.isMaster) &&
                         pill("Delete", () => {
                           if (
                             window.confirm(
