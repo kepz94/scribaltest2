@@ -1139,6 +1139,9 @@ export default function App() {
               chapter: t.chapter,
               bookId,
               studyId: t.studyId,
+              looseRefs: Array.isArray(t.looseRefs) ? t.looseRefs : undefined,
+              looseTitle:
+                typeof t.looseTitle === "string" ? t.looseTitle : undefined,
             };
           });
         }
@@ -1752,7 +1755,9 @@ export default function App() {
     // A tab for a chapter scope: reuse the open chapter tab if one shows it, else
     // build one in the current session book.
     const tabForScope = (scope: string): Tab | null => {
-      const open = tabs.find((t) => !t.studyId && chapterScopeOf(t) === scope);
+      const open = tabs.find(
+        (t) => !t.studyId && !t.looseRefs && chapterScopeOf(t) === scope
+      );
       if (open) return open;
       const loc = chapterLoc.get(scope);
       if (!loc) return null;
@@ -2268,7 +2273,9 @@ export default function App() {
   );
   const tabLabel = useCallback(
     (t: Tab) =>
-      t.studyId
+      t.looseRefs
+        ? t.looseTitle || "Mark verses"
+        : t.studyId
         ? searchStudies.find((s) => s.id === t.studyId)?.name || "Study"
         : vols[t.volume].books[t.book].book + " " + getChapter(t).chapter,
     [getChapter, searchStudies]
@@ -2714,12 +2721,96 @@ export default function App() {
     return null;
   };
 
+  // Smart jump (SCR-27 follow-up): scroll to the verse wherever it's ALREADY
+  // visible — never convert a study/loose tab into a chapter tab (the old
+  // unconditional updateActiveTab rebuilt the active tab without its studyId,
+  // which is how a keyword tab silently became a chapter tab). Priority:
+  // active tab showing the ref → an open chapter tab at that chapter → any
+  // other tab showing it → retarget a PLAIN active chapter tab → open new.
+  const tabShowsRef = (t: Tab, reference: string): boolean => {
+    if (t.looseRefs) return t.looseRefs.includes(reference);
+    if (t.studyId) {
+      const st = searchStudies.find((s) => s.id === t.studyId);
+      return !!st && st.refs.includes(reference);
+    }
+    return false;
+  };
   const jumpToReference = (reference: string) => {
     const loc = locateReference(reference);
     if (!loc) return;
-    updateActiveTab(loc.v, loc.b, loc.c);
-    setMode("read");
-    setJumpTarget(reference);
+    const land = (tabId?: string) => {
+      if (tabId && tabId !== activeTabId) setActiveTabId(tabId);
+      if (tabId) focusRowPanel(tabId);
+      setMode("read");
+      setJumpTarget(reference);
+    };
+    const active = tabs.find((t) => t.id === activeTabId);
+    // 1) The active study/loose tab already shows this verse — scroll in place.
+    if (active && tabShowsRef(active, reference)) {
+      land();
+      return;
+    }
+    // 2) An open plain chapter tab is at this verse's chapter.
+    const chapTab = tabs.find(
+      (t) =>
+        !t.studyId &&
+        !t.looseRefs &&
+        t.volume === loc.v &&
+        t.book === loc.b &&
+        t.chapter === loc.c
+    );
+    if (chapTab) {
+      land(chapTab.id);
+      return;
+    }
+    // 3) Some other open study/loose tab shows it.
+    const showing = tabs.find((t) => tabShowsRef(t, reference));
+    if (showing) {
+      land(showing.id);
+      return;
+    }
+    // 4) The active tab is a plain chapter tab — retarget it (the original
+    // behavior, now reserved for tabs that are safe to retarget).
+    if (active && !active.studyId && !active.looseRefs) {
+      updateActiveTab(loc.v, loc.b, loc.c);
+      setMode("read");
+      setJumpTarget(reference);
+      return;
+    }
+    // 5) Active is a study/loose tab and the verse is nowhere on screen —
+    // open its chapter as a NEW tab (inline append; openInNewTab's cap
+    // fallback calls back here and would recurse). At the cap, retarget the
+    // first plain chapter tab instead; with none, leave everything alone.
+    if (tabs.length >= MAX_TABS) {
+      const plain = tabs.find((t) => !t.studyId && !t.looseRefs);
+      if (!plain) return;
+      const rid = makeTabId(plain.bookId, loc.v, loc.b, loc.c);
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === plain.id
+            ? {
+                id: rid,
+                volume: loc.v,
+                book: loc.b,
+                chapter: loc.c,
+                bookId: plain.bookId,
+              }
+            : t
+        )
+      );
+      land(rid);
+      return;
+    }
+    const id = makeTabId("master", loc.v, loc.b, loc.c);
+    setTabs((prev) =>
+      prev.some((t) => t.id === id)
+        ? prev
+        : [
+            ...prev,
+            { id, volume: loc.v, book: loc.b, chapter: loc.c, bookId: "master" },
+          ]
+    );
+    land(id);
   };
 
   // Guided-tour navigation: open the demo chapter in a NEW tab bound to the
@@ -2970,6 +3061,9 @@ export default function App() {
     const seen: Record<string, { label: string; tabIds: string[] }> = {};
     const seenTabs: Record<string, Tab[]> = {};
     tabs.forEach((t) => {
+      // A "Mark these" loose-verse tab is a marking surface, not a study —
+      // never a compile unit.
+      if (t.looseRefs) return;
       if (t.studyId) {
         const ks = searchStudies.find((s) => s.id === t.studyId);
         // A linked keyword search is not its own compile unit — it folds into
@@ -3166,7 +3260,12 @@ export default function App() {
     }
     const target = resolveScope(scope);
     let chapterTabIds = tabs
-      .filter((t) => !t.studyId && resolveScope(chapterScopeOf(t)) === target)
+      .filter(
+        (t) =>
+          !t.studyId &&
+          !t.looseRefs &&
+          resolveScope(chapterScopeOf(t)) === target
+      )
       .map((t) => t.id);
     if (chapterTabIds.length === 0) {
       const loc = chapterLoc.get(scope);
@@ -3277,7 +3376,10 @@ export default function App() {
     // book (the guided tour) compile just the open chapter, never the user's
     // linked-study dialog (SCR-19).
     const gid =
-      activeTab && !activeTab.studyId && !isEphemeralActive
+      activeTab &&
+      !activeTab.studyId &&
+      !activeTab.looseRefs &&
+      !isEphemeralActive
         ? chapterGroups[chapterScopeOf(activeTab)]
         : undefined;
     if (gid) {
@@ -3809,7 +3911,12 @@ export default function App() {
       // Ensure a chapter tab exists for the scope, then compile it — the same
       // block compileLinkedSearch uses.
       let ids = tabs
-        .filter((t) => !t.studyId && resolveScope(chapterScopeOf(t)) === scope)
+        .filter(
+          (t) =>
+            !t.studyId &&
+            !t.looseRefs &&
+            resolveScope(chapterScopeOf(t)) === scope
+        )
         .map((t) => t.id);
       if (!ids.length) {
         const loc = chapterLoc.get(scope);
@@ -3836,6 +3943,41 @@ export default function App() {
     // A pending panel rename wins over the seeded default so Save-to-Studies
     // records it.
     if (p.titleDraft && p.titleDraft.trim()) setCompileName(p.titleDraft.trim());
+  };
+  // "Mark these" (SCR-27): open the panel's unmarked verses as a loose-refs
+  // TAB beside it — a real marking surface (toolbar, active-book sync) built
+  // on the keyword-study tab machinery. The snapshot is fixed so the surface
+  // stays stable while the study panel's Unmarked group shrinks live. At the
+  // tab cap, fall back to the existing full-screen mark overlay.
+  const openMarkTheseTab = (p: StudyPanelInstance) => {
+    const bk = getBook(p.bookId);
+    const refs = versesForPanel(p)
+      .filter((v) => !bk.marks.some((m) => m.reference === v.reference))
+      .map((v) => v.reference);
+    if (!refs.length) return;
+    const title = studyPanelTitle(p) + " — unmarked";
+    if (tabs.length >= MAX_TABS) {
+      const refBook: Record<string, string> = {};
+      refs.forEach((r) => (refBook[r] = p.bookId));
+      openTableMarkPanel(refs, refBook, title);
+      return;
+    }
+    const loc = refLoc.get(refs[0]) || { volume: 0, book: 0, chapter: 0 };
+    const id = "loose_" + Date.now();
+    setTabs((prev) => [
+      ...prev,
+      {
+        id,
+        volume: loc.volume,
+        book: loc.book,
+        chapter: loc.chapter,
+        bookId: p.bookId,
+        looseRefs: refs,
+        looseTitle: title,
+      },
+    ]);
+    setActiveTabId(id);
+    setMode("read");
   };
   // ------------------------------------------------------------------------
 
@@ -5121,7 +5263,7 @@ export default function App() {
       }
     };
     tabs
-      .filter((t) => !t.studyId)
+      .filter((t) => !t.studyId && !t.looseRefs)
       .forEach((t) => {
         const scope = resolveScope(chapterScopeOf(t));
         push("scope|" + t.bookId + "|" + scope, tabLabel(t), "Open now");
@@ -6262,7 +6404,7 @@ export default function App() {
 
       {linkSearchDraft &&
         (() => {
-          const chapterTabs = tabs.filter((x) => !x.studyId);
+          const chapterTabs = tabs.filter((x) => !x.studyId && !x.looseRefs);
           const eyebrow: React.CSSProperties = {
             fontSize: "11px",
             fontWeight: 700,
@@ -6586,7 +6728,9 @@ export default function App() {
               });
               const themes = Array.from(themeMap.values());
               const openRows = tabs
-                .filter((x) => x.id !== linkPromptTabId && !x.studyId)
+                .filter(
+                  (x) => x.id !== linkPromptTabId && !x.studyId && !x.looseRefs
+                )
                 .map((x) => ({
                   scope: chapterScopeOf(x),
                   label: tabLabel(x),
@@ -10514,7 +10658,9 @@ export default function App() {
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
-            const gid = chapterGroups[chapterScopeOf(t)];
+            const gid = t.looseRefs
+              ? undefined
+              : chapterGroups[chapterScopeOf(t)];
             const kwStudy = t.studyId
               ? searchStudies.find((s) => s.id === t.studyId)
               : undefined;
@@ -10526,6 +10672,7 @@ export default function App() {
             // plain chapter-only group keeps its own palette color.
             const chapterCombined =
               !t.studyId &&
+              !t.looseRefs &&
               (() => {
                 const r = resolveScope(chapterScopeOf(t));
                 return searchStudies.some(
@@ -10536,7 +10683,9 @@ export default function App() {
                 );
               })();
             const linked =
-              (!t.studyId && !!gid) || kwLinked || chapterCombined;
+              (!t.studyId && !t.looseRefs && !!gid) ||
+              kwLinked ||
+              chapterCombined;
             const linkColor =
               kwLinked || chapterCombined
                 ? TYPE_PURPLE
@@ -11245,14 +11394,16 @@ export default function App() {
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
-              const linkGid = !t.studyId
-                ? chapterGroups[chapterScopeOf(t)]
-                : undefined;
+              const linkGid =
+                !t.studyId && !t.looseRefs
+                  ? chapterGroups[chapterScopeOf(t)]
+                  : undefined;
               // A chapter reads as "combined" (purple) when a live keyword
               // search is linked into it (or its group); otherwise it's a plain
               // chapter study (red). Derived live — no stored flag to drift.
               const chapterCombined =
                 !t.studyId &&
+                !t.looseRefs &&
                 (() => {
                   const r = resolveScope(chapterScopeOf(t));
                   return searchStudies.some(
@@ -11359,9 +11510,21 @@ export default function App() {
                     dark={dark}
                     sidebarOpen={sidebarOpen}
                     studyRefs={
-                      study ? study.refs : t.studyId ? [] : undefined
+                      study
+                        ? study.refs
+                        : t.looseRefs
+                        ? t.looseRefs
+                        : t.studyId
+                        ? []
+                        : undefined
                     }
-                    studyTitle={study ? study.name : "Study"}
+                    studyTitle={
+                      study
+                        ? study.name
+                        : t.looseRefs
+                        ? t.looseTitle || "Mark verses"
+                        : "Study"
+                    }
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
                     onSendVerses={(refs) => {
@@ -11372,7 +11535,9 @@ export default function App() {
                       }
                     }}
                     linkScriptures={
-                      t.studyId
+                      t.looseRefs
+                        ? undefined
+                        : t.studyId
                         ? {
                             onClick: () =>
                               setLinkKwStudyId(t.studyId as string),
@@ -11566,6 +11731,7 @@ export default function App() {
                     onCompile={() => compileFromStudyPanel(p)}
                     onJump={(ref) => jumpToReference(ref)}
                     onClose={() => closeStudyPanel(p.id)}
+                    onMarkUnmarked={() => openMarkTheseTab(p)}
                     missing={
                       p.kind === "keyword" && !st
                         ? "This study was deleted."

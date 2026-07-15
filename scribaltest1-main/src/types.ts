@@ -172,4 +172,8 @@ export interface Tab {
   chapter: number;
   bookId: string; // which StudyBook ("session") this tab reads/writes; "master" by default
   studyId?: string; // set => this tab is a keyword study, rendering its picked verses
+  // set => a "Mark these" surface (SCR-27): renders exactly these refs as a
+  // markable list, like a keyword study tab but over a fixed snapshot.
+  looseRefs?: string[];
+  looseTitle?: string;
 }
