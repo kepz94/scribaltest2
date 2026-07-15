@@ -109,6 +109,10 @@ interface VerseViewerProps {
     color: string;
     title: string;
   };
+  // Optional: per-panel Compile (SCR-48) — each chapter reading panel compiles
+  // itself (its chapter, or its linked group). The parent gates this to
+  // chapter-book panels; topic-book panels never get it.
+  onCompilePanel?: () => void;
   // How far from the top of the scroll area the function-button row (Link
   // scriptures / Send verses) pins while reading. Defaults to
   // 0, which is right when the row's own scroll container starts at the panel
@@ -187,6 +191,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     onSendVerses,
     onRemoveVerses,
     linkScriptures,
+    onCompilePanel,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -1326,6 +1331,32 @@ export default function VerseViewer(props: VerseViewerProps) {
           )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {onCompilePanel && (
+            // Per-panel Compile (SCR-48): this surface compiles itself — its
+            // chapter, or its linked group. Same row as the other function
+            // buttons, so the header height (SCR-20 guarantee) is unchanged.
+            <button
+              onClick={onCompilePanel}
+              title="Compile this chapter (or its linked group)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border: "none",
+                backgroundColor: "var(--text)",
+                color: "var(--bg)",
+                fontSize: "12.5px",
+                fontWeight: 700,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              Compile
+            </button>
+          )}
           {onSendVerses && !removeMode && (
             <button
               onClick={() => {

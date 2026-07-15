@@ -3273,6 +3273,22 @@ export default function App() {
     runCompile(u.tabIds);
   };
 
+  // Per-panel Compile (SCR-48): a chapter reading panel compiles ITSELF — its
+  // chapter, or (via the existing linked prompt) its linked group. No global
+  // "current study" guessing. Gated to chapter-book panels by the caller.
+  const compileReadingPanel = (t: Tab) => {
+    if (t.bookId !== activeBookId) setActiveBook(t.bookId);
+    setCompileStudyId(null);
+    const gid = !isEphemeralActive
+      ? chapterGroups[chapterScopeOf(t)]
+      : undefined;
+    if (gid) {
+      setLinkedCompilePrompt({ gid, tabId: t.id });
+      return;
+    }
+    runCompile([t.id]);
+  };
+
   // Compile the whole linked study (all chapters in the group) without opening
   // them as tabs — the open reading tabs stay exactly as they are.
   const compileLinkedAll = (gid: string) => {
@@ -9990,8 +10006,10 @@ export default function App() {
                     linkScriptures={
                       // Chapter-to-chapter linking only (SCR-46): keyword/topic
                       // tabs have no link affordance — chapter books LINK,
-                      // topic books GRAB.
-                      t.looseRefs || t.studyId
+                      // topic books GRAB. Topic-book chapter panels don't link.
+                      t.looseRefs ||
+                      t.studyId ||
+                      bookTypeOf(t.bookId) === "topic"
                         ? undefined
                         : {
                             onClick: () => openLinkPrompt(t),
@@ -9999,6 +10017,15 @@ export default function App() {
                             color: TYPE_RED,
                             title: "Link this chapter to other chapters",
                           }
+                    }
+                    onCompilePanel={
+                      // Per-panel Compile (SCR-48): chapter reading panels
+                      // only — topic-book panels compile from the study panel.
+                      t.looseRefs ||
+                      t.studyId ||
+                      bookTypeOf(t.bookId) === "topic"
+                        ? undefined
+                        : () => compileReadingPanel(t)
                     }
                     onRemoveVerses={
                       t.studyId
