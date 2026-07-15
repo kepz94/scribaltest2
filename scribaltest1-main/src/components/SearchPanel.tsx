@@ -34,6 +34,9 @@ interface SearchPanelProps {
   // plus the chapter's pulled verses become a NEW topic study. The query rides
   // along as the study's default name.
   onCreateTopicStudy?: (refs: string[], query: string) => void;
+  // Sends the current selection to a specific study via the parent's send
+  // picker (the same dialog reading panels use).
+  onSendToStudy?: (refs: string[]) => void;
   // When set, the panel is adding verses to an existing keyword study. The
   // selection is only the ADDITIONS — the parent merges them into the study
   // (add flows never remove; a replace-semantics bug once wiped a study).
@@ -85,6 +88,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onLinkSearchToChapter,
     linkChapterLabel,
     onCreateTopicStudy,
+    onSendToStudy,
     addToStudyName,
     onAddToStudy,
     addVersesName,
@@ -859,6 +863,67 @@ export default function SearchPanel(props: SearchPanelProps) {
                   >
                     Clear
                   </button>
+                  {/* Drag the whole selection from the bar itself. */}
+                  <span
+                    draggable
+                    onDragStart={(e) => {
+                      try {
+                        e.dataTransfer.setData(
+                          "text/plain",
+                          "scribalverse|" +
+                            Array.from(selectedRefs).join(";;") +
+                            "|search"
+                        );
+                        e.dataTransfer.effectAllowed = "copy";
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    title={
+                      "Drag the " +
+                      selectedRefs.size +
+                      " selected verses into a topic study panel"
+                    }
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding: "6px 12px",
+                      borderRadius: "999px",
+                      border: "1px solid #3b82f6",
+                      background: "rgba(59,130,246,0.08)",
+                      color: "#3b82f6",
+                      cursor: "grab",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      fontFamily: "inherit",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                    }}
+                  >
+                    ⠿ Drag {selectedRefs.size}
+                  </span>
+                  {onSendToStudy && (
+                    <button
+                      onClick={() => {
+                        onSendToStudy(Array.from(selectedRefs));
+                        setSelectedRefs(new Set());
+                      }}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: "none",
+                        background: "#3b82f6",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Send to study…
+                    </button>
+                  )}
                   {onCreateTopicStudy ? (
                     <button
                       onClick={() => {
@@ -1057,21 +1122,6 @@ export default function SearchPanel(props: SearchPanelProps) {
                       marginBottom: "3px",
                     }}
                   >
-                    {(onLinkStudy || onAddToStudy || onAddVerses) && (
-                      <input
-                        type="checkbox"
-                        checked={selectedRefs.has(r.reference)}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => toggleRef(r.reference)}
-                        style={{
-                          width: "15px",
-                          height: "15px",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                          accentColor: "#3b82f6",
-                        }}
-                      />
-                    )}
                     {r.color && (
                       <span
                         style={{
@@ -1163,6 +1213,70 @@ export default function SearchPanel(props: SearchPanelProps) {
                         ⧉ New tab
                       </button>
                     )}
+                    {/* Far-right handle column (Kepu's layout call): checkbox
+                        beside a uniform ⠿ chip. Dragging the handle of a
+                        checked row carries every checked result. */}
+                    {selectMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedRefs.has(r.reference)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => toggleRef(r.reference)}
+                        style={{
+                          width: "15px",
+                          height: "15px",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          accentColor: "#3b82f6",
+                        }}
+                      />
+                    )}
+                    <span
+                      draggable
+                      onClick={(e) => e.stopPropagation()}
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        const group =
+                          selectedRefs.has(r.reference) && selectedRefs.size
+                            ? Array.from(selectedRefs)
+                            : [r.reference];
+                        try {
+                          e.dataTransfer.setData(
+                            "text/plain",
+                            "scribalverse|" + group.join(";;") + "|search"
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      title={
+                        selectedRefs.has(r.reference) && selectedRefs.size > 1
+                          ? "Drag " +
+                            selectedRefs.size +
+                            " selected verses into a topic study panel"
+                          : "Drag this verse into a topic study panel"
+                      }
+                      style={{
+                        width: "22px",
+                        height: "22px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--soft)",
+                        color: "var(--muted)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "11px",
+                        cursor: "grab",
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                        flexShrink: 0,
+                        fontFamily: "system-ui, sans-serif",
+                      }}
+                    >
+                      ⠿
+                    </span>
                   </div>
                   <div
                     style={{

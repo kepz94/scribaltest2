@@ -1640,6 +1640,19 @@ export default function App() {
     setSearchPanels((prev) => [...prev, { id: sid }]);
     convertLauncher(launchId, sid);
   };
+  // "New topic study" (launcher root card): one tap creates an empty topic
+  // study in the Master Topic Book and converts the launcher IN PLACE into
+  // its live panel — rename it there, drag verses into its Unmarked section.
+  const launcherNewTopicStudy = (launchId: string) => {
+    const study = addStudy("Untitled topic study", MASTER_TOPIC_ID, []);
+    studyPanelSeq.current += 1;
+    const pid = "studypanel_" + studyPanelSeq.current;
+    setStudyPanels((prev) => [
+      ...prev,
+      { id: pid, bookId: study.bookId, searchStudyId: study.id },
+    ]);
+    convertLauncher(launchId, pid);
+  };
   // SCR-47: the launcher's Studies choice ids encode what opening means —
   // "kw|<searchStudyId>" opens a topic study panel; "rec|<studyId>" is a
   // chapter/linked study, which jumps to its chapter instead (no chapter
@@ -8583,20 +8596,31 @@ export default function App() {
             >
               <span style={{ color: ICON_ACCENT, fontSize: "13px" }}>❖</span>
               {activeBookName}
-              {!isMasterActive && (
-                <span
-                  style={{
-                    fontSize: "9px",
-                    letterSpacing: "1px",
-                    color: ICON_ACCENT,
-                    border: "1px solid " + ICON_ACCENT,
-                    borderRadius: "999px",
-                    padding: "1px 6px",
-                  }}
-                >
-                  SESSION
-                </span>
-              )}
+              {/* Badge = the active book's canvas type (red chapter / blue
+                  topic); untyped pre-migration sessions keep SESSION. */}
+              {!isMasterActive &&
+                (() => {
+                  const bt = bookTypeOf(activeBookId);
+                  const c = bt
+                    ? bt === "topic"
+                      ? TYPE_BLUE
+                      : TYPE_RED
+                    : ICON_ACCENT;
+                  return (
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        letterSpacing: "1px",
+                        color: c,
+                        border: "1px solid " + c,
+                        borderRadius: "999px",
+                        padding: "1px 6px",
+                      }}
+                    >
+                      {bt ? bt.toUpperCase() : "SESSION"}
+                    </span>
+                  );
+                })()}
               <span style={{ fontSize: "9px", color: "var(--muted)" }}>▼</span>
             </button>
 
@@ -9813,8 +9837,21 @@ export default function App() {
             const linked = !t.studyId && !t.looseRefs && !!gid;
             const linkColor = gid ? groupColor(gid) : ACCENT;
             const tabBook = books.find((b) => b.id === (t.bookId || "master"));
-            const tabBookLabel =
-              !tabBook || tabBook.isMaster ? "Master" : tabBook.name;
+            const tabBookName =
+              !tabBook || tabBook.isMaster ? "Master Book" : tabBook.name;
+            // Typed pill tag (Kepu's pick): the canvas type in its color,
+            // book name after it. Study tabs read TOPIC STUDY; an untyped
+            // pre-migration book keeps the plain label until migration types
+            // it.
+            const tabType = t.studyId ? "topic" : tabBook?.type;
+            const tabTypeColor = tabType === "topic" ? TYPE_BLUE : TYPE_RED;
+            const tabBookLabel = t.studyId
+              ? "TOPIC STUDY"
+              : tabType
+              ? (tabType === "topic" ? "TOPIC" : "CHAPTER") +
+                " · " +
+                tabBookName
+              : tabBookName;
             return (
               <div
                 key={t.id}
@@ -9874,7 +9911,7 @@ export default function App() {
                 <span
                   title={tabBookLabel}
                   style={{
-                    fontSize: "11px",
+                    fontSize: "10.5px",
                     lineHeight: 1,
                     color: "var(--muted)",
                     fontFamily: "system-ui, sans-serif",
@@ -9884,7 +9921,26 @@ export default function App() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {tabBookLabel}
+                  {tabType ? (
+                    <>
+                      <span
+                        style={{
+                          color: tabTypeColor,
+                          fontWeight: 800,
+                          letterSpacing: "0.07em",
+                        }}
+                      >
+                        {t.studyId
+                          ? "TOPIC STUDY"
+                          : tabType === "topic"
+                          ? "TOPIC"
+                          : "CHAPTER"}
+                      </span>
+                      {!t.studyId && <> · {tabBookName}</>}
+                    </>
+                  ) : (
+                    tabBookName
+                  )}
                 </span>
                 <div
                   onClick={() => {
@@ -10176,9 +10232,11 @@ export default function App() {
               >
                 <span
                   style={{
-                    fontSize: "11px",
+                    fontSize: "10.5px",
                     lineHeight: 1,
-                    color: "var(--muted)",
+                    color: TYPE_BLUE,
+                    fontWeight: 800,
+                    letterSpacing: "0.07em",
                     fontFamily: "system-ui, sans-serif",
                     maxWidth: "170px",
                     overflow: "hidden",
@@ -10186,7 +10244,7 @@ export default function App() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {kindLabel}
+                  {kindLabel.toUpperCase()}
                 </span>
                 <div
                   onClick={() => focusRowPanel(p.id)}
@@ -10551,6 +10609,27 @@ export default function App() {
                       }}
                     />
                   )}
+                  {/* Canvas identity strip (Kepu's pick): 3px red = chapter,
+                      blue = topic, none for untyped pre-migration books.
+                      Above the sticky header (20) and the active border (25)
+                      so it reads from anywhere; zero layout shift. */}
+                  {(t.studyId || bookTypeOf(t.bookId)) && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: "3px",
+                        background:
+                          t.studyId || bookTypeOf(t.bookId) === "topic"
+                            ? TYPE_BLUE
+                            : TYPE_RED,
+                        pointerEvents: "none",
+                        zIndex: 26,
+                      }}
+                    />
+                  )}
                   <div
                     style={{
                       height: "100%",
@@ -10648,8 +10727,9 @@ export default function App() {
                     dragVerses={
                       // Topic-book grabbers (SCR-50): chapter-book panels stay
                       // visually unchanged — chapter books LINK, topic books
-                      // GRAB.
-                      bookTypeOf(t.bookId) === "topic"
+                      // GRAB. Topic study reading tabs always grab, whatever
+                      // book they live in.
+                      bookTypeOf(t.bookId) === "topic" || !!t.studyId
                     }
                     sendPickNonce={sendPickNonces[t.id] || 0}
                     onAddKeywordSearch={
@@ -10786,6 +10866,14 @@ export default function App() {
                             )
                         : undefined
                     }
+                    onSendToStudy={(refs) => {
+                      // "Send to study…" routes the selection through the
+                      // same send picker reading panels use.
+                      if (!refs.length) return;
+                      setSendRefs(refs);
+                      setSendPicking(false);
+                      setSendTablesPicking(false);
+                    }}
                     addToStudyName={addStudy ? addStudy.name : undefined}
                     onAddToStudy={(refs, mode) => {
                       if (panel.addToStudyId)
@@ -10839,6 +10927,19 @@ export default function App() {
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
                   }}
                 >
+                  {/* Canvas identity strip: study panels are always topic. */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: "3px",
+                      background: TYPE_BLUE,
+                      pointerEvents: "none",
+                      zIndex: 26,
+                    }}
+                  />
                   <StudyPanel
                     title={studyPanelTitle(p)}
                     verses={versesForPanel(p)}
@@ -10876,15 +10977,19 @@ export default function App() {
                             ];
                       updateStudy(cur.id, { refs: next });
                     }}
-                    onDropVerse={(ref) => {
-                      // A grabber drop from outside adds the verse (it lands
-                      // in Unmarked until marked here). Appended, not
-                      // canon-sorted — the study's saved order is the user's.
+                    onDropVerses={(refs) => {
+                      // A grabber drop from outside adds the verses — one or
+                      // a checked group (they land in Unmarked until marked
+                      // here). Appended, not canon-sorted — the study's saved
+                      // order is the user's.
                       const cur = searchStudies.find(
                         (s) => s.id === p.searchStudyId
                       );
-                      if (!cur || cur.refs.includes(ref)) return;
-                      updateStudy(cur.id, { refs: [...cur.refs, ref] });
+                      if (!cur) return;
+                      const have = new Set(cur.refs);
+                      const add = refs.filter((r) => !have.has(r));
+                      if (!add.length) return;
+                      updateStudy(cur.id, { refs: [...cur.refs, ...add] });
                     }}
                     marking={{
                       // In-panel marking (SCR-47): the normal floating
@@ -10940,6 +11045,7 @@ export default function App() {
                   onPickChapter={(v, b, c) => launcherPickChapter(id, v, b, c)}
                   onPickStudy={(cid) => launcherPickStudy(id, cid)}
                   onSearch={() => launcherPickSearch(id)}
+                  onNewTopicStudy={() => launcherNewTopicStudy(id)}
                   onClose={() => closeNewTabPanel(id)}
                 />
                 <div

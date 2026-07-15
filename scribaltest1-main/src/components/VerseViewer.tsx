@@ -243,6 +243,14 @@ export default function VerseViewer(props: VerseViewerProps) {
     setSendMode(true);
     setSendSel([]);
   }, [sendPickNonce]);
+  // Grabber group-select (topic-book panels): Select toggles checkboxes in
+  // the handle column; the checked set drags as one group.
+  const [dragSelMode, setDragSelMode] = useState(false);
+  const [dragSel, setDragSel] = useState<string[]>([]);
+  const toggleDragSel = (r: string) =>
+    setDragSel((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
   const toggleSend = (ref: string) =>
     setSendSel((p) =>
       p.includes(ref) ? p.filter((r) => r !== ref) : [...p, ref]
@@ -762,42 +770,109 @@ export default function VerseViewer(props: VerseViewerProps) {
   // Study tabs render their verses with a heading whenever the chapter
   // changes, so cross-chapter sets stay readable. Factored into a helper so the
   // "mark added verses" screen can render two labeled sections (added + study).
-  // The topic-book grabber (SCR-50): sits at the verse's end, outside the
-  // selectable text. Its payload names the verse and its source, so a topic
-  // study panel can tell an outside add from an inside reorder.
-  const verseGrabber = (reference: string) =>
-    dragVerses && !sendMode && !removeMode ? (
+  // Topic-book grabbers (SCR-50, Kepu's layout call): every verse gets a
+  // visible handle chip in ONE uniform column at the far right. The Select
+  // toggle swaps checkboxes into the same column; dragging any handle of a
+  // checked verse carries the whole checked group. Payload lists the refs
+  // (";;"-joined) and the source, so a topic study panel can tell an outside
+  // add from an inside reorder.
+  const grabberRefsFor = (reference: string): string[] =>
+    dragSelMode && dragSel.length && dragSel.includes(reference)
+      ? dragSel
+      : [reference];
+  const handleColumn = (reference: string) => {
+    if (!dragVerses || sendMode || removeMode) return null;
+    const checked = dragSel.includes(reference);
+    const dragCount = grabberRefsFor(reference).length;
+    return (
       <span
-        draggable
-        onDragStart={(e) => {
-          e.stopPropagation();
-          try {
-            e.dataTransfer.setData(
-              "text/plain",
-              "scribalverse|" + reference + "|reading"
-            );
-            e.dataTransfer.effectAllowed = "copy";
-          } catch {
-            /* some browsers require a payload; nothing else to do */
-          }
-        }}
-        title="Drag this verse into a topic study panel"
         style={{
-          display: "inline-block",
-          marginLeft: "8px",
-          padding: "0 4px",
-          color: "var(--muted)",
-          opacity: 0.6,
-          cursor: "grab",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          fontSize: "0.8em",
-          fontFamily: "system-ui, sans-serif",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          marginTop: "2px",
         }}
       >
-        ⠿
+        {dragSelMode && (
+          <span
+            onClick={() => toggleDragSel(reference)}
+            role="checkbox"
+            aria-checked={checked}
+            style={{
+              width: "15px",
+              height: "15px",
+              borderRadius: "4px",
+              border:
+                "1.5px solid " + (checked ? "#3b82f6" : "var(--muted)"),
+              background: checked ? "#3b82f6" : "transparent",
+              color: "#fff",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "10px",
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            {checked ? "✓" : ""}
+          </span>
+        )}
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            try {
+              e.dataTransfer.setData(
+                "text/plain",
+                "scribalverse|" +
+                  grabberRefsFor(reference).join(";;") +
+                  "|reading"
+              );
+              e.dataTransfer.effectAllowed = "copy";
+            } catch {
+              /* some browsers require a payload; nothing else to do */
+            }
+          }}
+          title={
+            dragCount > 1
+              ? "Drag " + dragCount + " checked verses into a topic study panel"
+              : "Drag this verse into a topic study panel"
+          }
+          style={{
+            width: "22px",
+            height: "22px",
+            borderRadius: "6px",
+            border: "1px solid var(--border)",
+            background: "var(--soft)",
+            color: "var(--muted)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "11px",
+            cursor: "grab",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          ⠿
+        </span>
       </span>
-    ) : undefined;
+    );
+  };
+  // A verse row with its handle column pinned far right, in a uniform line.
+  const withHandleColumn = (reference: string, body: React.ReactNode) => {
+    const col = handleColumn(reference);
+    if (!col) return body;
+    return (
+      <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+        {col}
+      </div>
+    );
+  };
 
   const renderRefGroups = (refs: string[], keyPrefix: string) =>
     refs
@@ -836,7 +911,6 @@ export default function VerseViewer(props: VerseViewerProps) {
                 dark={dark}
                 tags={tags}
                 onTagTap={onTagTap}
-                trailing={verseGrabber(r)}
               />
             );
             const checked = removeSel.includes(r);
@@ -946,7 +1020,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                     </div>
                   </div>
                 ) : (
-                  marked
+                  withHandleColumn(r, marked)
                 )}
               </div>
             );
@@ -1428,6 +1502,44 @@ export default function VerseViewer(props: VerseViewerProps) {
           )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {dragVerses && !sendMode && !removeMode && (
+            // Group drag (topic-book panels): Select puts checkboxes in the
+            // handle column; drag any checked handle to move them together.
+            <button
+              onClick={() => {
+                setDragSelMode((v) => !v);
+                setDragSel([]);
+              }}
+              title={
+                dragSelMode
+                  ? "Done selecting"
+                  : "Check several verses, then drag them as one group"
+              }
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border:
+                  "1px solid " + (dragSelMode ? "#3b82f6" : "var(--border)"),
+                backgroundColor: dragSelMode
+                  ? "rgba(59,130,246,0.10)"
+                  : "var(--panel)",
+                color: dragSelMode ? "#3b82f6" : "var(--muted)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                fontFamily: "system-ui, sans-serif",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {dragSelMode
+                ? "Select ✓" +
+                  (dragSel.length ? " (" + dragSel.length + ")" : "")
+                : "Select"}
+            </button>
+          )}
           {onCompilePanel && (
             // Per-panel Compile (SCR-48): this surface compiles itself — its
             // chapter, or its linked group. Same row as the other function
@@ -1852,17 +1964,19 @@ export default function VerseViewer(props: VerseViewerProps) {
                 </span>
               )}
               <div style={sendMode ? { flex: 1, minWidth: 0 } : undefined}>
-                <MarkedVerse
-                  reference={verse.reference}
-                  verseNumber={verse.verse}
-                  text={verse.text}
-                  marks={marks}
-                  onEraseMark={erasing ? onEraseMark : undefined}
-                  dark={dark}
-                  tags={tags}
-                  onTagTap={onTagTap}
-                  trailing={verseGrabber(verse.reference)}
-                />
+                {withHandleColumn(
+                  verse.reference,
+                  <MarkedVerse
+                    reference={verse.reference}
+                    verseNumber={verse.verse}
+                    text={verse.text}
+                    marks={marks}
+                    onEraseMark={erasing ? onEraseMark : undefined}
+                    dark={dark}
+                    tags={tags}
+                    onTagTap={onTagTap}
+                  />
+                )}
               </div>
             </div>
             );

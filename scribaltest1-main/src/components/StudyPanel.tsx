@@ -68,10 +68,11 @@ interface StudyPanelProps {
   marking?: StudyPanelMarking;
   // SCR-50: drag-and-drop. dragId names this panel in drag payloads so the
   // same grabber disambiguates by source — from outside the panel a drop ADDS
-  // the verse (onDropVerse); from inside it reorders within its theme group
-  // (onReorderVerse — persistence is SCR-51).
+  // the verses (onDropVerses — grabber drags can carry a checked group); from
+  // inside it reorders within its theme group (onReorderVerse — persistence
+  // is SCR-51).
   dragId?: string;
-  onDropVerse?: (reference: string) => void;
+  onDropVerses?: (references: string[]) => void;
   onReorderVerse?: (reference: string, beforeRef: string | null) => void;
   // Set when the panel's study no longer exists (deleted topic study):
   // render only the message + close.
@@ -121,7 +122,7 @@ export default function StudyPanel({
   onRemoveVerse,
   marking,
   dragId,
-  onDropVerse,
+  onDropVerses,
   onReorderVerse,
   missing,
 }: StudyPanelProps) {
@@ -382,10 +383,12 @@ export default function StudyPanel({
     </div>
   );
 
-  // Drag payload parsing shared by the drop handlers: "scribalverse|<ref>|<src>".
+  // Drag payload parsing shared by the drop handlers:
+  // "scribalverse|<ref>[;;<ref>...]|<src>" — grabber drags can carry a whole
+  // checked group.
   const parseVersePayload = (
     e: React.DragEvent
-  ): { ref: string; fromSelf: boolean } | null => {
+  ): { refs: string[]; fromSelf: boolean } | null => {
     let raw = "";
     try {
       raw = e.dataTransfer.getData("text/plain");
@@ -395,23 +398,26 @@ export default function StudyPanel({
     if (!raw.startsWith("scribalverse|")) return null;
     const parts = raw.split("|");
     if (parts.length < 3) return null;
-    return { ref: parts[1], fromSelf: parts[2] === "panel:" + (dragId || "") };
+    const refs = parts[1].split(";;").filter(Boolean);
+    if (!refs.length) return null;
+    return { refs, fromSelf: parts[2] === "panel:" + (dragId || "") };
   };
-  // Whole-panel drop target (SCR-50): a verse dragged in from a topic-book
-  // reading panel or a search panel joins the study (it shows under Unmarked
-  // until it's marked here).
+  // Whole-panel drop target (SCR-50): verses dragged in from a topic-book
+  // reading panel or a search panel join the study (they show under Unmarked
+  // until they're marked here).
   const handlePanelDrop = (e: React.DragEvent) => {
     const p = parseVersePayload(e);
     if (!p) return;
     e.preventDefault();
     e.stopPropagation();
     if (p.fromSelf) return; // inside drags land on a verse row (reorder)
-    if (onDropVerse) onDropVerse(p.ref);
+    if (onDropVerses) onDropVerses(p.refs);
   };
 
-  // Reference caption above each verse: grabber first (drag to another panel,
-  // or reorder within this one), jump on click, and a quiet per-verse remove
-  // (drops the verse from the study; marks stay in the book).
+  // Reference caption above each verse: reference (jump on click) at the
+  // left; the quiet remove and the grabber pinned far right in one uniform
+  // column (Kepu's layout call) — drag to rearrange within its theme, or
+  // into another topic study panel.
   const refCaption = (row: VerseRow) => (
     <span
       style={{
@@ -421,34 +427,6 @@ export default function StudyPanel({
         marginBottom: "2px",
       }}
     >
-      {dragId && (
-        <span
-          draggable
-          onDragStart={(e) => {
-            e.stopPropagation();
-            try {
-              e.dataTransfer.setData(
-                "text/plain",
-                "scribalverse|" + row.reference + "|panel:" + dragId
-              );
-              e.dataTransfer.effectAllowed = "move";
-            } catch {
-              /* ignore */
-            }
-          }}
-          title="Drag to rearrange within its theme, or into another topic study panel"
-          style={{
-            color: "var(--muted)",
-            opacity: 0.6,
-            cursor: "grab",
-            userSelect: "none",
-            WebkitUserSelect: "none",
-            fontSize: "11px",
-          }}
-        >
-          ⠿
-        </span>
-      )}
       <button
         onClick={() => onJump(row.reference)}
         title={"Go to " + row.reference}
@@ -461,29 +439,78 @@ export default function StudyPanel({
           color: "var(--text)",
           cursor: "pointer",
           fontFamily: "system-ui, sans-serif",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
         {row.reference}
       </button>
-      {onRemoveVerse && (
-        <button
-          onClick={() => onRemoveVerse(row.reference)}
-          title={"Remove " + row.reference + " from this study (marks stay)"}
-          aria-label={"Remove " + row.reference + " from this study"}
-          style={{
-            border: "none",
-            background: "transparent",
-            padding: "0 2px",
-            fontSize: "11px",
-            lineHeight: 1,
-            color: "var(--muted)",
-            cursor: "pointer",
-            opacity: 0.7,
-          }}
-        >
-          ✕
-        </button>
-      )}
+      <span
+        style={{
+          marginLeft: "auto",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          flexShrink: 0,
+        }}
+      >
+        {onRemoveVerse && (
+          <button
+            onClick={() => onRemoveVerse(row.reference)}
+            title={"Remove " + row.reference + " from this study (marks stay)"}
+            aria-label={"Remove " + row.reference + " from this study"}
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: "0 2px",
+              fontSize: "11px",
+              lineHeight: 1,
+              color: "var(--muted)",
+              cursor: "pointer",
+              opacity: 0.7,
+            }}
+          >
+            ✕
+          </button>
+        )}
+        {dragId && (
+          <span
+            draggable
+            onDragStart={(e) => {
+              e.stopPropagation();
+              try {
+                e.dataTransfer.setData(
+                  "text/plain",
+                  "scribalverse|" + row.reference + "|panel:" + dragId
+                );
+                e.dataTransfer.effectAllowed = "move";
+              } catch {
+                /* ignore */
+              }
+            }}
+            title="Drag to rearrange within its theme, or into another topic study panel"
+            style={{
+              width: "22px",
+              height: "22px",
+              borderRadius: "6px",
+              border: "1px solid var(--border)",
+              background: "var(--soft)",
+              color: "var(--muted)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
+              cursor: "grab",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+            }}
+          >
+            ⠿
+          </span>
+        )}
+      </span>
     </span>
   );
 
@@ -492,7 +519,7 @@ export default function StudyPanel({
   // drag anywhere still adds.
   const rowDropProps = (row: VerseRow) => ({
     onDragOver: (e: React.DragEvent) => {
-      if (onReorderVerse || onDropVerse) e.preventDefault();
+      if (onReorderVerse || onDropVerses) e.preventDefault();
     },
     onDrop: (e: React.DragEvent) => {
       const p = parseVersePayload(e);
@@ -502,13 +529,14 @@ export default function StudyPanel({
       if (p.fromSelf) {
         // Reorder stays WITHIN a theme group: a drop on a row in another
         // group is ignored (grouping is meaning — marks decide it, not drag).
+        const ref = p.refs[0];
         if (
-          p.ref !== row.reference &&
+          ref !== row.reference &&
           onReorderVerse &&
-          grouped.groupOf.get(p.ref) === grouped.groupOf.get(row.reference)
+          grouped.groupOf.get(ref) === grouped.groupOf.get(row.reference)
         )
-          onReorderVerse(p.ref, row.reference);
-      } else if (onDropVerse) onDropVerse(p.ref);
+          onReorderVerse(ref, row.reference);
+      } else if (onDropVerses) onDropVerses(p.refs);
     },
   });
 
@@ -597,7 +625,7 @@ export default function StudyPanel({
   return (
     <div
       onDragOver={(e) => {
-        if (onDropVerse) e.preventDefault();
+        if (onDropVerses) e.preventDefault();
       }}
       onDrop={handlePanelDrop}
       style={{
@@ -912,18 +940,47 @@ export default function StudyPanel({
           })}
         </div>
 
-        {grouped.unmarked.length === 0 && grouped.groups.length === 0 && (
-          <p
-            style={{
-              fontSize: "13px",
-              color: "var(--muted)",
-              textAlign: "center",
-              marginTop: "40px",
-            }}
-          >
-            No verses here yet.
-          </p>
-        )}
+        {grouped.unmarked.length === 0 &&
+          grouped.groups.length === 0 &&
+          (onDropVerses ? (
+            // Empty study = one big drop target (the mockup's dashed zone).
+            <div
+              style={{
+                marginTop: "28px",
+                border: "2px dashed #3b82f6",
+                borderRadius: "12px",
+                background: "rgba(59,130,246,0.05)",
+                color: "#3b82f6",
+                textAlign: "center",
+                padding: "34px 16px",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              Drag verses here
+              <span
+                style={{
+                  display: "block",
+                  fontWeight: 400,
+                  fontSize: "11.5px",
+                  marginTop: "4px",
+                }}
+              >
+                from any topic reading tab or search result
+              </span>
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--muted)",
+                textAlign: "center",
+                marginTop: "40px",
+              }}
+            >
+              No verses here yet.
+            </p>
+          ))}
       </div>
     </div>
   );

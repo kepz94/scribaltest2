@@ -28,6 +28,9 @@ interface NewTabPanelProps {
   onPickChapter: (v: number, b: number, c: number) => void;
   onPickStudy: (id: string) => void;
   onSearch: () => void;
+  // Creates an empty topic study (in the Master Topic Book) and converts
+  // this launcher into its live panel — start empty, drag verses in.
+  onNewTopicStudy: () => void;
   onClose: () => void;
 }
 
@@ -37,6 +40,7 @@ export default function NewTabPanel({
   onPickChapter,
   onPickStudy,
   onSearch,
+  onNewTopicStudy,
   onClose,
 }: NewTabPanelProps) {
   const [browsing, setBrowsing] = useState(false);
@@ -419,6 +423,56 @@ export default function NewTabPanel({
                 }}
               >
                 i
+              </span>
+            </button>
+            <button
+              onClick={onNewTopicStudy}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                width: "100%",
+                textAlign: "left",
+                padding: "18px 18px",
+                borderRadius: "14px",
+                border: "1px solid var(--border)",
+                borderLeft: "3px solid #3b82f6",
+                background: "var(--panel)",
+                color: "var(--text)",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span style={{ minWidth: 0 }}>
+                <span
+                  style={{ display: "block", fontSize: "15px", fontWeight: 700 }}
+                >
+                  New topic study
+                </span>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Start empty, drag verses in — lives in your Master Topic Book
+                </span>
               </span>
             </button>
           </div>
