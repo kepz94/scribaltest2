@@ -992,6 +992,7 @@ export default function App() {
     absorb,
     moveStudyMarks,
     mergeRemoteBooks,
+    twoCanvasMigrate,
   } = useMarks();
 
   const {
@@ -2465,6 +2466,154 @@ export default function App() {
     );
     setActiveTabBook(id);
   };
+
+  // ---- Two-canvas migration (SCR-53) --------------------------------------
+  // One-time idempotent pass to the two-canvas model. Mapping: pure
+  // chapter/linked studies untouched; keyword studies in their own session
+  // books → book RETYPED topic in place (no data movement); master-resident
+  // (or mixed-book) keyword studies → VERIFIED MOVE into a deterministic
+  // topic book (topic_<studyId>); combined studies migrate WHOLE (their
+  // linked chapters' marked verses fold into the study's refs). The pass
+  // re-plans from live data, so it runs to empty: a study whose book is
+  // already topic-typed is the migrated marker, an interrupted run simply
+  // re-completes, and two devices produce identical books (deterministic
+  // ids) whose sync merge dedupes.
+  interface TwoCanvasMove {
+    studyId: string;
+    sourceId: string;
+    targetId: string;
+    targetName: string;
+    refs: string[];
+    scope: string;
+  }
+  interface TwoCanvasFold {
+    studyId: string;
+    refs: string[];
+  }
+  const planTwoCanvas = (): {
+    retypes: string[];
+    moves: TwoCanvasMove[];
+    folds: TwoCanvasFold[];
+  } => {
+    const retypes = new Set<string>();
+    const moves: TwoCanvasMove[] = [];
+    const folds: TwoCanvasFold[] = [];
+    searchStudies.forEach((ss) => {
+      const bookId = ss.bookId || "master";
+      // Combined studies (linkedScope set) migrate whole: the linked
+      // chapters' marked verses in this book join the study's refs.
+      let refs = ss.refs;
+      if (ss.linkedScope) {
+        const gid = chapterGroups[ss.linkedScope];
+        const scopes = new Set(
+          gid
+            ? Object.keys(chapterGroups).filter(
+                (s) => chapterGroups[s] === gid
+              )
+            : [ss.linkedScope]
+        );
+        const chapterRefs = getBook(bookId)
+          .marks.filter((m) => scopes.has(scopeOfRef(m.reference)))
+          .map((m) => m.reference);
+        refs = Array.from(new Set([...ss.refs, ...chapterRefs])).sort(
+          (a, b) => orderOfRef(a) - orderOfRef(b)
+        );
+      }
+      const bt = bookId === "master" ? "chapter" : bookTypeOf(bookId);
+      if (bt === "topic") {
+        // Already migrated (bookId at a topic book = the marker). Only a
+        // leftover combined link still needs folding + clearing.
+        if (ss.linkedScope) folds.push({ studyId: ss.id, refs });
+        return;
+      }
+      const bookExists =
+        bookId === "master" || books.some((b) => b.id === bookId);
+      // A synced study record whose book hasn't arrived yet — a later run
+      // (after the books merge lands) picks it up.
+      if (!bookExists) return;
+      const hostsChapterStudies = recordedStudies.some(
+        (s) => s.bookId === bookId
+      );
+      if (bookId !== "master" && !hostsChapterStudies) {
+        // Keyword studies already in their own session book: retype in
+        // place — no data movement.
+        retypes.add(bookId);
+        if (ss.linkedScope) folds.push({ studyId: ss.id, refs });
+      } else {
+        // Master-resident (or sharing a book with chapter studies): verified
+        // move into the study's own deterministic topic book.
+        moves.push({
+          studyId: ss.id,
+          sourceId: bookId,
+          targetId: "topic_" + ss.id,
+          targetName: ss.name,
+          refs,
+          scope: "searchstudy:" + ss.id,
+        });
+      }
+    });
+    return { retypes: Array.from(retypes), moves, folds };
+  };
+  const [migrationPending, setMigrationPending] = useState<{
+    moves: TwoCanvasMove[];
+    folds: TwoCanvasFold[];
+  } | null>(null);
+  const migrationBusy = useRef(false);
+  useEffect(() => {
+    if (migrationBusy.current) return;
+    const t = window.setTimeout(() => {
+      if (migrationBusy.current) return;
+      const plan = planTwoCanvas();
+      if (!plan.retypes.length && !plan.moves.length && !plan.folds.length)
+        return;
+      // Automatic vault backup FIRST — the pass does not start without it.
+      // The first backup is kept (never overwritten by a resume, which would
+      // capture a half-migrated state instead of the true pre-state).
+      const BK = "scribal_pre_two_canvas_backup";
+      try {
+        if (!localStorage.getItem(BK)) {
+          localStorage.setItem(BK, syncBuildBackupString(BACKUP_KEYS));
+          if (!localStorage.getItem(BK)) return; // backup failed — abort
+        }
+      } catch {
+        return; // backup failed (quota?) — abort, nothing touched
+      }
+      migrationBusy.current = true;
+      twoCanvasMigrate(
+        plan.retypes,
+        plan.moves.map(({ studyId, ...rest }) => rest)
+      );
+      setMigrationPending({ moves: plan.moves, folds: plan.folds });
+    }, 2500);
+    return () => window.clearTimeout(t);
+  }, [searchStudies, books, recordedStudies, chapterGroups]);
+  // Finalize: with the books store updated, re-verify each move on the LIVE
+  // state and only then re-point the study record (bookId at the topic book
+  // is the migrated marker, written LAST). A move that doesn't verify is left
+  // alone — the next pass re-completes it.
+  useEffect(() => {
+    if (!migrationPending) return;
+    migrationPending.moves.forEach((mv) => {
+      const targetExists = books.some((b) => b.id === mv.targetId);
+      const refSet = new Set(mv.refs);
+      const sourceCleared = !getBook(mv.sourceId).marks.some((m) =>
+        refSet.has(m.reference)
+      );
+      if (targetExists && sourceCleared) {
+        updateStudy(mv.studyId, {
+          bookId: mv.targetId,
+          refs: mv.refs,
+          linkedScope: undefined,
+        });
+      }
+    });
+    migrationPending.folds.forEach((f) =>
+      updateStudy(f.studyId, { refs: f.refs, linkedScope: undefined })
+    );
+    setMigrationPending(null);
+    migrationBusy.current = false;
+  }, [migrationPending, books]);
+  // --------------------------------------------------------------------------
 
   // Open the "which tabs do you want to link?" prompt for a tab. Pre-checks the
   // tab's current group members so you can also change or unlink from here.

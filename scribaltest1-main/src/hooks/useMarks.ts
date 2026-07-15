@@ -180,6 +180,24 @@ type Action =
       notes: Record<string, string>;
     }
   | { type: "freezeChapter"; prefix: string }
+  | {
+      // Two-canvas migration (SCR-53), books-store half. Atomic: retypes
+      // session books in place, and per verified move ensures the
+      // deterministic topic book, copies marks/palette/notes/relational data,
+      // VERIFIES the copy on the new state, and clears the source marks with
+      // tombstones only when verification passes. A move that fails
+      // verification is skipped whole — nothing removed. The study records'
+      // re-point happens outside (LAST), after the caller re-verifies.
+      type: "twoCanvasMigrate";
+      retypes: string[];
+      moves: {
+        sourceId: string;
+        targetId: string; // deterministic: "topic_" + study id
+        targetName: string;
+        refs: string[];
+        scope: string; // "searchstudy:" + study id
+      }[];
+    }
   | { type: "mergeRemoteBooks"; json: string };
 
 const HISTORY_CAP = 50;
@@ -918,6 +936,132 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "twoCanvasMigrate": {
+      const books = { ...state.books };
+      const order = [...state.order];
+      let changed = false;
+
+      // Retype keyword-hosting session books in place — no data movement.
+      action.retypes.forEach((id) => {
+        const bk = books[id];
+        if (!bk || id === "master" || bk.type === "topic") return;
+        books[id] = { ...bk, type: "topic" };
+        changed = true;
+      });
+
+      // Verified move per study: ensure topic book → copy → verify → clear
+      // source marks with tombstones. Interruption-safe: a re-run copies
+      // nothing new (union by id), re-verifies, and re-completes harmlessly.
+      action.moves.forEach((mv) => {
+        if (mv.sourceId === mv.targetId) return;
+        const source = books[mv.sourceId];
+        const refSet = new Set(mv.refs);
+
+        // Ensure the deterministic topic book (id derived from the study id,
+        // so two devices running independently produce identical books).
+        let target: StudyBook = books[mv.targetId] || {
+          id: mv.targetId,
+          name: mv.targetName,
+          type: "topic" as BookType,
+          marks: [],
+          colorLabels: defaultLabels(),
+          notes: {},
+          scopedLabels: {},
+          scopedMigrated: true,
+          scopedRoles: {},
+          createdAt: Date.now(),
+          lastStudiedAt: Date.now(),
+        };
+        if (!target.type) target = { ...target, type: "topic" };
+
+        const moving = source
+          ? source.marks.filter((m) => refSet.has(m.reference))
+          : [];
+        const haveIds = new Set(target.marks.map((m) => m.id));
+        const newTargetMarks = [
+          ...target.marks,
+          ...moving.filter((m) => !haveIds.has(m.id)),
+        ];
+
+        // Palette: the study's per-scope theme names travel (fill target
+        // blanks only), and the source's book-level labels fill the target's
+        // blanks so moved marks still read correctly through the fallback.
+        const srcScoped = source?.scopedLabels?.[mv.scope];
+        const tgtScopedAll = { ...(target.scopedLabels || {}) };
+        if (srcScoped && !tgtScopedAll[mv.scope])
+          tgtScopedAll[mv.scope] = { ...srcScoped };
+        const mergedLabels: Record<number, string> = {
+          ...(source ? source.colorLabels : {}),
+        };
+        Object.keys(target.colorLabels || {}).forEach((k) => {
+          const kn = Number(k);
+          if ((target.colorLabels[kn] || "").trim() !== "")
+            mergedLabels[kn] = target.colorLabels[kn];
+        });
+
+        // Notes on the study's verses: copy without clobbering.
+        const tgtNotes = { ...target.notes };
+        if (source) {
+          Object.keys(source.notes || {}).forEach((k) => {
+            const ref = k.split("|").pop();
+            if (ref && refSet.has(ref) && !(k in tgtNotes))
+              tgtNotes[k] = source.notes[k];
+          });
+        }
+
+        // Relational data (roles incl. lens/pins/threads) for the scope.
+        const srcRoles = source?.scopedRoles?.[mv.scope];
+        const tgtRolesAll = { ...(target.scopedRoles || {}) };
+        if (srcRoles && !tgtRolesAll[mv.scope])
+          tgtRolesAll[mv.scope] = srcRoles;
+
+        // VERIFY on the computed next state: every moving mark landed (by
+        // id), and the palette made it across. Failure = skip the whole move
+        // with nothing removed; a later run re-completes it.
+        const landedIds = new Set(newTargetMarks.map((m) => m.id));
+        const marksOk = moving.every((m) => landedIds.has(m.id));
+        const paletteOk = !srcScoped || !!tgtScopedAll[mv.scope];
+        if (!marksOk || !paletteOk) return;
+
+        books[mv.targetId] = {
+          ...target,
+          marks: newTargetMarks,
+          tombstones: diffTombstones(
+            target.marks,
+            newTargetMarks,
+            target.tombstones
+          ),
+          colorLabels: mergedLabels,
+          notes: tgtNotes,
+          scopedLabels: tgtScopedAll,
+          scopedRoles: tgtRolesAll,
+        };
+        if (!order.includes(mv.targetId)) order.push(mv.targetId);
+
+        // Clear the source marks WITH tombstones — unconditionally safe via
+        // the "one set of marks per verse per book" invariant.
+        if (source && moving.length) {
+          const newSourceMarks = source.marks.filter(
+            (m) => !refSet.has(m.reference)
+          );
+          books[mv.sourceId] = {
+            ...source,
+            marks: newSourceMarks,
+            tombstones: diffTombstones(
+              source.marks,
+              newSourceMarks,
+              source.tombstones
+            ),
+          };
+        }
+        changed = true;
+      });
+
+      if (!changed) return state;
+      // A cross-book bulk move invalidates the active book's undo history.
+      return { ...state, books, order, past: [], future: [] };
+    }
+
     case "mergeRemoteBooks": {
       // Live merge of a remote books snapshot — no reload. Union marks by id so
       // marks in progress on THIS device are never lost, and remote-only marks
@@ -1516,6 +1660,19 @@ export function useMarks() {
     (json: string) => dispatch({ type: "mergeRemoteBooks", json }),
     []
   );
+  const twoCanvasMigrate = useCallback(
+    (
+      retypes: string[],
+      moves: {
+        sourceId: string;
+        targetId: string;
+        targetName: string;
+        refs: string[];
+        scope: string;
+      }[]
+    ) => dispatch({ type: "twoCanvasMigrate", retypes, moves }),
+    []
+  );
   const renameBook = useCallback(
     (id: string, name: string) => dispatch({ type: "rename", id, name }),
     []
@@ -1671,5 +1828,6 @@ export function useMarks() {
     importStudy,
     freezeChapter,
     mergeRemoteBooks,
+    twoCanvasMigrate,
   };
 }
