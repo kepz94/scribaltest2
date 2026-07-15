@@ -38,6 +38,7 @@ import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
 import DesktopWalkthrough from "./DesktopWalkthrough";
 import NewTabPanel from "./components/NewTabPanel";
+import StudyPanel from "./components/StudyPanel";
 
 import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
@@ -1529,10 +1530,30 @@ export default function App() {
   const newTabSeq = useRef(0);
   const closeNewTabPanel = (id: string) =>
     setNewTabPanels((prev) => prev.filter((x) => x !== id));
+  // Live study panels (SCR-27): a reading-row lens on a study's verses grouped
+  // by theme. kind="scope" watches a chapter or link-group (scope is stored
+  // RESOLVED — "Genesis 1" or "group:<gid>"); kind="keyword" watches a keyword
+  // study's refs. titleDraft holds a session-only rename for a scope that has
+  // no recorded study yet — Compile carries it to the board's name field, so
+  // compiling stays the record gate. Session-only like search panels, and like
+  // them they do NOT count toward MAX_TABS.
+  interface StudyPanelInstance {
+    id: string;
+    kind: "scope" | "keyword";
+    bookId: string;
+    scope?: string;
+    searchStudyId?: string;
+    titleDraft?: string;
+  }
+  const [studyPanels, setStudyPanels] = useState<StudyPanelInstance[]>([]);
+  const studyPanelSeq = useRef(0);
+  const closeStudyPanel = (id: string) =>
+    setStudyPanels((prev) => prev.filter((p) => p.id !== id));
   // The reconciled row order: remembered arrangement first, then anything new.
   const rowIds = [
     ...tabs.map((t) => t.id),
     ...searchPanels.map((p) => p.id),
+    ...studyPanels.map((p) => p.id),
     ...newTabPanels,
   ];
   const orderedRowIds = rowOrder
@@ -1606,6 +1627,32 @@ export default function App() {
     const sid = "search_" + searchPanelSeq.current;
     setSearchPanels((prev) => [...prev, { id: sid }]);
     convertLauncher(launchId, sid);
+  };
+  // SCR-27: the launcher's Studies choice ids encode the panel descriptor —
+  // "scope|<bookId>|<scope>" or "kw|<searchStudyId>" — so NewTabPanel stays
+  // dumb and this parses it back into a StudyPanelInstance.
+  const launcherPickStudy = (launchId: string, choiceId: string) => {
+    studyPanelSeq.current += 1;
+    const pid = "studypanel_" + studyPanelSeq.current;
+    let inst: StudyPanelInstance | null = null;
+    if (choiceId.startsWith("kw|")) {
+      const st = searchStudies.find((s) => s.id === choiceId.slice(3));
+      if (st) inst = { id: pid, kind: "keyword", bookId: st.bookId, searchStudyId: st.id };
+    } else if (choiceId.startsWith("scope|")) {
+      const rest = choiceId.slice(6);
+      const sep = rest.indexOf("|");
+      if (sep > 0)
+        inst = {
+          id: pid,
+          kind: "scope",
+          bookId: rest.slice(0, sep),
+          scope: rest.slice(sep + 1),
+        };
+    }
+    if (!inst) return;
+    const desc = inst;
+    setStudyPanels((prev) => [...prev, desc]);
+    convertLauncher(launchId, pid);
   };
   // After adding verses to a recorded study, a banner offers to compile it once
   // the added verses are marked.
@@ -3612,6 +3659,186 @@ export default function App() {
       ? ""
       : scopedLabels[resolveScope(scopeOfRef(reference))]?.[color] || "";
 
+  // ---- Live study panel derivations (SCR-27) ----------------------------
+  // A scope panel's member chapters: the scope itself, or for a group its
+  // LIVE members (falling back to a recorded study's memberScopes snapshot if
+  // the group has dissolved — a lens tracks live links first).
+  const scopesForPanel = (p: { scope?: string; bookId: string }): string[] => {
+    const scope = p.scope || "";
+    if (!scope.startsWith("group:")) return scope ? [scope] : [];
+    const gid = scope.slice(6);
+    const live = Object.keys(chapterGroups).filter(
+      (sc) => chapterGroups[sc] === gid
+    );
+    if (live.length) return live;
+    const rec = recordedStudies.find(
+      (s) => s.type === "linked" && s.scopeRef === gid && s.bookId === p.bookId
+    );
+    return rec && rec.memberScopes ? rec.memberScopes : [];
+  };
+  // The recorded study (if any) matching a scope panel — its name/rename home.
+  const recForScopePanel = (p: { scope?: string; bookId: string }) =>
+    recordedStudies.find((s) =>
+      p.scope && p.scope.startsWith("group:")
+        ? s.type === "linked" &&
+          s.scopeRef === p.scope.slice(6) &&
+          s.bookId === p.bookId
+        : s.type === "chapter" &&
+          s.bookId === p.bookId &&
+          resolveScope(s.scopeRef) === p.scope
+    );
+  // Every verse the panel watches, in scripture order: for a scope, all verses
+  // of its member chapters plus whatever compile would fold in (the recorded
+  // study's loose extraRefs and any keyword refs linked at this scope); for a
+  // keyword study, its refs.
+  const versesForPanel = (p: {
+    kind: "scope" | "keyword";
+    scope?: string;
+    bookId: string;
+    searchStudyId?: string;
+  }): { reference: string; text: string }[] => {
+    const textOf = (ref: string): string => {
+      const loc = refLoc.get(ref);
+      if (!loc) return "";
+      const ch = vols[loc.volume]?.books[loc.book]?.chapters[loc.chapter];
+      const v = ch?.verses.find((x: any) => x.reference === ref);
+      return v ? v.text : "";
+    };
+    const refs: string[] = [];
+    const seen = new Set<string>();
+    const push = (ref: string) => {
+      if (!seen.has(ref)) {
+        seen.add(ref);
+        refs.push(ref);
+      }
+    };
+    if (p.kind === "keyword") {
+      const st = searchStudies.find((s) => s.id === p.searchStudyId);
+      (st ? st.refs : []).forEach(push);
+    } else {
+      scopesForPanel(p).forEach((sc) => {
+        const loc = chapterLoc.get(sc);
+        const ch = loc
+          ? vols[loc.volume]?.books[loc.book]?.chapters[loc.chapter]
+          : undefined;
+        (ch?.verses || []).forEach((v: any) => push(v.reference));
+      });
+      const rec = recForScopePanel(p);
+      (rec?.extraRefs || []).forEach(push);
+      searchStudies.forEach((ss) => {
+        if (
+          !isSearchStudyDeleted(ss) &&
+          ss.linkedScope &&
+          resolveScope(ss.linkedScope) === p.scope
+        )
+          ss.refs.forEach(push);
+      });
+    }
+    return refs
+      .sort((a, b) => orderOfRef(a) - orderOfRef(b))
+      .map((r) => ({ reference: r, text: textOf(r) }));
+  };
+  // The label scope whose scopedLabels name the panel's themes — mirrors how
+  // activeScope resolves for the reading legend.
+  const labelScopeForPanel = (p: {
+    kind: "scope" | "keyword";
+    scope?: string;
+    searchStudyId?: string;
+  }): string => {
+    if (p.kind === "scope") return p.scope || "";
+    const st = searchStudies.find((s) => s.id === p.searchStudyId);
+    if (!st) return "";
+    return st.linkedScope
+      ? resolveScope(st.linkedScope)
+      : "searchstudy:" + st.id;
+  };
+  const studyPanelTitle = (p: {
+    kind: "scope" | "keyword";
+    scope?: string;
+    bookId: string;
+    searchStudyId?: string;
+    titleDraft?: string;
+  }): string => {
+    if (p.kind === "keyword") {
+      const st = searchStudies.find((s) => s.id === p.searchStudyId);
+      return st ? st.name : "Study";
+    }
+    const rec = recForScopePanel(p);
+    if (rec) return rec.name;
+    if (p.titleDraft && p.titleDraft.trim()) return p.titleDraft;
+    const scopes = scopesForPanel(p);
+    return scopes.length ? scopes.join(" + ") : "Study";
+  };
+  // Renaming from the panel goes wherever the name lives: the keyword study,
+  // the recorded study (nameAt stamped, matching recordStudy's rename), or —
+  // when nothing is recorded yet — a session draft that Compile carries to the
+  // board's name field (compile stays the record gate).
+  const renameFromStudyPanel = (p: StudyPanelInstance, name: string) => {
+    const nm = name.trim();
+    if (!nm) return;
+    if (p.kind === "keyword") {
+      if (p.searchStudyId) renameStudy(p.searchStudyId, nm);
+      return;
+    }
+    const rec = recForScopePanel(p);
+    if (rec) {
+      setRecordedStudies((prev) =>
+        prev.map((s) =>
+          s.id === rec.id ? { ...s, name: nm, nameAt: Date.now() } : s
+        )
+      );
+      return;
+    }
+    setStudyPanels((prev) =>
+      prev.map((x) => (x.id === p.id ? { ...x, titleDraft: nm } : x))
+    );
+  };
+  const compileFromStudyPanel = (p: StudyPanelInstance) => {
+    if (p.bookId !== activeBookId) setActiveBook(p.bookId);
+    if (p.kind === "keyword") {
+      const st = searchStudies.find((s) => s.id === p.searchStudyId);
+      if (!st) return;
+      if (st.linkedScope) compileLinkedSearch(st);
+      else startStudyCompile(st);
+      return;
+    }
+    const scope = p.scope || "";
+    if (scope.startsWith("group:")) {
+      compileLinkedAll(scope.slice(6));
+    } else {
+      // Ensure a chapter tab exists for the scope, then compile it — the same
+      // block compileLinkedSearch uses.
+      let ids = tabs
+        .filter((t) => !t.studyId && resolveScope(chapterScopeOf(t)) === scope)
+        .map((t) => t.id);
+      if (!ids.length) {
+        const loc = chapterLoc.get(scope);
+        if (!loc) return;
+        const id = makeTabId(activeBookId, loc.volume, loc.book, loc.chapter);
+        setTabs((prev) =>
+          prev.some((t) => t.id === id)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id,
+                  volume: loc.volume,
+                  book: loc.book,
+                  chapter: loc.chapter,
+                  bookId: activeBookId,
+                },
+              ]
+        );
+        ids = [id];
+      }
+      runCompile(ids);
+    }
+    // A pending panel rename wins over the seeded default so Save-to-Studies
+    // records it.
+    if (p.titleDraft && p.titleDraft.trim()) setCompileName(p.titleDraft.trim());
+  };
+  // ------------------------------------------------------------------------
+
   const usedColors = COLORS.filter((c) =>
     marks.some((m) => activeChapterRefs.has(m.reference) && m.color === c)
   );
@@ -4875,6 +5102,51 @@ export default function App() {
     });
     return n;
   }, [searchStudies, recordedStudies, chapterGroups]);
+
+  // SCR-27: what the new-tab launcher's Studies step offers. Open chapters
+  // first (a live lens on what you're reading now), then every saved study —
+  // mirroring buildStudyRows' combining rules but as encoded descriptors the
+  // launcher hands back to launcherPickStudy.
+  const buildStudyPanelChoices = (): {
+    id: string;
+    label: string;
+    meta?: string;
+  }[] => {
+    const out: { id: string; label: string; meta?: string }[] = [];
+    const seen = new Set<string>();
+    const push = (id: string, label: string, meta?: string) => {
+      if (!seen.has(id)) {
+        seen.add(id);
+        out.push({ id, label, meta });
+      }
+    };
+    tabs
+      .filter((t) => !t.studyId)
+      .forEach((t) => {
+        const scope = resolveScope(chapterScopeOf(t));
+        push("scope|" + t.bookId + "|" + scope, tabLabel(t), "Open now");
+      });
+    recordedStudies.forEach((s) => {
+      const scope =
+        s.type === "linked" ? "group:" + s.scopeRef : resolveScope(s.scopeRef);
+      push(
+        "scope|" + s.bookId + "|" + scope,
+        s.name,
+        s.type === "linked" ? "Linked study" : "Chapter study"
+      );
+    });
+    searchStudies.forEach((ss) => {
+      if (isSearchStudyDeleted(ss)) return;
+      if (ss.linkedScope)
+        push(
+          "scope|" + ss.bookId + "|" + resolveScope(ss.linkedScope),
+          ss.name,
+          "Combined study"
+        );
+      else push("kw|" + ss.id, ss.name, "Keyword study");
+    });
+    return out;
+  };
 
   const buildStudyRows = (): StudyRow[] => {
     const bookMarksOf = (bid: string) =>
@@ -10577,6 +10849,148 @@ export default function App() {
               </div>
             );
           })}
+          {/* Study-panel pills (SCR-27): each live study panel shows in the tab
+              row like a search panel — same drag machinery, one row order. */}
+          {studyPanels.map((p) => {
+            const kindLabel =
+              p.kind === "keyword"
+                ? "Keyword study"
+                : p.scope && p.scope.startsWith("group:")
+                ? "Linked study"
+                : "Chapter study";
+            return (
+              <div
+                key={p.id}
+                draggable={orderedRowIds.length > 1}
+                title={
+                  orderedRowIds.length > 1
+                    ? "Drag to rearrange the reading panels"
+                    : undefined
+                }
+                onDragStart={(e) => {
+                  dragTabRef.current = p.id;
+                  setDraggingTab(p.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  try {
+                    e.dataTransfer.setData("text/plain", p.id);
+                  } catch (err) {
+                    /* some browsers require a payload; ignore if it throws */
+                  }
+                }}
+                onDragEnd={() => {
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                onDragOver={(e) => {
+                  const from = dragTabRef.current;
+                  if (!from || from === p.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverTab !== p.id) {
+                    setDragOverTab(p.id);
+                    reorderRow(from, p.id);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dragTabRef.current = null;
+                  setDraggingTab(null);
+                  setDragOverTab(null);
+                }}
+                className="scribal-tabpill"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "3px",
+                  order: rowIndexOf(p.id),
+                  cursor: orderedRowIds.length > 1 ? "grab" : "default",
+                  opacity: draggingTab === p.id ? 0.4 : 1,
+                  transform:
+                    draggingTab === p.id ? "scale(0.96)" : "scale(1)",
+                  transition: "opacity 0.15s, transform 0.15s",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "11px",
+                    lineHeight: 1,
+                    color: "var(--muted)",
+                    fontFamily: "system-ui, sans-serif",
+                    maxWidth: "170px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {kindLabel}
+                </span>
+                <div
+                  onClick={() => focusRowPanel(p.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 400,
+                    backgroundColor: "var(--panel)",
+                    color: "var(--text)",
+                    border: "1px dashed var(--border)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {orderedRowIds.length > 1 && (
+                    <span
+                      className="scribal-tabgrip"
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-flex",
+                        flexShrink: 0,
+                        cursor: "grab",
+                      }}
+                    >
+                      <svg
+                        width="7"
+                        height="12"
+                        viewBox="0 0 7 12"
+                        fill="currentColor"
+                      >
+                        <circle cx="1.5" cy="2" r="1.2" />
+                        <circle cx="5.5" cy="2" r="1.2" />
+                        <circle cx="1.5" cy="6" r="1.2" />
+                        <circle cx="5.5" cy="6" r="1.2" />
+                        <circle cx="1.5" cy="10" r="1.2" />
+                        <circle cx="5.5" cy="10" r="1.2" />
+                      </svg>
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      maxWidth: "140px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {studyPanelTitle(p)}
+                  </span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeStudyPanel(p.id);
+                    }}
+                    style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                  >
+                    ✕
+                  </span>
+                </div>
+              </div>
+            );
+          })}
           {/* New-tab launcher pills (SCR-43): a picker panel waiting to become
               a chapter tab or a search panel. */}
           {newTabPanels.map((id) => (
@@ -10808,7 +11222,11 @@ export default function App() {
               minWidth: 0,
               display: "flex",
               overflowX:
-                tabs.length + searchPanels.length + newTabPanels.length > 1
+                tabs.length +
+                  searchPanels.length +
+                  studyPanels.length +
+                  newTabPanels.length >
+                1
                   ? "auto"
                   : "visible",
             }}
@@ -10819,7 +11237,11 @@ export default function App() {
               // reading-row panel is open — chapters and search panels both
               // count, so a lone chapter next to a search panel sizes uniformly.
               const multi =
-                tabs.length + searchPanels.length + newTabPanels.length > 1;
+                tabs.length +
+                  searchPanels.length +
+                  studyPanels.length +
+                  newTabPanels.length >
+                1;
               const study = t.studyId
                 ? searchStudies.find((s) => s.id === t.studyId)
                 : undefined;
@@ -11093,6 +11515,79 @@ export default function App() {
                 </div>
               );
             })}
+            {/* Live study panels (SCR-27): a lens on a study's verses grouped
+                by theme, fed straight from the marks store so it updates as
+                the user marks in the reader beside it. */}
+            {studyPanels.map((p) => {
+              const st =
+                p.kind === "keyword"
+                  ? searchStudies.find(
+                      (s) => s.id === p.searchStudyId && !isSearchStudyDeleted(s)
+                    )
+                  : undefined;
+              const bk = getBook(p.bookId);
+              const lblScope = labelScopeForPanel(p);
+              const rec = p.kind === "scope" ? recForScopePanel(p) : undefined;
+              return (
+                <div
+                  key={p.id}
+                  data-row-panel={p.id}
+                  style={{
+                    flex: "0 0 auto",
+                    width: panelWidths[p.id] || DEFAULT_PANEL_WIDTH,
+                    minWidth: 0,
+                    order: rowIndexOf(p.id),
+                    borderRight: "1px solid var(--border)",
+                    position: "relative",
+                    overflow: "hidden",
+                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                  }}
+                >
+                  <StudyPanel
+                    title={studyPanelTitle(p)}
+                    titleHint={
+                      p.kind === "scope" && !rec
+                        ? "Saved to Studies when you compile"
+                        : undefined
+                    }
+                    subtitle={
+                      p.kind === "scope" && p.scope?.startsWith("group:")
+                        ? scopesForPanel(p).join(" + ")
+                        : undefined
+                    }
+                    verses={versesForPanel(p)}
+                    marks={bk.marks}
+                    labels={bk.scopedLabels?.[lblScope] || {}}
+                    fallbackLabels={bk.colorLabels || {}}
+                    onRenameTitle={(n) => renameFromStudyPanel(p, n)}
+                    onEditLabel={(c, l) =>
+                      setScopedLabelInBook(p.bookId, lblScope, c, l)
+                    }
+                    onCompile={() => compileFromStudyPanel(p)}
+                    onJump={(ref) => jumpToReference(ref)}
+                    onClose={() => closeStudyPanel(p.id)}
+                    missing={
+                      p.kind === "keyword" && !st
+                        ? "This study was deleted."
+                        : undefined
+                    }
+                  />
+                  <div
+                    onMouseDown={(e) => startPanelResize(p.id, e)}
+                    title="Drag to resize this panel"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: "9px",
+                      cursor: "col-resize",
+                      zIndex: 6,
+                    }}
+                  />
+                </div>
+              );
+            })}
             {/* New-tab launcher panels (SCR-43): the Library / Search picker.
                 Sits in the row like any panel until the choice converts it. */}
             {newTabPanels.map((id) => (
@@ -11112,7 +11607,9 @@ export default function App() {
               >
                 <NewTabPanel
                   vols={vols}
+                  studies={buildStudyPanelChoices()}
                   onPickChapter={(v, b, c) => launcherPickChapter(id, v, b, c)}
+                  onPickStudy={(cid) => launcherPickStudy(id, cid)}
                   onSearch={() => launcherPickSearch(id)}
                   onClose={() => closeNewTabPanel(id)}
                 />

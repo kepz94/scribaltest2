@@ -10,20 +10,33 @@ type Chapter = { chapter: number; title?: string };
 type Book = { book: string; chapters: Chapter[] };
 type Volume = { volume: string; books: Book[] };
 
+// A pickable study-panel target (SCR-27). The id is an encoded descriptor the
+// parent parses back — this component never interprets it.
+export interface NewTabStudyChoice {
+  id: string;
+  label: string;
+  meta?: string;
+}
+
 interface NewTabPanelProps {
   vols: Volume[];
+  studies: NewTabStudyChoice[];
   onPickChapter: (v: number, b: number, c: number) => void;
+  onPickStudy: (id: string) => void;
   onSearch: () => void;
   onClose: () => void;
 }
 
 export default function NewTabPanel({
   vols,
+  studies,
   onPickChapter,
+  onPickStudy,
   onSearch,
   onClose,
 }: NewTabPanelProps) {
   const [browsing, setBrowsing] = useState(false);
+  const [pickingStudy, setPickingStudy] = useState(false);
   const [volIdx, setVolIdx] = useState<number | null>(null);
   const [bookIdx, setBookIdx] = useState<number | null>(null);
 
@@ -31,16 +44,21 @@ export default function NewTabPanel({
   const singleBook = vol ? vol.books.length === 1 : false;
   const book = vol && bookIdx !== null ? vol.books[bookIdx] : null;
 
-  const step: "root" | "volumes" | "books" | "chapters" = !browsing
-    ? "root"
-    : vol === null
-    ? "volumes"
-    : book === null
-    ? "books"
-    : "chapters";
+  const step: "root" | "volumes" | "books" | "chapters" | "studies" =
+    pickingStudy
+      ? "studies"
+      : !browsing
+      ? "root"
+      : vol === null
+      ? "volumes"
+      : book === null
+      ? "books"
+      : "chapters";
 
   const goBack = () => {
-    if (step === "chapters") {
+    if (step === "studies") {
+      setPickingStudy(false);
+    } else if (step === "chapters") {
       if (singleBook) {
         setVolIdx(null);
         setBookIdx(null);
@@ -63,6 +81,8 @@ export default function NewTabPanel({
       ? singleBook
         ? vol!.volume
         : book!.book
+      : step === "studies"
+      ? "Studies"
       : "New tab";
 
   const closeX = (
@@ -88,7 +108,12 @@ export default function NewTabPanel({
     </button>
   );
 
-  const listRow = (label: string, onClick: () => void, key?: string) => (
+  const listRow = (
+    label: string,
+    onClick: () => void,
+    key?: string,
+    meta?: string
+  ) => (
     <button
       key={key ?? label}
       onClick={onClick}
@@ -114,7 +139,20 @@ export default function NewTabPanel({
       <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
         {label}
       </span>
-      <span style={{ color: "var(--muted)", flexShrink: 0 }}>›</span>
+      {meta ? (
+        <span
+          style={{
+            color: "var(--muted)",
+            flexShrink: 0,
+            fontSize: "11.5px",
+            fontWeight: 600,
+          }}
+        >
+          {meta}
+        </span>
+      ) : (
+        <span style={{ color: "var(--muted)", flexShrink: 0 }}>›</span>
+      )}
     </button>
   );
 
@@ -276,8 +314,78 @@ export default function NewTabPanel({
                 </span>
               </span>
             </button>
+            <button
+              onClick={() => setPickingStudy(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                width: "100%",
+                textAlign: "left",
+                padding: "18px 18px",
+                borderRadius: "14px",
+                border: "1px solid var(--border)",
+                background: "var(--panel)",
+                color: "var(--text)",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+              >
+                <polygon points="12 2 22 8.5 12 15 2 8.5 12 2" />
+                <polyline points="2 15.5 12 22 22 15.5" />
+              </svg>
+              <span style={{ minWidth: 0 }}>
+                <span
+                  style={{ display: "block", fontSize: "15px", fontWeight: 700 }}
+                >
+                  Studies
+                </span>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: "12.5px",
+                    color: "var(--muted)",
+                    marginTop: "3px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  A live view of a study's verses by theme
+                </span>
+              </span>
+            </button>
           </div>
         )}
+
+        {step === "studies" &&
+          (studies.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+              {studies.map((s) =>
+                listRow(s.label, () => onPickStudy(s.id), s.id, s.meta)
+              )}
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: "13px",
+                color: "var(--muted)",
+                textAlign: "center",
+                marginTop: "30px",
+              }}
+            >
+              Nothing open and no studies yet.
+            </p>
+          ))}
 
         {step === "volumes" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
