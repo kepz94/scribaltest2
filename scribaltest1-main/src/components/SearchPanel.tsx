@@ -30,6 +30,10 @@ interface SearchPanelProps {
   // button names that chapter (e.g. Link to "1 Nephi 1") instead of reading
   // generically, since the destination is already fixed.
   linkChapterLabel?: string;
+  // When set, the panel is the SCR-49 chapter → topic bridge: the selection
+  // plus the chapter's pulled verses become a NEW topic study. The query rides
+  // along as the study's default name.
+  onCreateTopicStudy?: (refs: string[], query: string) => void;
   // When set, the panel is adding verses to an existing keyword study. The
   // selection is only the ADDITIONS — the parent merges them into the study
   // (add flows never remove; a replace-semantics bug once wiped a study).
@@ -80,6 +84,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onLinkStudy,
     onLinkSearchToChapter,
     linkChapterLabel,
+    onCreateTopicStudy,
     addToStudyName,
     onAddToStudy,
     addVersesName,
@@ -404,7 +409,12 @@ export default function SearchPanel(props: SearchPanelProps) {
   // list: clicking a row toggles its checkbox rather than jumping away (a stray
   // tap used to open the verse and close the search, losing the whole selection).
   // Jumping moves to a dedicated button on the far side of the row.
-  const selectMode = !!(onLinkStudy || onAddToStudy || onAddVerses);
+  const selectMode = !!(
+    onLinkStudy ||
+    onAddToStudy ||
+    onAddVerses ||
+    onCreateTopicStudy
+  );
   const shownRefs = shown.map((r) => r.reference);
   const allShownSelected =
     shownRefs.length > 0 && shownRefs.every((ref) => selectedRefs.has(ref));
@@ -809,7 +819,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                 )}
               </div>
 
-              {(onLinkStudy || onAddToStudy || onAddVerses) &&
+              {(onLinkStudy || onAddToStudy || onAddVerses || onCreateTopicStudy) &&
                 selectedRefs.size > 0 && (
                 <div
                   style={{
@@ -849,7 +859,30 @@ export default function SearchPanel(props: SearchPanelProps) {
                   >
                     Clear
                   </button>
-                  {onAddVerses && addVersesName ? (
+                  {onCreateTopicStudy ? (
+                    <button
+                      onClick={() => {
+                        onCreateTopicStudy(
+                          Array.from(selectedRefs),
+                          query.trim()
+                        );
+                        setSelectedRefs(new Set());
+                      }}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: "none",
+                        background: "#3b82f6",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Create topic study
+                    </button>
+                  ) : onAddVerses && addVersesName ? (
                     <button
                       onClick={() => onAddVerses(Array.from(selectedRefs))}
                       style={{

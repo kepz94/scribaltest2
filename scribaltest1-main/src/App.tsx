@@ -1491,12 +1491,23 @@ export default function App() {
   // general search; addToStudyId puts it in "add verses to this keyword study"
   // mode (the selection is only the additions — they MERGE into the study,
   // never replace); addVersesRecId adds loose verses to a recorded
-  // chapter/linked study (same merge rule). Multiple panels can be open at
-  // once.
+  // chapter/linked study (same merge rule); gatherTopic is the SCR-49
+  // chapter → topic bridge (the gathered selection plus the pulled chapter
+  // verses become a NEW topic study — the chapter book is copied from, never
+  // changed). Multiple panels can be open at once.
   interface SearchPanelInstance {
     id: string;
     addToStudyId?: string;
     addVersesRecId?: string;
+    gatherTopic?: {
+      pulledRefs: string[];
+      carryMarks: boolean;
+      sourceBookId: string;
+      label: string;
+      // The chapter's theme names at pull time, seeded onto the new topic
+      // study's scope when marks are carried over.
+      themeLabels: Record<number, string>;
+    };
   }
   const [searchPanels, setSearchPanels] = useState<SearchPanelInstance[]>([]);
   const searchPanelSeq = useRef(0);
@@ -2613,6 +2624,103 @@ export default function App() {
     setMigrationPending(null);
     migrationBusy.current = false;
   }, [migrationPending, books]);
+  // --------------------------------------------------------------------------
+
+  // ---- "Add keyword search" — the chapter → topic bridge (SCR-49) ---------
+  // One dialog: the notice (this creates a topic study; the chapter study
+  // stays as it is) plus two plain choices — which verses (all marked / let
+  // me pick) and what travels (carry marks and themes / verses only, blank).
+  const [addKwDraft, setAddKwDraft] = useState<{
+    tabId: string;
+    verses: "all" | "pick";
+    marks: "carry" | "blank";
+  } | null>(null);
+  // "Let me pick" drops the chapter into the send-verses checkbox mode; the
+  // nonce triggers it and this intercept routes the picks here instead of the
+  // send dialog.
+  const [addKwPick, setAddKwPick] = useState<{
+    tabId: string;
+    carryMarks: boolean;
+  } | null>(null);
+  const [sendPickNonces, setSendPickNonces] = useState<Record<string, number>>(
+    {}
+  );
+  // The chapter's marked verses (its linked group included) in its own book —
+  // the pull brings ONLY marked verses, never whole chapters.
+  const markedRefsOfChapterTab = (t: Tab): string[] => {
+    const cs = chapterScopeOf(t);
+    const gid = chapterGroups[cs];
+    const scopes = new Set(
+      gid
+        ? Object.keys(chapterGroups).filter((s) => chapterGroups[s] === gid)
+        : [cs]
+    );
+    return Array.from(
+      new Set(
+        getBook(t.bookId)
+          .marks.filter((m) => scopes.has(scopeOfRef(m.reference)))
+          .map((m) => m.reference)
+      )
+    ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
+  };
+  const openGatherTopicPanel = (
+    t: Tab,
+    pulledRefs: string[],
+    carryMarks: boolean
+  ) => {
+    const bk = getBook(t.bookId);
+    openSearchPanel({
+      gatherTopic: {
+        pulledRefs,
+        carryMarks,
+        sourceBookId: t.bookId,
+        label: tabLabel(t),
+        themeLabels: bk.scopedLabels[resolveScope(chapterScopeOf(t))] || {},
+      },
+    });
+  };
+  const confirmAddKwDraft = () => {
+    if (!addKwDraft) return;
+    const t = tabs.find((x) => x.id === addKwDraft.tabId);
+    setAddKwDraft(null);
+    if (!t) return;
+    if (addKwDraft.verses === "pick") {
+      setAddKwPick({ tabId: t.id, carryMarks: addKwDraft.marks === "carry" });
+      setSendPickNonces((prev) => ({
+        ...prev,
+        [t.id]: (prev[t.id] || 0) + 1,
+      }));
+      return;
+    }
+    openGatherTopicPanel(t, markedRefsOfChapterTab(t), addKwDraft.marks === "carry");
+  };
+  // The pull itself: gathered search picks + pulled chapter verses become a
+  // NEW topic study in a NEW topic book. Copy, not move — absorb copies the
+  // marks/labels/notes, and the chapter's theme names seed the study's own
+  // searchstudy scope, so the chapter book is byte-for-byte unaffected.
+  const createTopicFromGather = (
+    gt: NonNullable<SearchPanelInstance["gatherTopic"]>,
+    gatheredRefs: string[],
+    query: string
+  ) => {
+    const refs = Array.from(
+      new Set([...gt.pulledRefs, ...gatheredRefs])
+    ).sort((a, b) => orderOfRef(a) - orderOfRef(b));
+    if (!refs.length) return;
+    const name = query.trim() || gt.label + " topic";
+    const bookId = createSession(name, false, "topic");
+    if (gt.carryMarks && gt.pulledRefs.length)
+      absorb(bookId, gt.sourceBookId, gt.pulledRefs);
+    const study = addStudy(name, bookId, refs);
+    if (gt.carryMarks) {
+      COLORS.forEach((c) => {
+        const label = (gt.themeLabels[c] || "").trim();
+        if (label)
+          setScopedLabelInBook(bookId, "searchstudy:" + study.id, c, label);
+      });
+    }
+    openStudyTab(study);
+  };
   // --------------------------------------------------------------------------
 
   // Open the "which tabs do you want to link?" prompt for a tab. Pre-checks the
@@ -7150,6 +7258,214 @@ export default function App() {
         </div>
       )}
 
+      {/* SCR-49: the one Add-keyword-search dialog — notice + two plain
+          choices, no second confirmation. */}
+      {addKwDraft &&
+        (() => {
+          const t = tabs.find((x) => x.id === addKwDraft.tabId);
+          if (!t) return null;
+          const markedCount = markedRefsOfChapterTab(t).length;
+          const radioRow = (
+            checked: boolean,
+            label: string,
+            onPick: () => void,
+            disabled?: boolean
+          ) => (
+            <button
+              onClick={onPick}
+              disabled={disabled}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                textAlign: "left",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border:
+                  "1px solid " + (checked ? ICON_ACCENT : "var(--border)"),
+                background: checked ? ICON_ACCENT + "14" : "var(--bg)",
+                color: disabled ? "var(--muted)" : "var(--text)",
+                fontSize: "13.5px",
+                fontWeight: checked ? 700 : 500,
+                fontFamily: "inherit",
+                cursor: disabled ? "default" : "pointer",
+                opacity: disabled ? 0.55 : 1,
+              }}
+            >
+              <span
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  borderRadius: "50%",
+                  border:
+                    "2px solid " + (checked ? ICON_ACCENT : "var(--border)"),
+                  background: checked ? ICON_ACCENT : "transparent",
+                  flexShrink: 0,
+                }}
+              />
+              {label}
+            </button>
+          );
+          return (
+            <div
+              className="scribal-fade"
+              onClick={() => setAddKwDraft(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 380,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+              }}
+            >
+              <div
+                className="scribal-rise"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "440px",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  borderRadius: "16px",
+                  border: "1px solid var(--border)",
+                  padding: "20px",
+                  boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+                  maxHeight: "82vh",
+                  overflowY: "auto",
+                }}
+              >
+                <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Add keyword search
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--muted)",
+                    marginTop: "4px",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  This creates a topic study — your chapter study stays as it
+                  is.
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    margin: "18px 0 8px",
+                  }}
+                >
+                  Verses
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  {radioRow(
+                    addKwDraft.verses === "all",
+                    "All marked verses from this study" +
+                      (markedCount
+                        ? " (" + markedCount + ")"
+                        : " (none marked yet)"),
+                    () => setAddKwDraft({ ...addKwDraft, verses: "all" })
+                  )}
+                  {radioRow(
+                    addKwDraft.verses === "pick",
+                    "Let me pick which verses",
+                    () => setAddKwDraft({ ...addKwDraft, verses: "pick" }),
+                    markedCount === 0
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    margin: "18px 0 8px",
+                  }}
+                >
+                  Marks
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  {radioRow(
+                    addKwDraft.marks === "carry",
+                    "Carry existing marks and themes over",
+                    () => setAddKwDraft({ ...addKwDraft, marks: "carry" })
+                  )}
+                  {radioRow(
+                    addKwDraft.marks === "blank",
+                    "Only the verses themselves, in a blank session state",
+                    () => setAddKwDraft({ ...addKwDraft, marks: "blank" })
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    marginTop: "20px",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <button
+                    onClick={() => setAddKwDraft(null)}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                      fontSize: "13.5px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmAddKwDraft}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: ICON_ACCENT,
+                      color: "#fff",
+                      cursor: "pointer",
+                      fontSize: "13.5px",
+                      fontWeight: 700,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {addKwDraft.verses === "pick"
+                      ? "Pick verses"
+                      : "Open search"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {studyDraftRefs && (
         <div
           className="scribal-fade"
@@ -9491,6 +9807,8 @@ export default function App() {
               ? "Add to " + addStudy.name
               : addRec
               ? "Add to " + addRec.name
+              : panel.gatherTopic
+              ? "Topic from " + panel.gatherTopic.label
               : "Search";
             return (
               <div
@@ -10145,12 +10463,34 @@ export default function App() {
                       t.looseRefs
                         ? undefined
                         : (refs) => {
-                            if (refs.length) {
-                              setSendRefs(refs);
-                              setSendPicking(false);
-                              setSendTablesPicking(false);
+                            if (!refs.length) return;
+                            // SCR-49 "let me pick": the checkbox picks feed
+                            // the topic pull instead of the send dialog.
+                            if (addKwPick && addKwPick.tabId === t.id) {
+                              const carry = addKwPick.carryMarks;
+                              setAddKwPick(null);
+                              openGatherTopicPanel(t, refs, carry);
+                              return;
                             }
+                            setSendRefs(refs);
+                            setSendPicking(false);
+                            setSendTablesPicking(false);
                           }
+                    }
+                    sendPickNonce={sendPickNonces[t.id] || 0}
+                    onAddKeywordSearch={
+                      // The chapter → topic bridge (SCR-49): chapter-book
+                      // reading panels only.
+                      t.looseRefs ||
+                      t.studyId ||
+                      bookTypeOf(t.bookId) === "topic"
+                        ? undefined
+                        : () =>
+                            setAddKwDraft({
+                              tabId: t.id,
+                              verses: "all",
+                              marks: "carry",
+                            })
                     }
                     linkScriptures={
                       // Chapter-to-chapter linking only (SCR-46): keyword/topic
@@ -10257,7 +10597,21 @@ export default function App() {
                     allMarks={allMarks}
                     onJump={(ref) => jumpToReference(ref)}
                     onJumpToMark={jumpToMark}
-                    onLinkStudy={(refs) => onLinkStudy(refs)}
+                    onLinkStudy={
+                      panel.gatherTopic ? undefined : (refs) => onLinkStudy(refs)
+                    }
+                    onCreateTopicStudy={
+                      panel.gatherTopic
+                        ? (refs, q) =>
+                            createTopicFromGather(
+                              panel.gatherTopic as NonNullable<
+                                SearchPanelInstance["gatherTopic"]
+                              >,
+                              refs,
+                              q
+                            )
+                        : undefined
+                    }
                     addToStudyName={addStudy ? addStudy.name : undefined}
                     onAddToStudy={(refs, mode) => {
                       if (panel.addToStudyId)
