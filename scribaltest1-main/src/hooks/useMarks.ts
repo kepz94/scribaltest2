@@ -1,6 +1,14 @@
 import { useReducer, useEffect, useCallback } from "react";
 import { Mark, MarkStyle, MarkColor } from "../types";
 
+// Two-canvas model (SCR-45): every book is a chapter canvas or a topic canvas.
+// Master is implicitly chapter-typed. Books created before the model exists
+// carry no type and behave exactly as before until the migration pass types
+// them.
+export type BookType = "chapter" | "topic";
+const asBookType = (v: unknown): BookType | undefined =>
+  v === "chapter" || v === "topic" ? v : undefined;
+
 // Stable fallback for books without scopedLabels. An inline `|| {}` mints a
 // new object identity every render, which the shells' syncData effects read
 // as "data changed" — one ingredient of the SCR-10 idle write loop.
@@ -9,6 +17,10 @@ const EMPTY_SCOPED_LABELS: Record<string, Record<number, string>> = {};
 interface StudyBook {
   id: string;
   name: string;
+  // Two-canvas book type (SCR-45): "chapter" or "topic". Absent on master
+  // (implicitly chapter) and on pre-migration books (which behave as today
+  // until the migration pass runs). Persisted + synced with the book.
+  type?: BookType;
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
@@ -113,8 +125,15 @@ type Action =
   | { type: "undo" }
   | { type: "redo" }
   | { type: "setActive"; id: string }
-  | { type: "createSession"; id: string; name: string; ephemeral?: boolean }
+  | {
+      type: "createSession";
+      id: string;
+      name: string;
+      ephemeral?: boolean;
+      bookType?: BookType;
+    }
   | { type: "rename"; id: string; name: string }
+  | { type: "setBookType"; id: string; bookType: BookType }
   | { type: "deleteBook"; id: string }
   | { type: "setLabel"; color: MarkColor; label: string }
   | { type: "setScopedLabel"; scope: string; color: MarkColor; label: string }
@@ -145,7 +164,7 @@ type Action =
       threads: Record<string, { a: string | string[]; b: string | string[] }[]>;
     }
   | { type: "setNote"; key: string; text: string }
-  | { type: "ensureBook"; id: string; name: string }
+  | { type: "ensureBook"; id: string; name: string; bookType?: BookType }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
   | {
       type: "moveStudyMarks";
@@ -304,6 +323,7 @@ function initState(): State {
       books[id] = {
         id,
         name: b.name || (id === "master" ? "Master Book" : "Session"),
+        type: asBookType(b.type),
         marks: marksArr,
         colorLabels,
         notes: b.notes && typeof b.notes === "object" ? b.notes : {},
@@ -634,6 +654,7 @@ function reducer(state: State, action: Action): State {
       const book: StudyBook = {
         id,
         name: action.name,
+        type: action.bookType,
         marks: [],
         colorLabels: defaultLabels(), // sessions start with their own blank theme names
         notes: {},
@@ -652,10 +673,25 @@ function reducer(state: State, action: Action): State {
     }
 
     case "ensureBook": {
-      if (state.books[action.id]) return state; // already exists
+      const existing = state.books[action.id];
+      if (existing) {
+        // Already exists — but a typed ensure may still stamp the type onto an
+        // untyped book (the migration's deterministic-id path relies on this).
+        if (action.bookType && !existing.type) {
+          return {
+            ...state,
+            books: {
+              ...state.books,
+              [action.id]: { ...existing, type: action.bookType },
+            },
+          };
+        }
+        return state;
+      }
       const book: StudyBook = {
         id: action.id,
         name: action.name,
+        type: action.bookType,
         marks: [],
         colorLabels: { ...defaultLabels() },
         notes: {},
@@ -812,6 +848,20 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "setBookType": {
+      const bk = state.books[action.id];
+      // Master is implicitly chapter-typed and can never be retyped.
+      if (!bk || action.id === "master" || bk.type === action.bookType)
+        return state;
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.id]: { ...bk, type: action.bookType },
+        },
+      };
+    }
+
     case "deleteBook": {
       if (action.id === "master" || !state.books[action.id]) return state;
       const books = { ...state.books };
@@ -901,6 +951,7 @@ function reducer(state: State, action: Action): State {
           books[id] = {
             id,
             name: rb.name || (id === "master" ? "Master Book" : "Session"),
+            type: asBookType(rb.type),
             marks: cleanMarks,
             colorLabels: rColorLabels,
             notes: rb.notes && typeof rb.notes === "object" ? rb.notes : {},
@@ -1018,16 +1069,24 @@ function reducer(state: State, action: Action): State {
             scopedRoles[s] = r;
           }
         });
+        // Book type: fill-blank only — an untyped local book adopts the type
+        // the other device stamped (migration/retype), but a type set locally
+        // is never overwritten. The migration is deterministic, so two typed
+        // copies always agree.
+        const remoteType = asBookType(rb.type);
+        const typeChanged = !local.type && !!remoteType;
         if (
           marksChanged ||
           labelsChanged ||
           notesChanged ||
           tombChanged ||
           scopedChanged ||
-          rolesChanged
+          rolesChanged ||
+          typeChanged
         ) {
           books[id] = {
             ...local,
+            type: typeChanged ? remoteType : local.type,
             marks: finalMarks,
             colorLabels: labels,
             notes,
@@ -1407,14 +1466,24 @@ export function useMarks() {
     (id: string) => dispatch({ type: "setActive", id }),
     []
   );
-  const createSession = useCallback((name: string, ephemeral = false) => {
-    const id = "session_" + Date.now() + "_" + rand();
-    dispatch({ type: "createSession", id, name, ephemeral });
-    return id;
-  }, []);
+  const createSession = useCallback(
+    (name: string, ephemeral = false, bookType?: BookType) => {
+      const id = "session_" + Date.now() + "_" + rand();
+      dispatch({ type: "createSession", id, name, ephemeral, bookType });
+      return id;
+    },
+    []
+  );
 
   const ensureBook = useCallback(
-    (id: string, name: string) => dispatch({ type: "ensureBook", id, name }),
+    (id: string, name: string, bookType?: BookType) =>
+      dispatch({ type: "ensureBook", id, name, bookType }),
+    []
+  );
+
+  const setBookType = useCallback(
+    (id: string, bookType: BookType) =>
+      dispatch({ type: "setBookType", id, bookType }),
     []
   );
 
@@ -1466,6 +1535,7 @@ export function useMarks() {
           scopedLabels: {} as Record<string, Record<number, string>>,
           notes: {} as Record<string, string>,
           name: "",
+          type: undefined as BookType | undefined,
         };
       return {
         marks: b.marks,
@@ -1476,6 +1546,7 @@ export function useMarks() {
         >,
         notes: b.notes,
         name: b.name,
+        type: id === "master" ? ("chapter" as BookType) : b.type,
       };
     },
     [state.books]
@@ -1548,6 +1619,9 @@ export function useMarks() {
       id,
       name: state.books[id].name,
       isMaster: id === "master",
+      // Master is treated as chapter-typed everywhere the type is consulted;
+      // untyped pre-migration session books surface undefined (behave as today).
+      type: id === "master" ? ("chapter" as BookType) : state.books[id].type,
       markCount: state.books[id].marks.length,
       createdAt: state.books[id].createdAt,
       lastStudiedAt: state.books[id].lastStudiedAt,
@@ -1588,6 +1662,7 @@ export function useMarks() {
     setActiveBook,
     createSession,
     renameBook,
+    setBookType,
     deleteBook,
     getBook,
     ensureBook,

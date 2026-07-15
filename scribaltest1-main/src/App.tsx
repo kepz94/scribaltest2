@@ -2472,8 +2472,12 @@ export default function App() {
     return fmtShortDate(ts);
   };
 
-  const newSessionForActiveTab = () => {
-    const id = createSession("Session · " + fmtShortDate(Date.now()));
+  const newSessionForActiveTab = (bookType?: "chapter" | "topic") => {
+    const id = createSession(
+      "Session · " + fmtShortDate(Date.now()),
+      false,
+      bookType
+    );
     setActiveTabBook(id);
   };
 
@@ -3459,7 +3463,7 @@ export default function App() {
     const refs = vols[t.volume].books[t.book].chapters[t.chapter].verses.map(
       (v) => v.reference
     );
-    const id = createSession(cs);
+    const id = createSession(cs, false, "chapter");
     absorb(id, activeBookId, refs);
     setActiveBook(id);
     const newTabId = makeTabId(id, t.volume, t.book, t.chapter);
@@ -4958,9 +4962,20 @@ export default function App() {
     setGateOpen(false);
   };
 
+  // SCR-45: every new session book is a chapter canvas or a topic canvas —
+  // a plain choice at creation (the two intents, not skill levels). The new
+  // book starts blank either way.
   const handleNewSession = () => {
-    newSessionForActiveTab();
     setBookMenuOpen(false);
+    askConfirm({
+      title: "What kind of study book?",
+      body:
+        "A Chapter study book is for marking chapters — meaning drives membership: mark, name your colors, compile, link chapters to carry themes. A Topic study book is for gathering specific verses — membership drives meaning: collect verses, then impose meaning on them.",
+      confirmLabel: "Chapter study book",
+      onConfirm: () => newSessionForActiveTab("chapter"),
+      secondaryLabel: "Topic study book",
+      onSecondary: () => newSessionForActiveTab("topic"),
+    });
   };
   const startEditBook = (id: string, name: string) => {
     setEditingBookId(id);
@@ -5198,7 +5213,7 @@ export default function App() {
     if (!saveStudyPrompt) return;
     const { info } = saveStudyPrompt;
     const nm = compileName.trim() || info.defaultName;
-    const id = createSession(nm);
+    const id = createSession(nm, false, "chapter");
     absorb(id, info.bookId, info.refs); // copy the current marks into the new book
     setActiveBook(id);
     recordStudy(info.type, id, info.scopeRef, nm, compileView, info.memberScopes);
@@ -5210,7 +5225,7 @@ export default function App() {
     if (!saveStudyPrompt) return;
     const { info } = saveStudyPrompt;
     const nm = compileName.trim() || info.defaultName;
-    const id = createSession(nm);
+    const id = createSession(nm, false, "chapter");
     setActiveBook(id);
     recordStudy(info.type, id, info.scopeRef, nm, compileView, info.memberScopes);
     setSaveStudyPrompt(null);
