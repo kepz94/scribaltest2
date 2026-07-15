@@ -38,7 +38,11 @@ interface StudyPanelProps {
 
 interface VerseRow {
   reference: string;
-  preview: string;
+  // "Focused" = the dominant color's marked fragments (or the verse text when
+  // nothing is marked); "full" = the whole verse. Which one shows is the
+  // panel-level Focused / Full verse toggle (the Outline's vocabulary).
+  focused: string;
+  full: string;
 }
 
 export default function StudyPanel({
@@ -61,6 +65,12 @@ export default function StudyPanel({
   const [titleDraft, setTitleDraft] = useState("");
   const [editingColor, setEditingColor] = useState<MarkColor | null>(null);
   const [colorDraft, setColorDraft] = useState("");
+  // SCR-44: sections start collapsed (headers are the overview); the arrow at
+  // the end of each row expands it. Keys: "unmarked" | "c<color>".
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleExpanded = (key: string) =>
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  const [view, setView] = useState<"focused" | "full">("focused");
 
   // Group each verse under its dominant color (summed STYLE_POINTS across its
   // marks — the Outline's assignment rule), or Unmarked when it has no marks.
@@ -76,7 +86,7 @@ export default function StudyPanel({
     verses.forEach((v) => {
       const vm = byRef.get(v.reference) || [];
       if (!vm.length) {
-        unmarked.push({ reference: v.reference, preview: v.text });
+        unmarked.push({ reference: v.reference, focused: v.text, full: v.text });
         return;
       }
       const pts = new Map<MarkColor, number>();
@@ -105,7 +115,8 @@ export default function StudyPanel({
       });
       const row = {
         reference: v.reference,
-        preview: frags.length ? frags.join(" · ") : v.text,
+        focused: frags.length ? frags.join(" · ") : v.text,
+        full: v.text,
       };
       const list = groups.get(best);
       if (list) list.push(row);
@@ -130,7 +141,26 @@ export default function StudyPanel({
     onEditLabel(c, colorDraft.trim());
   };
 
+  // A small pencil beside every editable name, so renames are discoverable
+  // (SCR-44 — the labels didn't read as editable).
+  const pencil = (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ flexShrink: 0, opacity: 0.55 }}
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+
   const sectionHeader = (
+    key: string,
     dot: React.ReactNode,
     body: React.ReactNode,
     count: number,
@@ -143,20 +173,40 @@ export default function StudyPanel({
         gap: "8px",
         padding: "4px 2px 7px",
         borderBottom: "1px solid var(--border)",
-        marginBottom: "8px",
+        marginBottom: expanded[key] ? "8px" : "0",
       }}
     >
       {dot}
       <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
       {action}
       <span
+        onClick={() => toggleExpanded(key)}
         style={{
           flexShrink: 0,
           fontSize: "11px",
           color: "var(--muted)",
+          cursor: "pointer",
         }}
       >
         {count} {count === 1 ? "verse" : "verses"}
+      </span>
+      {/* The expand arrow at the end of the row (SCR-44) — Outline's rotating
+          chevron. Collapsed points right, open points down. */}
+      <span
+        onClick={() => toggleExpanded(key)}
+        title={expanded[key] ? "Collapse" : "Show the verses"}
+        style={{
+          flexShrink: 0,
+          cursor: "pointer",
+          color: "var(--muted)",
+          fontSize: "12px",
+          width: "14px",
+          textAlign: "center",
+          transform: expanded[key] ? "none" : "rotate(-90deg)",
+          transition: "transform 0.15s",
+        }}
+      >
+        ▼
       </span>
     </div>
   );
@@ -190,17 +240,26 @@ export default function StudyPanel({
         {row.reference}
       </span>
       <span
-        style={{
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical" as any,
-          overflow: "hidden",
-          fontSize: "12.5px",
-          lineHeight: 1.45,
-          color: "var(--muted)",
-        }}
+        style={
+          view === "focused"
+            ? {
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical" as any,
+                overflow: "hidden",
+                fontSize: "12.5px",
+                lineHeight: 1.45,
+                color: "var(--muted)",
+              }
+            : {
+                display: "block",
+                fontSize: "12.5px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              }
+        }
       >
-        {row.preview}
+        {view === "focused" ? row.focused : row.full}
       </span>
     </button>
   );
@@ -293,6 +352,9 @@ export default function StudyPanel({
               style={{
                 flex: 1,
                 minWidth: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
                 textAlign: "left",
                 fontSize: "16px",
                 fontWeight: 700,
@@ -302,12 +364,21 @@ export default function StudyPanel({
                 padding: "6px 0",
                 cursor: "text",
                 fontFamily: "system-ui, sans-serif",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
               }}
             >
-              {title}
+              <span
+                style={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  borderBottom: "1px dashed var(--border)",
+                  paddingBottom: "1px",
+                }}
+              >
+                {title}
+              </span>
+              {pencil}
             </button>
           )}
           <button
@@ -378,10 +449,52 @@ export default function StudyPanel({
           </div>
         )}
 
+        {/* Focused / Full verse toggle (Outline's vocabulary) — governs what
+            the expanded verse rows show. */}
+        {(grouped.unmarked.length > 0 || grouped.groups.length > 0) && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: "14px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                border: "1px solid var(--border)",
+                borderRadius: "999px",
+                overflow: "hidden",
+              }}
+            >
+              {(["focused", "full"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  style={{
+                    padding: "5px 13px",
+                    border: "none",
+                    backgroundColor:
+                      view === v ? "var(--text)" : "transparent",
+                    color: view === v ? "var(--bg)" : "var(--muted)",
+                    fontSize: "11.5px",
+                    fontWeight: view === v ? 600 : 400,
+                    fontFamily: "system-ui, sans-serif",
+                    cursor: "pointer",
+                  }}
+                >
+                  {v === "focused" ? "Focused" : "Full verse"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Unmarked group first — the verses still waiting for a theme. */}
         {grouped.unmarked.length > 0 && (
           <div style={{ marginBottom: "18px" }}>
             {sectionHeader(
+              "unmarked",
               <span
                 style={{
                   flexShrink: 0,
@@ -424,7 +537,7 @@ export default function StudyPanel({
                 </button>
               ) : undefined
             )}
-            {grouped.unmarked.map(verseRow)}
+            {expanded["unmarked"] && grouped.unmarked.map(verseRow)}
           </div>
         )}
 
@@ -436,6 +549,7 @@ export default function StudyPanel({
           return (
             <div key={g.color} style={{ marginBottom: "18px" }}>
               {sectionHeader(
+                "c" + g.color,
                 <span
                   style={{
                     flexShrink: 0,
@@ -474,8 +588,11 @@ export default function StudyPanel({
                       setColorDraft(label);
                       setEditingColor(g.color);
                     }}
-                    title="Name this theme"
+                    title="Rename this theme"
                     style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
                       maxWidth: "100%",
                       textAlign: "left",
                       background: "transparent",
@@ -487,17 +604,26 @@ export default function StudyPanel({
                       fontFamily: "system-ui, sans-serif",
                       color: label ? "var(--text)" : "var(--muted)",
                       fontStyle: label ? "normal" : "italic",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
                     }}
                   >
-                    {label || "Name this color"}
+                    <span
+                      style={{
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        borderBottom: "1px dashed var(--border)",
+                        paddingBottom: "1px",
+                      }}
+                    >
+                      {label || "Name this color"}
+                    </span>
+                    {pencil}
                   </button>
                 ),
                 g.rows.length
               )}
-              {g.rows.map(verseRow)}
+              {expanded["c" + g.color] && g.rows.map(verseRow)}
             </div>
           );
         })}
