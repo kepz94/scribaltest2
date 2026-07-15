@@ -10477,6 +10477,12 @@ export default function App() {
                             setSendTablesPicking(false);
                           }
                     }
+                    dragVerses={
+                      // Topic-book grabbers (SCR-50): chapter-book panels stay
+                      // visually unchanged — chapter books LINK, topic books
+                      // GRAB.
+                      bookTypeOf(t.bookId) === "topic"
+                    }
                     sendPickNonce={sendPickNonces[t.id] || 0}
                     onAddKeywordSearch={
                       // The chapter → topic bridge (SCR-49): chapter-book
@@ -10682,6 +10688,17 @@ export default function App() {
                     onRemoveVerse={(ref) =>
                       removeVersesFromStudy(p.searchStudyId, [ref])
                     }
+                    dragId={p.searchStudyId}
+                    onDropVerse={(ref) => {
+                      // A grabber drop from outside adds the verse (it lands
+                      // in Unmarked until marked here). Appended, not
+                      // canon-sorted — the study's saved order is the user's.
+                      const cur = searchStudies.find(
+                        (s) => s.id === p.searchStudyId
+                      );
+                      if (!cur || cur.refs.includes(ref)) return;
+                      updateStudy(cur.id, { refs: [...cur.refs, ref] });
+                    }}
                     marking={{
                       // In-panel marking (SCR-47): the normal floating
                       // toolbar's tool/color, written book-targeted so the

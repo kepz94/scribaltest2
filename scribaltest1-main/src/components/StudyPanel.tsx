@@ -66,6 +66,13 @@ interface StudyPanelProps {
   // onRemoveVerses semantics, one verse at a time).
   onRemoveVerse?: (reference: string) => void;
   marking?: StudyPanelMarking;
+  // SCR-50: drag-and-drop. dragId names this panel in drag payloads so the
+  // same grabber disambiguates by source — from outside the panel a drop ADDS
+  // the verse (onDropVerse); from inside it reorders within its theme group
+  // (onReorderVerse — persistence is SCR-51).
+  dragId?: string;
+  onDropVerse?: (reference: string) => void;
+  onReorderVerse?: (reference: string, beforeRef: string | null) => void;
   // Set when the panel's study no longer exists (deleted topic study):
   // render only the message + close.
   missing?: string;
@@ -113,6 +120,9 @@ export default function StudyPanel({
   onMarkUnmarked,
   onRemoveVerse,
   marking,
+  dragId,
+  onDropVerse,
+  onReorderVerse,
   missing,
 }: StudyPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -364,8 +374,36 @@ export default function StudyPanel({
     </div>
   );
 
-  // Reference caption above each verse: jump on click, with a quiet per-verse
-  // remove (drops the verse from the study; marks stay in the book).
+  // Drag payload parsing shared by the drop handlers: "scribalverse|<ref>|<src>".
+  const parseVersePayload = (
+    e: React.DragEvent
+  ): { ref: string; fromSelf: boolean } | null => {
+    let raw = "";
+    try {
+      raw = e.dataTransfer.getData("text/plain");
+    } catch {
+      return null;
+    }
+    if (!raw.startsWith("scribalverse|")) return null;
+    const parts = raw.split("|");
+    if (parts.length < 3) return null;
+    return { ref: parts[1], fromSelf: parts[2] === "panel:" + (dragId || "") };
+  };
+  // Whole-panel drop target (SCR-50): a verse dragged in from a topic-book
+  // reading panel or a search panel joins the study (it shows under Unmarked
+  // until it's marked here).
+  const handlePanelDrop = (e: React.DragEvent) => {
+    const p = parseVersePayload(e);
+    if (!p) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (p.fromSelf) return; // inside drags land on a verse row (reorder)
+    if (onDropVerse) onDropVerse(p.ref);
+  };
+
+  // Reference caption above each verse: grabber first (drag to another panel,
+  // or reorder within this one), jump on click, and a quiet per-verse remove
+  // (drops the verse from the study; marks stay in the book).
   const refCaption = (row: VerseRow) => (
     <span
       style={{
@@ -375,6 +413,34 @@ export default function StudyPanel({
         marginBottom: "2px",
       }}
     >
+      {dragId && (
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            try {
+              e.dataTransfer.setData(
+                "text/plain",
+                "scribalverse|" + row.reference + "|panel:" + dragId
+              );
+              e.dataTransfer.effectAllowed = "move";
+            } catch {
+              /* ignore */
+            }
+          }}
+          title="Drag to rearrange within its theme, or into another topic study panel"
+          style={{
+            color: "var(--muted)",
+            opacity: 0.6,
+            cursor: "grab",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            fontSize: "11px",
+          }}
+        >
+          ⠿
+        </span>
+      )}
       <button
         onClick={() => onJump(row.reference)}
         title={"Go to " + row.reference}
@@ -413,11 +479,30 @@ export default function StudyPanel({
     </span>
   );
 
+  // Row-level drop: an inside drag dropped on a verse row reorders (insert
+  // before that row, within its theme group — SCR-51 persists it); an outside
+  // drag anywhere still adds.
+  const rowDropProps = (row: VerseRow) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (onReorderVerse || onDropVerse) e.preventDefault();
+    },
+    onDrop: (e: React.DragEvent) => {
+      const p = parseVersePayload(e);
+      if (!p) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (p.fromSelf) {
+        if (p.ref !== row.reference && onReorderVerse)
+          onReorderVerse(p.ref, row.reference);
+      } else if (onDropVerse) onDropVerse(p.ref);
+    },
+  });
+
   const verseRow = (row: VerseRow) =>
     view === "full" ? (
       // Full verse: the marking surface. MarkedVerse is the reader's renderer,
       // so marks layer identically; selections become marks via handleMouseUp.
-      <div key={row.reference} style={{ padding: "6px 8px" }}>
+      <div key={row.reference} style={{ padding: "6px 8px" }} {...rowDropProps(row)}>
         {refCaption(row)}
         <div style={{ fontSize: "14px", lineHeight: 1.6 }}>
           <MarkedVerse
@@ -437,7 +522,7 @@ export default function StudyPanel({
         </div>
       </div>
     ) : (
-      <div key={row.reference} style={{ padding: "6px 8px" }}>
+      <div key={row.reference} style={{ padding: "6px 8px" }} {...rowDropProps(row)}>
         {refCaption(row)}
         <span
           onClick={() => onJump(row.reference)}
@@ -497,6 +582,10 @@ export default function StudyPanel({
 
   return (
     <div
+      onDragOver={(e) => {
+        if (onDropVerse) e.preventDefault();
+      }}
+      onDrop={handlePanelDrop}
       style={{
         height: "100%",
         overflowY: "auto",

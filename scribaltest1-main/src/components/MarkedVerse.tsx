@@ -10,6 +10,10 @@ interface MarkedVerseProps {
   dark?: boolean;
   tags?: WordTag[];
   onTagTap?: (tag: WordTag) => void;
+  // Rendered after the verse text, OUTSIDE data-verse-text so it never shifts
+  // the selection offsets that drive marking. Used for the topic-book grabber
+  // (SCR-50).
+  trailing?: React.ReactNode;
 }
 
 export default function MarkedVerse({
@@ -21,6 +25,7 @@ export default function MarkedVerse({
   dark = false,
   tags,
   onTagTap,
+  trailing,
 }: MarkedVerseProps) {
   const verseMarks = marks.filter((m) => m.reference === reference);
   const verseTags = (tags || []).filter((t) => t.reference === reference);
@@ -125,6 +130,7 @@ export default function MarkedVerse({
           );
         })}
       </span>
+      {trailing}
     </p>
   );
 }

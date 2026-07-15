@@ -1023,6 +1023,20 @@ export default function SearchPanel(props: SearchPanelProps) {
                     else if (r.bookId) onJumpToMark(r.bookId, r.reference);
                     else onJump(r.reference);
                   }}
+                  // SCR-50: search results drag into a topic study panel's
+                  // Unmarked section like any verse grabber.
+                  draggable
+                  onDragStart={(e) => {
+                    try {
+                      e.dataTransfer.setData(
+                        "text/plain",
+                        "scribalverse|" + r.reference + "|search"
+                      );
+                      e.dataTransfer.effectAllowed = "copy";
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
                   style={{
                     padding: "11px 18px",
                     cursor: "pointer",

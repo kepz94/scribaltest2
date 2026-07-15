@@ -119,6 +119,10 @@ interface VerseViewerProps {
   // SCR-49 "let me pick": a nonce that, when bumped, drops the panel into the
   // existing send-verses checkbox mode so the parent can intercept the picks.
   sendPickNonce?: number;
+  // SCR-50: topic-book reading panels show a grabber at each verse's end for
+  // dragging into a topic study panel. Chapter-book panels never get one —
+  // chapter books LINK, topic books GRAB.
+  dragVerses?: boolean;
   // How far from the top of the scroll area the function-button row (Link
   // scriptures / Send verses) pins while reading. Defaults to
   // 0, which is right when the row's own scroll container starts at the panel
@@ -200,6 +204,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     onCompilePanel,
     onAddKeywordSearch,
     sendPickNonce,
+    dragVerses,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -757,6 +762,43 @@ export default function VerseViewer(props: VerseViewerProps) {
   // Study tabs render their verses with a heading whenever the chapter
   // changes, so cross-chapter sets stay readable. Factored into a helper so the
   // "mark added verses" screen can render two labeled sections (added + study).
+  // The topic-book grabber (SCR-50): sits at the verse's end, outside the
+  // selectable text. Its payload names the verse and its source, so a topic
+  // study panel can tell an outside add from an inside reorder.
+  const verseGrabber = (reference: string) =>
+    dragVerses && !sendMode && !removeMode ? (
+      <span
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation();
+          try {
+            e.dataTransfer.setData(
+              "text/plain",
+              "scribalverse|" + reference + "|reading"
+            );
+            e.dataTransfer.effectAllowed = "copy";
+          } catch {
+            /* some browsers require a payload; nothing else to do */
+          }
+        }}
+        title="Drag this verse into a topic study panel"
+        style={{
+          display: "inline-block",
+          marginLeft: "8px",
+          padding: "0 4px",
+          color: "var(--muted)",
+          opacity: 0.6,
+          cursor: "grab",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          fontSize: "0.8em",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        ⠿
+      </span>
+    ) : undefined;
+
   const renderRefGroups = (refs: string[], keyPrefix: string) =>
     refs
       .filter((r) => verseByRef.has(r))
@@ -794,6 +836,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                 dark={dark}
                 tags={tags}
                 onTagTap={onTagTap}
+                trailing={verseGrabber(r)}
               />
             );
             const checked = removeSel.includes(r);
@@ -1818,6 +1861,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                   dark={dark}
                   tags={tags}
                   onTagTap={onTagTap}
+                  trailing={verseGrabber(verse.reference)}
                 />
               </div>
             </div>
