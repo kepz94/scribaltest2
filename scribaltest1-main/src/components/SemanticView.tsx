@@ -38,6 +38,13 @@ interface Props {
   muted?: string;
   // Synthesis editor text size — mobile must pass >= 16 (iOS sticky-zoom).
   noteFontSize?: number;
+  // SCR-52: topic studies get the SIMPLIFIED single-line synthesis — the
+  // altitude-1 strip only, no stacked layout and no per-theme descent.
+  // Chapter studies never pass this, keeping the full stacked view.
+  singleLine?: boolean;
+  // SCR-52: restrict the strip to a topic study's own verses (in the study's
+  // saved order) instead of every verse of the chapters it spans.
+  onlyRefs?: string[];
 }
 
 interface Row {
@@ -75,6 +82,8 @@ export default function SemanticView({
   text = "var(--text)",
   muted = "var(--muted)",
   noteFontSize,
+  singleLine,
+  onlyRefs,
 }: Props) {
   const [alt, setAlt] = useState<1 | 2 | 3 | 4>(1);
   const [selColor, setSelColor] = useState<MarkColor | null>(null);
@@ -96,12 +105,17 @@ export default function SemanticView({
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
+    const keep = onlyRefs ? new Set(onlyRefs) : null;
     compileTabs.forEach((t) => {
       const ch = vols[t.volume]?.books?.[t.book]?.chapters?.[t.chapter];
       if (!ch) return;
       const title =
         (vols[t.volume]?.books?.[t.book]?.book || "") + " " + ch.chapter;
+      let first = true;
       (ch.verses || []).forEach((v: any, i: number) => {
+        // Topic single-line (SCR-52): only the study's own verses join the
+        // strip — never the whole chapters they came from.
+        if (keep && !keep.has(v.reference)) return;
         const ms = byRef.get(v.reference) || [];
         const colors = Array.from(new Set(ms.map((m) => m.color)));
         out.push({
@@ -109,16 +123,17 @@ export default function SemanticView({
           verse: v.verse,
           text: v.text || "",
           chapterTitle: title,
-          firstOfChapter: i === 0,
+          firstOfChapter: keep ? first : i === 0,
           colors,
           weight: ms.reduce((s, m) => s + (STYLE_PTS[m.style] || 1), 0),
           hasNote: !!noteFor(v.reference).trim(),
         });
+        first = false;
       });
     });
     return out;
     // eslint-disable-next-line
-  }, [compileTabs, byRef]);
+  }, [compileTabs, byRef, onlyRefs]);
 
   const marked = rows.filter((r) => r.colors.length > 0);
   const gaps = rows.filter((r) => r.colors.length === 0);
@@ -154,6 +169,11 @@ export default function SemanticView({
   };
 
   const goVerse = (ref: string) => {
+    // Single-line (SCR-52): no descent — a bar jumps straight to its verse.
+    if (singleLine) {
+      onJumpToReference(ref);
+      return;
+    }
     setSelRef(ref);
     setAlt(4);
   };
@@ -168,14 +188,15 @@ export default function SemanticView({
   // proprietary zoom event) is also blocked inside the view. Single-finger
   // touches are never intercepted, so scrolling stays native.
   const pinchRef = useRef({ start: 0, fired: false });
-  const stateRef = useRef({ alt, selColor, selRef });
-  stateRef.current = { alt, selColor, selRef };
+  const stateRef = useRef({ alt, selColor, selRef, singleLine });
+  stateRef.current = { alt, selColor, selRef, singleLine };
   useEffect(() => {
     const inView = (e: Event) =>
       !!(e.target as HTMLElement | null)?.closest?.(".sem-pinch");
     const dist = (t: TouchList) =>
       Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     const descendOne = () => {
+      if (stateRef.current.singleLine) return; // SCR-52: the strip is the whole view
       const { alt: a, selColor: c, selRef: v } = stateRef.current;
       if (a === 1) setAlt(2);
       else if (a === 2) {
@@ -588,14 +609,16 @@ export default function SemanticView({
     return (
       <div className="sem-pinch" style={card}>
         {header("The study's shape — tap a bar to land on its verse")}
-        <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
-          <button onClick={() => setStacked(false)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
-            Flow ✓
-          </button>
-          <button onClick={() => setStacked(true)} style={chipStyle}>
-            Stacked
-          </button>
-        </div>
+        {!singleLine && (
+          <div style={{ display: "flex", gap: "7px", marginBottom: "12px" }}>
+            <button onClick={() => setStacked(false)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
+              Flow ✓
+            </button>
+            <button onClick={() => setStacked(true)} style={chipStyle}>
+              Stacked
+            </button>
+          </div>
+        )}
         <div
           style={{
             display: "flex",
@@ -677,9 +700,11 @@ export default function SemanticView({
           ))}
         </div>
         <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
-          <button onClick={() => setAlt(2)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
-            Zoom into the themes ↘
-          </button>
+          {!singleLine && (
+            <button onClick={() => setAlt(2)} style={{ ...chipStyle, borderColor: "#8b5cf6", color: "#b79df5" }}>
+              Zoom into the themes ↘
+            </button>
+          )}
           {gaps.length > 0 && (
             <button
               onClick={() => setGapsOpen(true)}

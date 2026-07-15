@@ -11646,9 +11646,13 @@ export default function App() {
                   {viewTabButton(compileView === "outline", "Outline", () =>
                     setCompileView("outline")
                   )}
-                  {viewTabButton(compileView === "charting", "Charting", () =>
-                    setCompileView("charting")
-                  )}
+                  {/* Topic view set (SCR-52): Outline, Distilled, Relational,
+                      single-line Semantic — Charting stays chapter-structured
+                      and excluded for topic studies. */}
+                  {!compileStudy &&
+                    viewTabButton(compileView === "charting", "Charting", () =>
+                      setCompileView("charting")
+                    )}
                   {viewTabButton(compileView === "distilled", "Distilled", () =>
                     setCompileView("distilled")
                   )}
@@ -11922,6 +11926,11 @@ export default function App() {
                     sharedCompileProps.compileTabs.map(tabLabel).join("+");
                   setNote(k, t);
                 }}
+                // Topic studies get the simplified single-line synthesis over
+                // the study's own verses (SCR-52); chapter studies keep the
+                // full stacked view.
+                singleLine={!!compileStudy}
+                onlyRefs={compileStudy ? compileStudy.refs : undefined}
               />
             )}
             {compileView === "distilled" && (
