@@ -118,6 +118,10 @@ interface VerseViewerProps {
   // dragging into a topic study panel. Chapter-book panels never get one —
   // chapter books LINK, topic books GRAB.
   dragVerses?: boolean;
+  // With Select-mode verses checked, "Send to study…" routes them through the
+  // parent's send picker — for a topic study that isn't open as a panel
+  // (drag needs a visible target; this doesn't).
+  onSendSelection?: (refs: string[]) => void;
   // How far from the top of the scroll area the function-button row (Link
   // scriptures / Send verses) pins while reading. Defaults to
   // 0, which is right when the row's own scroll container starts at the panel
@@ -198,6 +202,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     linkScriptures,
     onCompilePanel,
     dragVerses,
+    onSendSelection,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -1498,6 +1503,44 @@ export default function VerseViewer(props: VerseViewerProps) {
                 : "Select"}
             </button>
           )}
+          {dragVerses &&
+            dragSelMode &&
+            dragSel.length > 0 &&
+            onSendSelection && (
+              // The checked set can also go to a study that isn't open as a
+              // panel — dragging needs a visible drop target, this doesn't.
+              <button
+                onClick={() => {
+                  onSendSelection(dragSel);
+                  setDragSelMode(false);
+                  setDragSel([]);
+                }}
+                title={
+                  "Send the " +
+                  dragSel.length +
+                  " checked " +
+                  (dragSel.length === 1 ? "verse" : "verses") +
+                  " to a topic study"
+                }
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  border: "none",
+                  backgroundColor: "#3b82f6",
+                  color: "#fff",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  fontFamily: "system-ui, sans-serif",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                Send to study…
+              </button>
+            )}
           {onCompilePanel && (
             // Per-panel Compile (SCR-48): this surface compiles itself — its
             // chapter, or its linked group. Same row as the other function

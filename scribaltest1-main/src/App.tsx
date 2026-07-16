@@ -1116,7 +1116,10 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length) {
+        if (Array.isArray(parsed)) {
+          // An empty canvas is a valid state (every tab is closable) — only
+          // a missing/corrupt store gets the default master tab.
+          if (!parsed.length) return [];
           // migrate older tabs that have no bookId
           return parsed.map((t: any) => {
             const bookId = t.bookId || "master";
@@ -2323,20 +2326,12 @@ export default function App() {
   };
 
   const closeTab = (id: string) => {
+    // Every tab is closable, the last one included — zero tabs is a valid
+    // empty canvas (Kepu's call; the + in the tab strip starts over).
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
-      if (next.length === 0) {
-        const fb = {
-          id: makeTabId("master", 0, 0, 0),
-          volume: 0,
-          book: 0,
-          chapter: 0,
-          bookId: "master",
-        };
-        setActiveTabId(fb.id);
-        return [fb];
-      }
-      if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
+      if (id === activeTabId)
+        setActiveTabId(next.length ? next[next.length - 1].id : "");
       return next;
     });
   };
@@ -9534,17 +9529,15 @@ export default function App() {
                     </span>
                   )}
                   {tabLabel(t)}
-                  {tabs.length > 1 && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeTab(t.id);
-                      }}
-                      style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
-                    >
-                      ✕
-                    </span>
-                  )}
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(t.id);
+                    }}
+                    style={{ fontSize: "14px", opacity: 0.6, lineHeight: 1 }}
+                  >
+                    ✕
+                  </span>
                 </div>
               </div>
             );
@@ -9929,7 +9922,9 @@ export default function App() {
         </div>
       )}
 
-      {mode === "read" && (
+      {/* Chapter-scope UI — with no tabs open there is no chapter to name
+          colors for, so the bar goes with them. */}
+      {mode === "read" && tabs.length > 0 && (
         <div
           style={{
             display: "flex",
@@ -10092,6 +10087,28 @@ export default function App() {
                   : "visible",
             }}
           >
+            {/* The empty canvas: everything is closable, so nothing may be
+                open. Just a quiet pointer at the + that starts over. */}
+            {tabs.length +
+              searchPanels.length +
+              studyPanels.length +
+              newTabPanels.length ===
+              0 && (
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "60vh",
+                  color: "var(--muted)",
+                  fontSize: "13px",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Nothing open — press + above to start.
+              </div>
+            )}
             {tabs.map((t) => {
               const isActive = t.id === activeTabId;
               // A panel holds a fixed width (SCR-29) whenever more than one
@@ -10266,6 +10283,14 @@ export default function App() {
                       // book they live in.
                       bookTypeOf(t.bookId) === "topic" || !!t.studyId
                     }
+                    onSendSelection={(refs) => {
+                      // Select-mode "Send to study…": same send picker the
+                      // search panel uses — for a study that isn't open.
+                      if (!refs.length) return;
+                      setSendRefs(refs);
+                      setSendPicking(false);
+                      setSendTablesPicking(false);
+                    }}
                     linkScriptures={
                       // Chapter-to-chapter linking only (SCR-46): keyword/topic
                       // tabs have no link affordance — chapter books LINK,
