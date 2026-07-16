@@ -3818,41 +3818,6 @@ export default function App() {
     if (!st) return;
     startStudyCompile(st);
   };
-  // "Mark these" (SCR-27): open the panel's unmarked verses as a loose-refs
-  // TAB beside it — a real marking surface (toolbar, active-book sync) built
-  // on the keyword-study tab machinery. The snapshot is fixed so the surface
-  // stays stable while the study panel's Unmarked group shrinks live. At the
-  // tab cap, fall back to the existing full-screen mark overlay.
-  const openMarkTheseTab = (p: StudyPanelInstance) => {
-    const bk = getBook(p.bookId);
-    const refs = versesForPanel(p)
-      .filter((v) => !bk.marks.some((m) => m.reference === v.reference))
-      .map((v) => v.reference);
-    if (!refs.length) return;
-    const title = studyPanelTitle(p) + " — unmarked";
-    if (tabs.length >= MAX_TABS) {
-      const refBook: Record<string, string> = {};
-      refs.forEach((r) => (refBook[r] = p.bookId));
-      openTableMarkPanel(refs, refBook, title);
-      return;
-    }
-    const loc = refLoc.get(refs[0]) || { volume: 0, book: 0, chapter: 0 };
-    const id = "loose_" + Date.now();
-    setTabs((prev) => [
-      ...prev,
-      {
-        id,
-        volume: loc.volume,
-        book: loc.book,
-        chapter: loc.chapter,
-        bookId: p.bookId,
-        looseRefs: refs,
-        looseTitle: title,
-      },
-    ]);
-    setActiveTabId(id);
-    setMode("read");
-  };
   // ------------------------------------------------------------------------
 
   const usedColors = COLORS.filter((c) =>
@@ -10494,7 +10459,6 @@ export default function App() {
                     onCompile={() => compileFromStudyPanel(p)}
                     onJump={(ref) => jumpToReference(ref)}
                     onClose={() => closeStudyPanel(p.id)}
-                    onMarkUnmarked={() => openMarkTheseTab(p)}
                     onRemoveVerse={(ref) =>
                       removeVersesFromStudy(p.searchStudyId, [ref])
                     }

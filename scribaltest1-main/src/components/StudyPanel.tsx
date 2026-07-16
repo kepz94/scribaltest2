@@ -8,6 +8,7 @@ import {
   COLORS,
   COLOR_MAP,
   STYLE_POINTS,
+  markStyleCSS,
 } from "../types";
 import MarkedVerse from "./MarkedVerse";
 import { setVerseDragImage } from "../dragGhost";
@@ -61,8 +62,6 @@ interface StudyPanelProps {
   onCompile: () => void;
   onJump: (reference: string) => void;
   onClose: () => void;
-  // Opens the Unmarked verses as a markable surface beside the panel.
-  onMarkUnmarked?: () => void;
   // Drops one verse from the study (its marks stay in the book — the existing
   // onRemoveVerses semantics, one verse at a time).
   onRemoveVerse?: (reference: string) => void;
@@ -119,7 +118,6 @@ export default function StudyPanel({
   onCompile,
   onJump,
   onClose,
-  onMarkUnmarked,
   onRemoveVerse,
   marking,
   dragId,
@@ -670,6 +668,10 @@ export default function StudyPanel({
         </div>
       </div>
     ) : (
+      // Focused = the markings themselves, live (Kepu's call — Outline's
+      // fragment view): each marked phrase on its own line, styled as it was
+      // marked, the moment it's marked. Verses with no marks yet keep the
+      // grey snippet.
       <div
         key={row.reference}
         data-vref={row.reference}
@@ -677,22 +679,58 @@ export default function StudyPanel({
         {...rowDropProps(row)}
       >
         {refCaption(row)}
-        <span
-          onClick={() => onJump(row.reference)}
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical" as any,
-            overflow: "hidden",
-            fontSize: "12.5px",
-            lineHeight: 1.45,
-            color: "var(--muted)",
-            cursor: "pointer",
-            fontFamily: "system-ui, sans-serif",
-          }}
-        >
-          {row.focused}
-        </span>
+        {(() => {
+          const seen = new Set<string>();
+          const frags: { text: string; style: MarkStyle; color: MarkColor }[] =
+            [];
+          marks
+            .filter((m) => m.reference === row.reference)
+            .sort((a, b) => a.startIndex - b.startIndex)
+            .forEach((m) => {
+              const t = (m.markedText || "").trim();
+              if (t && !seen.has(t)) {
+                seen.add(t);
+                frags.push({ text: t, style: m.style, color: m.color });
+              }
+            });
+          if (!frags.length)
+            return (
+              <span
+                onClick={() => onJump(row.reference)}
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical" as any,
+                  overflow: "hidden",
+                  fontSize: "12.5px",
+                  lineHeight: 1.45,
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                {row.focused}
+              </span>
+            );
+          return frags.map((f, i) => (
+            <div
+              key={row.reference + ":frag:" + i}
+              onClick={() => onJump(row.reference)}
+              style={{ margin: "3px 0 3px 14px", cursor: "pointer" }}
+            >
+              <span
+                style={{
+                  fontFamily: '"Times New Roman", Times, serif',
+                  fontSize: "15px",
+                  lineHeight: 1.55,
+                  ...markStyleCSS(f.style, f.color),
+                }}
+              >
+                {f.text}
+              </span>
+            </div>
+          ));
+        })()}
       </div>
     );
 
@@ -909,10 +947,13 @@ export default function StudyPanel({
               marginBottom: "14px",
             }}
           >
+            {/* Real surface + text-color labels — the transparent pill
+                vanished into the panel background (dress-rehearsal fix). */}
             <div
               style={{
                 display: "flex",
-                border: "1px solid var(--border)",
+                border: "1.5px solid var(--muted)",
+                background: "var(--panel)",
                 borderRadius: "999px",
                 overflow: "hidden",
               }}
@@ -926,9 +967,9 @@ export default function StudyPanel({
                     border: "none",
                     backgroundColor:
                       view === v ? "var(--text)" : "transparent",
-                    color: view === v ? "var(--bg)" : "var(--muted)",
+                    color: view === v ? "var(--panel)" : "var(--text)",
                     fontSize: "11.5px",
-                    fontWeight: view === v ? 600 : 400,
+                    fontWeight: view === v ? 600 : 500,
                     fontFamily: "system-ui, sans-serif",
                     cursor: "pointer",
                   }}
@@ -967,27 +1008,22 @@ export default function StudyPanel({
                 >
                   Unmarked
                 </span>,
-                grouped.unmarked.length,
-                onMarkUnmarked ? (
-                  <button
-                    onClick={onMarkUnmarked}
-                    title="Open these verses beside the panel to mark them"
-                    style={{
-                      flexShrink: 0,
-                      padding: "3px 10px",
-                      borderRadius: "999px",
-                      border: "1px solid var(--border)",
-                      background: "var(--panel)",
-                      color: "var(--text)",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      fontFamily: "system-ui, sans-serif",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Mark these
-                  </button>
-                ) : undefined
+                grouped.unmarked.length
+              )}
+              {/* Marking happens right here — the hint replaces the old
+                  "Mark these" side surface (Kepu's call: redundant). */}
+              {expanded["unmarked"] && (
+                <div
+                  style={{
+                    fontSize: "11.5px",
+                    fontStyle: "italic",
+                    color: "var(--muted)",
+                    margin: "4px 0 2px 2px",
+                  }}
+                >
+                  Highlight words in a verse below to theme it — it moves into
+                  its color's group at Compile.
+                </div>
               )}
               {expanded["unmarked"] && grouped.unmarked.map(verseRow)}
             </div>
