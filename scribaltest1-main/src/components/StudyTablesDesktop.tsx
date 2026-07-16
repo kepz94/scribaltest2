@@ -1304,7 +1304,7 @@ export default function StudyTablesDesktop({
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {b.isMaster ? "Master Book" : b.name || "Session"}
+                        {b.isMaster ? "Master Chapter Book" : b.name || "Session"}
                       </div>
                       <div
                         style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { Mark, MarkColor, COLORS, COLOR_MAP } from "../types";
 import { buildSearchMatcher } from "../searchMatch";
+import { setVerseDragImage } from "../dragGhost";
 
 export interface ThemeMark {
   bookId: string;
@@ -878,6 +879,12 @@ export default function SearchPanel(props: SearchPanelProps) {
                       } catch {
                         /* ignore */
                       }
+                      setVerseDragImage(
+                        e,
+                        Array.from(selectedRefs).map((ref) => ({
+                          reference: ref,
+                        }))
+                      );
                     }}
                     title={
                       "Drag the " +
@@ -1081,26 +1088,14 @@ export default function SearchPanel(props: SearchPanelProps) {
                 </div>
               )}
               {shown.map((r, i) => (
+                // Drag lives ONLY on the ⠿ handle — a draggable row hijacks
+                // text selection inside the result (Kepu's catch).
                 <div
                   key={r.reference + "|" + i}
                   onClick={() => {
                     if (selectMode) toggleRef(r.reference);
                     else if (r.bookId) onJumpToMark(r.bookId, r.reference);
                     else onJump(r.reference);
-                  }}
-                  // SCR-50: search results drag into a topic study panel's
-                  // Unmarked section like any verse grabber.
-                  draggable
-                  onDragStart={(e) => {
-                    try {
-                      e.dataTransfer.setData(
-                        "text/plain",
-                        "scribalverse|" + r.reference + "|search"
-                      );
-                      e.dataTransfer.effectAllowed = "copy";
-                    } catch {
-                      /* ignore */
-                    }
                   }}
                   style={{
                     padding: "11px 18px",
@@ -1249,6 +1244,13 @@ export default function SearchPanel(props: SearchPanelProps) {
                         } catch {
                           /* ignore */
                         }
+                        setVerseDragImage(
+                          e,
+                          group.map((ref) => ({
+                            reference: ref,
+                            text: ref === r.reference ? r.text : undefined,
+                          }))
+                        );
                       }}
                       title={
                         selectedRefs.has(r.reference) && selectedRefs.size > 1

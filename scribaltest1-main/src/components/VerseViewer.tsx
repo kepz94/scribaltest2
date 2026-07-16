@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
+import { setVerseDragImage } from "../dragGhost";
 import StyleGlyph from "./StyleGlyph";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 import { isSermonsVolume, sermonLabel } from "../sermons";
@@ -823,17 +824,28 @@ export default function VerseViewer(props: VerseViewerProps) {
           draggable
           onDragStart={(e) => {
             e.stopPropagation();
+            const group = grabberRefsFor(reference);
             try {
               e.dataTransfer.setData(
                 "text/plain",
-                "scribalverse|" +
-                  grabberRefsFor(reference).join(";;") +
-                  "|reading"
+                "scribalverse|" + group.join(";;") + "|reading"
               );
               e.dataTransfer.effectAllowed = "copy";
             } catch {
               /* some browsers require a payload; nothing else to do */
             }
+            // The verse itself follows the pointer (Kepu's call) — not the
+            // bare chip.
+            setVerseDragImage(e, group.map((ref) => ({
+              reference: ref,
+              text: verseByRef.get(ref)?.text,
+            })));
+          }}
+          onDragEnd={(e) => {
+            // A completed group drop clears the checks; a cancelled drag
+            // keeps them so the user can re-aim.
+            if (dragSelMode && e.dataTransfer.dropEffect !== "none")
+              setDragSel([]);
           }}
           title={
             dragCount > 1

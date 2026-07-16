@@ -4277,7 +4277,7 @@ export default function App() {
 
     const targetName =
       target === "master"
-        ? "Master Book"
+        ? "Master Chapter Book"
         : books.find((b) => b.id === target)?.name || "this session";
     const belongs = owners.length
       ? " Those marks belong to: " + owners.join(", ") + "."
@@ -4454,7 +4454,7 @@ export default function App() {
   // Display name for a study's book in the send picker.
   const bookLabel = (bookId: string) => {
     const b = books.find((x) => x.id === bookId);
-    return b ? (b.isMaster ? "Master Book" : b.name || "Session") : "Session";
+    return b ? (b.isMaster ? "Master Chapter Book" : b.name || "Session") : "Session";
   };
 
   // Add loose verses to a recorded chapter/linked study (its extraRefs), then
@@ -8318,7 +8318,7 @@ export default function App() {
                     (or untyped) books; a chapter/linked study never moves into
                     a topic book. */}
                 {moveTarget.kind !== "keyword" && (
-                  <option value="master">Master Book</option>
+                  <option value="master">Master Chapter Book</option>
                 )}
                 {books
                   .filter((b) =>
@@ -8572,8 +8572,20 @@ export default function App() {
 
           {vDivider}
 
-          {/* Study-book selector */}
+          {/* Study-book selector — colored by the active book's canvas type
+              (red chapter / blue topic), never the old purple. */}
           <div style={{ position: "relative" }}>
+            {(() => {
+              const activeType = isMasterActive
+                ? ("chapter" as const)
+                : bookTypeOf(activeBookId);
+              const activeTypeColor =
+                activeType === "chapter"
+                  ? TYPE_RED
+                  : activeType === "topic"
+                  ? TYPE_BLUE
+                  : ICON_ACCENT;
+              return (
             <button
               onClick={() => setBookMenuOpen((o) => !o)}
               title="Switch study book"
@@ -8581,9 +8593,7 @@ export default function App() {
                 height: "40px",
                 padding: "0 16px",
                 borderRadius: "999px",
-                border: isMasterActive
-                  ? "1px solid var(--border)"
-                  : "1px solid " + ICON_ACCENT,
+                border: "1px solid " + activeTypeColor,
                 backgroundColor: isMasterActive ? "transparent" : "var(--soft)",
                 color: "var(--text)",
                 cursor: "pointer",
@@ -8594,35 +8604,26 @@ export default function App() {
                 gap: "8px",
               }}
             >
-              <span style={{ color: ICON_ACCENT, fontSize: "13px" }}>❖</span>
+              <span style={{ color: activeTypeColor, fontSize: "13px" }}>
+                ❖
+              </span>
               {activeBookName}
-              {/* Badge = the active book's canvas type (red chapter / blue
-                  topic); untyped pre-migration sessions keep SESSION. */}
-              {!isMasterActive &&
-                (() => {
-                  const bt = bookTypeOf(activeBookId);
-                  const c = bt
-                    ? bt === "topic"
-                      ? TYPE_BLUE
-                      : TYPE_RED
-                    : ICON_ACCENT;
-                  return (
-                    <span
-                      style={{
-                        fontSize: "9px",
-                        letterSpacing: "1px",
-                        color: c,
-                        border: "1px solid " + c,
-                        borderRadius: "999px",
-                        padding: "1px 6px",
-                      }}
-                    >
-                      {bt ? bt.toUpperCase() : "SESSION"}
-                    </span>
-                  );
-                })()}
+              <span
+                style={{
+                  fontSize: "9px",
+                  letterSpacing: "1px",
+                  color: activeTypeColor,
+                  border: "1px solid " + activeTypeColor,
+                  borderRadius: "999px",
+                  padding: "1px 6px",
+                }}
+              >
+                {activeType ? activeType.toUpperCase() : "SESSION"}
+              </span>
               <span style={{ fontSize: "9px", color: "var(--muted)" }}>▼</span>
             </button>
+              );
+            })()}
 
             {bookMenuOpen && (
               <>
@@ -8829,7 +8830,7 @@ export default function App() {
                       fontWeight: 500,
                     }}
                   >
-                    + New session
+                    + New study book
                   </div>
                   <div
                     style={{
@@ -8839,8 +8840,9 @@ export default function App() {
                       lineHeight: 1.45,
                     }}
                   >
-                    Sessions are separate workspaces — marks made here never
-                    touch your Master Book.
+                    Study books are separate canvases — marks made here
+                    never touch your Master Chapter Book or Master Topic
+                    Book.
                   </div>
                 </div>
               </>
@@ -9838,7 +9840,7 @@ export default function App() {
             const linkColor = gid ? groupColor(gid) : ACCENT;
             const tabBook = books.find((b) => b.id === (t.bookId || "master"));
             const tabBookName =
-              !tabBook || tabBook.isMaster ? "Master Book" : tabBook.name;
+              !tabBook || tabBook.isMaster ? "Master Chapter Book" : tabBook.name;
             // Typed pill tag (Kepu's pick): the canvas type in its color,
             // book name after it. Study tabs read TOPIC STUDY; an untyped
             // pre-migration book keeps the plain label until migration types
@@ -9915,7 +9917,7 @@ export default function App() {
                     lineHeight: 1,
                     color: "var(--muted)",
                     fontFamily: "system-ui, sans-serif",
-                    maxWidth: "170px",
+                    maxWidth: "210px",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -11362,7 +11364,7 @@ export default function App() {
                 >
                   {books.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.isMaster ? "Master Book" : b.name || "Session"}
+                      {b.isMaster ? "Master Chapter Book" : b.name || "Session"}
                     </option>
                   ))}
                   <option value="__new">＋ New session…</option>

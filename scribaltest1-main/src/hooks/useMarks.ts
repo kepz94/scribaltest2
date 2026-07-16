@@ -319,7 +319,7 @@ function migrateMaster(): StudyBook {
   const notes = safeParse<Record<string, string>>(safeGet("scribal_notes"), {});
   return {
     id: "master",
-    name: "Master Book",
+    name: "Master Chapter Book",
     marks: Array.isArray(marks) ? marks : [],
     colorLabels: { ...defaultLabels(), ...labels },
     notes: notes && typeof notes === "object" ? notes : {},
@@ -366,7 +366,14 @@ function initState(): State {
         : migrateScopedLabels(marksArr, colorLabels, rawScoped);
       books[id] = {
         id,
-        name: b.name || (id === "master" ? "Master Book" : "Session"),
+        // Heal the old default master name to the two-canvas one (master is
+        // never user-renameable, so the old default is the only value here).
+        name:
+          id === "master"
+            ? b.name === "Master Book" || !b.name
+              ? "Master Chapter Book"
+              : b.name
+            : b.name || "Session",
         type: asBookType(b.type),
         marks: marksArr,
         colorLabels,
@@ -1130,7 +1137,8 @@ function reducer(state: State, action: Action): State {
           const rColorLabels = { ...defaultLabels(), ...(rb.colorLabels || {}) };
           books[id] = {
             id,
-            name: rb.name || (id === "master" ? "Master Book" : "Session"),
+            name:
+              rb.name || (id === "master" ? "Master Chapter Book" : "Session"),
             type: asBookType(rb.type),
             marks: cleanMarks,
             colorLabels: rColorLabels,

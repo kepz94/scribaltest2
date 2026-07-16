@@ -933,7 +933,7 @@ export default function VersePicker({
             >
               {markSourceBooks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.isMaster ? "Master" : b.name}
+                  {b.isMaster ? "Master Chapter Book" : b.name}
                 </option>
               ))}
               <option value="">Empty (no marks)</option>

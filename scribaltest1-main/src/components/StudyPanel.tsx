@@ -10,6 +10,7 @@ import {
   STYLE_POINTS,
 } from "../types";
 import MarkedVerse from "./MarkedVerse";
+import { setVerseDragImage } from "../dragGhost";
 
 // Topic study panel (SCR-47, retargeting the SCR-27 chassis): the container
 // for a topic study — its verses grouped by theme, markable in place. It is a
@@ -489,6 +490,9 @@ export default function StudyPanel({
               } catch {
                 /* ignore */
               }
+              setVerseDragImage(e, [
+                { reference: row.reference, text: row.full },
+              ]);
             }}
             title="Drag to rearrange within its theme, or into another topic study panel"
             style={{

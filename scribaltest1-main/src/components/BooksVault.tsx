@@ -129,7 +129,7 @@ export default function BooksVault({
               fontFamily: "inherit",
             }}
           >
-            + New session
+            + New study book
           </button>
           <button
             onClick={onClose}
