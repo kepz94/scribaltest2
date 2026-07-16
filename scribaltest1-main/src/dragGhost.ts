@@ -1,10 +1,16 @@
 // Custom drag image for verse grabbers: the verse itself follows the pointer
 // (a card with the reference and text — or the stack summary for a group
-// drag) instead of the browser's default tiny ghost of the ⠿ chip. The node
-// is parked offscreen, handed to setDragImage, and removed right after the
-// browser snapshots it.
+// drag) instead of the browser's default tiny ghost of the ⠿ chip.
+//
+// The browser renders anything given to setDragImage at its own reduced
+// opacity (way too faded — Kepu's dress-rehearsal note), so the native ghost
+// is hidden behind a 1×1 transparent canvas and the card is a real DOM node
+// moved along on document dragover at full opacity. It anchors at its
+// top-RIGHT corner: the grabber sits at the verse's right end, so the card
+// hangs left of the pointer — anchored left it reads as if you'd grabbed the
+// wrong side.
 export function setVerseDragImage(
-  e: { dataTransfer: DataTransfer | null },
+  e: { dataTransfer: DataTransfer | null; clientX?: number; clientY?: number },
   verses: { reference: string; text?: string }[]
 ): void {
   try {
@@ -12,7 +18,7 @@ export function setVerseDragImage(
     if (!dt || typeof dt.setDragImage !== "function" || !verses.length) return;
     const g = document.createElement("div");
     g.style.cssText =
-      "position:fixed;top:-1000px;left:-1000px;max-width:340px;" +
+      "position:fixed;top:-1000px;left:-1000px;max-width:340px;z-index:9999;" +
       "padding:10px 13px;border-radius:12px;border:1.5px solid #3b82f6;" +
       "background:var(--panel,#fff);color:var(--text,#292524);" +
       "font-family:system-ui,sans-serif;font-size:12.5px;line-height:1.5;" +
@@ -41,10 +47,34 @@ export function setVerseDragImage(
       g.appendChild(more);
     }
     document.body.appendChild(g);
-    dt.setDragImage(g, 24, 18);
-    window.setTimeout(() => {
+
+    // Blank out the native (faded) ghost.
+    const blank = document.createElement("canvas");
+    blank.width = 1;
+    blank.height = 1;
+    blank.style.cssText = "position:fixed;top:-10px;left:-10px;";
+    document.body.appendChild(blank);
+    dt.setDragImage(blank, 0, 0);
+
+    const place = (x: number, y: number) => {
+      g.style.left = x - Math.max(0, g.offsetWidth - 18) + "px";
+      g.style.top = y - 18 + "px";
+    };
+    if (typeof e.clientX === "number" && typeof e.clientY === "number")
+      place(e.clientX, e.clientY);
+    const move = (ev: DragEvent) => {
+      if (ev.clientX || ev.clientY) place(ev.clientX, ev.clientY);
+    };
+    const cleanup = () => {
+      document.removeEventListener("dragover", move);
+      document.removeEventListener("dragend", cleanup);
+      document.removeEventListener("drop", cleanup);
       if (g.parentNode) g.parentNode.removeChild(g);
-    }, 0);
+      if (blank.parentNode) blank.parentNode.removeChild(blank);
+    };
+    document.addEventListener("dragover", move);
+    document.addEventListener("dragend", cleanup);
+    document.addEventListener("drop", cleanup);
   } catch {
     /* the drag still works with the browser's default image */
   }
