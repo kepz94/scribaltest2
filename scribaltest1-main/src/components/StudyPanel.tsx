@@ -74,6 +74,10 @@ interface StudyPanelProps {
   dragId?: string;
   onDropVerses?: (references: string[]) => void;
   onReorderVerse?: (reference: string, beforeRef: string | null) => void;
+  // Opens every verse of this study in a reading panel — the optional
+  // all-verses reading view. Sends land in this panel itself, so the reading
+  // panel is a choice made here, never an automatic side effect of a send.
+  onOpenReader?: () => void;
   // Set when the panel's study no longer exists (deleted topic study):
   // render only the message + close.
   missing?: string;
@@ -123,6 +127,7 @@ export default function StudyPanel({
   dragId,
   onDropVerses,
   onReorderVerse,
+  onOpenReader,
   missing,
 }: StudyPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -940,15 +945,40 @@ export default function StudyPanel({
           </div>
         )}
 
-        {/* Full verse (default — the marking surface) / Focused overview. */}
+        {/* Full verse (default — the marking surface) / Focused overview,
+            plus the optional all-verses reading view on the left. */}
         {(grouped.unmarked.length > 0 || grouped.groups.length > 0) && (
           <div
             style={{
               display: "flex",
-              justifyContent: "flex-end",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "10px",
               marginBottom: "14px",
             }}
           >
+            {onOpenReader ? (
+              <button
+                onClick={onOpenReader}
+                title="Open all of this study's verses in a reading panel"
+                style={{
+                  padding: "5px 13px",
+                  borderRadius: "999px",
+                  border: "1.5px solid var(--muted)",
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  fontSize: "11.5px",
+                  fontWeight: 500,
+                  fontFamily: "system-ui, sans-serif",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Open in reading panel
+              </button>
+            ) : (
+              <span />
+            )}
             {/* Real surface + text-color labels — the transparent pill
                 vanished into the panel background (dress-rehearsal fix). */}
             <div

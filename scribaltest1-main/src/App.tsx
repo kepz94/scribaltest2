@@ -59,7 +59,6 @@ import {
   WordTag,
   COLOR_MAP,
   COLORS,
-  STYLE_LABELS,
   KEY_TO_TOOL,
 } from "./types";
 import {
@@ -949,8 +948,6 @@ export default function App() {
     addMarksToBook,
     deleteMarkInBook,
     setScopedLabelInBook,
-    deleteMarkGroup,
-    clearMarks,
     undo,
     redo,
     canUndo,
@@ -1434,7 +1431,6 @@ export default function App() {
   useEffect(() => {
     if (selectedTool === "define") loadWebster();
   }, [selectedTool]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
 
@@ -1574,6 +1570,35 @@ export default function App() {
           block: "nearest",
         });
     });
+  };
+  // Sending verses to a topic study lands you IN its panel — the markable
+  // container — not a reading tab of all its verses (Kepu's rehearsal call:
+  // a reading tab defeats the point when the panel is already open and
+  // markable). Already open: bring it into view — the arrival flash + toast
+  // announce the drop. Not open: open it. The panel's own "Open in reading
+  // panel" button remains the way to get the all-verses reading view.
+  const openOrFocusStudyPanel = (study: SearchStudy) => {
+    const open = studyPanels.find((p) => p.searchStudyId === study.id);
+    if (open) {
+      // A send can also migrate the study to a new book — keep the open
+      // panel pointed at wherever the study lives now.
+      if (open.bookId !== study.bookId)
+        setStudyPanels((prev) =>
+          prev.map((p) =>
+            p.searchStudyId === study.id ? { ...p, bookId: study.bookId } : p
+          )
+        );
+      focusRowPanel(open.id);
+      return;
+    }
+    studyPanelSeq.current += 1;
+    const pid = "studypanel_" + studyPanelSeq.current;
+    setStudyPanels((prev) => [
+      ...prev,
+      { id: pid, bookId: study.bookId, searchStudyId: study.id },
+    ]);
+    // Scroll to the new panel once it's in the DOM.
+    window.setTimeout(() => focusRowPanel(pid), 120);
   };
   // SCR-43: a launcher converts IN PLACE — the new panel inherits the
   // launcher's row position and any width the user already dragged it to.
@@ -3161,23 +3186,6 @@ export default function App() {
     return new Set(getChapter(activeTab).verses.map((v) => v.reference));
   }, [activeTab, getChapter, searchStudies]);
 
-  const groups: { reference: string; color: MarkColor; items: Mark[] }[] = [];
-  marks
-    .filter((m) => activeChapterRefs.has(m.reference))
-    .forEach((mark) => {
-      const existing = groups.find(
-        (g) => g.reference === mark.reference && g.color === mark.color
-      );
-      if (existing) existing.items.push(mark);
-      else
-        groups.push({
-          reference: mark.reference,
-          color: mark.color,
-          items: [mark],
-        });
-    });
-  groups.forEach((g) => g.items.sort((a, b) => a.startIndex - b.startIndex));
-
   // Resolve compile tab ids (real OR the synthetic ones a linked-study compile
   // builds) to the chapter scopes they cover. Tab ids encode volume/book/chapter
   // as their last three segments, so this works even when the ids don't match
@@ -4188,14 +4196,14 @@ export default function App() {
     const merged = [...study.refs, ...refs.filter((r) => !have.has(r))];
     if (mode === "copy") {
       const copy = addStudy(study.name + " (copy)", study.bookId, merged);
-      openStudyTab(copy);
+      openOrFocusStudyPanel(copy);
     } else {
       const existing = new Set(study.refs);
       const dupes = refs.filter((r) => existing.has(r));
       const added = refs.length - dupes.length;
       if (added > 0) updateStudy(study.id, { refs: merged });
       toastAdd(added, dupes, study.name);
-      openStudyTab(study);
+      openOrFocusStudyPanel(study);
     }
   };
 
@@ -4265,10 +4273,10 @@ export default function App() {
           t.studyId === study.id ? { ...t, bookId: newBook } : t
         )
       );
-      openStudyTab({ ...study, bookId: newBook, refs: merged });
+      openOrFocusStudyPanel({ ...study, bookId: newBook, refs: merged });
     } else {
       updateStudy(study.id, { refs: merged });
-      openStudyTab({ ...study, refs: merged });
+      openOrFocusStudyPanel({ ...study, refs: merged });
     }
   };
   // "Remove verses" on a study panel: drop the chosen references from the
@@ -9278,10 +9286,6 @@ export default function App() {
             )}
             {vDivider}
             {mode === "read" &&
-              actionButton(sidebarOpen ? "Hide marks" : "Show marks", () =>
-                setSidebarOpen(!sidebarOpen)
-              )}
-            {mode === "read" &&
               actionButton("Study tables", () => setMode("table"))}
             {mode === "compile" &&
               actionButton(
@@ -10152,10 +10156,19 @@ export default function App() {
       {mode === "read" && (
         <div style={{ display: "flex" }}>
           <div
+            className="scribal-readrow"
             style={{
               flex: 1,
               minWidth: 0,
               display: "flex",
+              // The row owns the leftover viewport height (panels inside are
+              // 100%), so when panels overflow, the horizontal scrollbar sits
+              // on the bottom edge of the screen — a free-height row put it
+              // just below the fold, invisible without a page scroll. The
+              // 46px is the chapter legend bar, which only renders with tabs.
+              height: `calc(100vh - ${
+                headerH + tabsH + (tabs.length > 0 ? 46 : 0)
+              }px)`,
               overflowX:
                 tabs.length +
                   searchPanels.length +
@@ -10227,7 +10240,7 @@ export default function App() {
                     borderRight: multi ? "1px solid var(--border)" : "none",
                     position: "relative",
                     overflow: "hidden",
-                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                    height: "100%",
                   }}
                 >
                   {/* SCR-40: the active-tab border is an overlay div, not a CSS
@@ -10316,7 +10329,6 @@ export default function App() {
                     lineScale={reading.lineScale}
                     warm={reading.warm}
                     dark={dark}
-                    sidebarOpen={sidebarOpen}
                     studyRefs={
                       study
                         ? study.refs
@@ -10454,7 +10466,7 @@ export default function App() {
                     borderRight: "1px solid var(--border)",
                     position: "relative",
                     overflow: "hidden",
-                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                    height: "100%",
                   }}
                 >
                   <SearchPanel
@@ -10528,7 +10540,7 @@ export default function App() {
                     borderRight: "1px solid var(--border)",
                     position: "relative",
                     overflow: "hidden",
-                    height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                    height: "100%",
                   }}
                 >
                   {/* Canvas identity strip: study panels are always topic. */}
@@ -10557,6 +10569,11 @@ export default function App() {
                     onCompile={() => compileFromStudyPanel(p)}
                     onJump={(ref) => jumpToReference(ref)}
                     onClose={() => closeStudyPanel(p.id)}
+                    onOpenReader={
+                      // The optional all-verses reading view (sends no longer
+                      // open one automatically — this button is the way in).
+                      st ? () => openStudyTab(st) : undefined
+                    }
                     onRemoveVerse={(ref) =>
                       removeVersesFromStudy(p.searchStudyId, [ref])
                     }
@@ -10639,7 +10656,7 @@ export default function App() {
                   borderRight: "1px solid var(--border)",
                   position: "relative",
                   overflow: "hidden",
-                  height: `calc(100vh - ${headerH + tabsH + 46}px)`,
+                  height: "100%",
                 }}
               >
                 <NewTabPanel
@@ -10670,205 +10687,6 @@ export default function App() {
             ))}
           </div>
 
-          {sidebarOpen && (
-            <div
-              style={{
-                width: "260px",
-                backgroundColor: "var(--panel)",
-                padding: "16px",
-                borderLeft: "1px solid var(--border)",
-                overflowY: "auto",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginTop: 0,
-                }}
-              >
-                <h3 style={{ margin: 0, fontSize: "14px" }}>
-                  Marks ({groups.length})
-                </h3>
-                {groups.length > 0 && (
-                  <button
-                    onClick={() =>
-                      askConfirm({
-                        title: activeTab.studyId
-                          ? "Clear all marks on this study?"
-                          : "Clear all marks on this chapter?",
-                        body:
-                          "This removes every highlight, underline, and other mark here, regardless of color or style. You can undo it.",
-                        confirmLabel: "Clear all",
-                        onConfirm: () =>
-                          clearMarks(Array.from(activeChapterRefs)),
-                      })
-                    }
-                    title={`Remove every mark on ${
-                      activeTab.studyId ? "this study" : "this chapter"
-                    } (undoable)`}
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--muted)",
-                      background: "none",
-                      border: "1px solid var(--border)",
-                      borderRadius: "6px",
-                      padding: "3px 8px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-              <p
-                style={{
-                  color: "var(--muted)",
-                  fontSize: "11px",
-                  marginTop: "-6px",
-                }}
-              >
-                {activeBookName} · {tabLabel(activeTab)}
-              </p>
-
-              {groups.length === 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    textAlign: "center",
-                    padding: "30px 16px",
-                    gap: "9px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "46px",
-                      height: "46px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      border: "1px solid var(--border)",
-                      color: "var(--muted)",
-                      opacity: 0.8,
-                    }}
-                  >
-                    <svg
-                      width="22"
-                      height="22"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M5 8h14" />
-                      <path d="M5 12h10" />
-                      <path d="M5 16h7" />
-                    </svg>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "14px",
-                      fontWeight: 600,
-                      color: "var(--text)",
-                    }}
-                  >
-                    Nothing marked yet
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "12px",
-                      color: "var(--muted)",
-                      lineHeight: 1.6,
-                      maxWidth: "230px",
-                    }}
-                  >
-                    {activeTab.studyId
-                      ? "Highlight or underline verses in this study and they'll show up here."
-                      : "Highlight or underline verses and they'll show up here."}
-                  </div>
-                </div>
-              )}
-
-              {groups.map((group) => (
-                <div
-                  key={group.reference + "|" + group.color}
-                  style={{
-                    marginBottom: "10px",
-                    padding: "10px",
-                    backgroundColor: "var(--soft)",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                    borderLeft: "4px solid " + COLOR_MAP[group.color],
-                    position: "relative",
-                  }}
-                >
-                  <button
-                    onClick={() =>
-                      askConfirm({
-                        title: "Remove these marks?",
-                        body:
-                          "This removes all marks of this color on this verse. You can undo it.",
-                        confirmLabel: "Remove",
-                        onConfirm: () =>
-                          deleteMarkGroup(group.reference, group.color),
-                      })
-                    }
-                    title="Remove all marks of this color on this verse"
-                    style={{
-                      position: "absolute",
-                      top: "6px",
-                      right: "6px",
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "50%",
-                      border: "none",
-                      backgroundColor: "var(--border)",
-                      color: "var(--muted)",
-                      cursor: "pointer",
-                      fontSize: "11px",
-                      lineHeight: "20px",
-                      padding: 0,
-                    }}
-                  >
-                    ✕
-                  </button>
-                  <strong>{group.reference}</strong>
-                  {group.items.map((mark) => (
-                    <p
-                      key={mark.id}
-                      style={{
-                        margin: "6px 14px 0 0",
-                        display: "flex",
-                        gap: "6px",
-                        alignItems: "baseline",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontWeight: "bold",
-                          color: COLOR_MAP[group.color],
-                          fontSize: "11px",
-                          flexShrink: 0,
-                          width: "14px",
-                        }}
-                      >
-                        {STYLE_LABELS[mark.style]}
-                      </span>
-                      <span style={{ color: "var(--text)" }}>
-                        "{mark.markedText}"
-                      </span>
-                    </p>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

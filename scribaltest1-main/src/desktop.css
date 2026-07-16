@@ -94,6 +94,34 @@ textarea:focus-visible {
   }
 }
 
+/* ----- Reading-row horizontal scrollbar -----
+   The panel row owns the leftover viewport height, so this scrollbar IS the
+   bottom edge of the screen when panels overflow. Give it a real track and a
+   firm thumb so it can't be missed — and styling ::-webkit-scrollbar forces a
+   classic (always-rendered) bar even where the OS uses hidden overlay
+   scrollbars. It only appears at all when panels don't fit (overflow-x auto). */
+.scribal-readrow {
+  scrollbar-width: auto; /* Firefox: full-size, not the thin app-wide bar */
+  scrollbar-color: rgba(127, 127, 127, 0.55) rgba(127, 127, 127, 0.14);
+}
+.scribal-readrow::-webkit-scrollbar {
+  height: 13px;
+}
+.scribal-readrow::-webkit-scrollbar-track {
+  background: rgba(127, 127, 127, 0.14);
+  border-top: 1px solid var(--border);
+}
+.scribal-readrow::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.55);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.scribal-readrow::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.75);
+  background-clip: padding-box;
+}
+
 /* ----- On-brand text selection (the purple accent at low opacity) ----- */
 ::selection {
   background: rgba(139, 92, 246, 0.25);
