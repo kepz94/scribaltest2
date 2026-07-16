@@ -53,9 +53,25 @@ export default function NewTabPanel({
   const [showStudyInfo, setShowStudyInfo] = useState(false);
   const [volIdx, setVolIdx] = useState<number | null>(null);
   const [bookIdx, setBookIdx] = useState<number | null>(null);
-  // Library destination: the canvas type. Chapter is the default; a pick
-  // opens in that type's master book (switch books on the panel afterward).
-  const [destType, setDestType] = useState<"chapter" | "topic">("chapter");
+  // Library destination: the canvas type. A pick opens in that type's master
+  // book (switch books on the panel afterward). The starting toggle position
+  // is the user's saved default (Kepu's ask — his is topic).
+  const readDestDefault = (): "chapter" | "topic" =>
+    localStorage.getItem("scribal_library_dest") === "topic"
+      ? "topic"
+      : "chapter";
+  const [destType, setDestType] = useState<"chapter" | "topic">(
+    readDestDefault
+  );
+  const [destDefault, setDestDefault] = useState<"chapter" | "topic">(
+    readDestDefault
+  );
+  const saveDestDefault = () => {
+    try {
+      localStorage.setItem("scribal_library_dest", destType);
+    } catch {}
+    setDestDefault(destType);
+  };
   const dest = (): LibraryDest => destType;
 
   const vol = volIdx !== null ? vols[volIdx] : null;
@@ -402,7 +418,8 @@ export default function NewTabPanel({
                     lineHeight: 1.45,
                   }}
                 >
-                  Open a study — topic studies as live panels
+                  Topic studies open as live panels; chapter studies jump to
+                  their chapter
                 </span>
               </span>
               <span
@@ -650,6 +667,41 @@ export default function NewTabPanel({
                 );
               })}
             </div>
+            {/* Remember the toggle position (Kepu's ask): quiet when the
+                current choice already is the default. */}
+            {destDefault === destType ? (
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Default ✓
+              </span>
+            ) : (
+              <button
+                onClick={saveDestDefault}
+                title={
+                  "Open with " +
+                  (destType === "chapter" ? "Chapter" : "Topic") +
+                  " selected every time"
+                }
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#3b82f6",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Set as my default
+              </button>
+            )}
           </div>
         )}
 

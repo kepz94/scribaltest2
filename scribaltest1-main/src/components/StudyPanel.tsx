@@ -163,13 +163,10 @@ export default function StudyPanel({
       .map((v) => v.reference)
       .filter((r) => !prev.has(r));
     if (!added.length) return;
-    setExpanded((e) => {
-      const next = { ...e };
-      added.forEach((r) => {
-        next[grouped.groupOf.get(r) || "unmarked"] = true;
-      });
-      return next;
-    });
+    setExpanded((e) =>
+      // Arrivals are unsettled, so they always land in Unmarked.
+      e["unmarked"] ? e : { ...e, unmarked: true }
+    );
     setFlashRefs(new Set(added));
     window.clearTimeout(flashTimer.current);
     flashTimer.current = window.setTimeout(
@@ -235,53 +232,40 @@ export default function StudyPanel({
         unmarked.push({ reference: v.reference, focused: v.text, full: v.text });
         return;
       }
-      const pts = new Map<MarkColor, number>();
-      vm.forEach((m) => {
-        pts.set(m.color, (pts.get(m.color) || 0) + STYLE_POINTS[m.style]);
-      });
-      let best: MarkColor = vm[0].color;
-      let bestPts = -1;
+      // The notes-side rule (Kepu's consistency call): a settled verse joins
+      // EVERY color group it has marks for — not just its dominant color.
+      // Each group renders only its own color's markings, so a blue+green
+      // verse shows its blue under the blue theme and its green under green.
+      // (Dominant-only membership also starved rarely-dominant pens — pink
+      // never got a dropdown.)
       COLORS.forEach((c) => {
-        const p = pts.get(c) || 0;
-        if (p > bestPts) {
-          best = c;
-          bestPts = p;
-        }
+        const cm = vm.filter((m) => m.color === c);
+        if (!cm.length) return;
+        const seen = new Set<string>();
+        const frags: string[] = [];
+        cm.forEach((m) => {
+          const t = (m.markedText || "").trim();
+          if (t && !seen.has(t)) {
+            seen.add(t);
+            frags.push(t);
+          }
+        });
+        const row = {
+          reference: v.reference,
+          focused: frags.length ? frags.join(" · ") : v.text,
+          full: v.text,
+        };
+        const list = groups.get(c);
+        if (list) list.push(row);
+        else groups.set(c, [row]);
       });
-      // Preview = the dominant color's marked fragments, deduped in order.
-      const seen = new Set<string>();
-      const frags: string[] = [];
-      vm.forEach((m) => {
-        if (m.color !== best) return;
-        const t = (m.markedText || "").trim();
-        if (t && !seen.has(t)) {
-          seen.add(t);
-          frags.push(t);
-        }
-      });
-      const row = {
-        reference: v.reference,
-        focused: frags.length ? frags.join(" · ") : v.text,
-        full: v.text,
-      };
-      const list = groups.get(best);
-      if (list) list.push(row);
-      else groups.set(best, [row]);
     });
-    // Which group (theme color or "unmarked") each verse sits in — reorder
-    // drags are constrained WITHIN a group (SCR-51).
-    const groupOf = new Map<string, string>();
-    unmarked.forEach((r) => groupOf.set(r.reference, "unmarked"));
-    groups.forEach((rows, c) =>
-      rows.forEach((r) => groupOf.set(r.reference, "c" + c))
-    );
     return {
       unmarked,
       groups: COLORS.filter((c) => groups.has(c)).map((c) => ({
         color: c,
         rows: groups.get(c) as VerseRow[],
       })),
-      groupOf,
     };
   }, [verses, marks, settled]);
 
@@ -464,7 +448,7 @@ export default function StudyPanel({
   // checked group.
   const parseVersePayload = (
     e: React.DragEvent
-  ): { refs: string[]; fromSelf: boolean } | null => {
+  ): { refs: string[]; fromSelf: boolean; group: string } | null => {
     let raw = "";
     try {
       raw = e.dataTransfer.getData("text/plain");
@@ -476,7 +460,13 @@ export default function StudyPanel({
     if (parts.length < 3) return null;
     const refs = parts[1].split(";;").filter(Boolean);
     if (!refs.length) return null;
-    return { refs, fromSelf: parts[2] === "panel:" + (dragId || "") };
+    return {
+      refs,
+      fromSelf: parts[2] === "panel:" + (dragId || ""),
+      // Inside drags carry their source group — a verse can sit in several
+      // color groups now, so "same group" needs the instance, not the ref.
+      group: parts[3] || "",
+    };
   };
   // Whole-panel drop target (SCR-50): verses dragged in from a topic-book
   // reading panel or a search panel join the study (they show under Unmarked
@@ -503,7 +493,7 @@ export default function StudyPanel({
   // left; the quiet remove and the grabber pinned far right in one uniform
   // column (Kepu's layout call) — drag to rearrange within its theme, or
   // into another topic study panel.
-  const refCaption = (row: VerseRow) => (
+  const refCaption = (row: VerseRow, groupKey: string) => (
     <span
       style={{
         display: "flex",
@@ -568,7 +558,12 @@ export default function StudyPanel({
               try {
                 e.dataTransfer.setData(
                   "text/plain",
-                  "scribalverse|" + row.reference + "|panel:" + dragId
+                  "scribalverse|" +
+                    row.reference +
+                    "|panel:" +
+                    dragId +
+                    "|" +
+                    groupKey
                 );
                 e.dataTransfer.effectAllowed = "move";
               } catch {
@@ -605,7 +600,7 @@ export default function StudyPanel({
   // Row-level drop: an inside drag dropped on a verse row reorders (insert
   // before that row, within its theme group — SCR-51 persists it); an outside
   // drag anywhere still adds.
-  const rowDropProps = (row: VerseRow) => ({
+  const rowDropProps = (row: VerseRow, groupKey: string) => ({
     onDragOver: (e: React.DragEvent) => {
       if (onReorderVerse || onDropVerses) e.preventDefault();
     },
@@ -618,11 +613,7 @@ export default function StudyPanel({
         // Reorder stays WITHIN a theme group: a drop on a row in another
         // group is ignored (grouping is meaning — marks decide it, not drag).
         const ref = p.refs[0];
-        if (
-          ref !== row.reference &&
-          onReorderVerse &&
-          grouped.groupOf.get(ref) === grouped.groupOf.get(row.reference)
-        )
+        if (ref !== row.reference && onReorderVerse && p.group === groupKey)
           onReorderVerse(ref, row.reference);
       } else dropFromOutside(p.refs);
     },
@@ -639,7 +630,10 @@ export default function StudyPanel({
       ? "none"
       : "background 1.2s ease-out",
   });
-  const verseRow = (row: VerseRow) =>
+  // Theme groups render ONLY their own color's markings (the notes-side
+  // rule): colorFilter narrows both the Full-view marks and the Focused
+  // fragments; Unmarked passes none and shows everything.
+  const verseRow = (row: VerseRow, groupKey: string, colorFilter?: MarkColor) =>
     view === "full" ? (
       // Full verse: the marking surface. MarkedVerse is the reader's renderer,
       // so marks layer identically; selections become marks via handleMouseUp.
@@ -647,15 +641,19 @@ export default function StudyPanel({
         key={row.reference}
         data-vref={row.reference}
         style={rowStyle(row)}
-        {...rowDropProps(row)}
+        {...rowDropProps(row, groupKey)}
       >
-        {refCaption(row)}
+        {refCaption(row, groupKey)}
         <div style={{ fontSize: "14px", lineHeight: 1.6 }}>
           <MarkedVerse
             reference={row.reference}
             verseNumber={verseNumOf(row.reference)}
             text={row.full}
-            marks={marks}
+            marks={
+              colorFilter
+                ? marks.filter((m) => m.color === colorFilter)
+                : marks
+            }
             onEraseMark={
               marking && marking.tool === "eraser"
                 ? marking.onEraseMark
@@ -676,15 +674,19 @@ export default function StudyPanel({
         key={row.reference}
         data-vref={row.reference}
         style={rowStyle(row)}
-        {...rowDropProps(row)}
+        {...rowDropProps(row, groupKey)}
       >
-        {refCaption(row)}
+        {refCaption(row, groupKey)}
         {(() => {
           const seen = new Set<string>();
           const frags: { text: string; style: MarkStyle; color: MarkColor }[] =
             [];
           marks
-            .filter((m) => m.reference === row.reference)
+            .filter(
+              (m) =>
+                m.reference === row.reference &&
+                (!colorFilter || m.color === colorFilter)
+            )
             .sort((a, b) => a.startIndex - b.startIndex)
             .forEach((m) => {
               const t = (m.markedText || "").trim();
@@ -1025,7 +1027,8 @@ export default function StudyPanel({
                   its color's group at Compile.
                 </div>
               )}
-              {expanded["unmarked"] && grouped.unmarked.map(verseRow)}
+              {expanded["unmarked"] &&
+                grouped.unmarked.map((r) => verseRow(r, "unmarked"))}
             </div>
           )}
 
@@ -1111,7 +1114,8 @@ export default function StudyPanel({
                   ),
                   g.rows.length
                 )}
-                {expanded["c" + g.color] && g.rows.map(verseRow)}
+                {expanded["c" + g.color] &&
+                  g.rows.map((r) => verseRow(r, "c" + g.color, g.color))}
               </div>
             );
           })}

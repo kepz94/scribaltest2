@@ -9907,13 +9907,19 @@ export default function App() {
                 width: "34px",
                 height: "34px",
                 borderRadius: "50%",
-                border: "1px dashed var(--border)",
-                backgroundColor: "transparent",
-                color: "var(--muted)",
+                // Real surface + firm border — the dashed transparent circle
+                // vanished into --bg; and align with the PILL row (pills are
+                // caption-over-pill columns, so the strip's top edge isn't
+                // the pills' centerline).
+                border: "1px solid var(--muted)",
+                backgroundColor: "var(--panel)",
+                color: "var(--text)",
                 cursor: "pointer",
                 fontSize: "18px",
                 lineHeight: 1,
                 order: 9999,
+                alignSelf: "flex-end",
+                flexShrink: 0,
               }}
             >
               +
