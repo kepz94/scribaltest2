@@ -150,6 +150,14 @@ export default function StudyPanel({
   // announce themselves; a drop of verses already in the study says so
   // instead of silently deduping.
   const [flashRefs, setFlashRefs] = useState<Set<string>>(new Set());
+  // Reorder feedback (rehearsal ask): while one of THIS panel's own verses is
+  // being dragged, a blue insertion line marks exactly where it will land
+  // (drops insert before the hovered row, within the same theme group).
+  const [reorderDrag, setReorderDrag] = useState<{
+    ref: string;
+    group: string;
+  } | null>(null);
+  const [dropBefore, setDropBefore] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const flashTimer = useRef<number | undefined>(undefined);
@@ -574,9 +582,14 @@ export default function StudyPanel({
               } catch {
                 /* ignore */
               }
+              setReorderDrag({ ref: row.reference, group: groupKey });
               setVerseDragImage(e, [
                 { reference: row.reference, text: row.full },
               ]);
+            }}
+            onDragEnd={() => {
+              setReorderDrag(null);
+              setDropBefore(null);
             }}
             title="Drag to rearrange within its theme, or into another topic study panel"
             style={{
@@ -608,8 +621,20 @@ export default function StudyPanel({
   const rowDropProps = (row: VerseRow, groupKey: string) => ({
     onDragOver: (e: React.DragEvent) => {
       if (onReorderVerse || onDropVerses) e.preventDefault();
+      // Move the insertion line to this row while a reorder drag hovers it —
+      // and clear it over rows the drop would ignore (other groups, itself),
+      // so the line never promises a landing spot the drop won't honor.
+      if (reorderDrag) {
+        const next =
+          reorderDrag.group === groupKey && reorderDrag.ref !== row.reference
+            ? row.reference
+            : null;
+        setDropBefore((prev) => (prev === next ? prev : next));
+      }
     },
     onDrop: (e: React.DragEvent) => {
+      setDropBefore(null);
+      setReorderDrag(null);
       const p = parseVersePayload(e);
       if (!p) return;
       e.preventDefault();
@@ -626,14 +651,22 @@ export default function StudyPanel({
 
   // New arrivals flash in the blue highlight, then fade: the color lands
   // with no transition and the fade-out transition takes over when the
-  // flash set clears.
-  const rowStyle = (row: VerseRow): React.CSSProperties => ({
+  // flash set clears. Each row is a lightly bordered card (rehearsal ask:
+  // verses need visible boundaries), and while a reorder drag hovers a row,
+  // a blue bar in the gap above it marks the insertion point.
+  const rowStyle = (row: VerseRow, groupKey: string): React.CSSProperties => ({
     padding: "6px 8px",
     borderRadius: "6px",
+    border: "1px solid var(--border)",
+    marginBottom: "6px",
     background: flashRefs.has(row.reference) ? "var(--hl5)" : "transparent",
     transition: flashRefs.has(row.reference)
       ? "none"
       : "background 1.2s ease-out",
+    boxShadow:
+      dropBefore === row.reference && reorderDrag?.group === groupKey
+        ? "0 -4px 0 0 #3b82f6"
+        : undefined,
   });
   // Theme groups render ONLY their own color's markings (the notes-side
   // rule): colorFilter narrows both the Full-view marks and the Focused
@@ -645,7 +678,7 @@ export default function StudyPanel({
       <div
         key={row.reference}
         data-vref={row.reference}
-        style={rowStyle(row)}
+        style={rowStyle(row, groupKey)}
         {...rowDropProps(row, groupKey)}
       >
         {refCaption(row, groupKey)}
@@ -678,7 +711,7 @@ export default function StudyPanel({
       <div
         key={row.reference}
         data-vref={row.reference}
-        style={rowStyle(row)}
+        style={rowStyle(row, groupKey)}
         {...rowDropProps(row, groupKey)}
       >
         {refCaption(row, groupKey)}

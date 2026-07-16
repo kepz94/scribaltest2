@@ -10350,20 +10350,6 @@ export default function App() {
                     }
                     jumpTarget={isActive ? jumpTarget : null}
                     onJumpHandled={() => setJumpTarget(null)}
-                    onSendVerses={
-                      // Chapter-book reading panels stay basic — Link +
-                      // Compile only (Kepu's call): no send flow there, and
-                      // none on a "Mark these" loose tab either (SCR-44).
-                      // Study tabs keep Send verses.
-                      t.looseRefs || !t.studyId
-                        ? undefined
-                        : (refs) => {
-                            if (!refs.length) return;
-                            setSendRefs(refs);
-                            setSendPicking(false);
-                            setSendTablesPicking(false);
-                          }
-                    }
                     dragVerses={
                       // Topic-book grabbers (SCR-50): chapter-book panels stay
                       // visually unchanged — chapter books LINK, topic books
