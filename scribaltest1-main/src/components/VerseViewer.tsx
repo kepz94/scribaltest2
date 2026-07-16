@@ -114,12 +114,6 @@ interface VerseViewerProps {
   // itself (its chapter, or its linked group). The parent gates this to
   // chapter-book panels; topic-book panels never get it.
   onCompilePanel?: () => void;
-  // Optional: "Add keyword search" (SCR-49) — the chapter → topic bridge.
-  // Chapter-book panels only (parent gates); opens the pull dialog.
-  onAddKeywordSearch?: () => void;
-  // SCR-49 "let me pick": a nonce that, when bumped, drops the panel into the
-  // existing send-verses checkbox mode so the parent can intercept the picks.
-  sendPickNonce?: number;
   // SCR-50: topic-book reading panels show a grabber at each verse's end for
   // dragging into a topic study panel. Chapter-book panels never get one —
   // chapter books LINK, topic books GRAB.
@@ -203,8 +197,6 @@ export default function VerseViewer(props: VerseViewerProps) {
     onRemoveVerses,
     linkScriptures,
     onCompilePanel,
-    onAddKeywordSearch,
-    sendPickNonce,
     dragVerses,
     toolbarPos: pos,
     onToolbarPos: setPos,
@@ -237,13 +229,6 @@ export default function VerseViewer(props: VerseViewerProps) {
   // existing). The selection lives here; the parent runs the send UI.
   const [sendMode, setSendMode] = useState(false);
   const [sendSel, setSendSel] = useState<string[]>([]);
-  // SCR-49: the parent bumps sendPickNonce to drop this panel into the
-  // send-verses checkbox mode ("let me pick which verses").
-  useEffect(() => {
-    if (!sendPickNonce) return;
-    setSendMode(true);
-    setSendSel([]);
-  }, [sendPickNonce]);
   // Grabber group-select (topic-book panels): Select toggles checkboxes in
   // the handle column; the checked set drags as one group.
   const [dragSelMode, setDragSelMode] = useState(false);
@@ -1471,45 +1456,6 @@ export default function VerseViewer(props: VerseViewerProps) {
                 <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
               </svg>
               Link scriptures
-            </button>
-          )}
-          {onAddKeywordSearch && (
-            // The chapter → topic bridge (SCR-49): pulls marked verses into a
-            // NEW topic study alongside a keyword search. Chapter-book panels
-            // only, same row — header height unchanged.
-            <button
-              onClick={onAddKeywordSearch}
-              title="Create a topic study from this chapter's marked verses plus a keyword search"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "7px",
-                padding: "6px 12px",
-                borderRadius: "999px",
-                border: "1px solid var(--border)",
-                backgroundColor: "var(--panel)",
-                color: "var(--muted)",
-                fontSize: "12.5px",
-                fontWeight: 600,
-                fontFamily: "system-ui, sans-serif",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-              Add keyword search
             </button>
           )}
           </div>

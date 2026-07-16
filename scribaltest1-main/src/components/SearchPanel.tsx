@@ -34,7 +34,6 @@ interface SearchPanelProps {
   // When set, the panel is the SCR-49 chapter → topic bridge: the selection
   // plus the chapter's pulled verses become a NEW topic study. The query rides
   // along as the study's default name.
-  onCreateTopicStudy?: (refs: string[], query: string) => void;
   // Sends the current selection to a specific study via the parent's send
   // picker (the same dialog reading panels use).
   onSendToStudy?: (refs: string[]) => void;
@@ -88,7 +87,6 @@ export default function SearchPanel(props: SearchPanelProps) {
     onLinkStudy,
     onLinkSearchToChapter,
     linkChapterLabel,
-    onCreateTopicStudy,
     onSendToStudy,
     addToStudyName,
     onAddToStudy,
@@ -414,12 +412,7 @@ export default function SearchPanel(props: SearchPanelProps) {
   // list: clicking a row toggles its checkbox rather than jumping away (a stray
   // tap used to open the verse and close the search, losing the whole selection).
   // Jumping moves to a dedicated button on the far side of the row.
-  const selectMode = !!(
-    onLinkStudy ||
-    onAddToStudy ||
-    onAddVerses ||
-    onCreateTopicStudy
-  );
+  const selectMode = !!(onLinkStudy || onAddToStudy || onAddVerses);
   const shownRefs = shown.map((r) => r.reference);
   const allShownSelected =
     shownRefs.length > 0 && shownRefs.every((ref) => selectedRefs.has(ref));
@@ -824,7 +817,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                 )}
               </div>
 
-              {(onLinkStudy || onAddToStudy || onAddVerses || onCreateTopicStudy) &&
+              {(onLinkStudy || onAddToStudy || onAddVerses) &&
                 selectedRefs.size > 0 && (
                 <div
                   style={{
@@ -931,30 +924,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                       Send to study…
                     </button>
                   )}
-                  {onCreateTopicStudy ? (
-                    <button
-                      onClick={() => {
-                        onCreateTopicStudy(
-                          Array.from(selectedRefs),
-                          query.trim()
-                        );
-                        setSelectedRefs(new Set());
-                      }}
-                      style={{
-                        padding: "6px 14px",
-                        borderRadius: "999px",
-                        border: "none",
-                        background: "#3b82f6",
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontSize: "12.5px",
-                        fontWeight: 700,
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Create topic study
-                    </button>
-                  ) : onAddVerses && addVersesName ? (
+                  {onAddVerses && addVersesName ? (
                     <button
                       onClick={() => onAddVerses(Array.from(selectedRefs))}
                       style={{
