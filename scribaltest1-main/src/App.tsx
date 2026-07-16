@@ -2525,6 +2525,18 @@ export default function App() {
     const retypes = new Set<string>();
     const moves: TwoCanvasMove[] = [];
     const folds: TwoCanvasFold[] = [];
+    // Moves target the Master Topic Book by default (Kepu's call) — a
+    // per-study book only when the study's verses collide with what already
+    // lives there: verses marked in the Master Topic Book, or claimed by a
+    // topic study already residing in it. Master-resident siblings sharing a
+    // verse are NOT collisions — they shared one mark set before the move
+    // and keep sharing it after, exactly the pre-migration semantics.
+    const mtClaimed = new Set(
+      getBook(MASTER_TOPIC_ID).marks.map((m) => m.reference)
+    );
+    searchStudies.forEach((s) => {
+      if (s.bookId === MASTER_TOPIC_ID) s.refs.forEach((r) => mtClaimed.add(r));
+    });
     searchStudies.forEach((ss) => {
       const bookId = ss.bookId || "master";
       // Combined studies (linkedScope set) migrate whole: the linked
@@ -2568,11 +2580,13 @@ export default function App() {
         if (ss.linkedScope) folds.push({ studyId: ss.id, refs });
       } else {
         // Master-resident (or sharing a book with chapter studies): verified
-        // move into the study's own deterministic topic book.
+        // move into the Master Topic Book — or the study's own deterministic
+        // topic book when its verses collide with existing claims there.
+        const collides = refs.some((r) => mtClaimed.has(r));
         moves.push({
           studyId: ss.id,
           sourceId: bookId,
-          targetId: "topic_" + ss.id,
+          targetId: collides ? "topic_" + ss.id : MASTER_TOPIC_ID,
           targetName: ss.name,
           refs,
           scope: "searchstudy:" + ss.id,
@@ -2641,6 +2655,17 @@ export default function App() {
     migrationBusy.current = false;
   }, [migrationPending, books]);
   // --------------------------------------------------------------------------
+
+  // A topic study remembers the compile view it was last on and reopens
+  // there (Kepu's call — Charting never applies to topic studies).
+  useEffect(() => {
+    if (mode !== "compile" || !compileStudyId) return;
+    if (compileView === "charting") return;
+    const st = searchStudies.find((s) => s.id === compileStudyId);
+    if (st && st.view !== compileView)
+      updateStudy(compileStudyId, { view: compileView });
+    // eslint-disable-next-line
+  }, [compileView, compileStudyId, mode]);
 
   // ---- "Add keyword search" — the chapter → topic bridge (SCR-49) ---------
   // One dialog: the notice (this creates a topic study; the chapter study
@@ -3426,6 +3451,17 @@ export default function App() {
   };
 
   const startStudyCompile = (study: SearchStudy, animate = true) => {
+    // An empty topic study has nothing to compile — say so instead of
+    // opening an empty board (Kepu's call).
+    if (!study.refs.length) {
+      setShareMsg(
+        "No verses to compile yet — drag verses into “" +
+          (study.name || "this study") +
+          "” first"
+      );
+      window.setTimeout(() => setShareMsg(null), 3200);
+      return;
+    }
     setCompileVirtualTabs(null);
     setCompileStudyId(study.id);
     setCompileName(study.name);

@@ -21,9 +21,10 @@ export interface SearchStudy {
   // Optional free-text overview shown atop the study. Used by the ScriptureNotes
   // importer to carry the report's description (and favorites list) across.
   note?: string;
-  // The compile view this study was saved in. A relational study reopens on
-  // (and is locked to) the Relational view; carried so it survives sync.
-  view?: "outline" | "distilled" | "covenants";
+  // The compile view this study was last on — topic studies reopen there
+  // (Outline / Distilled / Relational / single-line Semantic). Carried so it
+  // survives sync.
+  view?: "outline" | "distilled" | "covenants" | "semantic";
   // A chapter scope ("1 Nephi 3") this search is linked to. When set, the
   // chapter compiles together with this search's verses, and reopening the
   // chapter study reopens this search alongside it as its own tab.

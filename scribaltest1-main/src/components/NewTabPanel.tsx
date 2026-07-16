@@ -689,9 +689,10 @@ export default function NewTabPanel({
             >
               Opening a topic study here adds a live panel to your reading row
               — its gathered verses, grouped by theme and markable right in
-              the panel. Unmarked verses sit at the top; as you mark, each
-              verse moves into its color's theme. A chapter study opens its
-              chapter in the reader instead.
+              the panel. Unmarked verses sit at the top while you layer marks
+              onto them; pressing Compile settles each marked verse into its
+              color's theme. A chapter study opens its chapter in the reader
+              instead.
             </p>
             <p
               style={{

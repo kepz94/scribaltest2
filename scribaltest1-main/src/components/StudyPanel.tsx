@@ -141,10 +141,33 @@ export default function StudyPanel({
   const [view, setView] = useState<"focused" | "full">("full");
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  // Group each verse under its dominant color (summed STYLE_POINTS across its
-  // marks — the Outline's assignment rule), or Unmarked when it has no marks.
-  // New arrivals have no marks, so they land in Unmarked and disperse into
-  // their color's group as they're marked — live, since marks are props.
+  // Verses SETTLE into theme groups at Compile, not mid-marking (Kepu's
+  // call): a verse in Unmarked stays there while you layer marks onto it —
+  // its marks render live — and only moves into its color's group when you
+  // press Compile. "Settled" = verses that were already marked at the last
+  // settle (mount or Compile); erasing a settled verse's last mark drops it
+  // back to Unmarked.
+  const [settled, setSettled] = useState<Set<string>>(
+    () =>
+      new Set(
+        verses
+          .filter((v) => marks.some((m) => m.reference === v.reference))
+          .map((v) => v.reference)
+      )
+  );
+  const settleGroups = () => {
+    setSettled(
+      new Set(
+        verses
+          .filter((v) => marks.some((m) => m.reference === v.reference))
+          .map((v) => v.reference)
+      )
+    );
+  };
+
+  // Group each settled verse under its dominant color (summed STYLE_POINTS
+  // across its marks — the Outline's assignment rule); everything else —
+  // truly unmarked verses AND marked-but-unsettled ones — sits in Unmarked.
   const grouped = useMemo(() => {
     const byRef = new Map<string, Mark[]>();
     marks.forEach((m) => {
@@ -156,7 +179,7 @@ export default function StudyPanel({
     const groups = new Map<MarkColor, VerseRow[]>();
     verses.forEach((v) => {
       const vm = byRef.get(v.reference) || [];
-      if (!vm.length) {
+      if (!vm.length || !settled.has(v.reference)) {
         unmarked.push({ reference: v.reference, focused: v.text, full: v.text });
         return;
       }
@@ -208,7 +231,7 @@ export default function StudyPanel({
       })),
       groupOf,
     };
-  }, [verses, marks]);
+  }, [verses, marks, settled]);
 
   const textByRef = useMemo(() => {
     const m = new Map<string, string>();
@@ -711,7 +734,12 @@ export default function StudyPanel({
             </button>
           )}
           <button
-            onClick={onCompile}
+            onClick={() => {
+              // Compile is the settle moment: marked verses leave Unmarked
+              // for their theme groups now, not mid-marking.
+              settleGroups();
+              onCompile();
+            }}
             title="Compile this study"
             style={{
               flexShrink: 0,
