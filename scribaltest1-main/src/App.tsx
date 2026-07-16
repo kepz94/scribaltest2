@@ -2498,24 +2498,36 @@ export default function App() {
   const trimBookName = (name: string) =>
     name.replace(/\s*(Chapter|Topic)?\s*Book$/i, "") || name;
   const typeCircle = (tp: "chapter" | "topic") => (
-    <span
+    // SVG, not a border+flex span: dominant-baseline centers the letter in
+    // the circle exactly (the flex version sat the glyph visibly low).
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
       aria-hidden="true"
-      style={{
-        width: "13px",
-        height: "13px",
-        borderRadius: "50%",
-        border: "1.5px solid currentColor",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "8px",
-        fontWeight: 800,
-        flexShrink: 0,
-        lineHeight: 1,
-      }}
+      style={{ flexShrink: 0, display: "block" }}
     >
-      {tp === "chapter" ? "C" : "T"}
-    </span>
+      <circle
+        cx="6.5"
+        cy="6.5"
+        r="5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <text
+        x="6.5"
+        y="6.9"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize="7.2"
+        fontWeight="800"
+        fill="currentColor"
+        fontFamily="system-ui, sans-serif"
+      >
+        {tp === "chapter" ? "C" : "T"}
+      </text>
+    </svg>
   );
   // Which tab's pill-tag book menu is open (the tag doubles as the panel's
   // book switcher — Kepu's pick over the launcher's master/session row).
@@ -2542,15 +2554,6 @@ export default function App() {
       );
     });
     setActiveTabId(newId);
-  };
-
-  const newSessionForActiveTab = (bookType?: "chapter" | "topic") => {
-    const id = createSession(
-      "Session · " + fmtShortDate(Date.now()),
-      false,
-      bookType
-    );
-    setActiveTabBook(id);
   };
 
   // ---- Two-canvas migration (SCR-53) --------------------------------------
@@ -4938,21 +4941,26 @@ export default function App() {
   // blank either way. attach: "tab" points the active tab at it; "vault"
   // makes it the active book (the Vault's + New session).
   const [newBookPrompt, setNewBookPrompt] = useState<{
-    attach: "tab" | "vault";
+    attach: "tab" | "vault" | "switch";
+    tabId?: string;
   } | null>(null);
+  const [newBookName, setNewBookName] = useState("");
   const pickNewBookType = (bookType: "chapter" | "topic") => {
     if (!newBookPrompt) return;
+    const nm = newBookName.trim() || "Session · " + fmtShortDate(Date.now());
     setNewBookPrompt(null);
+    setNewBookName("");
     if (newBookPrompt.attach === "tab") {
-      newSessionForActiveTab(bookType);
+      const id = createSession(nm, false, bookType);
+      setActiveTabBook(id);
+    } else if (newBookPrompt.attach === "switch") {
+      // From a pill tag's book menu: create the typed session book and
+      // re-point that panel at it.
+      const t = tabs.find((x) => x.id === newBookPrompt.tabId);
+      const id = createSession(nm, false, bookType);
+      if (t) switchTabBook(t, id);
     } else {
-      setActiveBook(
-        createSession(
-          "Session · " + fmtShortDate(Date.now()),
-          false,
-          bookType
-        )
-      );
+      setActiveBook(createSession(nm, false, bookType));
     }
   };
   const handleNewSession = () => {
@@ -7435,11 +7443,30 @@ export default function App() {
                 fontSize: "12.5px",
                 color: "var(--muted)",
                 marginTop: "3px",
-                marginBottom: "16px",
+                marginBottom: "14px",
               }}
             >
               Every book is one of two canvases. It starts blank either way.
             </div>
+            <input
+              autoFocus
+              value={newBookName}
+              onChange={(e) => setNewBookName(e.target.value)}
+              placeholder={"Name it (optional) — e.g. Conference prep"}
+              style={{
+                width: "100%",
+                marginBottom: "12px",
+                padding: "11px 13px",
+                borderRadius: "10px",
+                border: "1px solid var(--border)",
+                background: "var(--panel)",
+                color: "var(--text)",
+                fontSize: "14px",
+                fontFamily: "inherit",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
             <div
               style={{ display: "flex", flexDirection: "column", gap: "10px" }}
             >
@@ -10129,6 +10156,29 @@ export default function App() {
                             {b.type && typeCircle(b.type)}
                           </div>
                         ))}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTagMenuTabId(null);
+                          setNewBookName("");
+                          setNewBookPrompt({ attach: "switch", tabId: t.id });
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "7px",
+                          padding: "8px 9px",
+                          marginTop: "2px",
+                          borderTop: "1px solid var(--border)",
+                          cursor: "pointer",
+                          fontSize: "12.5px",
+                          fontWeight: 600,
+                          fontFamily: "system-ui, sans-serif",
+                          color: "var(--text)",
+                        }}
+                      >
+                        ＋ New session book…
+                      </div>
                     </div>
                   </>
                 )}
