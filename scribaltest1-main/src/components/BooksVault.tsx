@@ -37,6 +37,39 @@ const SECTIONS: {
   { kinds: ["keyword", "combined"], label: "Topic studies", color: "#3b82f6" },
 ];
 
+// The one book-type badge (matches the tab pills): a C/T in a circle, drawn
+// as SVG so the letter sits optically centered.
+const typeCircle = (tp: "chapter" | "topic") => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 13 13"
+    aria-hidden="true"
+    style={{ flexShrink: 0, display: "block" }}
+  >
+    <circle
+      cx="6.5"
+      cy="6.5"
+      r="5.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+    />
+    <text
+      x="6.5"
+      y="6.9"
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontSize="7.2"
+      fontWeight="800"
+      fill="currentColor"
+      fontFamily="system-ui, sans-serif"
+    >
+      {tp === "chapter" ? "C" : "T"}
+    </text>
+  </svg>
+);
+
 export default function BooksVault({
   books,
   onSetActive,
@@ -212,30 +245,22 @@ export default function BooksVault({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span
                         style={{
-                          fontSize: "15px",
-                          fontWeight: 700,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
                           marginRight: "8px",
+                          color: b.type
+                            ? b.type === "chapter"
+                              ? "#ef4444"
+                              : "#3b82f6"
+                            : "var(--text)",
                         }}
                       >
-                        {b.name}
-                      </span>
-                      {b.type && (
-                        <span
-                          style={{
-                            fontSize: "9px",
-                            letterSpacing: "1px",
-                            color: b.type === "chapter" ? "#ef4444" : "#3b82f6",
-                            border:
-                              "1px solid " +
-                              (b.type === "chapter" ? "#ef4444" : "#3b82f6"),
-                            borderRadius: "999px",
-                            padding: "1px 6px",
-                            marginRight: "6px",
-                          }}
-                        >
-                          {b.type === "chapter" ? "CHAPTER" : "TOPIC"}
+                        <span style={{ fontSize: "15px", fontWeight: 700 }}>
+                          {b.name}
                         </span>
-                      )}
+                        {b.type && typeCircle(b.type)}
+                      </span>
                       {b.active && (
                         <span
                           style={{

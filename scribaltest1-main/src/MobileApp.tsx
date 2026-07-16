@@ -22,11 +22,8 @@ import StyleGlyph from "./components/StyleGlyph";
 import CompileBook, {
   CompileFlyer,
 } from "./components/CompileBook";
-import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
-import MobileWalkthrough from "./MobileWalkthrough";
-import FeatureSlides from "./FeatureSlides";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
@@ -1588,9 +1585,6 @@ export default function MobileApp() {
   };
   // The Studies screen (lists every study done, by type).
   const [studiesOpen, setStudiesOpen] = useState(false);
-  // The built-in, read-only "See how it works" example (marked John 1 + a live
-  // compile). Opens over everything; writes nothing.
-  const [exampleOpen, setExampleOpen] = useState(false);
   // Which study row (if any) is expanded to show its scope + themes peek.
   const [infoStudyId, setInfoStudyId] = useState<string | null>(null);
   // Verses just picked in search, waiting for the source + name step.
@@ -1681,16 +1675,7 @@ export default function MobileApp() {
   const [signInOpen, setSignInOpen] = useState(
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
-  const [mtourOpen, setMtourOpen] = useState(false);
-  const [slidesOpen, setSlidesOpen] = useState(false);
   const [chooseRef, setChooseRef] = useState<string | null>(null);
-
-  // Replay the first-run tour (which then opens the gestures sheet).
-  const resetIntro = () => {
-    setSettingsOpen(false);
-    setHomeOpen(true);
-    setMtourOpen(true);
-  };
 
   // After the sign-in reload, finish opening the gestures sheet.
   useEffect(() => {
@@ -2093,15 +2078,7 @@ export default function MobileApp() {
   };
   // A chapter's label scope: its group's shared scope if linked, else its own.
   const resolveScope = (cs: string) =>
-    // During the first-run walkthrough the open chapter IS the demo chapter, so
-    // keep it standalone — otherwise the throwaway study inherits whatever real
-    // link group this chapter belongs to, which would collapse its themes and
-    // mis-key (hide) their names.
-    mtourOpen && cs === title
-      ? cs
-      : chapterGroups[cs]
-      ? "group:" + chapterGroups[cs]
-      : cs;
+    chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
   // A chapter reads as "combined" when a live keyword search is linked into it
   // (or its group). Derived live — no stored flag to drift out of sync.
   const chapterIsCombined = (cs: string) => {
@@ -3399,9 +3376,7 @@ export default function MobileApp() {
 
   // The chapters Compile gathers: the current chapter's whole study if it's
   // linked, otherwise just this chapter (sorted in canonical order).
-  const studyScopes = (
-    chapterGroups[title] && !mtourOpen ? groupMembers(title) : [title]
-  )
+  const studyScopes = (chapterGroups[title] ? groupMembers(title) : [title])
     .slice()
     .sort(
       (a, b) => (chapterLoc.get(a)?.order ?? 0) - (chapterLoc.get(b)?.order ?? 0)
@@ -3475,7 +3450,6 @@ export default function MobileApp() {
     view?: "outline" | "charting" | "distilled" | "covenants" | "semantic",
     memberScopes?: string[]
   ) => {
-    if (mtourOpen) return;
     const bookId = activeBookId;
     setStudies((prev) => {
       const now = Date.now();
@@ -3969,15 +3943,6 @@ export default function MobileApp() {
     onClick: () => void
   ) => (
     <button
-      data-tour={
-        label === "Browse books"
-          ? "m-browse"
-          : label === "Studies"
-          ? "m-studies"
-          : label === "Search"
-          ? "m-search"
-          : undefined
-      }
       onClick={onClick}
       style={{
         display: "flex",
@@ -4224,7 +4189,6 @@ export default function MobileApp() {
               ‹
             </button>
             <button
-              data-tour="m-chapter"
               onClick={() => setJumpOpen(true)}
               style={{
                 minWidth: 0,
@@ -4260,8 +4224,6 @@ export default function MobileApp() {
           </div>
 
           <button
-            data-tour="m-compile"
-            data-wt="wt-compile"
             onClick={compileCurrentStudy}
             disabled={sendMode}
             style={{
@@ -4362,7 +4324,6 @@ export default function MobileApp() {
                 </span>
               </button>
           <button
-            data-tour="m-menu"
             onClick={() => setSettingsOpen(true)}
             style={{
               display: "flex",
@@ -4425,7 +4386,6 @@ export default function MobileApp() {
               fontFamily: "inherit",
             }}
             aria-label="Link this chapter into a study"
-            data-wt="wt-link"
           >
             <LinkGlyph
               color={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
@@ -4528,7 +4488,6 @@ export default function MobileApp() {
           {displayTitle}
         </h2>
         <div
-          data-tour="m-read"
           style={{
             fontFamily: '"Times New Roman", Times, serif',
             fontSize: verseSize,
@@ -4562,14 +4521,7 @@ export default function MobileApp() {
                 onTagTap={openTagRef}
               />
             );
-            if (!sendMode)
-              return mtourOpen && vi === 0 ? (
-                <div data-wt="wt-verse" key={vs.reference}>
-                  {verse}
-                </div>
-              ) : (
-                verse
-              );
+            if (!sendMode) return verse;
             const checked = sendSel.has(vs.reference);
             return (
               <div
@@ -4719,7 +4671,6 @@ export default function MobileApp() {
         }}
       >
         <div
-          data-wt="wt-tray"
           style={{
             pointerEvents: "auto",
             backgroundColor: C.panel,
@@ -4732,7 +4683,7 @@ export default function MobileApp() {
           }}
         >
           {/* Colors — always visible */}
-          <div data-wt="wt-colors" style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
+          <div style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
             {COLORS.map((c) => (
               <button
                 key={c}
@@ -4756,7 +4707,6 @@ export default function MobileApp() {
 
           {/* Styles — always visible (single letters keep the bar short) */}
           <div
-            data-wt="wt-styles"
             style={{
               padding: "8px 14px 0",
               display: "flex",
@@ -4768,13 +4718,6 @@ export default function MobileApp() {
               return (
                 <button
                   key={s.tool}
-                  data-wt={
-                    s.tool === "eraser"
-                      ? "wt-eraser"
-                      : s.tool === "define"
-                      ? "wt-define"
-                      : undefined
-                  }
                   onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
                   aria-label={s.label}
                   title={s.label}
@@ -5498,8 +5441,7 @@ export default function MobileApp() {
             >
               Or add a keyword search
             </div>
-            <button data-wt="wt-search"
-
+            <button
               onClick={() => {
                 setLinkToChapterScope(title);
                 setLinkOpen(false);
@@ -6879,7 +6821,6 @@ export default function MobileApp() {
 
           {/* Continue reading — hero */}
           <button
-            data-tour="m-continue"
             onClick={() => setHomeOpen(false)}
             style={{
               display: "block",
@@ -7011,27 +6952,6 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
-              "How Scribal works",
-              "Every feature, on the real screens",
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M16 8l-2.5 5.5L8 16l2.5-5.5z" />
-              </svg>,
-              () => {
-                setHomeOpen(false);
-                setSlidesOpen(true);
-              }
-            )}
-            {homeTile(
               "Study tables",
               "Build & present lessons",
               <svg
@@ -7145,7 +7065,6 @@ export default function MobileApp() {
 
           {/* Settings — slim row */}
           <button
-            data-tour="m-settings"
             onClick={() => {
               setHomeOpen(false);
               setSettingsOpen(true);
@@ -7741,13 +7660,6 @@ export default function MobileApp() {
                   () => setReading((r) => ({ ...r, warm: !r.warm }))
                 )}
 
-                {label("Help")}
-                {actionBtn("How Scribal works", () => {
-                  setSettingsOpen(false);
-                  setSlidesOpen(true);
-                })}
-                {actionBtn("Replay the welcome tour", resetIntro)}
-
                 {label("About")}
                 <div
                   style={{ fontSize: "12px", color: C.muted, lineHeight: 1.6 }}
@@ -7757,29 +7669,6 @@ export default function MobileApp() {
                   marks stay in step across desktop and phone whenever you're
                   signed in.
                 </div>
-                <button
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setHomeOpen(true);
-                    setMtourOpen(true);
-                  }}
-                  style={{
-                    width: "100%",
-                    marginTop: "14px",
-                    padding: "12px",
-                    borderRadius: "10px",
-                    border: "1px solid " + C.border,
-                    background: "transparent",
-                    color: C.text,
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Show the tour again
-                </button>
-
                 {label("Legal")}
                 {actionBtn("Privacy Policy", () => {
                   window.open("/privacy.html", "_blank");
@@ -9449,26 +9338,6 @@ export default function MobileApp() {
                       <b style={{ color: C.text }}>Compile</b> to record it here,
                       or build one from Search.
                     </div>
-                    <button
-                      onClick={() => {
-                        setStudiesOpen(false);
-                        setExampleOpen(true);
-                      }}
-                      style={{
-                        marginTop: "16px",
-                        background: "transparent",
-                        border: "1px solid " + C.border,
-                        borderRadius: "999px",
-                        padding: "10px 18px",
-                        color: C.text,
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      See an example study →
-                    </button>
                   </>
                 ) : (
                   <>
@@ -11097,13 +10966,6 @@ export default function MobileApp() {
               setNote={setNote}
               defaultName={cTitle}
               onSave={(nm, view) => {
-                // During the walkthrough, "Save" just closes the demo compile —
-                // nothing is persisted (the throwaway study is discarded on exit,
-                // and the walkthrough's own cleanup runs off compileOpen).
-                if (mtourOpen) {
-                  setCompileOpen(false);
-                  return;
-                }
                 const name = nm.trim();
                 if (cs) {
                   setSearchStudies((prev) =>
@@ -11169,21 +11031,6 @@ export default function MobileApp() {
             />
           );
         })()}
-
-      {/* See how it works — read-only example (marked John 1 + live compile) */}
-      {exampleOpen && (
-        <ExampleStudy
-          C={C}
-          dark={dark}
-          onClose={() => setExampleOpen(false)}
-          onTryIt={() => {
-            setExampleOpen(false);
-            setLoc({ v: 1, b: 3, c: 0 });
-            setHomeOpen(false);
-          }}
-        />
-      )}
-
 
       {/* Manage a mark (long-press) */}
       {defn &&
@@ -11893,7 +11740,6 @@ export default function MobileApp() {
                 } catch {
                   /* popup dismissed — they can sign in later from the menu */
                 }
-                setMtourOpen(true);
               }}
               style={{
                 width: "100%",
@@ -11915,7 +11761,6 @@ export default function MobileApp() {
               onClick={() => {
                 localStorage.setItem("scribal_mobile_onboarded", "1");
                 setSignInOpen(false);
-                setMtourOpen(true);
               }}
               style={{
                 width: "100%",
@@ -11935,7 +11780,7 @@ export default function MobileApp() {
           </div>
         </div>
       )}
-      {undoFlash && canUndo && !compileOpen && !mtourOpen && (
+      {undoFlash && canUndo && !compileOpen && (
         <button
           onClick={() => {
             undo();
@@ -11965,46 +11810,6 @@ export default function MobileApp() {
         >
           ↺ Undo
         </button>
-      )}
-
-      {slidesOpen && (
-        <FeatureSlides C={C} onClose={() => setSlidesOpen(false)} />
-      )}
-
-      {mtourOpen && (
-        <MobileWalkthrough
-          C={C}
-          onClose={() => setMtourOpen(false)}
-          createSession={createSession}
-          deleteBook={deleteBook}
-          setActiveBook={setActiveBook}
-          addMark={addMark}
-          setScopedLabel={setScopedLabel}
-          resolveScope={resolveScope}
-          scopedLabels={getBook(activeBookId).scopedLabels || {}}
-          linkOpen={linkOpen}
-          searchOpen={searchOpen}
-          chapterGroups={chapterGroups}
-          searchStudyIds={searchStudies.map((x) => x.id)}
-          tabIds={tabs.map((x) => x.id)}
-          demoCombined={chapterIsCombined("1 Nephi 1")}
-          unlinkChapter={unlink}
-          deleteSearchStudy={(id) =>
-            setSearchStudies((prev) => prev.filter((x) => x.id !== id))
-          }
-          closeTab={closeTab}
-          marks={marks}
-          activeBookId={activeBookId}
-          loc={loc}
-          setLoc={setLoc}
-          setHomeOpen={setHomeOpen}
-          setCompileOpen={setCompileOpen}
-          compileOpen={compileOpen}
-          pen={pen}
-          setPen={setPen}
-          notes={notes}
-          setNote={setNote}
-        />
       )}
 
       {/* Edit-mark mode bar */}

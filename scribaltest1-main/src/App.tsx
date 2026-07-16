@@ -38,9 +38,7 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
-import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
-import DesktopWalkthrough from "./DesktopWalkthrough";
 import NewTabPanel, {
   NewTabStudyChoice,
   LibraryDest,
@@ -49,7 +47,6 @@ import StudyPanel from "./components/StudyPanel";
 
 import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
-import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
 import { getScriptures, volumesProxy, registerOnLoaded } from "./data/scripturesStore";
 import {
@@ -86,7 +83,7 @@ import {
 } from "./cloudSync";
 
 // Everything this (desktop) shell backs up: the shared study data (CORE_KEYS)
-// plus the desktop-only layout / concept-map / walkthrough keys.
+// plus the desktop-only layout / concept-map keys.
 const BACKUP_KEYS = [
   ...CORE_KEYS,
   "scribal_toolbar_pos",
@@ -96,12 +93,6 @@ const BACKUP_KEYS = [
   "scribal_map_layout",
   "scribal_map_colorfilter",
   "scribal_map_stylefilter",
-  "scribal_tutorial_seen",
-  "scribal_guide_compile",
-  "scribal_guide_search",
-  "scribal_guide_vault",
-  "scribal_guide_tabs",
-  "scribal_guide_books",
   "scribal_last_compile_count",
 ]
 
@@ -790,22 +781,6 @@ const IconSun = ({ size = 18 }: { size?: number }) => (
     <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
   </svg>
 );
-const IconBulb = ({ size = 18 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M9 18h6" />
-    <path d="M10 22h4" />
-    <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2Z" />
-  </svg>
-);
 const IconKey = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -1111,7 +1086,6 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("read");
   // The built-in, read-only "See how it works" example (marked John 1 + a live
   // compile using the real desktop views). Opens over everything; writes nothing.
-  const [exampleOpen, setExampleOpen] = useState(false);
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
     return saved === "outline" ||
@@ -1490,9 +1464,6 @@ export default function App() {
     updateStudyTable(t.id, { shelf: [...(t.shelf || []), ...cards] });
   };
 
-  const [showTutorial, setShowTutorial] = useState<boolean>(
-    () => !localStorage.getItem("scribal_tutorial_seen")
-  );
   // Desktop search is a set of persistent reading-row panels (SCR-28), not a
   // toggled overlay. Each open panel carries its own context: a plain panel is
   // general search; addToStudyId puts it in "add verses to this keyword study"
@@ -1720,8 +1691,6 @@ export default function App() {
   const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
     null
   );
-  const [slidesOpen, setSlidesOpen] = useState(false);
-  const [walkOpen, setWalkOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [compileAnim, setCompileAnim] = useState<{
@@ -1730,12 +1699,6 @@ export default function App() {
     flyers: CompileFlyer[];
     colors: number[];
   }>({ show: false, duration: 1000, flyers: [], colors: [] });
-
-  // When more than one separate thing is open, compile asks what to combine
-  // instead of silently merging everything.
-  const [compilePrompt, setCompilePrompt] = useState<
-    { label: string; tabIds: string[] }[] | null
-  >(null);
 
   // "Which open tabs do you want to link this one with?" prompt.
   const [linkPromptTabId, setLinkPromptTabId] = useState<string | null>(null);
@@ -2352,17 +2315,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
-
-  // First run: greet new users with the live guided tour, once any opening
-  // gate is out of the way.
-  useEffect(() => {
-    if (showTutorial && !gateOpen) {
-      localStorage.setItem("scribal_tutorial_seen", "1");
-      setShowTutorial(false);
-      setExampleOpen(false);
-      setWalkOpen(true);
-    }
-  }, [showTutorial, gateOpen]);
 
   // SCR-43: + opens a launcher panel (Library / Search picker) instead of
   // auto-opening the next unopened chapter. Launchers count toward the tab
@@ -3184,27 +3136,6 @@ export default function App() {
     land(id);
   };
 
-  // Guided-tour navigation: open the demo chapter in a NEW tab bound to the
-  // tour's ephemeral book. jumpToReference must not be used here — it REPLACES
-  // the active tab and inherits that tab's bookId (usually "master"), which is
-  // exactly how the tour ended up marking the user's real Master Book (SCR-19).
-  const openTourChapter = (bookId: string) => {
-    const loc = locateReference("1 Nephi 1:1");
-    if (!loc) return;
-    const id = makeTabId(bookId, loc.v, loc.b, loc.c);
-    setTabs((prev) =>
-      prev.find((t) => t.id === id)
-        ? prev
-        : [
-            ...prev,
-            { id, volume: loc.v, book: loc.b, chapter: loc.c, bookId },
-          ]
-    );
-    setActiveTabId(id);
-    setMode("read");
-    setJumpTarget("1 Nephi 1:1");
-  };
-
   const openInNewTab = (reference: string) => {
     const loc = locateReference(reference);
     if (!loc) return;
@@ -3356,36 +3287,6 @@ export default function App() {
         });
     });
   groups.forEach((g) => g.items.sort((a, b) => a.startIndex - b.startIndex));
-
-  // Group open tabs into "compile units": each unlinked tab is its own unit,
-  // and each link group becomes one unit. (Mirrors the verified rules.)
-  const compileUnits = (): { label: string; tabIds: string[] }[] => {
-    const units: { label: string; tabIds: string[] }[] = [];
-    const seen: Record<string, { label: string; tabIds: string[] }> = {};
-    const seenTabs: Record<string, Tab[]> = {};
-    tabs.forEach((t) => {
-      // A "Mark these" loose-verse tab is a marking surface, not a study —
-      // never a compile unit.
-      if (t.looseRefs) return;
-      const gid = chapterGroups[chapterScopeOf(t)];
-      if (gid) {
-        if (!seen[gid]) {
-          seen[gid] = { label: "", tabIds: [] };
-          seenTabs[gid] = [];
-          units.push(seen[gid]);
-        }
-        seen[gid].tabIds.push(t.id);
-        seenTabs[gid].push(t);
-      } else {
-        units.push({ label: tabLabel(t), tabIds: [t.id] });
-      }
-    });
-    Object.keys(seen).forEach((gid) => {
-      seen[gid].label =
-        "Linked: " + seenTabs[gid].map((t) => tabLabel(t)).join(" + ");
-    });
-    return units;
-  };
 
   // Resolve compile tab ids (real OR the synthetic ones a linked-study compile
   // builds) to the chapter scopes they cover. Tab ids encode volume/book/chapter
@@ -3633,37 +3534,6 @@ export default function App() {
     });
     if (tabIds[0]) setActiveTabId(tabIds[0]);
     runCompile(tabIds);
-  };
-
-  const startCompile = () => {
-    setCompileStudyId(null);
-    // Link groups belong to the user's real study data — inside an ephemeral
-    // book (the guided tour) compile just the open chapter, never the user's
-    // linked-study dialog (SCR-19).
-    const gid =
-      activeTab &&
-      !activeTab.studyId &&
-      !activeTab.looseRefs &&
-      !isEphemeralActive
-        ? chapterGroups[chapterScopeOf(activeTab)]
-        : undefined;
-    if (gid) {
-      setLinkedCompilePrompt({ gid, tabId: activeTab.id });
-      return;
-    }
-    const units = compileUnits();
-    // Only one thing open (a single chapter, or a single linked group) — just
-    // compile it. More than one separate thing — ask first.
-    if (units.length <= 1) {
-      runCompile(units.length ? units[0].tabIds : tabs.map((t) => t.id));
-    } else {
-      setCompilePrompt(units);
-    }
-  };
-
-  const chooseCompileUnit = (u: { label: string; tabIds: string[] }) => {
-    setCompilePrompt(null);
-    runCompile(u.tabIds);
   };
 
   // Per-panel Compile (SCR-48): a chapter reading panel compiles ITSELF — its
@@ -5783,24 +5653,6 @@ export default function App() {
               Continue without signing in
             </button>
 
-            <button
-              onClick={() => {
-                setGateOpen(false);
-                setExampleOpen(true);
-              }}
-              style={{
-                marginTop: "16px",
-                background: "transparent",
-                border: "none",
-                color: ICON_ACCENT,
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              See how Scribal works →
-            </button>
-
             {gateMsg && (
               <p
                 style={{
@@ -5814,62 +5666,6 @@ export default function App() {
             )}
           </div>
         </div>
-      )}
-
-      {exampleOpen && (
-        <DesktopExample
-          dark={dark}
-          onClose={() => setExampleOpen(false)}
-          onTryIt={() => {
-            setExampleOpen(false);
-            updateActiveTab(1, 3, 0);
-            setMode("read");
-          }}
-        />
-      )}
-
-      {walkOpen && (
-        <DesktopWalkthrough
-          onClose={() => setWalkOpen(false)}
-          createSession={createSession}
-          deleteBook={deleteBook}
-          setActiveBook={setActiveBook}
-          addMark={addMark}
-          setScopedLabel={setScopedLabel}
-          resolveScope={resolveScope}
-          scopedLabels={getBook(activeBookId).scopedLabels || {}}
-          marks={marks}
-          activeBookId={activeBookId}
-          openDemoChapter={openTourChapter}
-          tabIds={tabs.map((t) => t.id)}
-          activeTabId={activeTabId}
-          setActiveTab={setActiveTabId}
-          closeTab={closeTab}
-          compileOpen={mode === "compile"}
-          setCompileOpen={(v) => setMode(v ? "compile" : "read")}
-          pen={{ color: selectedColor, tool: selectedTool }}
-          setPen={(p) => {
-            setSelectedColor(p.color);
-            setSelectedTool(p.tool);
-          }}
-          notes={notes}
-          setNote={setNote}
-        />
-      )}
-
-      {slidesOpen && (
-        <FeatureSlides
-          C={{
-            bg: "var(--bg)",
-            panel: "var(--panel)",
-            soft: "var(--soft)",
-            text: "var(--text)",
-            muted: "var(--muted)",
-            border: "var(--border)",
-          }}
-          onClose={() => setSlidesOpen(false)}
-          desktop
-        />
       )}
 
       {showShortcuts && (
@@ -6772,92 +6568,6 @@ export default function App() {
         </div>
       )}
 
-      {compilePrompt && (
-        <div
-          className="scribal-fade"
-          onClick={() => setCompilePrompt(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
-          }}
-        >
-          <div
-            className="scribal-rise"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "var(--panel)",
-              color: "var(--text)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "22px",
-              width: "100%",
-              maxWidth: "420px",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div
-              style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}
-            >
-              What do you want to compile?
-            </div>
-            <div
-              style={{
-                fontSize: "13px",
-                opacity: 0.7,
-                marginBottom: "16px",
-              }}
-            >
-              You have more than one thing open. Pick what to compile.
-            </div>
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              {compilePrompt.map((u, i) => (
-                <button
-                  key={i}
-                  onClick={() => chooseCompileUnit(u)}
-                  style={{
-                    textAlign: "left",
-                    padding: "12px 14px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    fontSize: "14px",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  {u.label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setCompilePrompt(null)}
-              style={{
-                marginTop: "16px",
-                width: "100%",
-                padding: "10px",
-                borderRadius: "10px",
-                border: "none",
-                background: "transparent",
-                color: "var(--text)",
-                opacity: 0.6,
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
       {compileAnim.show && (
         <CompileBook
           flyers={compileAnim.flyers}
@@ -8742,19 +8452,14 @@ export default function App() {
               <span style={{ color: activeTypeColor, fontSize: "13px" }}>
                 ❖
               </span>
-              {activeBookName}
-              <span
-                style={{
-                  fontSize: "9px",
-                  letterSpacing: "1px",
-                  color: activeTypeColor,
-                  border: "1px solid " + activeTypeColor,
-                  borderRadius: "999px",
-                  padding: "1px 6px",
-                }}
-              >
-                {activeType ? activeType.toUpperCase() : "SESSION"}
+              <span style={{ color: activeType ? activeTypeColor : "var(--text)" }}>
+                {activeBookName}
               </span>
+              {activeType && (
+                <span style={{ color: activeTypeColor, display: "inline-flex" }}>
+                  {typeCircle(activeType)}
+                </span>
+              )}
               <span style={{ fontSize: "9px", color: "var(--muted)" }}>▼</span>
             </button>
               );
@@ -8871,16 +8576,32 @@ export default function App() {
                               style={{
                                 fontSize: "13.5px",
                                 fontWeight: active ? 600 : 400,
-                                color: "var(--text)",
+                                color: b.type
+                                  ? b.type === "topic"
+                                    ? TYPE_BLUE
+                                    : TYPE_RED
+                                  : "var(--text)",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "5px",
                               }}
                             >
-                              {b.name}
+                              <span
+                                style={{
+                                  minWidth: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {b.name}
+                              </span>
+                              {b.type && typeCircle(b.type)}
                               {b.isMaster && (
                                 <span
                                   style={{
                                     fontSize: "10px",
                                     color: "var(--muted)",
-                                    marginLeft: "6px",
                                   }}
                                 >
                                   · default
@@ -8999,7 +8720,6 @@ export default function App() {
           {/* Find group */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              data-tour="search"
               onClick={() => openSearchPanel()}
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
@@ -9008,7 +8728,6 @@ export default function App() {
               Search
             </button>
             <button
-              data-tour="studies"
               onClick={() => setStudiesOpen(true)}
               title="Every study you've done"
               style={pillStyle}
@@ -9086,7 +8805,6 @@ export default function App() {
             })()}
             <div style={{ position: "relative" }}>
               <button
-                data-tour="more"
                 onClick={() => setBackupOpen((o) => !o)}
                 title="More — display, study books, shortcuts, back up"
                 style={{
@@ -9197,68 +8915,6 @@ export default function App() {
                         margin: "6px 4px",
                       }}
                     />
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setExampleOpen(false);
-                        setWalkOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      ▶ Take the guided tour
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setSlidesOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        color: "var(--text)",
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.backgroundColor = "var(--soft)")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.backgroundColor = "transparent")
-                      }
-                    >
-                      ◈ How Scribal works
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setExampleOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          verticalAlign: "-2px",
-                          marginRight: "6px",
-                        }}
-                      >
-                        <IconBulb size={14} />
-                      </span>
-                      See how it works
-                    </div>
                     <div
                       onClick={() => {
                         setBackupOpen(false);
@@ -9917,23 +9573,6 @@ export default function App() {
               )}
             {mode === "read" &&
               actionButton("Study tables", () => setMode("table"))}
-            {mode === "read" && (
-              <span data-tour="compile" style={{ display: "inline-flex" }}>
-                {actionButton(
-                  "Compile →",
-                  activeTab.studyId
-                    ? () => {
-                        const st = searchStudies.find(
-                          (s) => s.id === activeTab.studyId
-                        );
-                        if (!st) return;
-                        startStudyCompile(st);
-                      }
-                    : startCompile,
-                  true
-                )}
-              </span>
-            )}
             {mode === "compile" &&
               actionButton(
                 "← Back to Reading",
@@ -9964,7 +9603,6 @@ export default function App() {
             zIndex: 31,
           }}
           ref={tabsRef}
-          data-tour="tabs"
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
@@ -12020,7 +11658,6 @@ export default function App() {
                 }}
               />
               <button
-                data-tour="save-study"
                 onClick={saveToStudies}
                 style={{
                   display: "inline-flex",
@@ -12171,7 +11808,6 @@ export default function App() {
             ) : (
               <div style={{ display: "flex", justifyContent: "center" }}>
                 <div
-                  data-tour="compile-views"
                   style={{
                     display: "flex",
                     border: "1px solid var(--border)",
