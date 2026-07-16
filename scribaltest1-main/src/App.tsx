@@ -1624,19 +1624,9 @@ export default function App() {
     dest: LibraryDest
   ) => {
     // Library destination (Kepu's design): the pick opens as the toggled
-    // canvas type, in the master book of that type (the default) or the
-    // chosen/new session book of it.
-    let bookId = dest.type === "chapter" ? "master" : MASTER_TOPIC_ID;
-    if (dest.owner === "session") {
-      bookId =
-        dest.bookId && dest.bookId !== "__new__"
-          ? dest.bookId
-          : createSession(
-              "Session · " + fmtShortDate(Date.now()),
-              false,
-              dest.type
-            );
-    }
+    // canvas type, in that type's master book. Switching the panel to a
+    // session book happens on the panel's own pill tag afterward.
+    const bookId = dest === "chapter" ? "master" : MASTER_TOPIC_ID;
     const id = makeTabId(bookId, v, b, c);
     if (tabs.some((t) => t.id === id)) {
       // Chapter already open — drop the launcher and go to the existing panel.
@@ -2502,6 +2492,57 @@ export default function App() {
   // The Master Topic Book always exists, so it is THE default home for new
   // topic studies.
   const defaultTopicBookId = () => MASTER_TOPIC_ID;
+  // Pill-tag vocabulary (Kepu's design): the book's short name ("Master
+  // Chapter Book" → "Master") plus its type letter in a circle, everything
+  // in the canvas color.
+  const trimBookName = (name: string) =>
+    name.replace(/\s*(Chapter|Topic)?\s*Book$/i, "") || name;
+  const typeCircle = (tp: "chapter" | "topic") => (
+    <span
+      aria-hidden="true"
+      style={{
+        width: "13px",
+        height: "13px",
+        borderRadius: "50%",
+        border: "1.5px solid currentColor",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "8px",
+        fontWeight: 800,
+        flexShrink: 0,
+        lineHeight: 1,
+      }}
+    >
+      {tp === "chapter" ? "C" : "T"}
+    </span>
+  );
+  // Which tab's pill-tag book menu is open (the tag doubles as the panel's
+  // book switcher — Kepu's pick over the launcher's master/session row).
+  const [tagMenuTabId, setTagMenuTabId] = useState<string | null>(null);
+  // Re-point a chapter tab at another book, keeping its row position and
+  // width (same mechanics as setActiveTabBook, but for any tab).
+  const switchTabBook = (t: Tab, bookId: string) => {
+    if (t.studyId || t.looseRefs || bookId === t.bookId) return;
+    const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
+    setRowOrder(orderedRowIds.map((x) => (x === t.id ? newId : x)));
+    setPanelWidths((prev) => {
+      if (!(t.id in prev)) return prev;
+      const next = { ...prev };
+      if (!(newId in next)) next[newId] = next[t.id];
+      delete next[t.id];
+      return next;
+    });
+    setTabs((prev) => {
+      // That book+chapter already open in another tab → just switch to it.
+      if (prev.some((x) => x.id === newId && x.id !== t.id))
+        return prev.filter((x) => x.id !== t.id);
+      return prev.map((x) =>
+        x.id === t.id ? { ...x, id: newId, bookId } : x
+      );
+    });
+    setActiveTabId(newId);
+  };
 
   const newSessionForActiveTab = (bookType?: "chapter" | "topic") => {
     const id = createSession(
@@ -9895,14 +9936,16 @@ export default function App() {
             const tabBook = books.find((b) => b.id === (t.bookId || "master"));
             const tabBookName =
               !tabBook || tabBook.isMaster ? "Master Chapter Book" : tabBook.name;
-            // Typed pill tag (Kepu's call): just the book name in its canvas
-            // color — the color carries the type, and the master books' names
-            // already say it. Study tabs read TOPIC STUDY; an untyped
-            // pre-migration book keeps the plain muted label until migration
-            // types it.
+            // Typed pill tag (Kepu's design): the book's short name plus its
+            // type letter in a circle, all in the canvas color — "Master Ⓒ"
+            // red, "Deep study Ⓣ" blue. Untyped pre-migration books keep the
+            // plain muted label. The tag is also the panel's book switcher.
             const tabType = t.studyId ? "topic" : tabBook?.type;
             const tabTypeColor = tabType === "topic" ? TYPE_BLUE : TYPE_RED;
-            const tabBookLabel = t.studyId ? "TOPIC STUDY" : tabBookName;
+            const tabTagName = trimBookName(tabBookName);
+            const tabBookLabel = t.studyId
+              ? "Topic study"
+              : tabTagName + (tabType ? " · " + tabType : "");
             return (
               <div
                 key={t.id}
@@ -9952,6 +9995,7 @@ export default function App() {
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "3px",
+                  position: "relative",
                   order: rowIndexOf(t.id),
                   cursor: orderedRowIds.length > 1 ? "grab" : "default",
                   opacity: draggingTab === t.id ? 0.4 : 1,
@@ -9960,32 +10004,134 @@ export default function App() {
                 }}
               >
                 <span
-                  title={tabBookLabel}
+                  title={
+                    t.studyId || t.looseRefs
+                      ? tabBookLabel
+                      : "Switch which book this panel reads and marks in"
+                  }
+                  onClick={
+                    t.studyId || t.looseRefs
+                      ? undefined
+                      : (e) => {
+                          e.stopPropagation();
+                          setTagMenuTabId((cur) =>
+                            cur === t.id ? null : t.id
+                          );
+                        }
+                  }
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
                     fontSize: "10.5px",
                     lineHeight: 1,
-                    color: "var(--muted)",
+                    color: tabType ? tabTypeColor : "var(--muted)",
+                    fontWeight: tabType ? 700 : 400,
                     fontFamily: "system-ui, sans-serif",
                     maxWidth: "210px",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    cursor: t.studyId || t.looseRefs ? "default" : "pointer",
+                    position: "relative",
                   }}
                 >
-                  {tabType ? (
-                    <span
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {t.studyId ? "Topic study" : tabTagName}
+                  </span>
+                  {tabType && typeCircle(tabType)}
+                </span>
+                {tagMenuTabId === t.id && !t.studyId && !t.looseRefs && (
+                  <>
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTagMenuTabId(null);
+                      }}
+                      style={{ position: "fixed", inset: 0, zIndex: 44 }}
+                    />
+                    <div
+                      className="scribal-pop"
+                      onClick={(e) => e.stopPropagation()}
                       style={{
-                        color: tabTypeColor,
-                        fontWeight: t.studyId ? 800 : 700,
-                        letterSpacing: t.studyId ? "0.07em" : "0.01em",
+                        position: "absolute",
+                        top: "16px",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: "240px",
+                        backgroundColor: "var(--panel)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+                        padding: "6px",
+                        zIndex: 45,
+                        textAlign: "left",
                       }}
                     >
-                      {tabBookLabel}
-                    </span>
-                  ) : (
-                    tabBookName
-                  )}
-                </span>
+                      {[...books]
+                        .sort(
+                          (a, b) =>
+                            (a.id === "master"
+                              ? 0
+                              : a.id === MASTER_TOPIC_ID
+                              ? 1
+                              : 2) -
+                            (b.id === "master"
+                              ? 0
+                              : b.id === MASTER_TOPIC_ID
+                              ? 1
+                              : 2)
+                        )
+                        .map((b) => (
+                          <div
+                            key={b.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagMenuTabId(null);
+                              switchTabBook(t, b.id);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "7px",
+                              padding: "8px 9px",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              fontSize: "12.5px",
+                              fontWeight: b.id === t.bookId ? 700 : 500,
+                              fontFamily: "system-ui, sans-serif",
+                              color: b.type
+                                ? b.type === "topic"
+                                  ? TYPE_BLUE
+                                  : TYPE_RED
+                                : "var(--text)",
+                              background:
+                                b.id === t.bookId
+                                  ? "var(--soft)"
+                                  : "transparent",
+                            }}
+                          >
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {trimBookName(b.name)}
+                            </span>
+                            {b.type && typeCircle(b.type)}
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                )}
                 <div
                   onClick={() => {
                     setActiveTabId(t.id);
@@ -10219,7 +10365,7 @@ export default function App() {
               the tab row like a search panel — same drag machinery, one row
               order. */}
           {studyPanels.map((p) => {
-            const kindLabel = "Topic study";
+            const panelBook = books.find((b) => b.id === p.bookId);
             return (
               <div
                 key={p.id}
@@ -10275,20 +10421,30 @@ export default function App() {
                 }}
               >
                 <span
+                  title={"Topic study in " + (panelBook?.name || "its book")}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
                     fontSize: "10.5px",
                     lineHeight: 1,
                     color: TYPE_BLUE,
-                    fontWeight: 800,
-                    letterSpacing: "0.07em",
+                    fontWeight: 700,
                     fontFamily: "system-ui, sans-serif",
                     maxWidth: "170px",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {kindLabel.toUpperCase()}
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {trimBookName(panelBook?.name || "Topic study")}
+                  </span>
+                  {typeCircle("topic")}
                 </span>
                 <div
                   onClick={() => focusRowPanel(p.id)}
@@ -11086,13 +11242,6 @@ export default function App() {
                 <NewTabPanel
                   vols={vols}
                   studies={buildStudyPanelChoices()}
-                  sessionBooks={books
-                    .filter((b) => !isBuiltinBook(b.id) && !!b.type)
-                    .map((b) => ({
-                      id: b.id,
-                      name: b.name,
-                      type: b.type as "chapter" | "topic",
-                    }))}
                   onPickChapter={(v, b, c, dest) =>
                     launcherPickChapter(id, v, b, c, dest)
                   }
