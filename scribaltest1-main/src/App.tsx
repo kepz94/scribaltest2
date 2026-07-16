@@ -2708,6 +2708,13 @@ export default function App() {
           refs: mv.refs,
           linkedScope: undefined,
         });
+        // An open (or persisted) tab for this study still points at the
+        // emptied source book — re-point it at the study's new home.
+        setTabs((prev) =>
+          prev.map((tb) =>
+            tb.studyId === mv.studyId ? { ...tb, bookId: mv.targetId } : tb
+          )
+        );
       }
     });
     migrationPending.folds.forEach((f) =>
@@ -5939,7 +5946,13 @@ export default function App() {
               const themes = Array.from(themeMap.values());
               const openRows = tabs
                 .filter(
-                  (x) => x.id !== linkPromptTabId && !x.studyId && !x.looseRefs
+                  (x) =>
+                    x.id !== linkPromptTabId &&
+                    !x.studyId &&
+                    !x.looseRefs &&
+                    // Chapter-to-chapter linking is a chapter-canvas act —
+                    // never offer a tab reading inside a topic book.
+                    bookTypeOf(x.bookId) !== "topic"
                 )
                 .map((x) => ({
                   scope: chapterScopeOf(x),
