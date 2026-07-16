@@ -14,6 +14,7 @@ import * as drive from "./googleDrive";
 import ScribalMark from "./components/ScribalMark";
 import ScribalWordmark from "./components/ScribalWordmark";
 import StudyTablesDesktop from "./components/StudyTablesDesktop";
+import MarkingToolbar from "./components/MarkingToolbar";
 import { useStudyTables, newCardId, TableCard } from "./hooks/useStudyTables";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
@@ -1883,6 +1884,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("scribal_toolbar_orient", toolbarOrient);
   }, [toolbarOrient]);
+  // Toolbar size (the Aa dropdown's "Toolbar size" stepper): 0.6–1.2, 1 = the
+  // designed size. Device-local, like the reading-comfort settings.
+  const [toolbarScale, setToolbarScale] = useState<number>(() => {
+    const s = parseFloat(localStorage.getItem("scribal_toolbar_scale") || "");
+    return Number.isFinite(s) ? Math.min(1.2, Math.max(0.6, s)) : 1;
+  });
+  useEffect(() => {
+    localStorage.setItem("scribal_toolbar_scale", toolbarScale.toFixed(2));
+  }, [toolbarScale]);
 
   const [backupOpen, setBackupOpen] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
@@ -6595,7 +6605,6 @@ export default function App() {
                 }}
               >
                 <VerseViewer
-                toolHotkeys={toolHotkeys}
                   key={"markverses_" + st.id}
                   selectedVolume={firstLoc.volume}
                   selectedBook={firstLoc.book}
@@ -6612,11 +6621,6 @@ export default function App() {
                   tags={wordTags}
                   onTagTap={openTagRef}
                   marks={getBook(st.bookId).marks}
-                  showToolbar={true}
-                  toolbarPos={toolbarPos}
-                  onToolbarPos={setToolbarPos}
-                  toolbarOrient={toolbarOrient}
-                  onToolbarOrient={setToolbarOrient}
                   panelMode={false}
                   fontScale={reading.fontScale}
                   lineScale={reading.lineScale}
@@ -8565,7 +8569,7 @@ export default function App() {
                         color: "var(--text)",
                       }}
                     >
-                      ⌨ Keyboard shortcuts
+                      ⌨ Toolbar shortcuts
                     </div>
                     <div
                       style={{
@@ -8999,6 +9003,75 @@ export default function App() {
                             opacity: reading.lineScale >= 2.3 ? 0.4 : 1,
                             cursor:
                               reading.lineScale >= 2.3 ? "default" : "pointer",
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                        }}
+                      >
+                        Toolbar size
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            setToolbarScale((s) =>
+                              Math.max(0.6, +(s - 0.1).toFixed(2))
+                            )
+                          }
+                          disabled={toolbarScale <= 0.6}
+                          style={{
+                            ...readingStepBtn,
+                            fontSize: "16px",
+                            opacity: toolbarScale <= 0.6 ? 0.4 : 1,
+                            cursor: toolbarScale <= 0.6 ? "default" : "pointer",
+                          }}
+                        >
+                          −
+                        </button>
+                        <span
+                          style={{
+                            minWidth: "44px",
+                            textAlign: "center",
+                            fontSize: "12px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {Math.round(toolbarScale * 100)}%
+                        </span>
+                        <button
+                          onClick={() =>
+                            setToolbarScale((s) =>
+                              Math.min(1.2, +(s + 0.1).toFixed(2))
+                            )
+                          }
+                          disabled={toolbarScale >= 1.2}
+                          style={{
+                            ...readingStepBtn,
+                            fontSize: "16px",
+                            opacity: toolbarScale >= 1.2 ? 0.4 : 1,
+                            cursor: toolbarScale >= 1.2 ? "default" : "pointer",
                           }}
                         >
                           +
@@ -10216,7 +10289,6 @@ export default function App() {
                     </div>
                   )}
                   <VerseViewer
-                toolHotkeys={toolHotkeys}
                     key={t.id}
                     selectedVolume={t.volume}
                     selectedBook={t.book}
@@ -10233,11 +10305,6 @@ export default function App() {
                     tags={wordTags}
                     onTagTap={openTagRef}
                     marks={getBook(t.bookId).marks}
-                    showToolbar={isActive}
-                    toolbarPos={toolbarPos}
-                    onToolbarPos={setToolbarPos}
-                    toolbarOrient={toolbarOrient}
-                    onToolbarOrient={setToolbarOrient}
                     panelMode={multi}
                     controlsStickyTop={
                       // The reader column is its own fixed-height scroller in
@@ -10933,7 +11000,6 @@ export default function App() {
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
             <VerseViewer
-                toolHotkeys={toolHotkeys}
               selectedVolume={trLoc.v}
               selectedBook={trLoc.b}
               selectedChapter={trLoc.c}
@@ -10953,12 +11019,7 @@ export default function App() {
               tags={wordTags}
               onTagTap={openTagRef}
               marks={getBook(tableReader.bookId).marks}
-              showToolbar
               panelMode
-              toolbarPos={toolbarPos}
-              onToolbarPos={setToolbarPos}
-              toolbarOrient={toolbarOrient}
-              onToolbarOrient={setToolbarOrient}
               jumpTarget={trJump}
               onJumpHandled={() => setTrJump(null)}
               onSendVerses={sendReaderVersesToTable}
@@ -11197,7 +11258,6 @@ export default function App() {
               </div>
               <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
                 <VerseViewer
-                toolHotkeys={toolHotkeys}
                   selectedVolume={loc ? loc.volume : 0}
                   selectedBook={loc ? loc.book : 0}
                   selectedChapter={loc ? loc.chapter : 0}
@@ -11232,11 +11292,6 @@ export default function App() {
                   }
                   onMarkMany={routeMany}
                   marks={unionMarks}
-                  showToolbar
-                  toolbarPos={toolbarPos}
-                  onToolbarPos={setToolbarPos}
-                  toolbarOrient={toolbarOrient}
-                  onToolbarOrient={setToolbarOrient}
                   panelMode
                   controlsStickyTop={0}
                   fontScale={reading.fontScale}
@@ -11253,6 +11308,36 @@ export default function App() {
             </div>
           );
         })()}
+
+      {/* The marking toolbar lives at App level so it's always on screen
+          wherever marking is possible — the empty canvas included — instead of
+          belonging to any one reading panel. It hides on non-marking surfaces
+          (Compile, Study Tables, Vault) and behind the welcome gate; the table
+          reader, mark panels, and the mark-added-verses screen bring it back.
+          The z-index steps just above whichever marking overlay is open while
+          staying below the 380+ dialogs, matching where the toolbar painted
+          when each surface rendered its own. */}
+      {!gateOpen &&
+        (mode === "read" ||
+          !!tableReader ||
+          !!markPanel ||
+          !!markVersesStudyId) && (
+          <MarkingToolbar
+            toolHotkeys={toolHotkeys}
+            selectedTool={selectedTool}
+            selectedColor={selectedColor}
+            onChangeTool={setSelectedTool}
+            onChangeColor={setSelectedColor}
+            pos={toolbarPos}
+            onPos={setToolbarPos}
+            orient={toolbarOrient}
+            onOrient={setToolbarOrient}
+            scale={toolbarScale}
+            zIndex={
+              markVersesStudyId ? 1250 : markPanel ? 430 : tableReader ? 70 : 60
+            }
+          />
+        )}
 
       {mode === "compile" && (
         <div>

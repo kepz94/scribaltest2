@@ -134,7 +134,7 @@ export default function Shortcuts({
           }}
         >
           <div style={{ fontSize: "17px", fontWeight: 800 }}>
-            Keyboard shortcuts
+            Toolbar shortcuts
           </div>
           <button
             onClick={onClose}
