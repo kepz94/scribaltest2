@@ -9335,8 +9335,11 @@ export default function App() {
             const tabType = t.studyId ? "topic" : tabBook?.type;
             const tabTypeColor = tabType === "topic" ? TYPE_BLUE : TYPE_RED;
             const tabTagName = trimBookName(tabBookName);
+            // Study reading tabs carry the same book-name tag as the study
+            // panel's pill ("Deep study Ⓣ"), so the two read as one study —
+            // a bare "Topic study" caption looked like a disconnect.
             const tabBookLabel = t.studyId
-              ? "Topic study"
+              ? "Topic study in " + tabBookName
               : tabTagName + (tabType ? " · " + tabType : "");
             return (
               <div
@@ -9433,7 +9436,7 @@ export default function App() {
                       textOverflow: "ellipsis",
                     }}
                   >
-                    {t.studyId ? "Topic study" : tabTagName}
+                    {tabTagName}
                   </span>
                   {tabType && typeCircle(tabType)}
                 </span>
