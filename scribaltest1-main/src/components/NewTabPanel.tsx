@@ -418,8 +418,7 @@ export default function NewTabPanel({
                     lineHeight: 1.45,
                   }}
                 >
-                  Topic studies open as live panels; chapter studies jump to
-                  their chapter
+                  Open a study — topic studies as live panels
                 </span>
               </span>
               <span
@@ -817,10 +816,12 @@ export default function NewTabPanel({
             >
               Opening a topic study here adds a live panel to your reading row
               — its gathered verses, grouped by theme and markable right in
-              the panel. Unmarked verses sit at the top while you layer marks
-              onto them; pressing Compile settles each marked verse into its
-              color's theme. A chapter study opens its chapter in the reader
-              instead.
+              the panel. New verses land in Unmarked (drag them in with the
+              grabbers, or Select → Send to study from a topic reading panel
+              or search); pressing Compile settles each marked verse into its
+              color's theme. A verse marked in several colors appears under
+              each of those themes, showing just that color's markings. A
+              chapter study opens its chapter in the reader instead.
             </p>
             <p
               style={{
@@ -843,8 +844,8 @@ export default function NewTabPanel({
                 margin: "0 0 18px",
               }}
             >
-              A live panel isn't a saved study yet — it becomes one when you
-              press Compile and save it to Studies.
+              The panel is your topic study, live — Compile turns it into
+              study notes whenever you're ready.
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
