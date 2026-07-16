@@ -41,7 +41,10 @@ import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
 import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
 import DesktopWalkthrough from "./DesktopWalkthrough";
-import NewTabPanel, { NewTabStudyChoice } from "./components/NewTabPanel";
+import NewTabPanel, {
+  NewTabStudyChoice,
+  LibraryDest,
+} from "./components/NewTabPanel";
 import StudyPanel from "./components/StudyPanel";
 
 import Shortcuts from "./components/Shortcuts";
@@ -1617,9 +1620,24 @@ export default function App() {
     launchId: string,
     v: number,
     b: number,
-    c: number
+    c: number,
+    dest: LibraryDest
   ) => {
-    const id = makeTabId("master", v, b, c);
+    // Library destination (Kepu's design): the pick opens as the toggled
+    // canvas type, in the master book of that type (the default) or the
+    // chosen/new session book of it.
+    let bookId = dest.type === "chapter" ? "master" : MASTER_TOPIC_ID;
+    if (dest.owner === "session") {
+      bookId =
+        dest.bookId && dest.bookId !== "__new__"
+          ? dest.bookId
+          : createSession(
+              "Session · " + fmtShortDate(Date.now()),
+              false,
+              dest.type
+            );
+    }
+    const id = makeTabId(bookId, v, b, c);
     if (tabs.some((t) => t.id === id)) {
       // Chapter already open — drop the launcher and go to the existing panel.
       closeNewTabPanel(launchId);
@@ -1629,7 +1647,7 @@ export default function App() {
     }
     setTabs((prev) => [
       ...prev,
-      { id, volume: v, book: b, chapter: c, bookId: "master" },
+      { id, volume: v, book: b, chapter: c, bookId },
     ]);
     convertLauncher(launchId, id);
     setActiveTabId(id);
@@ -9877,19 +9895,14 @@ export default function App() {
             const tabBook = books.find((b) => b.id === (t.bookId || "master"));
             const tabBookName =
               !tabBook || tabBook.isMaster ? "Master Chapter Book" : tabBook.name;
-            // Typed pill tag (Kepu's pick): the canvas type in its color,
-            // book name after it. Study tabs read TOPIC STUDY; an untyped
-            // pre-migration book keeps the plain label until migration types
-            // it.
+            // Typed pill tag (Kepu's call): just the book name in its canvas
+            // color — the color carries the type, and the master books' names
+            // already say it. Study tabs read TOPIC STUDY; an untyped
+            // pre-migration book keeps the plain muted label until migration
+            // types it.
             const tabType = t.studyId ? "topic" : tabBook?.type;
             const tabTypeColor = tabType === "topic" ? TYPE_BLUE : TYPE_RED;
-            const tabBookLabel = t.studyId
-              ? "TOPIC STUDY"
-              : tabType
-              ? (tabType === "topic" ? "TOPIC" : "CHAPTER") +
-                " · " +
-                tabBookName
-              : tabBookName;
+            const tabBookLabel = t.studyId ? "TOPIC STUDY" : tabBookName;
             return (
               <div
                 key={t.id}
@@ -9960,22 +9973,15 @@ export default function App() {
                   }}
                 >
                   {tabType ? (
-                    <>
-                      <span
-                        style={{
-                          color: tabTypeColor,
-                          fontWeight: 800,
-                          letterSpacing: "0.07em",
-                        }}
-                      >
-                        {t.studyId
-                          ? "TOPIC STUDY"
-                          : tabType === "topic"
-                          ? "TOPIC"
-                          : "CHAPTER"}
-                      </span>
-                      {!t.studyId && <> · {tabBookName}</>}
-                    </>
+                    <span
+                      style={{
+                        color: tabTypeColor,
+                        fontWeight: t.studyId ? 800 : 700,
+                        letterSpacing: t.studyId ? "0.07em" : "0.01em",
+                      }}
+                    >
+                      {tabBookLabel}
+                    </span>
                   ) : (
                     tabBookName
                   )}
@@ -11080,7 +11086,16 @@ export default function App() {
                 <NewTabPanel
                   vols={vols}
                   studies={buildStudyPanelChoices()}
-                  onPickChapter={(v, b, c) => launcherPickChapter(id, v, b, c)}
+                  sessionBooks={books
+                    .filter((b) => !isBuiltinBook(b.id) && !!b.type)
+                    .map((b) => ({
+                      id: b.id,
+                      name: b.name,
+                      type: b.type as "chapter" | "topic",
+                    }))}
+                  onPickChapter={(v, b, c, dest) =>
+                    launcherPickChapter(id, v, b, c, dest)
+                  }
                   onPickStudy={(cid) => launcherPickStudy(id, cid)}
                   onSearch={() => launcherPickSearch(id)}
                   onNewTopicStudy={() => launcherNewTopicStudy(id)}

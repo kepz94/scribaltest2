@@ -22,10 +22,21 @@ export interface NewTabStudyChoice {
   themes?: { color: number; name: string }[];
 }
 
+// Where a Library pick opens (Kepu's design): a Chapter/Topic canvas toggle
+// plus a Master/Session toggle — master is always the default. bookId is a
+// session book id, or "__new__" to create a fresh typed session book.
+export interface LibraryDest {
+  type: "chapter" | "topic";
+  owner: "master" | "session";
+  bookId?: string;
+}
+
 interface NewTabPanelProps {
   vols: Volume[];
   studies: NewTabStudyChoice[];
-  onPickChapter: (v: number, b: number, c: number) => void;
+  // Typed session books, for the Session destination picker.
+  sessionBooks: { id: string; name: string; type: "chapter" | "topic" }[];
+  onPickChapter: (v: number, b: number, c: number, dest: LibraryDest) => void;
   onPickStudy: (id: string) => void;
   onSearch: () => void;
   // Creates an empty topic study (in the Master Topic Book) and converts
@@ -37,6 +48,7 @@ interface NewTabPanelProps {
 export default function NewTabPanel({
   vols,
   studies,
+  sessionBooks,
   onPickChapter,
   onPickStudy,
   onSearch,
@@ -48,6 +60,23 @@ export default function NewTabPanel({
   const [showStudyInfo, setShowStudyInfo] = useState(false);
   const [volIdx, setVolIdx] = useState<number | null>(null);
   const [bookIdx, setBookIdx] = useState<number | null>(null);
+  // Library destination: canvas type + master/session. Master is always the
+  // default; the session picker offers the typed session books (or a new one).
+  const [destType, setDestType] = useState<"chapter" | "topic">("chapter");
+  const [destOwner, setDestOwner] = useState<"master" | "session">("master");
+  const [destSessionId, setDestSessionId] = useState<string>("__new__");
+  const typedSessions = sessionBooks.filter((b) => b.type === destType);
+  const destColor = destType === "chapter" ? "#ef4444" : "#3b82f6";
+  const dest = (): LibraryDest => ({
+    type: destType,
+    owner: destOwner,
+    bookId:
+      destOwner === "session"
+        ? typedSessions.some((b) => b.id === destSessionId)
+          ? destSessionId
+          : "__new__"
+        : undefined,
+  });
 
   const vol = volIdx !== null ? vols[volIdx] : null;
   const singleBook = vol ? vol.books.length === 1 : false;
@@ -425,59 +454,63 @@ export default function NewTabPanel({
                 i
               </span>
             </button>
-            <button
-              onClick={onNewTopicStudy}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "14px",
-                width: "100%",
-                textAlign: "left",
-                padding: "18px 18px",
-                borderRadius: "14px",
-                border: "1px solid var(--border)",
-                borderLeft: "3px solid #3b82f6",
-                background: "var(--panel)",
-                color: "var(--text)",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ flexShrink: 0 }}
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              <span style={{ minWidth: 0 }}>
-                <span
-                  style={{ display: "block", fontSize: "15px", fontWeight: 700 }}
-                >
-                  New topic study
-                </span>
-                <span
-                  style={{
-                    display: "block",
-                    fontSize: "12.5px",
-                    color: "var(--muted)",
-                    marginTop: "3px",
-                    lineHeight: 1.45,
-                  }}
-                >
-                  Start empty, drag verses in — lives in your Master Topic Book
-                </span>
-              </span>
-            </button>
           </div>
         )}
 
+        {step === "studies" && (
+          // "New topic study" lives at the top of the Studies menu (Kepu's
+          // call): one tap creates an empty topic study in the Master Topic
+          // Book and converts this launcher into its live panel.
+          <button
+            onClick={onNewTopicStudy}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              width: "100%",
+              textAlign: "left",
+              padding: "12px 14px",
+              borderRadius: "12px",
+              border: "1px dashed #3b82f6",
+              background: "rgba(59,130,246,0.05)",
+              color: "#3b82f6",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: "14px",
+              fontWeight: 700,
+              marginBottom: "10px",
+              transition: "all 0.15s",
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ flexShrink: 0 }}
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span style={{ minWidth: 0 }}>
+              New topic study
+              <span
+                style={{
+                  display: "block",
+                  fontSize: "11.5px",
+                  fontWeight: 400,
+                  color: "var(--muted)",
+                  marginTop: "2px",
+                }}
+              >
+                Start empty, drag verses in — lives in your Master Topic Book
+              </span>
+            </span>
+          </button>
+        )}
         {step === "studies" &&
           (studies.length ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -577,6 +610,153 @@ export default function NewTabPanel({
             </p>
           ))}
 
+        {(step === "volumes" || step === "books" || step === "chapters") && (
+          // Library destination (Kepu's design): whatever you open lands as
+          // this canvas type, in the master book of that type by default or
+          // a session book of it.
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              marginBottom: "14px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  color: "var(--muted)",
+                  width: "58px",
+                  flexShrink: 0,
+                }}
+              >
+                Opens as
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}
+              >
+                {(["chapter", "topic"] as const).map((tp) => {
+                  const on = destType === tp;
+                  const c = tp === "chapter" ? "#ef4444" : "#3b82f6";
+                  return (
+                    <button
+                      key={tp}
+                      onClick={() => {
+                        setDestType(tp);
+                        setDestSessionId("__new__");
+                      }}
+                      style={{
+                        padding: "5px 14px",
+                        border: "none",
+                        backgroundColor: on ? c : "transparent",
+                        color: on ? "#fff" : "var(--muted)",
+                        fontSize: "11.5px",
+                        fontWeight: on ? 700 : 400,
+                        fontFamily: "system-ui, sans-serif",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tp === "chapter" ? "Chapter" : "Topic"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  color: "var(--muted)",
+                  width: "58px",
+                  flexShrink: 0,
+                }}
+              >
+                In
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}
+              >
+                {(["master", "session"] as const).map((ow) => {
+                  const on = destOwner === ow;
+                  return (
+                    <button
+                      key={ow}
+                      onClick={() => setDestOwner(ow)}
+                      style={{
+                        padding: "5px 14px",
+                        border: "none",
+                        backgroundColor: on ? destColor : "transparent",
+                        color: on ? "#fff" : "var(--muted)",
+                        fontSize: "11.5px",
+                        fontWeight: on ? 700 : 400,
+                        fontFamily: "system-ui, sans-serif",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {ow === "master"
+                        ? destType === "chapter"
+                          ? "Master Chapter Book"
+                          : "Master Topic Book"
+                        : "Session book"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {destOwner === "session" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "58px", flexShrink: 0 }} />
+                <select
+                  value={
+                    typedSessions.some((b) => b.id === destSessionId)
+                      ? destSessionId
+                      : "__new__"
+                  }
+                  onChange={(e) => setDestSessionId(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                    outline: "none",
+                  }}
+                >
+                  {typedSessions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                  <option value="__new__">
+                    ＋ New {destType} session book…
+                  </option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         {step === "volumes" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
             {vols.map((v, i) =>
@@ -603,7 +783,7 @@ export default function NewTabPanel({
               {book!.chapters.map((ch, i) =>
                 listRow(
                   sermonLabel(ch.title, ch.chapter),
-                  () => onPickChapter(volIdx!, bookIdx!, i),
+                  () => onPickChapter(volIdx!, bookIdx!, i, dest()),
                   "ch_" + i
                 )
               )}
@@ -613,7 +793,7 @@ export default function NewTabPanel({
               {book!.chapters.map((ch, i) => (
                 <button
                   key={"ch_" + i}
-                  onClick={() => onPickChapter(volIdx!, bookIdx!, i)}
+                  onClick={() => onPickChapter(volIdx!, bookIdx!, i, dest())}
                   style={{
                     minWidth: "44px",
                     height: "40px",
