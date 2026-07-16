@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Mark,
   MarkColor,
@@ -140,6 +140,60 @@ export default function StudyPanel({
   // Focused remains as the overview.
   const [view, setView] = useState<"focused" | "full">("full");
   const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Arrival feedback (dress-rehearsal fix): with every group collapsed, a
+  // drop changed nothing visible — Kepu couldn't tell whether the verse
+  // landed. New arrivals now open their group, flash, scroll into view, and
+  // announce themselves; a drop of verses already in the study says so
+  // instead of silently deduping.
+  const [flashRefs, setFlashRefs] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const flashTimer = useRef<number | undefined>(undefined);
+  const showToast = (msg: string) => {
+    window.clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  };
+  const verseRefsKey = verses.map((v) => v.reference).join("\n");
+  const prevRefs = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const prev = prevRefs.current;
+    prevRefs.current = new Set(verses.map((v) => v.reference));
+    if (!prev) return; // mount is not an arrival
+    const added = verses
+      .map((v) => v.reference)
+      .filter((r) => !prev.has(r));
+    if (!added.length) return;
+    setExpanded((e) => {
+      const next = { ...e };
+      added.forEach((r) => {
+        next[grouped.groupOf.get(r) || "unmarked"] = true;
+      });
+      return next;
+    });
+    setFlashRefs(new Set(added));
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(
+      () => setFlashRefs(new Set()),
+      2000
+    );
+    showToast(added.length === 1 ? "Added 1 verse" : "Added " + added.length + " verses");
+    // After the group expands, bring the first arrival into view.
+    window.setTimeout(() => {
+      const el = bodyRef.current?.querySelector(
+        '[data-vref="' + added[0].replace(/"/g, '\\"') + '"]'
+      );
+      if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 80);
+  }, [verseRefsKey]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(flashTimer.current);
+    },
+    []
+  );
 
   // Verses SETTLE into theme groups at Compile, not mid-marking (Kepu's
   // call): a verse in Unmarked stays there while you layer marks onto it —
@@ -428,14 +482,23 @@ export default function StudyPanel({
   };
   // Whole-panel drop target (SCR-50): verses dragged in from a topic-book
   // reading panel or a search panel join the study (they show under Unmarked
-  // until they're marked here).
+  // until they're marked here). A drop that adds nothing new gets told so —
+  // the parent's dedupe used to swallow it silently.
+  const dropFromOutside = (refs: string[]) => {
+    const have = new Set(verses.map((v) => v.reference));
+    if (!refs.some((r) => !have.has(r))) {
+      showToast("Already in this study");
+      return;
+    }
+    if (onDropVerses) onDropVerses(refs);
+  };
   const handlePanelDrop = (e: React.DragEvent) => {
     const p = parseVersePayload(e);
     if (!p) return;
     e.preventDefault();
     e.stopPropagation();
     if (p.fromSelf) return; // inside drags land on a verse row (reorder)
-    if (onDropVerses) onDropVerses(p.refs);
+    dropFromOutside(p.refs);
   };
 
   // Reference caption above each verse: reference (jump on click) at the
@@ -522,9 +585,9 @@ export default function StudyPanel({
               width: "22px",
               height: "22px",
               borderRadius: "6px",
-              border: "1px solid var(--border)",
-              background: "var(--soft)",
-              color: "var(--muted)",
+              border: "1px solid var(--grabBorder)",
+              background: "var(--grabBg)",
+              color: "var(--grabFg)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -563,15 +626,31 @@ export default function StudyPanel({
           grouped.groupOf.get(ref) === grouped.groupOf.get(row.reference)
         )
           onReorderVerse(ref, row.reference);
-      } else if (onDropVerses) onDropVerses(p.refs);
+      } else dropFromOutside(p.refs);
     },
   });
 
+  // New arrivals flash in the blue highlight, then fade: the color lands
+  // with no transition and the fade-out transition takes over when the
+  // flash set clears.
+  const rowStyle = (row: VerseRow): React.CSSProperties => ({
+    padding: "6px 8px",
+    borderRadius: "6px",
+    background: flashRefs.has(row.reference) ? "var(--hl5)" : "transparent",
+    transition: flashRefs.has(row.reference)
+      ? "none"
+      : "background 1.2s ease-out",
+  });
   const verseRow = (row: VerseRow) =>
     view === "full" ? (
       // Full verse: the marking surface. MarkedVerse is the reader's renderer,
       // so marks layer identically; selections become marks via handleMouseUp.
-      <div key={row.reference} style={{ padding: "6px 8px" }} {...rowDropProps(row)}>
+      <div
+        key={row.reference}
+        data-vref={row.reference}
+        style={rowStyle(row)}
+        {...rowDropProps(row)}
+      >
         {refCaption(row)}
         <div style={{ fontSize: "14px", lineHeight: 1.6 }}>
           <MarkedVerse
@@ -591,7 +670,12 @@ export default function StudyPanel({
         </div>
       </div>
     ) : (
-      <div key={row.reference} style={{ padding: "6px 8px" }} {...rowDropProps(row)}>
+      <div
+        key={row.reference}
+        data-vref={row.reference}
+        style={rowStyle(row)}
+        {...rowDropProps(row)}
+      >
         {refCaption(row)}
         <span
           onClick={() => onJump(row.reference)}
@@ -650,6 +734,31 @@ export default function StudyPanel({
   }
 
   return (
+    <div style={{ position: "relative", height: "100%" }}>
+      {/* Arrival toast — pinned to the panel, above the scroll. */}
+      {toast && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "14px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            whiteSpace: "nowrap",
+            zIndex: 5,
+            background: "var(--text)",
+            color: "var(--panel)",
+            fontSize: "12px",
+            fontWeight: 600,
+            padding: "5px 11px",
+            borderRadius: "999px",
+            opacity: 0.92,
+            pointerEvents: "none",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          {toast}
+        </div>
+      )}
     <div
       onDragOver={(e) => {
         if (onDropVerses) e.preventDefault();
@@ -1014,6 +1123,7 @@ export default function StudyPanel({
             </p>
           ))}
       </div>
+    </div>
     </div>
   );
 }
