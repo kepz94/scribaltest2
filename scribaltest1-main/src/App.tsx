@@ -2390,6 +2390,21 @@ export default function App() {
     });
   };
 
+  // A tab's id IS its location, so navigating (chapter arrows) or re-pointing
+  // a tab RENAMES it — and the row arrangement + panel widths are keyed by id.
+  // Carry both to the new id, or the renamed tab reads as brand-new and jumps
+  // to the end of the row (and a resized panel snaps back to default width).
+  const carryRowIdentity = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setRowOrder(orderedRowIds.map((x) => (x === fromId ? toId : x)));
+    setPanelWidths((prev) => {
+      if (!(fromId in prev)) return prev;
+      const next = { ...prev };
+      if (!(toId in next)) next[toId] = next[fromId];
+      delete next[fromId];
+      return next;
+    });
+  };
   const updateTab = (
     tabId: string,
     volume: number,
@@ -2416,6 +2431,7 @@ export default function App() {
       if (c >= count) c = chapter;
     }
     const newId = makeTabId(bookId, volume, book, c);
+    if (!tabs.some((t) => t.id === newId)) carryRowIdentity(tabId, newId);
     setTabs((prev) => {
       const existing = prev.find((t) => t.id === newId);
       if (existing) {
@@ -2435,6 +2451,8 @@ export default function App() {
     const t = tabs.find((x) => x.id === activeTabId);
     if (!t) return;
     const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
+    if (!tabs.some((x) => x.id === newId && x.id !== t.id))
+      carryRowIdentity(t.id, newId);
     setTabs((prev) => {
       // if that book+chapter is already open in another tab, switch to it
       if (prev.some((x) => x.id === newId && x.id !== t.id)) {
@@ -2516,14 +2534,7 @@ export default function App() {
   const switchTabBook = (t: Tab, bookId: string) => {
     if (t.studyId || t.looseRefs || bookId === t.bookId) return;
     const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
-    setRowOrder(orderedRowIds.map((x) => (x === t.id ? newId : x)));
-    setPanelWidths((prev) => {
-      if (!(t.id in prev)) return prev;
-      const next = { ...prev };
-      if (!(newId in next)) next[newId] = next[t.id];
-      delete next[t.id];
-      return next;
-    });
+    carryRowIdentity(t.id, newId);
     setTabs((prev) => {
       // That book+chapter already open in another tab → just switch to it.
       if (prev.some((x) => x.id === newId && x.id !== t.id))
