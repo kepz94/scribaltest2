@@ -11328,55 +11328,45 @@ export default function App() {
               </div>
             </div>
 
-            {compileStudy?.view === "covenants" ? (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    letterSpacing: "1px",
-                    textTransform: "uppercase",
-                    color: "var(--muted)",
-                    padding: "6px 0",
-                  }}
-                >
-                  Relational study
-                </div>
+            {/* The view switcher renders in EVERY view. (An old special case
+                swapped it for a static "Relational study" label whenever the
+                saved view was covenants — a leftover from when relational
+                studies were their own kind. Under the two-canvas model a
+                topic study owns the whole view set, so that label just
+                trapped you in Relational: no tabs to leave, and reopening
+                restored the saved covenants view.) */}
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                  backgroundColor: "var(--panel)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {viewTabButton(compileView === "outline", "Outline", () =>
+                  setCompileView("outline")
+                )}
+                {/* Topic view set (SCR-52): Outline, Distilled, Relational,
+                    single-line Semantic — Charting stays chapter-structured
+                    and excluded for topic studies. */}
+                {!compileStudy &&
+                  viewTabButton(compileView === "charting", "Charting", () =>
+                    setCompileView("charting")
+                  )}
+                {viewTabButton(compileView === "distilled", "Distilled", () =>
+                  setCompileView("distilled")
+                )}
+                {viewTabButton(compileView === "covenants", "Relational", () =>
+                  setCompileView("covenants")
+                )}
+                {viewTabButton(compileView === "semantic", "Semantic", () =>
+                  setCompileView("semantic")
+                )}
               </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    border: "1px solid var(--border)",
-                    borderRadius: "999px",
-                    overflow: "hidden",
-                    backgroundColor: "var(--panel)",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {viewTabButton(compileView === "outline", "Outline", () =>
-                    setCompileView("outline")
-                  )}
-                  {/* Topic view set (SCR-52): Outline, Distilled, Relational,
-                      single-line Semantic — Charting stays chapter-structured
-                      and excluded for topic studies. */}
-                  {!compileStudy &&
-                    viewTabButton(compileView === "charting", "Charting", () =>
-                      setCompileView("charting")
-                    )}
-                  {viewTabButton(compileView === "distilled", "Distilled", () =>
-                    setCompileView("distilled")
-                  )}
-                  {viewTabButton(compileView === "covenants", "Relational", () =>
-                    setCompileView("covenants")
-                  )}
-                  {viewTabButton(compileView === "semantic", "Semantic", () =>
-                    setCompileView("semantic")
-                  )}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
 
           <style>{`
