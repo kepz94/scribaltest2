@@ -46,6 +46,13 @@ export type CardKind =
 export type WordRole = "thought" | "story" | "invitation";
 export type QuestionType = "fact" | "analysis" | "application" | "feeling";
 
+// How a shelf (tray) entry got there. "staged" = set aside by hand (the intake
+// drawer's "+", or the legacy set-aside flow); "mark" = delivered automatically
+// because a new mark landed in the table's scope (a newly linked chapter's
+// themed verses arrive the same way). Absent => "staged", which grandfathers
+// every pre-existing shelf card without a migration.
+export type ShelfSource = "staged" | "mark";
+
 export interface TableCard {
   id: string;
   kind: CardKind;
@@ -76,6 +83,11 @@ export interface TableCard {
   shelfGroupColor?: number;
   passage?: boolean;
   bookId?: string;
+  // Shelf-only: how this entry arrived (see ShelfSource) and when. Both are
+  // dropped when the card is placed into the column — placement is the act
+  // that turns an arrival into an authored card.
+  shelfSource?: ShelfSource;
+  arrivedAt?: number;
 
   // clip: the source link plus the slice to play. `startSec` is read from the
   // link's ?t= param; `endSec` is set by the user (blank => play to the end).
@@ -98,6 +110,11 @@ export interface StudyTable {
   // default (master, an existing session, or a session created for this table).
   // Individual cards can still carry their own bookId (e.g. imported studies).
   bookId?: string;
+  // Table-as-notes (ADR-007): the study this table is the notes section OF.
+  // One table per study; a linked chapter group shares one study and so one
+  // table. bookId keeps its marks-home meaning — the two are independent.
+  // Absent on legacy tables until the SCR-67 migration attaches them.
+  studyId?: string;
   // The ordered column. Index IS the order — first card first, and that order
   // drives Present. There is no board geometry here; a spatial "board" lens can
   // be layered on later without touching this shape.
@@ -154,7 +171,8 @@ export function useStudyTables() {
   const createTable = (
     name = "Untitled",
     purpose?: TablePurpose,
-    bookId?: string
+    bookId?: string,
+    studyId?: string
   ): string => {
     const now = Date.now();
     const id = newTableId();
@@ -164,6 +182,7 @@ export function useStudyTables() {
         name,
         purpose,
         bookId,
+        studyId,
         cards: [],
         createdAt: now,
         updatedAt: now,
@@ -179,7 +198,9 @@ export function useStudyTables() {
   // make a stale name win a rename sync.
   const updateTable = (
     id: string,
-    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
+    changes: Partial<
+      Pick<StudyTable, "name" | "cards" | "purpose" | "shelf" | "studyId">
+    >
   ) => {
     setTables((prev) =>
       prev.map((t) => {
@@ -199,6 +220,44 @@ export function useStudyTables() {
 
   const renameTable = (id: string, name: string) => updateTable(id, { name });
 
+  // Deliver mark arrivals to a table's shelf (the tray). Each ref becomes one
+  // scripture entry stamped shelfSource:"mark" + arrivedAt. A ref already
+  // placed in the column or already waiting on the shelf is skipped, so
+  // re-marking a verse never queues a duplicate. Never places — placement is
+  // always the user's act (Monastic rule; the tray UI is SCR-57).
+  const addShelfArrivals = (
+    id: string,
+    refs: string[],
+    extras?: Partial<Pick<TableCard, "bookId" | "shelfGroup" | "shelfGroupColor">>
+  ) => {
+    setTables((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const have = new Set<string>();
+        t.cards.forEach((c) => (c.refs || []).forEach((r) => have.add(r)));
+        (t.shelf || []).forEach((c) =>
+          (c.refs || []).forEach((r) => have.add(r))
+        );
+        const fresh = refs.filter((r) => !have.has(r));
+        if (!fresh.length) return t;
+        const now = Date.now();
+        const arrivals: TableCard[] = fresh.map((r) => ({
+          id: newCardId(),
+          kind: "scripture",
+          refs: [r],
+          shelfSource: "mark",
+          arrivedAt: now,
+          ...extras,
+        }));
+        return {
+          ...t,
+          shelf: [...(t.shelf || []), ...arrivals],
+          updatedAt: now,
+        };
+      })
+    );
+  };
+
   // Soft-delete: tombstone the table (kept, stamped) so the deletion travels to
   // other devices. Filtered out of the returned list below.
   const deleteTable = (id: string) =>
@@ -209,8 +268,9 @@ export function useStudyTables() {
   // Merge a remote tables snapshot (another device's backup) into ours.
   //  - A table we've never seen (new id) is added.
   //  - A table we both have: NAME from whichever device set it most recently
-  //    (nameAt); CONTENT (cards + purpose) from whichever edited most recently
-  //    (updatedAt); updatedAt + deletedAt advance to the latest.
+  //    (nameAt); CONTENT (cards / purpose / bookId / studyId / shelf) from
+  //    whichever edited most recently (updatedAt); updatedAt + deletedAt
+  //    advance to the latest.
   // Idempotent: returns the previous array unchanged when nothing differs, so it
   // never churns the sync loop.
   const mergeRemote = (raw: string | null | undefined) => {
@@ -242,6 +302,7 @@ export function useStudyTables() {
         const cards = contentNewer ? r.cards || [] : local.cards;
         const purpose = contentNewer ? r.purpose : local.purpose;
         const bookId = contentNewer ? r.bookId : local.bookId;
+        const studyId = contentNewer ? r.studyId : local.studyId;
         const shelf = contentNewer ? r.shelf : local.shelf;
         const updatedAt = Math.max(local.updatedAt || 0, r.updatedAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
@@ -262,6 +323,8 @@ export function useStudyTables() {
           };
           if (bookId) merged.bookId = bookId;
           else delete merged.bookId;
+          if (studyId) merged.studyId = studyId;
+          else delete merged.studyId;
           if (shelf && shelf.length) merged.shelf = shelf;
           else delete merged.shelf;
           if (deletedAt) merged.deletedAt = deletedAt;
@@ -286,6 +349,7 @@ export function useStudyTables() {
     updateTable,
     renameTable,
     deleteTable,
+    addShelfArrivals,
     setTables,
     mergeRemote,
   };
