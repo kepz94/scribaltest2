@@ -132,7 +132,18 @@ export interface StudyTable {
   // shelf. Holds scripture cards only; each is moved into `cards` when the user
   // decides where it goes. Syncs last-write like `cards`.
   shelf?: TableCard[];
+  // Table-as-notes lifecycle (ADR-007 §3): stamped by the first authoring act
+  // (insert / drag / delete). Until then the table is Compiled · live — its
+  // column is GENERATED from the study's marks (cards stays empty) and re-sorts
+  // freely; the promotion write persists the on-screen arrangement into cards.
+  // Promotion is one-way, so on merge the stamp advances like deletedAt.
+  promotedAt?: number;
 }
+
+// A table counts as promoted (Table · yours) once stamped — or, for tables
+// authored before the lifecycle existed, whenever it has any cards at all.
+export const isTablePromoted = (t: StudyTable): boolean =>
+  !!t.promotedAt || t.cards.length > 0;
 
 // A table is hidden iff its delete is its newest action (so editing or renaming
 // after a delete brings it back).
@@ -199,7 +210,10 @@ export function useStudyTables() {
   const updateTable = (
     id: string,
     changes: Partial<
-      Pick<StudyTable, "name" | "cards" | "purpose" | "shelf" | "studyId">
+      Pick<
+        StudyTable,
+        "name" | "cards" | "purpose" | "shelf" | "studyId" | "promotedAt"
+      >
     >
   ) => {
     setTables((prev) =>
@@ -306,11 +320,15 @@ export function useStudyTables() {
         const shelf = contentNewer ? r.shelf : local.shelf;
         const updatedAt = Math.max(local.updatedAt || 0, r.updatedAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
+        // Promotion is one-way, so the stamp advances to the latest on either
+        // device rather than following contentNewer.
+        const promotedAt = Math.max(local.promotedAt || 0, r.promotedAt || 0);
         const differs =
           name !== local.name ||
           nameAt !== (local.nameAt || 0) ||
           updatedAt !== (local.updatedAt || 0) ||
           deletedAt !== (local.deletedAt || 0) ||
+          promotedAt !== (local.promotedAt || 0) ||
           contentNewer;
         if (differs) {
           const merged: StudyTable = {
@@ -328,6 +346,7 @@ export function useStudyTables() {
           if (shelf && shelf.length) merged.shelf = shelf;
           else delete merged.shelf;
           if (deletedAt) merged.deletedAt = deletedAt;
+          if (promotedAt) merged.promotedAt = promotedAt;
           byId.set(r.id, merged);
           changed = true;
         }

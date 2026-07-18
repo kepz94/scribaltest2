@@ -12,6 +12,7 @@ import {
   markStyleCSS,
 } from "../types";
 import { Tab } from "../types";
+import { mergedRunsFor, pointsFor, assembleThemes } from "../outlineAssembly";
 
 interface OutlineProps {
   // Outline lead verses: per color, the refs the user pinned to a theme's top,
@@ -175,32 +176,8 @@ export default function Outline(props: OutlineProps) {
     return { reference: e.reference, text: e.text, color, themeName };
   });
 
-  // Merge overlapping/adjacent ranges of the SAME style into clean runs
-  // (SCR-12). Stacked near-duplicate marks (the triple-click double-fire,
-  // off-by-one legacy boundaries) rendered as separate near-identical outline
-  // entries and double-counted points. Different styles stay separate runs so
-  // intentional layering (a bold word inside a highlighted phrase) keeps its
-  // own entry and its own points.
-  const mergedRunsFor = (
-    ms: Mark[]
-  ): { start: number; end: number; style: Mark["style"] }[] => {
-    const styles = Array.from(new Set(ms.map((m) => m.style)));
-    const out: { start: number; end: number; style: Mark["style"] }[] = [];
-    styles.forEach((style) => {
-      const runs: { start: number; end: number; style: Mark["style"] }[] = [];
-      ms.filter((m) => m.style === style)
-        .map((m) => ({ start: m.startIndex, end: m.endIndex, style }))
-        .filter((f) => f.end > f.start)
-        .sort((a, b) => a.start - b.start)
-        .forEach((f) => {
-          const last = runs[runs.length - 1];
-          if (last && f.start <= last.end) last.end = Math.max(last.end, f.end);
-          else runs.push(f);
-        });
-      out.push(...runs);
-    });
-    return out.sort((a, b) => a.start - b.start);
-  };
+  // Run-merging + assembly live in outlineAssembly.ts (SCR-56) so the table's
+  // compiled starting state and this view share one arrangement.
 
   // The marked fragments of a verse, joined — the chip's "Focused" preview.
   const focusedFor = (reference: string): string => {
@@ -222,11 +199,6 @@ export default function Outline(props: OutlineProps) {
   };
   const fullTextFor = (reference: string): string =>
     allEntries.find((e) => e.reference === reference)?.text || reference;
-
-  const pointsFor = (reference: string, colorMarks: Mark[]) =>
-    mergedRunsFor(
-      colorMarks.filter((m) => m.reference === reference)
-    ).reduce((s, f) => s + STYLE_POINTS[f.style], 0);
 
   const toggleCollapsed = (c: number) =>
     setCollapsed((prev) =>
@@ -493,43 +465,9 @@ export default function Outline(props: OutlineProps) {
 
       {compileTabs.length > 0 &&
         !noMarks &&
-        (() => {
-          let themeIndex = 0;
-          return COLORS.map((color) => {
-            const colorMarks = relevantMarks.filter((m) => m.color === color);
-            if (colorMarks.length === 0) return null;
-            themeIndex++;
-
-            const refs = Array.from(
-              new Set(colorMarks.map((m) => m.reference))
-            );
-            let entries = allEntries.filter((e) => refs.includes(e.reference));
-            const pinned = pinsFor(color);
-            const pinRank = (r: string) => {
-              const i = pinned.indexOf(r);
-              return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-            };
-            if (sortMode === "points") {
-              entries = [...entries].sort(
-                (a, b) =>
-                  pinRank(a.reference) - pinRank(b.reference) ||
-                  pointsFor(b.reference, colorMarks) -
-                    pointsFor(a.reference, colorMarks)
-              );
-            } else {
-              entries = [...entries].sort(
-                (a, b) =>
-                  pinRank(a.reference) - pinRank(b.reference) ||
-                  a.order - b.order
-              );
-            }
-
-            // Sum per verse over merged runs so stacked duplicate marks don't
-            // inflate the theme total (SCR-12).
-            const totalPts = entries.reduce(
-              (s, e) => s + pointsFor(e.reference, colorMarks),
-              0
-            );
+        assembleThemes(allEntries, relevantMarks, { pins, sortMode }).map(
+          ({ color, colorMarks, entries, totalPts }, gi) => {
+            const themeIndex = gi + 1;
             const isCollapsed = collapsed.includes(color);
 
             return (
@@ -771,8 +709,8 @@ export default function Outline(props: OutlineProps) {
                   })}
               </section>
             );
-          });
-        })()}
+          }
+        )}
     </div>
   );
 }
