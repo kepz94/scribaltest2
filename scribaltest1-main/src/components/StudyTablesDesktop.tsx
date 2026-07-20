@@ -1,6 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ACCENT } from "../theme";
-import { Mark, MarkColor, WordTag, STYLE_POINTS, COLOR_MAP } from "../types";
+import {
+  Mark,
+  MarkColor,
+  WordTag,
+  STYLE_POINTS,
+  COLOR_MAP,
+  markStyleCSS,
+} from "../types";
+import { mergedRunsFor } from "../outlineAssembly";
 import {
   StudyTable,
   TablePurpose,
@@ -111,6 +119,14 @@ interface Props {
   ) => void;
   // Remove verses from a topic study (the tray's confirmed delete).
   onRemoveVersesFromStudy?: (studyId: string, refs: string[]) => void;
+  // Rename a theme where the compile reads it: useMarks.setScopedLabelInBook.
+  // Renaming a compiled heading while live edits the theme, never the cards.
+  setThemeLabel?: (
+    bookId: string,
+    scope: string,
+    color: MarkColor,
+    label: string
+  ) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -166,6 +182,7 @@ export default function StudyTablesDesktop({
   onMarkVerses,
   addShelfArrivals,
   onRemoveVersesFromStudy,
+  setThemeLabel,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -262,6 +279,25 @@ export default function StudyTablesDesktop({
   const [covOpen, setCovOpen] = useState(false);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
+  // Focused | Full verse rendering (Kepu: keep Focused as an option; Full is
+  // the default). Display-only, remembered per table, never synced.
+  const [verseView, setVerseView] = useState<"full" | "focused">("full");
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const v = localStorage.getItem("scribal_table_view_" + open.id);
+      setVerseView(v === "focused" ? "focused" : "full");
+    } catch {
+      setVerseView("full");
+    }
+  }, [open ? open.id : null]);
+  const flipVerseView = (v: "full" | "focused") => {
+    setVerseView(v);
+    if (!open) return;
+    try {
+      localStorage.setItem("scribal_table_view_" + open.id, v);
+    } catch {}
+  };
   const recStudy =
     open && open.studyId
       ? recordedStudies.find((s) => s.id === open.studyId)
@@ -311,7 +347,10 @@ export default function StudyTablesDesktop({
         const label = ((scoped || "") as string).trim();
         if (label) return label;
       }
-      return "";
+      // Book-level fallback — the reader's precedence. Without it, themes
+      // named only at book level compiled into BLANK headings (Kepu hit this
+      // on real data Jul 19).
+      return ((bk.colorLabels?.[color] || "") as string).trim();
     };
     return compiledCards(entries, bk.marks, themeName).map((c) =>
       c.kind === "scripture" ? { ...c, bookId: bid } : c
@@ -375,8 +414,36 @@ export default function StudyTablesDesktop({
     const cs = ix < 0 ? ref : ref.slice(0, ix);
     const scope = chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
     const scoped = scopeInfo.bk.scopedLabels?.[scope]?.[color];
-    return { color, label: ((scoped || "") as string).trim() };
+    const label =
+      ((scoped || "") as string).trim() ||
+      ((scopeInfo.bk.colorLabels?.[color] || "") as string).trim();
+    return { color, label };
   };
+  // Rename a theme from its compiled heading while Compiled · live: writes
+  // the scoped label everywhere the study's compile reads it (never promotes;
+  // the regenerated heading picks the new name up on the next render).
+  const renameTheme = (color: MarkColor, name: string) => {
+    if (!scopeInfo || !setThemeLabel) return;
+    const scopes = new Set<string>();
+    if (recStudy) {
+      (recStudy.memberScopes && recStudy.memberScopes.length
+        ? recStudy.memberScopes
+        : [recStudy.scopeRef]
+      ).forEach((cs) =>
+        scopes.add(chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs)
+      );
+    } else if (topicStudy) {
+      topicStudy.refs.forEach((r) => {
+        const ix = r.indexOf(":");
+        const cs = ix < 0 ? r : r.slice(0, ix);
+        scopes.add(chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs);
+      });
+    }
+    scopes.forEach((scope) =>
+      setThemeLabel(scopeInfo.bid, scope, color, name)
+    );
+  };
+
   const placedRefs = new Set<string>();
   columnCards.forEach((c) => {
     if (c.kind === "scripture") (c.refs || []).forEach((r) => placedRefs.add(r));
@@ -625,6 +692,53 @@ export default function StudyTablesDesktop({
         tags={wordTags}
         onTagTap={onTagTap}
       />
+    );
+  };
+
+  // Focused rendering: only the marked fragments, each in its mark's own
+  // style + color (merged runs per color, SCR-12 semantics), joined inline.
+  const renderVerseFocused = (
+    reference: string,
+    bookId?: string
+  ): React.ReactNode => {
+    const rec = getVerse(reference);
+    if (!rec)
+      return (
+        <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          {reference} — not found
+        </span>
+      );
+    const ms = (bookId ? getBook(bookId).marks : []).filter(
+      (m) => m.reference === reference
+    );
+    const colors = Array.from(new Set(ms.map((m) => m.color)));
+    const frags = colors
+      .flatMap((c) =>
+        mergedRunsFor(ms.filter((m) => m.color === c)).map((f) => ({
+          ...f,
+          color: c,
+        }))
+      )
+      .sort((a, b) => a.start - b.start);
+    if (!frags.length)
+      return (
+        <span
+          style={{ color: "var(--muted)", fontStyle: "italic", fontSize: 13 }}
+        >
+          no marks yet — Full shows the whole verse
+        </span>
+      );
+    return (
+      <span>
+        {frags.map((f, k) => (
+          <span key={f.color + ":" + f.style + ":" + f.start}>
+            {k > 0 && <span style={{ color: "var(--muted)" }}> · </span>}
+            <span style={markStyleCSS(f.style, f.color)}>
+              {rec.text.slice(f.start, f.end)}
+            </span>
+          </span>
+        ))}
+      </span>
     );
   };
 
@@ -1280,6 +1394,40 @@ export default function StudyTablesDesktop({
           >
             <Ico d="M8 5v14l11-7z" size={13} /> Present
           </button>
+          <div
+            style={{
+              display: "inline-flex",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              overflow: "hidden",
+              flex: "0 0 auto",
+            }}
+          >
+            {(["focused", "full"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => flipVerseView(v)}
+                title={
+                  v === "focused"
+                    ? "Only the marked fragments of each verse"
+                    : "The whole verse, marks inline"
+                }
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 12,
+                  fontWeight: verseView === v ? 700 : 400,
+                  padding: "6px 13px",
+                  border: 0,
+                  cursor: "pointer",
+                  background:
+                    verseView === v ? "var(--text)" : "transparent",
+                  color: verseView === v ? "var(--bg)" : "var(--muted)",
+                }}
+              >
+                {v === "focused" ? "Focused" : "Full"}
+              </button>
+            ))}
+          </div>
           <div style={{ position: "relative", flex: "0 0 auto" }}>
             <button
               onClick={() => setTableMenuOpen((o) => !o)}
@@ -1573,6 +1721,11 @@ export default function StudyTablesDesktop({
                 const rec = getVerse(r);
                 return rec ? rec.text : "";
               }}
+              outlineMode
+              live={liveCompiled}
+              verseView={verseView}
+              renderVerseFocused={renderVerseFocused}
+              onRenameTheme={setThemeLabel ? renameTheme : undefined}
             />
           </div>
           {panelOpen && (

@@ -58,6 +58,17 @@ interface StudyTableColumnProps {
   onDeleteFromShelf?: (cardId: string) => void;
   // Verse text for tray row previews.
   verseTextFor?: (reference: string) => string;
+  // ---- Outline mode (SCR-58 inverse): the desktop table wears Outline's UI.
+  // Dense rows at rest — theme headers, ref + verse text, accent lines —
+  // with edit-in-place on demand. Mobile never passes this.
+  outlineMode?: boolean;
+  // Compiled · live? Routes a compiled heading's rename to the theme label
+  // (via onRenameTheme) instead of the card text — renaming never promotes.
+  live?: boolean;
+  // Focused = only the marked fragments of each verse; full = whole verse.
+  verseView?: "full" | "focused";
+  renderVerseFocused?: (reference: string, bookId?: string) => React.ReactNode;
+  onRenameTheme?: (color: MarkColor, name: string) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -593,7 +604,20 @@ export default function StudyTableColumn({
   onPlaceFromShelf,
   onDeleteFromShelf,
   verseTextFor,
+  outlineMode,
+  live,
+  verseView = "full",
+  renderVerseFocused,
+  onRenameTheme,
 }: StudyTableColumnProps) {
+  // Outline mode: which card is expanded to its full editor, which row is
+  // hovered (tools), which is drag-reordering, which ✕ is armed.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [hoverRowId, setHoverRowId] = useState<string | null>(null);
+  const [rowDragId, setRowDragId] = useState<string | null>(null);
+  const [outlineConfirmId, setOutlineConfirmId] = useState<string | null>(
+    null
+  );
   // Tray state: pill vs expanded, the delete being confirmed, and the
   // grab-drag in flight (trayOverIndex = where the drop line sits).
   const [trayOpen, setTrayOpen] = useState(false);
@@ -673,6 +697,16 @@ export default function StudyTableColumn({
   const patch = (id: string, p: Partial<TableCard>) =>
     onChange(cards.map((c) => (c.id === id ? { ...c, ...p } : c)));
   const remove = (id: string) => onChange(cards.filter((c) => c.id !== id));
+  // Move a card to an absolute index (outline-mode grab-drag reorder).
+  const moveTo = (id: string, index: number) => {
+    const from = cards.findIndex((c) => c.id === id);
+    if (from === -1) return;
+    const next = cards.slice();
+    const [c] = next.splice(from, 1);
+    const to = Math.max(0, Math.min(from < index ? index - 1 : index, next.length));
+    next.splice(to, 0, c);
+    onChange(next);
+  };
   const move = (id: string, dir: -1 | 1) => {
     const i = cards.findIndex((c) => c.id === id);
     const j = i + dir;
@@ -1491,6 +1525,237 @@ export default function StudyTableColumn({
     );
   }
 
+  // ---- Outline-mode dense rows (SCR-58 inverse) ----
+  const compiledHeadingColor = (card: TableCard): MarkColor | null => {
+    if (card.kind !== "heading" || card.id.indexOf("compiled_h") !== 0)
+      return null;
+    const n = Number(card.id.slice("compiled_h".length));
+    return n >= 1 && n <= 10 ? (n as MarkColor) : null;
+  };
+  const denseLine = (
+    card: TableCard,
+    color: string,
+    tag: string,
+    body: string,
+    extra?: string
+  ) => (
+    <div
+      onClick={() => setEditingId(card.id)}
+      style={{
+        borderLeft: "3px solid " + color,
+        padding: "4px 10px",
+        margin: "5px 0 2px 4px",
+        fontFamily: SANS,
+        fontSize: 13,
+        color: "var(--text)",
+        lineHeight: 1.55,
+        cursor: "pointer",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: ".06em",
+          color: "var(--muted)",
+          textTransform: "uppercase",
+          marginRight: 7,
+        }}
+      >
+        {tag}
+      </span>
+      {body || (
+        <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          tap to write…
+        </span>
+      )}
+      {extra ? <span style={{ color: "var(--muted)" }}> — {extra}</span> : null}
+    </div>
+  );
+  const denseRow = (card: TableCard) => {
+    if (card.kind === "heading") {
+      const hc = compiledHeadingColor(card);
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            padding: "16px 0 6px",
+            borderBottom:
+              "2.5px solid " + (hc != null ? COLOR_MAP[hc] : "var(--border)"),
+            marginBottom: 4,
+          }}
+        >
+          {hc != null && (
+            <span
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                background: COLOR_MAP[hc],
+                flex: "0 0 auto",
+              }}
+            />
+          )}
+          <input
+            value={card.text || ""}
+            placeholder="Name this theme…"
+            onChange={(e) =>
+              // While Compiled · live a compiled heading IS the theme — its
+              // rename edits the theme's label and never promotes. Once the
+              // table is yours (or the heading is user-made) it's card text.
+              live && hc != null && onRenameTheme
+                ? onRenameTheme(hc, e.target.value)
+                : patch(card.id, { text: e.target.value })
+            }
+            style={{
+              border: "none",
+              outline: "none",
+              fontSize: 16,
+              fontWeight: 700,
+              background: "transparent",
+              flex: 1,
+              color: "var(--text)",
+              fontFamily: SANS,
+            }}
+          />
+        </div>
+      );
+    }
+    if (card.kind === "scripture") {
+      const refs = card.refs || [];
+      return (
+        <div style={{ padding: "6px 0 2px 4px" }}>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: accent,
+              marginBottom: 1,
+            }}
+          >
+            {refs.join(", ")}
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: 15, lineHeight: 1.65 }}>
+            {refs.map((r) => (
+              <div key={r} data-vref={r}>
+                {verseView === "focused" && renderVerseFocused
+                  ? renderVerseFocused(r, card.bookId)
+                  : renderVerse
+                  ? renderVerse(r, card.bookId)
+                  : r}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (card.kind === "text")
+      return denseLine(
+        card,
+        "#f0a24b",
+        "Your words" + (card.role ? " · " + card.role : ""),
+        card.text || ""
+      );
+    if (card.kind === "question")
+      return denseLine(
+        card,
+        "#8b5cf6",
+        "Question" + (card.qtype ? " · " + card.qtype : ""),
+        card.text || ""
+      );
+    if (card.kind === "quote")
+      return denseLine(card, "var(--muted)", "Quote", card.text || "", card.attribution);
+    if (card.kind === "note")
+      return denseLine(card, "var(--border)", "Note · private", card.text || "");
+    // clip: title + slice; the full player lives in the expanded editor.
+    return denseLine(
+      card,
+      accent,
+      "Clip",
+      card.clipTitle || card.url || "",
+      card.startSec != null ? "from " + card.startSec + "s" : undefined
+    );
+  };
+  const toolBtn: React.CSSProperties = {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    border: "1px solid var(--border)",
+    background: "var(--panel)",
+    color: "var(--muted)",
+    fontSize: 12,
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    lineHeight: 0,
+  };
+  const rowTools = (card: TableCard, i: number) => (
+    <div
+      style={{
+        position: "absolute",
+        right: 0,
+        top: card.kind === "heading" ? 14 : 4,
+        display: "flex",
+        gap: 4,
+        zIndex: 5,
+      }}
+    >
+      <span
+        draggable
+        onDragStart={(e) => {
+          setRowDragId(card.id);
+          e.dataTransfer.effectAllowed = "move";
+          try {
+            e.dataTransfer.setData("text/plain", card.id);
+          } catch {}
+        }}
+        onDragEnd={() => {
+          setRowDragId(null);
+          setTrayOverIndex(null);
+        }}
+        title="Drag to move"
+        style={{ ...toolBtn, cursor: "grab" }}
+      >
+        ⠿
+      </span>
+      {card.kind === "scripture" && (
+        <button
+          onClick={() => setEditingId(card.id)}
+          title="Edit this card"
+          style={toolBtn}
+        >
+          ✎
+        </button>
+      )}
+      <button
+        onClick={() => {
+          if (outlineConfirmId === card.id) {
+            setOutlineConfirmId(null);
+            remove(card.id);
+          } else {
+            setOutlineConfirmId(card.id);
+          }
+        }}
+        title={
+          outlineConfirmId === card.id
+            ? "Tap again to remove" +
+              (card.kind === "scripture" ? " — the verse waits in the tray" : "")
+            : "Remove"
+        }
+        style={
+          outlineConfirmId === card.id
+            ? { ...toolBtn, background: "#b3452f", borderColor: "#b3452f", color: "#fff" }
+            : toolBtn
+        }
+      >
+        ✕
+      </button>
+    </div>
+  );
+
   function Chooser({ index }: { index: number }) {
     return (
       <div style={{ paddingLeft: 4, margin: "4px 0" }}>
@@ -1630,17 +1895,19 @@ export default function StudyTableColumn({
   return (
     <div style={{ maxWidth: 660, margin: "0 auto", position: "relative" }}>
       {/* spine */}
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          bottom: 34,
-          left: 13,
-          width: 1,
-          background: "var(--border)",
-          zIndex: 0,
-        }}
-      />
+      {!outlineMode && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            bottom: 34,
+            left: 13,
+            width: 1,
+            background: "var(--border)",
+            zIndex: 0,
+          }}
+        />
+      )}
       {cards.map((card, i) => {
         const isSection = card.kind === "heading";
         return (
@@ -1650,7 +1917,7 @@ export default function StudyTableColumn({
               onMouseEnter={() => setHoverGap(i)}
               onMouseLeave={() => setHoverGap((g) => (g === i ? null : g))}
             >
-              {trayDragId && trayOverIndex === i && (
+              {(trayDragId || rowDragId) && trayOverIndex === i && (
                 <div
                   style={{
                     height: 3,
@@ -1666,9 +1933,9 @@ export default function StudyTableColumn({
             <div
               data-card-id={card.id}
               data-card-kind={card.kind}
-              draggable={card.kind === "scripture"}
+              draggable={!outlineMode && card.kind === "scripture"}
               onDragStart={(e) => {
-                if (card.kind !== "scripture") return;
+                if (outlineMode || card.kind !== "scripture") return;
                 setDragId(card.id);
                 e.dataTransfer.effectAllowed = "move";
                 try {
@@ -1680,9 +1947,9 @@ export default function StudyTableColumn({
                 setMergeOverId(null);
               }}
               onDragOver={(e) => {
-                // A tray card in hand: show the drop line above or below this
-                // card by pointer half — exact placement (SCR-57).
-                if (trayDragId) {
+                // A tray card or an outline row in hand: show the drop line
+                // above or below this card by pointer half — exact placement.
+                if (trayDragId || rowDragId) {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
                   const r = e.currentTarget.getBoundingClientRect();
@@ -1705,11 +1972,14 @@ export default function StudyTableColumn({
                 setMergeOverId((p) => (p === card.id ? null : p))
               }
               onDrop={(e) => {
-                if (trayDragId) {
+                if (trayDragId || rowDragId) {
                   e.preventDefault();
-                  if (onPlaceFromShelf)
-                    onPlaceFromShelf(trayDragId, trayOverIndex ?? i);
+                  const at = trayOverIndex ?? i;
+                  if (trayDragId && onPlaceFromShelf)
+                    onPlaceFromShelf(trayDragId, at);
+                  if (rowDragId) moveTo(rowDragId, at);
                   setTrayDragId(null);
+                  setRowDragId(null);
                   setTrayOverIndex(null);
                   return;
                 }
@@ -1733,13 +2003,24 @@ export default function StudyTableColumn({
                     }
                   : undefined
               }
+              onMouseEnter={
+                outlineMode ? () => setHoverRowId(card.id) : undefined
+              }
+              onMouseLeave={
+                outlineMode
+                  ? () => {
+                      setHoverRowId((p) => (p === card.id ? null : p));
+                      setOutlineConfirmId((p) => (p === card.id ? null : p));
+                    }
+                  : undefined
+              }
               style={{
                 position: "relative",
                 display: "grid",
-                gridTemplateColumns: "28px 1fr",
+                gridTemplateColumns: outlineMode ? "1fr" : "28px 1fr",
                 alignItems: "start",
-                marginTop: isSection ? 18 : 0,
-                marginBottom: isSection ? 6 : 0,
+                marginTop: !outlineMode && isSection ? 18 : 0,
+                marginBottom: !outlineMode && isSection ? 6 : 0,
                 cursor:
                   mergeSel.length && card.kind === "scripture"
                     ? "pointer"
@@ -1764,22 +2045,66 @@ export default function StudyTableColumn({
                 transition: "opacity .12s ease",
               }}
             >
-              <span
+              {!outlineMode && (
+                <span
+                  style={{
+                    gridColumn: 1,
+                    justifySelf: "center",
+                    marginTop: 16,
+                    zIndex: 1,
+                    width: isSection ? 11 : 9,
+                    height: isSection ? 11 : 9,
+                    borderRadius: "50%",
+                    background: "var(--panel)",
+                    border: "1.5px solid " + (isSection ? "var(--pen3)" : "var(--border)"),
+                  }}
+                />
+              )}
+              <div
                 style={{
-                  gridColumn: 1,
-                  justifySelf: "center",
-                  marginTop: 16,
-                  zIndex: 1,
-                  width: isSection ? 11 : 9,
-                  height: isSection ? 11 : 9,
-                  borderRadius: "50%",
-                  background: "var(--panel)",
-                  border: "1.5px solid " + (isSection ? "var(--pen3)" : "var(--border)"),
+                  gridColumn: outlineMode ? 1 : 2,
+                  minWidth: 0,
+                  padding: outlineMode ? "1px 0" : "8px 0 8px 4px",
                 }}
-              />
-              <div style={{ gridColumn: 2, minWidth: 0, padding: "8px 0 8px 4px" }}>
-                {renderCard(card, i)}
-                <Controls id={card.id} />
+              >
+                {outlineMode && editingId !== card.id ? (
+                  denseRow(card)
+                ) : (
+                  <>
+                    {outlineMode && (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          margin: "6px 0 4px",
+                        }}
+                      >
+                        <button
+                          onClick={() => setEditingId(null)}
+                          style={{
+                            fontFamily: SANS,
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            color: "#fff",
+                            background: accent,
+                            border: 0,
+                            borderRadius: 999,
+                            padding: "4px 14px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    )}
+                    {renderCard(card, i)}
+                    <Controls id={card.id} />
+                  </>
+                )}
+                {outlineMode &&
+                  editingId !== card.id &&
+                  hoverRowId === card.id &&
+                  rowTools(card, i)}
               </div>
             </div>
           </Fragment>
@@ -1788,17 +2113,20 @@ export default function StudyTableColumn({
       <div
         style={{ paddingLeft: 32 }}
         onDragOver={(e) => {
-          if (trayDragId) {
+          if (trayDragId || rowDragId) {
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
             setTrayOverIndex(cards.length);
           }
         }}
         onDrop={(e) => {
-          if (trayDragId) {
+          if (trayDragId || rowDragId) {
             e.preventDefault();
-            if (onPlaceFromShelf) onPlaceFromShelf(trayDragId, cards.length);
+            if (trayDragId && onPlaceFromShelf)
+              onPlaceFromShelf(trayDragId, cards.length);
+            if (rowDragId) moveTo(rowDragId, cards.length);
             setTrayDragId(null);
+            setRowDragId(null);
             setTrayOverIndex(null);
           }
         }}
@@ -1817,7 +2145,7 @@ export default function StudyTableColumn({
             Your table is empty — place cards from the tray in any order.
           </div>
         )}
-        {trayDragId && trayOverIndex === cards.length && (
+        {(trayDragId || rowDragId) && trayOverIndex === cards.length && (
           <div
             style={{
               height: 3,
@@ -1938,15 +2266,15 @@ export default function StudyTableColumn({
                 shelf.forEach((c) => {
                   const key =
                     c.kind !== "scripture"
-                      ? " yours"
-                      : c.shelfGroup || " aside";
+                      ? "__yours"
+                      : c.shelfGroup || "__aside";
                   if (!groups.has(key)) groups.set(key, []);
                   groups.get(key)!.push(c);
                 });
                 const label = (k: string) =>
-                  k === " yours"
+                  k === "__yours"
                     ? "Your cards"
-                    : k === " aside"
+                    : k === "__aside"
                     ? "Set aside"
                     : k;
                 return Array.from(groups.entries()).map(([k, list]) => (
@@ -1963,7 +2291,7 @@ export default function StudyTableColumn({
                         color: "var(--muted)",
                       }}
                     >
-                      {list[0].shelfGroupColor != null && k !== " yours" && (
+                      {list[0].shelfGroupColor != null && k !== "__yours" && (
                         <span
                           style={{
                             width: 8,

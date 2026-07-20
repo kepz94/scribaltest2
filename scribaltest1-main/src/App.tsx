@@ -10769,6 +10769,7 @@ export default function App() {
           onTagTap={openTagRef}
           addShelfArrivals={tableShelfArrivals}
           onRemoveVersesFromStudy={removeVersesFromStudy}
+          setThemeLabel={setScopedLabelInBook}
         />
       )}
 
