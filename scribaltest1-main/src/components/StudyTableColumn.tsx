@@ -44,6 +44,20 @@ interface StudyTableColumnProps {
   // passes it only while the table is still Compiled · live (SCR-56): the deal
   // line stating that this act makes the table yours.
   chooserFootnote?: string;
+  // ---- The tray (SCR-57): cards waiting at the bottom of the column ----
+  // Waiting entries (verse arrivals, staged verses, cleared cards). When
+  // present, the tray pill renders after the column; it never auto-places.
+  shelf?: TableCard[];
+  // Place a waiting card. With an index (grab-drag to a drop line) it lands
+  // exactly there; without one (the Place button) the parent chooses — end of
+  // the card's theme section, else the end of the column.
+  onPlaceFromShelf?: (cardId: string, index?: number) => void;
+  // Delete a waiting VERSE from the study itself — topic tables only (Kepu's
+  // ruling); absent on chapter tables, where verses leave by unmarking. The
+  // tray confirms before calling this.
+  onDeleteFromShelf?: (cardId: string) => void;
+  // Verse text for tray row previews.
+  verseTextFor?: (reference: string) => string;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -575,7 +589,17 @@ export default function StudyTableColumn({
   onMarkCard,
   themesFor,
   chooserFootnote,
+  shelf,
+  onPlaceFromShelf,
+  onDeleteFromShelf,
+  verseTextFor,
 }: StudyTableColumnProps) {
+  // Tray state: pill vs expanded, the delete being confirmed, and the
+  // grab-drag in flight (trayOverIndex = where the drop line sits).
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [trayConfirmId, setTrayConfirmId] = useState<string | null>(null);
+  const [trayDragId, setTrayDragId] = useState<string | null>(null);
+  const [trayOverIndex, setTrayOverIndex] = useState<number | null>(null);
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
   // Newly inserted card to autofocus once.
@@ -1558,7 +1582,9 @@ export default function StudyTableColumn({
   }
 
   // ---------- empty state ----------
-  if (cards.length === 0) {
+  // Only when the tray is empty too — with cards waiting (e.g. right after
+  // Clear to tray), the main render carries the tray and its drop target.
+  if (cards.length === 0 && !(shelf && shelf.length)) {
     return (
       <div style={{ maxWidth: 660, margin: "0 auto" }}>
         {openAt === 0 ? (
@@ -1624,6 +1650,16 @@ export default function StudyTableColumn({
               onMouseEnter={() => setHoverGap(i)}
               onMouseLeave={() => setHoverGap((g) => (g === i ? null : g))}
             >
+              {trayDragId && trayOverIndex === i && (
+                <div
+                  style={{
+                    height: 3,
+                    borderRadius: 2,
+                    background: accent,
+                    margin: "5px 2px",
+                  }}
+                />
+              )}
               <AddBar index={i} show={hoverGap === i} />
               {openAt === i && <Chooser index={i} />}
             </div>
@@ -1644,6 +1680,17 @@ export default function StudyTableColumn({
                 setMergeOverId(null);
               }}
               onDragOver={(e) => {
+                // A tray card in hand: show the drop line above or below this
+                // card by pointer half — exact placement (SCR-57).
+                if (trayDragId) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setTrayOverIndex(
+                    e.clientY < r.top + r.height / 2 ? i : i + 1
+                  );
+                  return;
+                }
                 if (
                   dragId &&
                   dragId !== card.id &&
@@ -1658,6 +1705,14 @@ export default function StudyTableColumn({
                 setMergeOverId((p) => (p === card.id ? null : p))
               }
               onDrop={(e) => {
+                if (trayDragId) {
+                  e.preventDefault();
+                  if (onPlaceFromShelf)
+                    onPlaceFromShelf(trayDragId, trayOverIndex ?? i);
+                  setTrayDragId(null);
+                  setTrayOverIndex(null);
+                  return;
+                }
                 if (
                   dragId &&
                   dragId !== card.id &&
@@ -1730,10 +1785,369 @@ export default function StudyTableColumn({
           </Fragment>
         );
       })}
-      <div style={{ paddingLeft: 32 }}>
+      <div
+        style={{ paddingLeft: 32 }}
+        onDragOver={(e) => {
+          if (trayDragId) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setTrayOverIndex(cards.length);
+          }
+        }}
+        onDrop={(e) => {
+          if (trayDragId) {
+            e.preventDefault();
+            if (onPlaceFromShelf) onPlaceFromShelf(trayDragId, cards.length);
+            setTrayDragId(null);
+            setTrayOverIndex(null);
+          }
+        }}
+      >
+        {cards.length === 0 && shelf && shelf.length > 0 && (
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              color: "var(--muted)",
+              fontStyle: "italic",
+              textAlign: "center",
+              padding: "26px 10px 6px",
+            }}
+          >
+            Your table is empty — place cards from the tray in any order.
+          </div>
+        )}
+        {trayDragId && trayOverIndex === cards.length && (
+          <div
+            style={{
+              height: 3,
+              borderRadius: 2,
+              background: accent,
+              margin: "5px 2px",
+            }}
+          />
+        )}
         <AddBar index={cards.length} big />
         {openAt === cards.length && <Chooser index={cards.length} />}
       </div>
+
+      {/* ---- The tray (SCR-57): waiting cards, grouped by theme. Never
+           auto-places — Place drops at the end of the theme's section, the
+           grab handle drags to an exact spot. ---- */}
+      {shelf && shelf.length > 0 && (
+        <div style={{ paddingLeft: 32, marginTop: 16 }}>
+          {!trayOpen ? (
+            <button
+              onClick={() => setTrayOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: SANS,
+                fontSize: 13,
+                fontWeight: 600,
+                color: accent,
+                background: "var(--panel)",
+                border: "1.5px solid " + accent,
+                borderRadius: 999,
+                padding: "8px 16px",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px " + softAccent,
+              }}
+            >
+              <span
+                style={{
+                  background: accent,
+                  color: "#fff",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "1px 8px",
+                }}
+              >
+                {shelf.length}
+              </span>
+              waiting
+              <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>
+                tap to place
+              </span>
+            </button>
+          ) : (
+            <div
+              style={{
+                background: "var(--panel)",
+                border: "1.5px solid " + accent,
+                borderRadius: 13,
+                overflow: "hidden",
+                maxWidth: 560,
+                boxShadow: "0 4px 14px " + softAccent,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 13px",
+                  borderBottom: "1px solid var(--border)",
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                }}
+              >
+                <span
+                  style={{
+                    background: accent,
+                    color: "#fff",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "1px 8px",
+                  }}
+                >
+                  {shelf.length}
+                </span>
+                <span style={{ fontWeight: 600, color: accent }}>waiting</span>
+                <button
+                  onClick={() => setTrayOpen(false)}
+                  style={{
+                    marginLeft: "auto",
+                    border: 0,
+                    background: "transparent",
+                    color: "var(--muted)",
+                    cursor: "pointer",
+                    lineHeight: 0,
+                  }}
+                >
+                  <Icon d="M18 6 6 18 M6 6l12 12" size={14} />
+                </button>
+              </div>
+              {(() => {
+                // Group by theme (shelfGroup); authored cards from a clear
+                // fall under "Your cards", unlabeled verses under "Set aside".
+                const groups = new Map<string, TableCard[]>();
+                shelf.forEach((c) => {
+                  const key =
+                    c.kind !== "scripture"
+                      ? " yours"
+                      : c.shelfGroup || " aside";
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(c);
+                });
+                const label = (k: string) =>
+                  k === " yours"
+                    ? "Your cards"
+                    : k === " aside"
+                    ? "Set aside"
+                    : k;
+                return Array.from(groups.entries()).map(([k, list]) => (
+                  <div key={k}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 13px 2px",
+                        fontFamily: SANS,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {list[0].shelfGroupColor != null && k !== " yours" && (
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 3,
+                            background:
+                              COLOR_MAP[list[0].shelfGroupColor as MarkColor] ||
+                              "var(--border)",
+                          }}
+                        />
+                      )}
+                      {label(k)}
+                    </div>
+                    {list.map((c) => {
+                      const ref = (c.refs || [])[0] || "";
+                      const preview =
+                        c.kind === "scripture"
+                          ? (verseTextFor ? verseTextFor(ref) : "")
+                          : c.text || "";
+                      const rowLabel =
+                        c.kind === "scripture"
+                          ? (c.refs || []).join(", ")
+                          : c.kind === "text"
+                          ? "Your words"
+                          : c.kind.charAt(0).toUpperCase() + c.kind.slice(1);
+                      if (trayConfirmId === c.id) {
+                        return (
+                          <div
+                            key={c.id}
+                            style={{
+                              padding: "8px 13px",
+                              borderTop: "1px solid var(--border)",
+                              fontFamily: SANS,
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                              Remove {rowLabel} from this study?
+                            </div>
+                            <div
+                              style={{
+                                color: "var(--muted)",
+                                fontSize: 11.5,
+                                marginBottom: 8,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              The verse leaves this study and its table. Its
+                              marks stay in the book.
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                justifyContent: "flex-end",
+                              }}
+                            >
+                              <button
+                                onClick={() => setTrayConfirmId(null)}
+                                style={{
+                                  fontFamily: SANS,
+                                  fontSize: 11.5,
+                                  border: "1px solid var(--border)",
+                                  background: "var(--panel)",
+                                  color: "var(--text)",
+                                  borderRadius: 7,
+                                  padding: "5px 12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTrayConfirmId(null);
+                                  onDeleteFromShelf && onDeleteFromShelf(c.id);
+                                }}
+                                style={{
+                                  fontFamily: SANS,
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  border: 0,
+                                  background: "#b3452f",
+                                  color: "#fff",
+                                  borderRadius: 7,
+                                  padding: "5px 12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div
+                          key={c.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setTrayDragId(c.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            try {
+                              e.dataTransfer.setData("text/plain", c.id);
+                            } catch {}
+                          }}
+                          onDragEnd={() => {
+                            setTrayDragId(null);
+                            setTrayOverIndex(null);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 13px",
+                            borderTop: "1px solid var(--border)",
+                            fontFamily: SANS,
+                            fontSize: 12,
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "var(--muted)",
+                              cursor: "grab",
+                              fontSize: 14,
+                              lineHeight: 1,
+                            }}
+                            title="Drag to an exact spot"
+                          >
+                            ⠿
+                          </span>
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            <span style={{ fontWeight: 700, color: accent }}>
+                              {rowLabel}
+                            </span>{" "}
+                            <span
+                              style={{ color: "var(--muted)", fontFamily: SERIF }}
+                            >
+                              {preview}
+                            </span>
+                          </span>
+                          <button
+                            onClick={() =>
+                              onPlaceFromShelf && onPlaceFromShelf(c.id)
+                            }
+                            style={{
+                              fontFamily: SANS,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: "#fff",
+                              background: accent,
+                              border: 0,
+                              borderRadius: 999,
+                              padding: "4px 12px",
+                              cursor: "pointer",
+                              flex: "0 0 auto",
+                            }}
+                          >
+                            Place
+                          </button>
+                          {onDeleteFromShelf && c.kind === "scripture" && (
+                            <button
+                              onClick={() => setTrayConfirmId(c.id)}
+                              title="Remove from this study"
+                              style={{
+                                border: 0,
+                                background: "transparent",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                                lineHeight: 0,
+                                flex: "0 0 auto",
+                              }}
+                            >
+                              <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating merge bar: shown while cards are selected for merging */}
       {mergeSel.length > 0 && !mergePrompt && (

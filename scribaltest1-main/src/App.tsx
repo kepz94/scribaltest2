@@ -997,6 +997,7 @@ export default function App() {
     updateTable: updateStudyTable,
     renameTable: renameStudyTable,
     deleteTable: deleteStudyTable,
+    addShelfArrivals: tableShelfArrivals,
     mergeRemote: tablesMergeRemote,
   } = useStudyTables();
   const [openTableId, setOpenTableId] = useState<string | null>(null);
@@ -10766,6 +10767,8 @@ export default function App() {
           onOpenReader={openTableReader}
           wordTags={wordTags}
           onTagTap={openTagRef}
+          addShelfArrivals={tableShelfArrivals}
+          onRemoveVersesFromStudy={removeVersesFromStudy}
         />
       )}
 

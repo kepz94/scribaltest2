@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ACCENT } from "../theme";
-import { Mark, MarkColor, WordTag } from "../types";
+import { Mark, MarkColor, WordTag, STYLE_POINTS, COLOR_MAP } from "../types";
 import {
   StudyTable,
   TablePurpose,
@@ -100,6 +100,17 @@ interface Props {
     refBook: Record<string, string>,
     title?: string
   ) => void;
+  // Deliver mark arrivals to a table's tray (useStudyTables.addShelfArrivals);
+  // the reconciliation effect calls it whenever scope verses are missing.
+  addShelfArrivals?: (
+    id: string,
+    refs: string[],
+    extras?: Partial<
+      Pick<TableCard, "bookId" | "shelfGroup" | "shelfGroupColor">
+    >
+  ) => void;
+  // Remove verses from a topic study (the tray's confirmed delete).
+  onRemoveVersesFromStudy?: (studyId: string, refs: string[]) => void;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -153,6 +164,8 @@ export default function StudyTablesDesktop({
   openTableId,
   onConsumeOpenTable,
   onMarkVerses,
+  addShelfArrivals,
+  onRemoveVersesFromStudy,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -244,6 +257,11 @@ export default function StudyTablesDesktop({
   // from then on the system never rearranges.
   const [promoToast, setPromoToast] = useState(false);
   const promoToastTimer = useRef<number | null>(null);
+  // Coverage panel, the ⋯ table menu, and the Clear-to-tray confirm (SCR-57 /
+  // SCR-56 v2).
+  const [covOpen, setCovOpen] = useState(false);
+  const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);
   const recStudy =
     open && open.studyId
       ? recordedStudies.find((s) => s.id === open.studyId)
@@ -299,16 +317,149 @@ export default function StudyTablesDesktop({
       c.kind === "scripture" ? { ...c, bookId: bid } : c
     );
   })();
+  // ---- Study scope + coverage plumbing (SCR-57) ----
+  // The verses this table answers for: a topic study's gathered refs, or a
+  // chapter/linked study's MARKED verses across its member chapters.
+  const scopeInfo = (() => {
+    if (!open || !(recStudy || topicStudy)) return null;
+    const bid =
+      open.bookId ||
+      (topicStudy ? topicStudy.bookId : recStudy && recStudy.bookId) ||
+      "master";
+    const bk = getBook(bid);
+    let refs: string[];
+    if (topicStudy) {
+      refs = topicStudy.refs;
+    } else {
+      const scopes = new Set(
+        recStudy!.memberScopes && recStudy!.memberScopes.length
+          ? recStudy!.memberScopes
+          : [recStudy!.scopeRef]
+      );
+      const seen = new Set<string>();
+      refs = [];
+      bk.marks.forEach((m) => {
+        const ix = m.reference.indexOf(":");
+        const cs = ix < 0 ? m.reference : m.reference.slice(0, ix);
+        if (scopes.has(cs) && !seen.has(m.reference)) {
+          seen.add(m.reference);
+          refs.push(m.reference);
+        }
+      });
+      refs = sortRefs(refs);
+    }
+    return { bid, bk, refs };
+  })();
+  // A verse's theme, resolved like the card chips: dominant color by merged
+  // points, named by its scoped label (no book-level fallback).
+  const refTheme = (
+    ref: string
+  ): { color: MarkColor; label: string } | null => {
+    if (!scopeInfo || !ref) return null;
+    const ms = scopeInfo.bk.marks.filter((m) => m.reference === ref);
+    if (!ms.length) return null;
+    const w = new Map<MarkColor, number>();
+    ms.forEach((m) =>
+      w.set(m.color, (w.get(m.color) || 0) + STYLE_POINTS[m.style])
+    );
+    let color: MarkColor | null = null;
+    let best = -1;
+    w.forEach((v, c) => {
+      if (v > best) {
+        best = v;
+        color = c;
+      }
+    });
+    if (color == null) return null;
+    const ix = ref.indexOf(":");
+    const cs = ix < 0 ? ref : ref.slice(0, ix);
+    const scope = chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const scoped = scopeInfo.bk.scopedLabels?.[scope]?.[color];
+    return { color, label: ((scoped || "") as string).trim() };
+  };
+  const placedRefs = new Set<string>();
+  columnCards.forEach((c) => {
+    if (c.kind === "scripture") (c.refs || []).forEach((r) => placedRefs.add(r));
+  });
+  const shelfRefSet = new Set<string>();
+  (open ? open.shelf || [] : []).forEach((c) => {
+    if (c.kind === "scripture")
+      (c.refs || []).forEach((r) => shelfRefSet.add(r));
+  });
+  // The meter only matters once the table is yours — while Compiled · live,
+  // everything in scope is on screen by construction.
+  const coverage =
+    open && scopeInfo && isTablePromoted(open) && scopeInfo.refs.length
+      ? {
+          total: scopeInfo.refs.length,
+          placed: scopeInfo.refs.filter((r) => placedRefs.has(r)).length,
+        }
+      : null;
+  const unplacedRefs = coverage
+    ? scopeInfo!.refs.filter((r) => !placedRefs.has(r))
+    : [];
+
   // Every column mutation funnels through here: while Compiled · live, the
   // first change writes the on-screen arrangement AND the promotion stamp in
-  // one edit, and announces the deal once (no dialog).
+  // one edit, and announces the deal once (no dialog). A verse card deleted
+  // from the column RETURNS TO THE TRAY (Kepu's rule) — its refs were present
+  // before, are absent after, and still belong to the study's scope. Merges
+  // and reorders keep their refs in the column, so only real deletes return.
   const commitCards = (
     cards: TableCard[],
     extra?: Partial<Pick<StudyTable, "shelf">>
   ) => {
     if (!open) return;
+    let shelfPatch = extra ? extra.shelf : undefined;
+    if (scopeInfo) {
+      const nextRefs = new Set<string>();
+      cards.forEach((c) => {
+        if (c.kind === "scripture")
+          (c.refs || []).forEach((r) => nextRefs.add(r));
+      });
+      const scopeSet = new Set(scopeInfo.refs);
+      const returned: string[] = [];
+      columnCards.forEach((c) => {
+        if (c.kind !== "scripture") return;
+        (c.refs || []).forEach((r) => {
+          if (!nextRefs.has(r) && scopeSet.has(r)) returned.push(r);
+        });
+      });
+      if (returned.length) {
+        const baseShelf =
+          shelfPatch !== undefined ? shelfPatch : open.shelf || [];
+        const have = new Set<string>();
+        baseShelf.forEach((c) => (c.refs || []).forEach((r) => have.add(r)));
+        const now = Date.now();
+        const additions: TableCard[] = returned
+          .filter((r) => !have.has(r))
+          .map((r) => {
+            const t = refTheme(r);
+            const card: TableCard = {
+              id: newCardId(),
+              kind: "scripture",
+              refs: [r],
+              bookId: scopeInfo.bid,
+              shelfSource: "mark",
+              arrivedAt: now,
+            };
+            if (t && t.label) {
+              card.shelfGroup = t.label;
+              card.shelfGroupColor = t.color;
+            }
+            return card;
+          });
+        if (additions.length) shelfPatch = [...baseShelf, ...additions];
+      }
+    }
+    const withShelf =
+      shelfPatch !== undefined ? { shelf: shelfPatch } : {};
     if (liveCompiled) {
-      updateTable(open.id, { cards, promotedAt: Date.now(), ...extra });
+      updateTable(open.id, {
+        cards,
+        promotedAt: Date.now(),
+        ...withShelf,
+      });
       setPromoToast(true);
       if (promoToastTimer.current)
         window.clearTimeout(promoToastTimer.current);
@@ -317,9 +468,133 @@ export default function StudyTablesDesktop({
         5000
       );
     } else {
-      updateTable(open.id, { cards, ...extra });
+      updateTable(open.id, { cards, ...withShelf });
     }
   };
+
+  // Place a waiting card: at an exact index (grab-drag), else at the end of
+  // its theme's section, else the end of the column. Placement is the act
+  // that turns an arrival into an authored card — the tray-only fields drop.
+  const placeFromShelf = (cardId: string, index?: number) => {
+    if (!open) return;
+    const shelfList = open.shelf || [];
+    const card = shelfList.find((c) => c.id === cardId);
+    if (!card) return;
+    const base = columnCards;
+    let idx: number;
+    if (index !== undefined) {
+      idx = Math.max(0, Math.min(index, base.length));
+    } else if (card.kind === "scripture" && card.shelfGroup) {
+      const h = base.findIndex(
+        (c) =>
+          c.kind === "heading" && (c.text || "").trim() === card.shelfGroup
+      );
+      if (h === -1) {
+        idx = base.length;
+      } else {
+        let j = h + 1;
+        while (j < base.length && base[j].kind !== "heading") j++;
+        idx = j;
+      }
+    } else {
+      idx = base.length;
+    }
+    const placed: TableCard = { ...card };
+    delete placed.shelfSource;
+    delete placed.arrivedAt;
+    delete placed.shelfGroup;
+    delete placed.shelfGroupColor;
+    commitCards([...base.slice(0, idx), placed, ...base.slice(idx)], {
+      shelf: shelfList.filter((c) => c.id !== cardId),
+    });
+  };
+
+  // Tray delete — topic tables only (Kepu's ruling): the confirmed delete
+  // removes the verse from the STUDY itself; its marks stay in the book.
+  const deleteFromShelf = (cardId: string) => {
+    if (!open || !topicStudy || !onRemoveVersesFromStudy) return;
+    const shelfList = open.shelf || [];
+    const card = shelfList.find((c) => c.id === cardId);
+    if (!card) return;
+    updateTable(open.id, {
+      shelf: shelfList.filter((c) => c.id !== cardId),
+    });
+    if ((card.refs || []).length)
+      onRemoveVersesFromStudy(topicStudy.id, card.refs || []);
+  };
+
+  // Clear to tray (SCR-56 v2, approved): every card moves to the tray —
+  // verses AND authored cards; only GENERATED theme headings are removed
+  // (their compiled_h ids mark them). A heading the user typed is authored
+  // content and moves to the tray like everything else — nothing written is
+  // ever destroyed. On a live table this is also the promotion.
+  const clearToTray = () => {
+    if (!open) return;
+    const now = Date.now();
+    const moved: TableCard[] = columnCards
+      .filter(
+        (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
+      )
+      .map((c) => {
+        const m: TableCard = { ...c, arrivedAt: now };
+        if (c.kind === "scripture") {
+          if (!m.shelfSource) m.shelfSource = "mark";
+          if (!m.bookId && scopeInfo) m.bookId = scopeInfo.bid;
+          if (!m.shelfGroup) {
+            const t = refTheme((c.refs || [])[0] || "");
+            if (t && t.label) {
+              m.shelfGroup = t.label;
+              m.shelfGroupColor = t.color;
+            }
+          }
+        }
+        return m;
+      });
+    commitCards([], { shelf: [...(open.shelf || []), ...moved] });
+    setClearConfirm(false);
+    setTableMenuOpen(false);
+  };
+
+  // Mark arrivals (SCR-57): once the table is yours, anything in scope that
+  // is neither placed nor already waiting gets DELIVERED to the tray, grouped
+  // by theme. Runs on open and whenever marks or the table change; the hook
+  // no-ops (identity-stable) when nothing is missing.
+  useEffect(() => {
+    if (!open || !addShelfArrivals || !scopeInfo) return;
+    if (!isTablePromoted(open)) return;
+    const missing = scopeInfo.refs.filter(
+      (r) => !placedRefs.has(r) && !shelfRefSet.has(r)
+    );
+    if (!missing.length) return;
+    const byTheme = new Map<
+      string,
+      { refs: string[]; color?: MarkColor; label?: string }
+    >();
+    missing.forEach((r) => {
+      const t = refTheme(r);
+      const key = t && t.label ? t.label + "|" + t.color : "";
+      if (!byTheme.has(key))
+        byTheme.set(key, {
+          refs: [],
+          color: t ? t.color : undefined,
+          label: t && t.label ? t.label : undefined,
+        });
+      byTheme.get(key)!.refs.push(r);
+    });
+    byTheme.forEach((g) =>
+      addShelfArrivals(
+        open.id,
+        g.refs,
+        g.label
+          ? {
+              bookId: scopeInfo.bid,
+              shelfGroup: g.label,
+              shelfGroupColor: g.color,
+            }
+          : { bookId: scopeInfo.bid }
+      )
+    );
+  }, [open ? open.id : null, open ? open.updatedAt : 0, allMarks]);
 
 
   // Smooth-scroll a card into view (used by the outline rail).
@@ -864,6 +1139,30 @@ export default function StudyTablesDesktop({
             </svg>
             {saveFlash ? "Saved" : "Autosaves"}
           </span>
+          {coverage && (
+            <button
+              onClick={() => setCovOpen((o) => !o)}
+              title="Verses in this study not yet placed in the column"
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                fontWeight: 700,
+                borderRadius: 999,
+                padding: "5px 11px",
+                cursor: "pointer",
+                flex: "0 0 auto",
+                color:
+                  coverage.placed >= coverage.total ? "#3d7a26" : "#b06a2f",
+                background:
+                  coverage.placed >= coverage.total ? "#edf7e6" : "#faf0e4",
+                border:
+                  "1px solid " +
+                  (coverage.placed >= coverage.total ? "#c4e0b2" : "#ecd7bd"),
+              }}
+            >
+              {coverage.placed} of {coverage.total} placed
+            </button>
+          )}
           {example && open.id === example.id && (
             <span
               style={{
@@ -981,6 +1280,54 @@ export default function StudyTablesDesktop({
           >
             <Ico d="M8 5v14l11-7z" size={13} /> Present
           </button>
+          <div style={{ position: "relative", flex: "0 0 auto" }}>
+            <button
+              onClick={() => setTableMenuOpen((o) => !o)}
+              style={iconBtn}
+              title="Table options"
+            >
+              <Ico d="M5 12h.01 M12 12h.01 M19 12h.01" />
+            </button>
+            {tableMenuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: 44,
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  boxShadow: "0 8px 22px rgba(0,0,0,.16)",
+                  zIndex: 40,
+                  minWidth: 170,
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setTableMenuOpen(false);
+                    setClearConfirm(true);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "9px 13px",
+                    border: 0,
+                    background: "transparent",
+                    color: "#b3452f",
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear to tray…
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setConfirmId(open.id)}
             style={iconBtn}
@@ -989,6 +1336,144 @@ export default function StudyTablesDesktop({
             <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
           </button>
         </div>
+
+        {/* Coverage panel: the unplaced verses, grouped by theme, each marked
+            whether it's waiting in the tray. */}
+        {covOpen && coverage && (
+          <div
+            style={{
+              margin: "8px 0 0 42px",
+              maxWidth: 560,
+              background: "var(--panel)",
+              border: "1px solid #ecd7bd",
+              borderRadius: 12,
+              padding: "10px 14px",
+              fontFamily: SANS,
+              fontSize: 12,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                color: unplacedRefs.length ? "#b06a2f" : "#3d7a26",
+                marginBottom: unplacedRefs.length ? 6 : 0,
+              }}
+            >
+              {unplacedRefs.length
+                ? "Not yet placed — " +
+                  unplacedRefs.length +
+                  (unplacedRefs.length === 1 ? " verse" : " verses")
+                : "Everything is placed"}
+            </div>
+            {unplacedRefs.map((r) => {
+              const t = refTheme(r);
+              return (
+                <div
+                  key={r}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "3px 0",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      flex: "0 0 auto",
+                      background: t ? COLOR_MAP[t.color] : "var(--border)",
+                    }}
+                  />
+                  <span style={{ fontWeight: 700, color: accent }}>{r}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {shelfRefSet.has(r) ? "in tray" : "not in tray"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Clear-to-tray confirm (SCR-56 v2, approved): nothing is deleted. */}
+        {clearConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              zIndex: 90,
+              display: "grid",
+              placeItems: "center",
+            }}
+            onClick={() => setClearConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: 14,
+                padding: "18px 20px",
+                maxWidth: 420,
+                margin: 16,
+                fontFamily: SANS,
+                boxShadow: "0 18px 50px rgba(0,0,0,.3)",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+                Clear this table to the tray?
+              </div>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--muted)",
+                  lineHeight: 1.55,
+                  marginBottom: 14,
+                }}
+              >
+                Every card moves to the tray — verses and anything you've
+                written. Theme headings are removed. You'll rebuild the column
+                in exactly the order you want; nothing is deleted.
+              </div>
+              <div
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  onClick={() => setClearConfirm(false)}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={clearToTray}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: 0,
+                    background: "#b3452f",
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear to tray
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Compiled · live: the quiet caption is the only state signal (no
             chip — Kepu's ruling). It disappears the moment the table is yours. */}
@@ -1077,6 +1562,17 @@ export default function StudyTablesDesktop({
                   ? "This makes the table yours — from here it keeps your order, and new marks wait in the tray instead of moving things."
                   : undefined
               }
+              shelf={open.shelf || []}
+              onPlaceFromShelf={placeFromShelf}
+              onDeleteFromShelf={
+                topicStudy && onRemoveVersesFromStudy
+                  ? deleteFromShelf
+                  : undefined
+              }
+              verseTextFor={(r) => {
+                const rec = getVerse(r);
+                return rec ? rec.text : "";
+              }}
             />
           </div>
           {panelOpen && (

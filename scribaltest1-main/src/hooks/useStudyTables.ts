@@ -128,9 +128,11 @@ export interface StudyTable {
   // Tombstone. A table counts as deleted only while the delete is its newest
   // action (>= nameAt and updatedAt), so a later edit or rename revives it.
   deletedAt?: number;
-  // Verses set aside for this table but not yet placed in the column — a staging
-  // shelf. Holds scripture cards only; each is moved into `cards` when the user
-  // decides where it goes. Syncs last-write like `cards`.
+  // Cards set aside for this table but not yet placed in the column — the
+  // tray. Mostly scripture (staged verses + mark arrivals); Clear-to-tray also
+  // parks the user's authored cards here so nothing written is ever destroyed.
+  // Each entry moves into `cards` when the user decides where it goes. Syncs
+  // last-write like `cards`.
   shelf?: TableCard[];
   // Table-as-notes lifecycle (ADR-007 §3): stamped by the first authoring act
   // (insert / drag / delete). Until then the table is Compiled · live — its
@@ -244,8 +246,9 @@ export function useStudyTables() {
     refs: string[],
     extras?: Partial<Pick<TableCard, "bookId" | "shelfGroup" | "shelfGroupColor">>
   ) => {
-    setTables((prev) =>
-      prev.map((t) => {
+    setTables((prev) => {
+      let changed = false;
+      const next = prev.map((t) => {
         if (t.id !== id) return t;
         const have = new Set<string>();
         t.cards.forEach((c) => (c.refs || []).forEach((r) => have.add(r)));
@@ -254,6 +257,7 @@ export function useStudyTables() {
         );
         const fresh = refs.filter((r) => !have.has(r));
         if (!fresh.length) return t;
+        changed = true;
         const now = Date.now();
         const arrivals: TableCard[] = fresh.map((r) => ({
           id: newCardId(),
@@ -268,8 +272,11 @@ export function useStudyTables() {
           shelf: [...(t.shelf || []), ...arrivals],
           updatedAt: now,
         };
-      })
-    );
+      });
+      // Identity-stable when nothing arrived, so a reconciliation effect can
+      // call this every pass without churning state or sync.
+      return changed ? next : prev;
+    });
   };
 
   // Soft-delete: tombstone the table (kept, stamped) so the deletion travels to
