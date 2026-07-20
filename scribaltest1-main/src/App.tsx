@@ -3282,6 +3282,25 @@ export default function App() {
     return out;
   };
 
+  // SCR-59 (ADR-007 §2): every study opens ITS table. The attached table is
+  // created lazily on first open — named after the study, opening in the
+  // Compiled · live preset (SCR-56). No dialog.
+  const openStudyTable = (studyId: string, name: string, bookId?: string) => {
+    const existing = studyTables.find((t) => t.studyId === studyId);
+    const id = existing
+      ? existing.id
+      : createStudyTable(name || "Study", undefined, bookId, studyId);
+    setOpenTableId(id);
+    setMode("table");
+  };
+  // Where the gather animation lands when it finishes: the study's table
+  // (SCR-59), or the legacy compile screen for study-less compiles (drafts).
+  const [compileLandsOn, setCompileLandsOn] = useState<null | {
+    studyId: string;
+    name: string;
+    bookId?: string;
+  }>(null);
+
   const runCompile = (tabIds: string[], animate = true) => {
     setCompileVirtualTabs(null);
     setCompileStudyId(null);
@@ -3291,6 +3310,12 @@ export default function App() {
     // from an existing record for this scope, else the chapter label(s).
     const unitTabs = tabs.filter((t) => ids.includes(t.id));
     let defName = unitTabs.map((t) => tabLabel(t)).join("  +  ");
+    // SCR-59: Compile lands on the study's table. Resolve the chapter/linked
+    // study for this scope — recording it silently when none exists yet (the
+    // study IS the chapter; the explicit save step is gone with the compile
+    // destination).
+    let landing: { studyId: string; name: string; bookId?: string } | null =
+      null;
     if (unitTabs.length) {
       const gid = chapterGroups[chapterScopeOf(unitTabs[0])];
       const isLinked =
@@ -3305,14 +3330,27 @@ export default function App() {
           s.scopeRef === scopeRef
       );
       if (ex) defName = ex.name;
+      const studyId = ex
+        ? ex.id
+        : recordStudy(
+            type,
+            activeBookId,
+            scopeRef,
+            defName,
+            undefined,
+            isLinked ? unitTabs.map((t) => chapterScopeOf(t)) : undefined
+          );
+      landing = { studyId, name: defName, bookId: activeBookId };
     }
     setCompileName(defName);
     // Opening an existing study jumps straight to its notes; only the Compile
     // button plays the gather animation.
     if (!animate) {
-      setMode("compile");
+      if (landing) openStudyTable(landing.studyId, landing.name, landing.bookId);
+      else setMode("compile");
       return;
     }
+    setCompileLandsOn(landing);
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -3347,9 +3385,14 @@ export default function App() {
     // Reopening from the Studies list jumps straight to the notes — the gather
     // animation is only for the act of compiling while marking.
     if (!animate) {
-      setMode("compile");
+      openStudyTable(study.id, study.name, study.bookId);
       return;
     }
+    setCompileLandsOn({
+      studyId: study.id,
+      name: study.name,
+      bookId: study.bookId,
+    });
     const lastCount = Number(
       localStorage.getItem("scribal_last_compile_count") || "0"
     );
@@ -3543,7 +3586,18 @@ export default function App() {
 
   const finishCompileAnim = () => {
     setCompileAnim((a) => ({ ...a, show: false }));
-    setMode("compile");
+    // SCR-59: the gather lands on the study's table; only study-less compiles
+    // (loose drafts) still fall back to the legacy compile screen.
+    if (compileLandsOn) {
+      openStudyTable(
+        compileLandsOn.studyId,
+        compileLandsOn.name,
+        compileLandsOn.bookId
+      );
+      setCompileLandsOn(null);
+    } else {
+      setMode("compile");
+    }
   };
 
   const toggleCompileTab = (id: string) => {

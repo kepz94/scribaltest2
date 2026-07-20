@@ -156,11 +156,15 @@ export default function StudyTablesDesktop({
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Deep-link: when the shell asks for a specific table (e.g. tapped in the
-  // Studies hub), open it and clear the request.
+  // Deep-link: when the shell asks for a specific table (a study opened via
+  // Studies/Compile, or a send-sheet drop), open it and clear the request.
+  // Entered this way, the back arrow returns to the READING screen (SCR-59) —
+  // the tables list is only home when the user came from it.
+  const [cameFromShell, setCameFromShell] = useState(false);
   useEffect(() => {
     if (openTableId) {
       setOpenId(openTableId);
+      setCameFromShell(true);
       onConsumeOpenTable?.();
     }
   }, [openTableId]);
@@ -803,9 +807,13 @@ export default function StudyTablesDesktop({
             onClick={() => {
               setExample(null);
               setOpenId(null);
+              if (cameFromShell) {
+                setCameFromShell(false);
+                onClose();
+              }
             }}
             style={iconBtn}
-            title="Back to your tables"
+            title={cameFromShell ? "Back to reading" : "Back to your tables"}
           >
             <Ico d="M15 6l-6 6 6 6" />
           </button>

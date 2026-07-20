@@ -65,6 +65,9 @@ export function useStudies() {
 
   // Compile is the save: record this chapter/linked group, or refresh an
   // existing record's name + timestamp.
+  // Returns the study's id — the one updated when this scope already has a
+  // record (tombstoned included, since an upsert revives it), else the fresh
+  // one being inserted. SCR-59's lazy table attachment needs it synchronously.
   const recordStudy = (
     type: "chapter" | "linked",
     bookId: string,
@@ -72,7 +75,12 @@ export function useStudies() {
     name: string,
     view?: "outline" | "charting" | "distilled" | "covenants" | "semantic",
     memberScopes?: string[]
-  ) => {
+  ): string => {
+    const existing = studies.find(
+      (s) => s.type === type && s.bookId === bookId && s.scopeRef === scopeRef
+    );
+    const freshId =
+      "study_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
     setStudies((prev) => {
       const now = Date.now();
       const i = prev.findIndex(
@@ -101,7 +109,7 @@ export function useStudies() {
       }
       return [
         {
-          id: "study_" + now + "_" + Math.random().toString(36).slice(2, 7),
+          id: freshId,
           type,
           bookId,
           name,
@@ -114,6 +122,7 @@ export function useStudies() {
         ...prev,
       ];
     });
+    return existing ? existing.id : freshId;
   };
 
   // Soft-delete: tombstone the study (keep the record, stamped) so the deletion
