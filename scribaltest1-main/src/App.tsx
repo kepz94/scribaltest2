@@ -3302,14 +3302,24 @@ export default function App() {
     bookId?: string;
   }>(null);
 
-  const runCompile = (tabIds: string[], animate = true) => {
+  // opts carries the compile's context explicitly when the caller just
+  // created it — a tab added via setTabs (or a book via setActiveBook) in the
+  // same handler isn't in state yet, and resolving from stale state was the
+  // sometimes-opens-the-old-outline bug (Kepu, Jul 20).
+  const runCompile = (
+    tabIds: string[],
+    animate = true,
+    opts?: { unitTabs?: Tab[]; bookId?: string }
+  ) => {
     setCompileVirtualTabs(null);
     setCompileStudyId(null);
     const ids = tabIds.length ? tabIds : tabs.map((t) => t.id);
     setCompileSelection(ids);
+    const bid = (opts && opts.bookId) || activeBookId;
     // Saving is now an explicit step (Save to Studies). Seed the name field
     // from an existing record for this scope, else the chapter label(s).
-    const unitTabs = tabs.filter((t) => ids.includes(t.id));
+    const unitTabs =
+      (opts && opts.unitTabs) || tabs.filter((t) => ids.includes(t.id));
     let defName = unitTabs.map((t) => tabLabel(t)).join("  +  ");
     // SCR-59: Compile lands on the study's table. Resolve the chapter/linked
     // study for this scope — recording it silently when none exists yet (the
@@ -3326,29 +3336,27 @@ export default function App() {
       const scopeRef = isLinked ? gid : chapterScopeOf(unitTabs[0]);
       const ex = recordedStudies.find(
         (s) =>
-          s.type === type &&
-          s.bookId === activeBookId &&
-          s.scopeRef === scopeRef
+          s.type === type && s.bookId === bid && s.scopeRef === scopeRef
       );
       if (ex) defName = ex.name;
       const studyId = ex
         ? ex.id
         : recordStudy(
             type,
-            activeBookId,
+            bid,
             scopeRef,
             defName,
             undefined,
             isLinked ? unitTabs.map((t) => chapterScopeOf(t)) : undefined
           );
-      landing = { studyId, name: defName, bookId: activeBookId };
+      landing = { studyId, name: defName, bookId: bid };
     }
     setCompileName(defName);
     // Opening an existing study jumps straight to its notes; only the Compile
-    // button plays the gather animation.
+    // button plays the gather animation. The old compile screen is no longer
+    // a landing anywhere (Kepu, Jul 20) — with nothing to compile, stay put.
     if (!animate) {
       if (landing) openStudyTable(landing.studyId, landing.name, landing.bookId);
-      else setMode("compile");
       return;
     }
     setCompileLandsOn(landing);
@@ -3537,7 +3545,9 @@ export default function App() {
           a.volume - b.volume || a.book - b.book || a.chapter - b.chapter
       );
     const tabIds = virtualTabs.map((t) => t.id);
-    runCompile(tabIds);
+    // The group's chapters are mostly NOT open as tabs — hand runCompile the
+    // synthetic ones so it resolves the linked study instead of a fragment.
+    runCompile(tabIds, true, { unitTabs: virtualTabs });
     setCompileVirtualTabs(virtualTabs);
     const linkedRec = recordedStudies.find(
       (s) =>
@@ -3567,28 +3577,27 @@ export default function App() {
     absorb(id, activeBookId, refs);
     setActiveBook(id);
     const newTabId = makeTabId(id, t.volume, t.book, t.chapter);
+    const newTab: Tab = {
+      id: newTabId,
+      volume: t.volume,
+      book: t.book,
+      chapter: t.chapter,
+      bookId: id,
+    };
     setTabs((prev) =>
-      prev.some((x) => x.id === newTabId)
-        ? prev
-        : [
-            ...prev,
-            {
-              id: newTabId,
-              volume: t.volume,
-              book: t.book,
-              chapter: t.chapter,
-              bookId: id,
-            },
-          ]
+      prev.some((x) => x.id === newTabId) ? prev : [...prev, newTab]
     );
     setActiveTabId(newTabId);
-    runCompile([newTabId]);
+    // The tab AND the session book were created this very handler — neither
+    // is in state yet, so hand both to runCompile explicitly.
+    runCompile([newTabId], true, { unitTabs: [newTab], bookId: id });
   };
 
   const finishCompileAnim = () => {
     setCompileAnim((a) => ({ ...a, show: false }));
-    // SCR-59: the gather lands on the study's table; only study-less compiles
-    // (loose drafts) still fall back to the legacy compile screen.
+    // SCR-59: the gather lands on the study's table. The legacy compile
+    // screen is DELETED as a landing (Kepu, Jul 20) — a gather that somehow
+    // resolved no study returns to reading instead of the old outline.
     if (compileLandsOn) {
       openStudyTable(
         compileLandsOn.studyId,
@@ -3597,7 +3606,7 @@ export default function App() {
       );
       setCompileLandsOn(null);
     } else {
-      setMode("compile");
+      setMode("read");
     }
   };
 
@@ -4008,13 +4017,11 @@ export default function App() {
       scopeSet.has(scopeOfRef(m.reference))
     );
     if (hasMarks) {
-      runCompile(tabIds, false);
-      // Title the notes with the study's own name. runCompile derives a name
-      // from the OPEN tabs, but only one chapter is open here, so set it directly.
-      setCompileName(s.name);
-      // Only a linked group needs virtual tabs (its other chapters aren't open);
-      // a single chapter is already the one open tab.
-      if (locs.length > 1) setCompileVirtualTabs(virtualTabs);
+      // Straight to THIS study's table. Routing through runCompile re-resolved
+      // the study from tab state that was set two lines up (still stale) —
+      // which silently recorded duplicate studies and sometimes fell back to
+      // the old outline screen (Kepu's sometimes-outline bug, Jul 20).
+      openStudyTable(s.id, s.name, s.bookId);
     } else {
       setMode("read");
     }
