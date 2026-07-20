@@ -332,16 +332,20 @@ export default function StudyTablesDesktop({
             .map((v) => ({ reference: v.reference, order: v.order }));
         })();
     // A heading's name resolves like the card theme chips do: the scoped label
-    // (chapter/group) of that color's marked verses — no book-level fallback.
+    // (chapter/group) of THIS study's marked verses. The scan must stay inside
+    // the study's own scope — unscoped it took the first labeled mark of that
+    // color anywhere in the book, so every study inherited one chapter study's
+    // theme names (Kepu, Jul 20).
     const scopeOf = (ref: string) => {
       const ix = ref.indexOf(":");
       return ix < 0 ? ref : ref.slice(0, ix);
     };
     const resolveScope = (cs: string) =>
       chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const inScopeRefs = new Set(entries.map((e) => e.reference));
     const themeName = (color: MarkColor): string => {
       for (const m of bk.marks) {
-        if (m.color !== color) continue;
+        if (m.color !== color || !inScopeRefs.has(m.reference)) continue;
         const scoped = bk.scopedLabels?.[resolveScope(scopeOf(m.reference))]?.[
           color
         ];
