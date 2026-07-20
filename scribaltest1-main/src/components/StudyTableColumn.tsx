@@ -1835,7 +1835,17 @@ export default function StudyTableColumn({
            auto-places — Place drops at the end of the theme's section, the
            grab handle drags to an exact spot. ---- */}
       {shelf && shelf.length > 0 && (
-        <div style={{ paddingLeft: 32, marginTop: 16 }}>
+        <div
+          style={{
+            paddingLeft: 32,
+            marginTop: 16,
+            // Docked: while the column is longer than the screen, the tray
+            // rides the bottom edge until its natural spot scrolls into view.
+            position: "sticky",
+            bottom: 12,
+            zIndex: 30,
+          }}
+        >
           {!trayOpen ? (
             <button
               onClick={() => setTrayOpen(true)}
