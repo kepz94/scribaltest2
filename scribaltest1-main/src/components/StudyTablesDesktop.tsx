@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ACCENT } from "../theme";
 import { Mark, MarkColor, WordTag } from "../types";
 import {
@@ -6,7 +6,9 @@ import {
   TablePurpose,
   TableCard,
   newCardId,
+  isTablePromoted,
 } from "../hooks/useStudyTables";
+import { compiledCards } from "../outlineAssembly";
 import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
@@ -24,7 +26,7 @@ import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
 import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
-import { getVerse, sortRefs } from "../data/verseIndex";
+import { getVerse, sortRefs, verseList } from "../data/verseIndex";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
 // one open table (its name, purpose, and the column surface). This owns the
@@ -68,7 +70,12 @@ interface Props {
   ) => string;
   updateTable: (
     id: string,
-    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
+    changes: Partial<
+      Pick<
+        StudyTable,
+        "name" | "cards" | "purpose" | "shelf" | "studyId" | "promotedAt"
+      >
+    >
   ) => void;
   renameTable: (id: string, name: string) => void;
   deleteTable: (id: string) => void;
@@ -225,6 +232,91 @@ export default function StudyTablesDesktop({
     return () => window.clearTimeout(t);
   }, [openUpdatedAt]);
 
+  // ---- Table-as-notes lifecycle (SCR-56, ADR-007 §3) ----
+  // A study-attached table that hasn't been promoted is Compiled · live: its
+  // column is GENERATED from the study's marks (the Outline arrangement —
+  // themes as headings, verses in canon order) and re-sorts as marks change.
+  // The first authoring act persists what's on screen and stamps promotedAt;
+  // from then on the system never rearranges.
+  const [promoToast, setPromoToast] = useState(false);
+  const promoToastTimer = useRef<number | null>(null);
+  const recStudy =
+    open && open.studyId
+      ? recordedStudies.find((s) => s.id === open.studyId)
+      : undefined;
+  const topicStudy =
+    open && open.studyId
+      ? searchStudies.find((s) => s.id === open.studyId)
+      : undefined;
+  const liveCompiled =
+    !!open && !isTablePromoted(open) && !!(recStudy || topicStudy);
+  const columnCards: TableCard[] = (() => {
+    if (!open) return [];
+    if (!liveCompiled) return open.cards;
+    const bid =
+      open.bookId ||
+      (topicStudy ? topicStudy.bookId : recStudy && recStudy.bookId) ||
+      "master";
+    const bk = getBook(bid);
+    // Compile scope: a topic study's gathered refs in their saved order; a
+    // chapter study's member chapters' verses in canon order.
+    const entries = topicStudy
+      ? topicStudy.refs.map((r, i) => ({ reference: r, order: i }))
+      : (() => {
+          const scopes = new Set(
+            recStudy!.memberScopes && recStudy!.memberScopes.length
+              ? recStudy!.memberScopes
+              : [recStudy!.scopeRef]
+          );
+          return verseList
+            .filter((v) => scopes.has(v.chapterRef))
+            .map((v) => ({ reference: v.reference, order: v.order }));
+        })();
+    // A heading's name resolves like the card theme chips do: the scoped label
+    // (chapter/group) of that color's marked verses — no book-level fallback.
+    const scopeOf = (ref: string) => {
+      const ix = ref.indexOf(":");
+      return ix < 0 ? ref : ref.slice(0, ix);
+    };
+    const resolveScope = (cs: string) =>
+      chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const themeName = (color: MarkColor): string => {
+      for (const m of bk.marks) {
+        if (m.color !== color) continue;
+        const scoped = bk.scopedLabels?.[resolveScope(scopeOf(m.reference))]?.[
+          color
+        ];
+        const label = ((scoped || "") as string).trim();
+        if (label) return label;
+      }
+      return "";
+    };
+    return compiledCards(entries, bk.marks, themeName).map((c) =>
+      c.kind === "scripture" ? { ...c, bookId: bid } : c
+    );
+  })();
+  // Every column mutation funnels through here: while Compiled · live, the
+  // first change writes the on-screen arrangement AND the promotion stamp in
+  // one edit, and announces the deal once (no dialog).
+  const commitCards = (
+    cards: TableCard[],
+    extra?: Partial<Pick<StudyTable, "shelf">>
+  ) => {
+    if (!open) return;
+    if (liveCompiled) {
+      updateTable(open.id, { cards, promotedAt: Date.now(), ...extra });
+      setPromoToast(true);
+      if (promoToastTimer.current)
+        window.clearTimeout(promoToastTimer.current);
+      promoToastTimer.current = window.setTimeout(
+        () => setPromoToast(false),
+        5000
+      );
+    } else {
+      updateTable(open.id, { cards, ...extra });
+    }
+  };
+
 
   // Smooth-scroll a card into view (used by the outline rail).
   const scrollToCard = (id: string) => {
@@ -281,10 +373,9 @@ export default function StudyTablesDesktop({
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
     const newCards = makeScriptureCards(refs, asPassage, bookId);
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), ...newCards, ...open.cards.slice(idx)],
-    });
+    const base = columnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    commitCards([...base.slice(0, idx), ...newCards, ...base.slice(idx)]);
     setPendingIndex(idx + newCards.length);
   };
 
@@ -306,9 +397,9 @@ export default function StudyTablesDesktop({
     const shelf = open.shelf || [];
     const card = shelf.find((c) => c.id === cardId);
     if (!card) return;
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), card, ...open.cards.slice(idx)],
+    const base = columnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    commitCards([...base.slice(0, idx), card, ...base.slice(idx)], {
       shelf: shelf.filter((c) => c.id !== cardId),
     });
     setPendingIndex(idx + 1);
@@ -317,9 +408,9 @@ export default function StudyTablesDesktop({
     if (!open) return;
     const shelf = open.shelf || [];
     if (shelf.length === 0) return;
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), ...shelf, ...open.cards.slice(idx)],
+    const base = columnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    commitCards([...base.slice(0, idx), ...shelf, ...base.slice(idx)], {
       shelf: [],
     });
     setPendingIndex(idx + shelf.length);
@@ -358,7 +449,7 @@ export default function StudyTablesDesktop({
   const markAllVerses = () => {
     if (!open || !onMarkVerses) return;
     const { refs, refBook } = collectMarkTargets([
-      ...open.cards,
+      ...columnCards,
       ...(open.shelf || []),
     ]);
     onMarkVerses(refs, refBook, "Mark verses · " + (open.name || "table"));
@@ -380,7 +471,7 @@ export default function StudyTablesDesktop({
     onMarkVerses(refs, refBook, "Mark verse");
   };
   const markTargetCount = open
-    ? collectMarkTargets([...open.cards, ...(open.shelf || [])]).refs.length
+    ? collectMarkTargets([...columnCards, ...(open.shelf || [])]).refs.length
     : 0;
 
   // Theme chips for one scripture card: the colors marked on its verses, each
@@ -701,7 +792,7 @@ export default function StudyTablesDesktop({
 
   // ---------------- EDITOR ----------------
   if (open) {
-    const sections = open.cards.filter((c) => c.kind === "heading");
+    const sections = columnCards.filter((c) => c.kind === "heading");
     const hasRail = sections.length > 0;
     const editorMax = 780 + (hasRail ? 200 : 0) + (panelOpen ? 386 : 0);
     return (
@@ -789,7 +880,7 @@ export default function StudyTablesDesktop({
                 // Open at the table's own scripture — the first scripture
                 // card (column, then shelf) — instead of the reader's
                 // Genesis 1 default (SCR-16).
-                const sc = [...open.cards, ...(open.shelf || [])].find(
+                const sc = [...columnCards, ...(open.shelf || [])].find(
                   (cd) => cd.kind === "scripture" && (cd.refs || []).length
                 );
                 onOpenReader(
@@ -857,10 +948,10 @@ export default function StudyTablesDesktop({
             </button>
           )}
           <button
-            onClick={() => open.cards.length > 0 && setPresenting(true)}
-            disabled={open.cards.length === 0}
+            onClick={() => columnCards.length > 0 && setPresenting(true)}
+            disabled={columnCards.length === 0}
             title={
-              open.cards.length === 0
+              columnCards.length === 0
                 ? "Add cards first — the column becomes the lesson"
                 : "Present this table, beat by beat"
             }
@@ -873,8 +964,8 @@ export default function StudyTablesDesktop({
               border: 0,
               borderRadius: 999,
               padding: "9px 16px",
-              opacity: open.cards.length === 0 ? 0.4 : 1,
-              cursor: open.cards.length === 0 ? "not-allowed" : "pointer",
+              opacity: columnCards.length === 0 ? 0.4 : 1,
+              cursor: columnCards.length === 0 ? "not-allowed" : "pointer",
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
@@ -890,6 +981,22 @@ export default function StudyTablesDesktop({
             <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
           </button>
         </div>
+
+        {/* Compiled · live: the quiet caption is the only state signal (no
+            chip — Kepu's ruling). It disappears the moment the table is yours. */}
+        {liveCompiled && (
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 11.5,
+              fontStyle: "italic",
+              color: "var(--muted)",
+              padding: "4px 0 0 42px",
+            }}
+          >
+            Arranged from your marks — it re-sorts until you make it yours.
+          </div>
+        )}
 
         {/* purpose */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "10px 0 22px", paddingLeft: 42 }}>
@@ -950,13 +1057,18 @@ export default function StudyTablesDesktop({
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <StudyTableColumn
-              cards={open.cards}
-              onChange={(cards) => updateTable(open.id, { cards })}
+              cards={columnCards}
+              onChange={commitCards}
               accent={accent}
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
               onMarkCard={onMarkVerses ? markCardVerses : undefined}
               themesFor={cardThemes}
+              chooserFootnote={
+                liveCompiled
+                  ? "This makes the table yours — from here it keeps your order, and new marks wait in the tray instead of moving things."
+                  : undefined
+              }
             />
           </div>
           {panelOpen && (
@@ -989,6 +1101,31 @@ export default function StudyTablesDesktop({
           )}
         </div>
 
+        {/* One-time promotion announcement — the same deal line, as a toast,
+            so drag/delete promotions (no insert sheet there) still hear it. */}
+        {promoToast && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 26,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "var(--text)",
+              color: "var(--bg)",
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 600,
+              borderRadius: 999,
+              padding: "10px 20px",
+              boxShadow: "0 10px 28px rgba(0,0,0,.28)",
+              zIndex: 80,
+              whiteSpace: "nowrap",
+            }}
+          >
+            This table is yours now — new marks will wait in the tray.
+          </div>
+        )}
+
         {confirmId === open.id && (
           <ConfirmDelete
             name={open.name}
@@ -1004,7 +1141,7 @@ export default function StudyTablesDesktop({
 
         {presenting && (
           <StudyTablePresent
-            table={open}
+            table={liveCompiled ? { ...open, cards: columnCards } : open}
             renderVerse={renderVerse}
             themesFor={cardThemes}
             accent={accent}
@@ -1019,7 +1156,7 @@ export default function StudyTablesDesktop({
                   string,
                   { color: number; label: string }[]
                 > = {};
-                [...open.cards, ...(open.shelf || [])].forEach((c) => {
+                [...columnCards, ...(open.shelf || [])].forEach((c) => {
                   if (c.kind !== "scripture" || !c.refs || !c.refs.length)
                     return;
                   const bid = c.bookId || open.bookId || "master";
@@ -1037,7 +1174,11 @@ export default function StudyTablesDesktop({
                 });
                 const code = newRoomCode();
                 await createRoom(code, {
-                  tableJson: JSON.stringify(redactTableForRoom(open)),
+                  tableJson: JSON.stringify(
+                    // Presenting a Compiled · live table performs what's on
+                    // screen — the generated arrangement — without promoting.
+                    redactTableForRoom({ ...open, cards: columnCards })
+                  ),
                   marksJson: JSON.stringify(marks),
                   themesJson: JSON.stringify(themes),
                 });

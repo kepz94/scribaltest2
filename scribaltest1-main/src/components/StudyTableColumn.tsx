@@ -40,6 +40,10 @@ interface StudyTableColumnProps {
     refs: string[],
     bookId?: string
   ) => { color: number; label: string }[];
+  // One quiet line pinned to the bottom of the add-a-card chooser. The parent
+  // passes it only while the table is still Compiled · live (SCR-56): the deal
+  // line stating that this act makes the table yours.
+  chooserFootnote?: string;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -570,6 +574,7 @@ export default function StudyTableColumn({
   onPickScripture,
   onMarkCard,
   themesFor,
+  chooserFootnote,
 }: StudyTableColumnProps) {
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
@@ -1533,6 +1538,20 @@ export default function StudyTableColumn({
               </button>
             ))}
           </div>
+          {chooserFootnote && (
+            <div
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                color: "var(--muted)",
+                fontStyle: "italic",
+                lineHeight: 1.5,
+                padding: "8px 6px 2px",
+              }}
+            >
+              {chooserFootnote}
+            </div>
+          )}
         </div>
       </div>
     );
