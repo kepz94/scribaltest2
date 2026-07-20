@@ -27,7 +27,11 @@ interface StudyTableColumnProps {
   accent?: string;
   // Render one verse (its text + the marks from a chosen book) for a scripture
   // card. Supplied by the parent, which owns the marks; absent in previews.
-  renderVerse?: (reference: string, bookId?: string) => React.ReactNode;
+  renderVerse?: (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ) => React.ReactNode;
   // Picking "Scripture" from the chooser opens the verse panel at this insert
   // index instead of dropping an empty card. Absent → falls back to an empty card.
   onPickScripture?: (index: number) => void;
@@ -67,7 +71,11 @@ interface StudyTableColumnProps {
   live?: boolean;
   // Focused = only the marked fragments of each verse; full = whole verse.
   verseView?: "full" | "focused";
-  renderVerseFocused?: (reference: string, bookId?: string) => React.ReactNode;
+  renderVerseFocused?: (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ) => React.ReactNode;
   onRenameTheme?: (color: MarkColor, name: string) => void;
 }
 
@@ -1532,6 +1540,17 @@ export default function StudyTableColumn({
     const n = Number(card.id.slice("compiled_h".length));
     return n >= 1 && n <= 10 ? (n as MarkColor) : null;
   };
+  // The pen governing a card's section: the nearest heading above it, when
+  // that heading is a compiled theme. Verses under it render ONLY that color
+  // (Kepu, Jul 20 — red only shows in red); under an authored heading (or no
+  // heading) a verse wears all its colors as before.
+  const sectionColorAt = (i: number): MarkColor | undefined => {
+    for (let j = i; j >= 0; j--) {
+      if (cards[j].kind === "heading")
+        return compiledHeadingColor(cards[j]) ?? undefined;
+    }
+    return undefined;
+  };
   const denseLine = (
     card: TableCard,
     color: string,
@@ -1572,7 +1591,7 @@ export default function StudyTableColumn({
       {extra ? <span style={{ color: "var(--muted)" }}> — {extra}</span> : null}
     </div>
   );
-  const denseRow = (card: TableCard) => {
+  const denseRow = (card: TableCard, themeColor?: MarkColor) => {
     if (card.kind === "heading") {
       const hc = compiledHeadingColor(card);
       return (
@@ -1642,9 +1661,9 @@ export default function StudyTableColumn({
             {refs.map((r) => (
               <div key={r} data-vref={r}>
                 {verseView === "focused" && renderVerseFocused
-                  ? renderVerseFocused(r, card.bookId)
+                  ? renderVerseFocused(r, card.bookId, themeColor)
                   : renderVerse
-                  ? renderVerse(r, card.bookId)
+                  ? renderVerse(r, card.bookId, themeColor)
                   : r}
               </div>
             ))}
@@ -2068,7 +2087,7 @@ export default function StudyTableColumn({
                 }}
               >
                 {outlineMode && editingId !== card.id ? (
-                  denseRow(card)
+                  denseRow(card, sectionColorAt(i))
                 ) : (
                   <>
                     {outlineMode && (

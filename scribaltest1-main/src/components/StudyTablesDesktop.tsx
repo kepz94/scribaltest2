@@ -279,16 +279,17 @@ export default function StudyTablesDesktop({
   const [covOpen, setCovOpen] = useState(false);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
-  // Focused | Full verse rendering (Kepu: keep Focused as an option; Full is
-  // the default). Display-only, remembered per table, never synced.
-  const [verseView, setVerseView] = useState<"full" | "focused">("full");
+  // Focused | Full verse rendering (Kepu, Jul 20: Focused IS the spec's
+  // Compact — tables open in it; Full is the flip). Display-only, remembered
+  // per table, never synced.
+  const [verseView, setVerseView] = useState<"full" | "focused">("focused");
   useEffect(() => {
     if (!open) return;
     try {
       const v = localStorage.getItem("scribal_table_view_" + open.id);
-      setVerseView(v === "focused" ? "focused" : "full");
+      setVerseView(v === "full" ? "full" : "focused");
     } catch {
-      setVerseView("full");
+      setVerseView("focused");
     }
   }, [open ? open.id : null]);
   const flipVerseView = (v: "full" | "focused") => {
@@ -674,7 +675,14 @@ export default function StudyTablesDesktop({
   // Render one verse's text + the marks from a specific book (undefined = an
   // empty, unmarked verse). Same MarkedVerse the reader uses + that book's real
   // marks, so a card shows exactly the marking that book has on the verse.
-  const renderVerse = (reference: string, bookId?: string): React.ReactNode => {
+  // themeColor (Kepu, Jul 20): inside a compiled theme section only that pen's
+  // marks render — other colors' words show as plain text; the verse repeats
+  // under each theme it's marked in, wearing only that theme's color.
+  const renderVerse = (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ): React.ReactNode => {
     const rec = getVerse(reference);
     if (!rec)
       return (
@@ -682,7 +690,9 @@ export default function StudyTablesDesktop({
           {reference} — not found
         </span>
       );
-    const bookMarks = bookId ? getBook(bookId).marks : [];
+    const bookMarks = (bookId ? getBook(bookId).marks : []).filter(
+      (m) => themeColor == null || m.color === themeColor
+    );
     return (
       <MarkedVerse
         reference={reference}
@@ -699,7 +709,8 @@ export default function StudyTablesDesktop({
   // style + color (merged runs per color, SCR-12 semantics), joined inline.
   const renderVerseFocused = (
     reference: string,
-    bookId?: string
+    bookId?: string,
+    themeColor?: MarkColor
   ): React.ReactNode => {
     const rec = getVerse(reference);
     if (!rec)
@@ -709,7 +720,9 @@ export default function StudyTablesDesktop({
         </span>
       );
     const ms = (bookId ? getBook(bookId).marks : []).filter(
-      (m) => m.reference === reference
+      (m) =>
+        m.reference === reference &&
+        (themeColor == null || m.color === themeColor)
     );
     const colors = Array.from(new Set(ms.map((m) => m.color)));
     const frags = colors
@@ -2455,6 +2468,13 @@ function OutlineRail({
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {sections.map((s) => {
           const label = (s.text || "").trim() || "Untitled section";
+          // A compiled theme heading carries its pen in the id — the rail
+          // shows the same color dot the section header wears (Kepu, Jul 20).
+          const n =
+            s.id.indexOf("compiled_h") === 0
+              ? Number(s.id.slice("compiled_h".length))
+              : NaN;
+          const dot = n >= 1 && n <= 10 ? COLOR_MAP[n as MarkColor] : null;
           return (
             <button
               key={s.id}
@@ -2471,11 +2491,10 @@ function OutlineRail({
                 fontSize: 13,
                 lineHeight: 1.35,
                 color: "var(--text)",
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
                 width: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = hexToRgba(accent, 0.09);
@@ -2486,7 +2505,26 @@ function OutlineRail({
                 e.currentTarget.style.color = "var(--text)";
               }}
             >
-              {label}
+              {dot && (
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: dot,
+                    flex: "0 0 auto",
+                  }}
+                />
+              )}
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {label}
+              </span>
             </button>
           );
         })}
