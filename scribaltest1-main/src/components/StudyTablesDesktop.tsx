@@ -274,11 +274,12 @@ export default function StudyTablesDesktop({
   // from then on the system never rearranges.
   const [promoToast, setPromoToast] = useState(false);
   const promoToastTimer = useRef<number | null>(null);
-  // Coverage panel, the ⋯ table menu, and the Clear-to-tray confirm (SCR-57 /
-  // SCR-56 v2).
+  // Coverage panel and the two table-action confirms (SCR-57 / SCR-56 v2;
+  // Kepu Jul 22: both actions are visible header buttons, each behind a
+  // confirm that says what it will do).
   const [covOpen, setCovOpen] = useState(false);
-  const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [organizeConfirm, setOrganizeConfirm] = useState(false);
   // Focused | Full verse rendering (Kepu, Jul 20: Focused IS the spec's
   // Compact — tables open in it; Full is the flip). Display-only, remembered
   // per table, never synced.
@@ -309,9 +310,11 @@ export default function StudyTablesDesktop({
       : undefined;
   const liveCompiled =
     !!open && !isTablePromoted(open) && !!(recStudy || topicStudy);
-  const columnCards: TableCard[] = (() => {
-    if (!open) return [];
-    if (!liveCompiled) return open.cards;
+  // The compiled outline arrangement for the open table's study — the live
+  // column's source, and what "Organize as outline" rebuilds a promoted
+  // column into.
+  const buildCompiledColumn = (): TableCard[] => {
+    if (!open || !(recStudy || topicStudy)) return [];
     const bid =
       open.bookId ||
       (topicStudy ? topicStudy.bookId : recStudy && recStudy.bookId) ||
@@ -360,7 +363,12 @@ export default function StudyTablesDesktop({
     return compiledCards(entries, bk.marks, themeName).map((c) =>
       c.kind === "scripture" ? { ...c, bookId: bid } : c
     );
-  })();
+  };
+  const columnCards: TableCard[] = !open
+    ? []
+    : liveCompiled
+    ? buildCompiledColumn()
+    : open.cards;
   // ---- Study scope + coverage plumbing (SCR-57) ----
   // The verses this table answers for: a topic study's gathered refs, or a
   // chapter/linked study's MARKED verses across its member chapters.
@@ -624,7 +632,57 @@ export default function StudyTablesDesktop({
       });
     commitCards([], { shelf: [...(open.shelf || []), ...moved] });
     setClearConfirm(false);
-    setTableMenuOpen(false);
+  };
+
+  // Organize as outline (Kepu, Jul 22): recompile the study into the column —
+  // theme headings with their verses in scripture order, exactly the compiled
+  // starting state. Authored cards can't be auto-placed (the system never
+  // interprets), so they move to the tray; tray verses the fresh outline
+  // covers come out (they're placed now); a placed verse the compile no
+  // longer covers drops to the tray instead of vanishing. Nothing written is
+  // ever destroyed. Only meaningful on a promoted table — a live one already
+  // is the outline.
+  const canOrganize = !!open && !liveCompiled && !!(recStudy || topicStudy);
+  const organizeAsOutline = () => {
+    if (!canOrganize || !open) return;
+    const fresh = buildCompiledColumn();
+    const freshRefs = new Set<string>();
+    fresh.forEach((c) => (c.refs || []).forEach((r) => freshRefs.add(r)));
+    const now = Date.now();
+    const toTray: TableCard[] = columnCards
+      .filter(
+        (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
+      )
+      .filter(
+        (c) =>
+          c.kind !== "scripture" ||
+          (c.refs || []).some((r) => !freshRefs.has(r))
+      )
+      .map((c) => {
+        const m: TableCard = { ...c, arrivedAt: now };
+        if (c.kind === "scripture") {
+          if (!m.shelfSource) m.shelfSource = "mark";
+          if (!m.bookId && scopeInfo) m.bookId = scopeInfo.bid;
+          if (!m.shelfGroup) {
+            const t = refTheme((c.refs || [])[0] || "");
+            if (t && t.label) {
+              m.shelfGroup = t.label;
+              m.shelfGroupColor = t.color;
+            }
+          }
+        }
+        return m;
+      });
+    const keptShelf = (open.shelf || []).filter(
+      (c) =>
+        !(
+          c.kind === "scripture" &&
+          (c.refs || []).length &&
+          (c.refs || []).every((r) => freshRefs.has(r))
+        )
+    );
+    commitCards(fresh, { shelf: [...keptShelf, ...toTray] });
+    setOrganizeConfirm(false);
   };
 
   // Mark arrivals (SCR-57): once the table is yours, anything in scope that
@@ -1445,54 +1503,50 @@ export default function StudyTablesDesktop({
               </button>
             ))}
           </div>
-          <div style={{ position: "relative", flex: "0 0 auto" }}>
-            <button
-              onClick={() => setTableMenuOpen((o) => !o)}
-              style={iconBtn}
-              title="Table options"
-            >
-              <Ico d="M5 12h.01 M12 12h.01 M19 12h.01" />
-            </button>
-            {tableMenuOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: 44,
-                  background: "var(--panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 10,
-                  boxShadow: "0 8px 22px rgba(0,0,0,.16)",
-                  zIndex: 40,
-                  minWidth: 170,
-                  fontFamily: SANS,
-                  fontSize: 12.5,
-                }}
-              >
-                <button
-                  onClick={() => {
-                    setTableMenuOpen(false);
-                    setClearConfirm(true);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "9px 13px",
-                    border: 0,
-                    background: "transparent",
-                    color: "#b3452f",
-                    fontFamily: SANS,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Clear to tray…
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => canOrganize && setOrganizeConfirm(true)}
+            title={
+              canOrganize
+                ? "Rebuild the column as the compiled outline"
+                : "A live table already is the outline"
+            }
+            style={{
+              fontFamily: SANS,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--text)",
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              padding: "6px 13px",
+              flex: "0 0 auto",
+              opacity: canOrganize ? 1 : 0.4,
+              cursor: canOrganize ? "pointer" : "not-allowed",
+            }}
+          >
+            Organize as outline
+          </button>
+          <button
+            onClick={() =>
+              columnCards.length > 0 && setClearConfirm(true)
+            }
+            title="Move every card to the tray"
+            style={{
+              fontFamily: SANS,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "#b3452f",
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              padding: "6px 13px",
+              flex: "0 0 auto",
+              opacity: columnCards.length > 0 ? 1 : 0.4,
+              cursor: columnCards.length > 0 ? "pointer" : "not-allowed",
+            }}
+          >
+            Clear to tray
+          </button>
           <button
             onClick={() => setConfirmId(open.id)}
             style={iconBtn}
@@ -1634,6 +1688,87 @@ export default function StudyTablesDesktop({
                   }}
                 >
                   Clear to tray
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Organize-as-outline confirm (Kepu, Jul 22): nothing is deleted. */}
+        {organizeConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              zIndex: 90,
+              display: "grid",
+              placeItems: "center",
+            }}
+            onClick={() => setOrganizeConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: 14,
+                padding: "18px 20px",
+                maxWidth: 420,
+                margin: 16,
+                fontFamily: SANS,
+                boxShadow: "0 18px 50px rgba(0,0,0,.3)",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+                Organize this table as the outline?
+              </div>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--muted)",
+                  lineHeight: 1.55,
+                  marginBottom: 14,
+                }}
+              >
+                The column is rebuilt as the study compiles today — theme
+                headings with their verses in scripture order. Everything
+                you've written moves to the tray to be re-placed where you
+                want; verses waiting in the tray are placed into the outline.
+                Nothing is deleted.
+              </div>
+              <div
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  onClick={() => setOrganizeConfirm(false)}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={organizeAsOutline}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: 0,
+                    background: accent,
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Organize as outline
                 </button>
               </div>
             </div>

@@ -1722,24 +1722,6 @@ export default function StudyTableColumn({
         zIndex: 5,
       }}
     >
-      <span
-        draggable
-        onDragStart={(e) => {
-          setRowDragId(card.id);
-          e.dataTransfer.effectAllowed = "move";
-          try {
-            e.dataTransfer.setData("text/plain", card.id);
-          } catch {}
-        }}
-        onDragEnd={() => {
-          setRowDragId(null);
-          setTrayOverIndex(null);
-        }}
-        title="Drag to move"
-        style={{ ...toolBtn, cursor: "grab" }}
-      >
-        ⠿
-      </span>
       {card.kind === "scripture" && (
         <button
           onClick={() => setEditingId(card.id)}
@@ -2036,7 +2018,7 @@ export default function StudyTableColumn({
               style={{
                 position: "relative",
                 display: "grid",
-                gridTemplateColumns: outlineMode ? "1fr" : "28px 1fr",
+                gridTemplateColumns: outlineMode ? "20px 1fr" : "28px 1fr",
                 alignItems: "start",
                 marginTop: !outlineMode && isSection ? 18 : 0,
                 marginBottom: !outlineMode && isSection ? 6 : 0,
@@ -2079,9 +2061,41 @@ export default function StudyTableColumn({
                   }}
                 />
               )}
+              {outlineMode && (
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    setRowDragId(card.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    try {
+                      e.dataTransfer.setData("text/plain", card.id);
+                    } catch {}
+                  }}
+                  onDragEnd={() => {
+                    setRowDragId(null);
+                    setTrayOverIndex(null);
+                  }}
+                  title="Drag to move"
+                  style={{
+                    gridColumn: 1,
+                    justifySelf: "start",
+                    alignSelf: "start",
+                    marginTop: card.kind === "heading" ? 15 : 2,
+                    fontSize: 11,
+                    lineHeight: "16px",
+                    color: "var(--muted)",
+                    opacity: rowDragId === card.id ? 1 : 0.5,
+                    cursor: "grab",
+                    userSelect: "none",
+                    zIndex: 4,
+                  }}
+                >
+                  ⠿
+                </span>
+              )}
               <div
                 style={{
-                  gridColumn: outlineMode ? 1 : 2,
+                  gridColumn: 2,
                   minWidth: 0,
                   padding: outlineMode ? "1px 0" : "8px 0 8px 4px",
                 }}
