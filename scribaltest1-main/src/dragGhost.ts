@@ -46,35 +46,86 @@ export function setVerseDragImage(
           .join(" · ") + (verses.length > 4 ? " …" : "");
       g.appendChild(more);
     }
-    document.body.appendChild(g);
+    mountGhost(e, dt, g, "right");
+  } catch {
+    /* the drag still works with the browser's default image */
+  }
+}
 
-    // Blank out the native (faded) ghost.
-    const blank = document.createElement("canvas");
-    blank.width = 1;
-    blank.height = 1;
-    blank.style.cssText = "position:fixed;top:-10px;left:-10px;";
-    document.body.appendChild(blank);
-    dt.setDragImage(blank, 0, 0);
+// The shared mount: blank out the native (faded) ghost and move the card
+// along the pointer at full opacity. `anchor` says which top corner rides
+// the pointer — "right" when the grabber sits at the row's right end,
+// "left" when it sits at the row's left (the table column's handles).
+function mountGhost(
+  e: { clientX?: number; clientY?: number },
+  dt: DataTransfer,
+  g: HTMLElement,
+  anchor: "left" | "right"
+): void {
+  document.body.appendChild(g);
 
-    const place = (x: number, y: number) => {
-      g.style.left = x - Math.max(0, g.offsetWidth - 18) + "px";
-      g.style.top = y - 18 + "px";
-    };
-    if (typeof e.clientX === "number" && typeof e.clientY === "number")
-      place(e.clientX, e.clientY);
-    const move = (ev: DragEvent) => {
-      if (ev.clientX || ev.clientY) place(ev.clientX, ev.clientY);
-    };
-    const cleanup = () => {
-      document.removeEventListener("dragover", move);
-      document.removeEventListener("dragend", cleanup);
-      document.removeEventListener("drop", cleanup);
-      if (g.parentNode) g.parentNode.removeChild(g);
-      if (blank.parentNode) blank.parentNode.removeChild(blank);
-    };
-    document.addEventListener("dragover", move);
-    document.addEventListener("dragend", cleanup);
-    document.addEventListener("drop", cleanup);
+  const blank = document.createElement("canvas");
+  blank.width = 1;
+  blank.height = 1;
+  blank.style.cssText = "position:fixed;top:-10px;left:-10px;";
+  document.body.appendChild(blank);
+  dt.setDragImage(blank, 0, 0);
+
+  const place = (x: number, y: number) => {
+    g.style.left =
+      (anchor === "right" ? x - Math.max(0, g.offsetWidth - 18) : x - 18) +
+      "px";
+    g.style.top = y - 18 + "px";
+  };
+  if (typeof e.clientX === "number" && typeof e.clientY === "number")
+    place(e.clientX, e.clientY);
+  const move = (ev: DragEvent) => {
+    if (ev.clientX || ev.clientY) place(ev.clientX, ev.clientY);
+  };
+  const cleanup = () => {
+    document.removeEventListener("dragover", move);
+    document.removeEventListener("dragend", cleanup);
+    document.removeEventListener("drop", cleanup);
+    if (g.parentNode) g.parentNode.removeChild(g);
+    if (blank.parentNode) blank.parentNode.removeChild(blank);
+  };
+  document.addEventListener("dragover", move);
+  document.addEventListener("dragend", cleanup);
+  document.addEventListener("drop", cleanup);
+}
+
+// Drag image for any table card: same full-opacity follow as the verse
+// grabbers, anchored top-LEFT (the table's handles sit at the row's left).
+// `title` is the card's kind or reference line, `body` a content snippet,
+// `accent` the card's color (theme pen / the surface accent).
+export function setCardDragImage(
+  e: { dataTransfer: DataTransfer | null; clientX?: number; clientY?: number },
+  title: string,
+  body?: string,
+  accent = "#3b82f6"
+): void {
+  try {
+    const dt = e.dataTransfer;
+    if (!dt || typeof dt.setDragImage !== "function") return;
+    const g = document.createElement("div");
+    g.style.cssText =
+      "position:fixed;top:-1000px;left:-1000px;max-width:340px;z-index:9999;" +
+      "padding:10px 13px;border-radius:12px;border:1.5px solid " + accent + ";" +
+      "background:var(--panel,#fff);color:var(--text,#292524);" +
+      "font-family:system-ui,sans-serif;font-size:12.5px;line-height:1.5;" +
+      "box-shadow:0 12px 30px rgba(0,0,0,.28);pointer-events:none;";
+    const head = document.createElement("div");
+    head.style.cssText =
+      "font-weight:700;font-size:11.5px;margin-bottom:2px;color:" + accent + ";";
+    head.textContent = title;
+    g.appendChild(head);
+    const t = (body || "").trim();
+    if (t) {
+      const b = document.createElement("div");
+      b.textContent = t.length > 140 ? t.slice(0, 140) + "…" : t;
+      g.appendChild(b);
+    }
+    mountGhost(e, dt, g, "left");
   } catch {
     /* the drag still works with the browser's default image */
   }

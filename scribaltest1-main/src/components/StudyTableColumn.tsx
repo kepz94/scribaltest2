@@ -9,6 +9,7 @@ import {
   QuestionType,
   newCardId,
 } from "../hooks/useStudyTables";
+import { setVerseDragImage, setCardDragImage } from "../dragGhost";
 
 // The COLUMN surface of a Study Table: an ordered stack of cards you build by
 // hand. The order is the lesson. This component only renders + edits the column
@@ -2018,7 +2019,7 @@ export default function StudyTableColumn({
               style={{
                 position: "relative",
                 display: "grid",
-                gridTemplateColumns: outlineMode ? "20px 1fr" : "28px 1fr",
+                gridTemplateColumns: outlineMode ? "30px 1fr" : "28px 1fr",
                 alignItems: "start",
                 marginTop: !outlineMode && isSection ? 18 : 0,
                 marginBottom: !outlineMode && isSection ? 6 : 0,
@@ -2070,6 +2071,34 @@ export default function StudyTableColumn({
                     try {
                       e.dataTransfer.setData("text/plain", card.id);
                     } catch {}
+                    // The card itself follows the pointer — the reading
+                    // panel grabber's ghost (Kepu, Jul 22).
+                    if (card.kind === "scripture") {
+                      setVerseDragImage(
+                        e,
+                        (card.refs || []).map((r) => ({
+                          reference: r,
+                          text: verseTextFor ? verseTextFor(r) : "",
+                        }))
+                      );
+                    } else {
+                      const title =
+                        card.kind === "heading"
+                          ? card.text || "Heading"
+                          : (TYPES.find((t) => t.kind === card.kind) || {
+                              name: "Card",
+                            }).name;
+                      setCardDragImage(
+                        e,
+                        title,
+                        card.kind === "heading"
+                          ? undefined
+                          : card.kind === "clip"
+                          ? card.clipTitle || card.url
+                          : card.text,
+                        accent
+                      );
+                    }
                   }}
                   onDragEnd={() => {
                     setRowDragId(null);
@@ -2080,13 +2109,21 @@ export default function StudyTableColumn({
                     gridColumn: 1,
                     justifySelf: "start",
                     alignSelf: "start",
-                    marginTop: card.kind === "heading" ? 15 : 2,
+                    marginTop: card.kind === "heading" ? 12 : 0,
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    border: "1px solid var(--grabBorder)",
+                    background: "var(--grabBg)",
+                    color: "var(--grabFg)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                     fontSize: 11,
-                    lineHeight: "16px",
-                    color: "var(--muted)",
-                    opacity: rowDragId === card.id ? 1 : 0.5,
+                    fontFamily: "system-ui, sans-serif",
                     cursor: "grab",
                     userSelect: "none",
+                    WebkitUserSelect: "none",
                     zIndex: 4,
                   }}
                 >
