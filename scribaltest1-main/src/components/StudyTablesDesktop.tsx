@@ -1878,8 +1878,16 @@ export default function StudyTablesDesktop({
               verseView={verseView}
               renderVerseFocused={renderVerseFocused}
               onRenameTheme={setThemeLabel ? renameTheme : undefined}
+              traySide={!panelOpen}
+              trayTop={headerOffset + 14}
             />
           </div>
+          {/* Reserve the right column for the fixed tray panel so it never
+              overlaps the cards it places (Kepu, Jul 22). The verse picker
+              takes this slot when open — the tray falls back to its pill. */}
+          {!panelOpen && (open.shelf || []).length > 0 && (
+            <div style={{ width: 288, flex: "0 0 auto" }} />
+          )}
           {panelOpen && (
             <VersePicker
               onAdd={addVerses}

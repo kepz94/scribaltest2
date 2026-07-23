@@ -78,6 +78,13 @@ interface StudyTableColumnProps {
     themeColor?: MarkColor
   ) => React.ReactNode;
   onRenameTheme?: (color: MarkColor, name: string) => void;
+  // Tray dock (Kepu, Jul 22): true = the tray is a fixed right-side panel,
+  // always open while cards wait (desktop; the verse picker takes precedence —
+  // the caller passes false while it's open, falling back to the bottom pill).
+  // Absent/false = the sticky bottom pill (mobile, and the fallback).
+  traySide?: boolean;
+  // Top offset for the side panel (below the app's sticky header).
+  trayTop?: number;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -614,6 +621,8 @@ export default function StudyTableColumn({
   onDeleteFromShelf,
   verseTextFor,
   outlineMode,
+  traySide,
+  trayTop,
   live,
   verseView = "full",
   renderVerseFocused,
@@ -2232,19 +2241,36 @@ export default function StudyTableColumn({
       {/* ---- The tray (SCR-57): waiting cards, grouped by theme. Never
            auto-places — Place drops at the end of the theme's section, the
            grab handle drags to an exact spot. ---- */}
-      {shelf && shelf.length > 0 && (
+      {shelf && shelf.length > 0 && (() => {
+        const sideDock = !!traySide && !!outlineMode;
+        return (
         <div
-          style={{
-            paddingLeft: 32,
-            marginTop: 16,
-            // Docked: while the column is longer than the screen, the tray
-            // rides the bottom edge until its natural spot scrolls into view.
-            position: "sticky",
-            bottom: 12,
-            zIndex: 30,
-          }}
+          style={
+            sideDock
+              ? {
+                  // Right-side dock (Kepu, Jul 22): a fixed panel while cards
+                  // wait, so the tray never covers the column it places into.
+                  position: "fixed",
+                  right: 14,
+                  top: trayTop || 90,
+                  width: 274,
+                  maxHeight: "calc(100vh - " + ((trayTop || 90) + 24) + "px)",
+                  overflowY: "auto",
+                  zIndex: 30,
+                }
+              : {
+                  paddingLeft: 32,
+                  marginTop: 16,
+                  // Docked: while the column is longer than the screen, the
+                  // tray rides the bottom edge until its natural spot scrolls
+                  // into view.
+                  position: "sticky",
+                  bottom: 12,
+                  zIndex: 30,
+                }
+          }
         >
-          {!trayOpen ? (
+          {!sideDock && !trayOpen ? (
             <button
               onClick={() => setTrayOpen(true)}
               style={{
@@ -2287,7 +2313,7 @@ export default function StudyTableColumn({
                 border: "1.5px solid " + accent,
                 borderRadius: 13,
                 overflow: "hidden",
-                maxWidth: 560,
+                maxWidth: sideDock ? undefined : 560,
                 boxShadow: "0 4px 14px " + softAccent,
               }}
             >
@@ -2315,19 +2341,31 @@ export default function StudyTableColumn({
                   {shelf.length}
                 </span>
                 <span style={{ fontWeight: 600, color: accent }}>waiting</span>
-                <button
-                  onClick={() => setTrayOpen(false)}
-                  style={{
-                    marginLeft: "auto",
-                    border: 0,
-                    background: "transparent",
-                    color: "var(--muted)",
-                    cursor: "pointer",
-                    lineHeight: 0,
-                  }}
-                >
-                  <Icon d="M18 6 6 18 M6 6l12 12" size={14} />
-                </button>
+                {sideDock ? (
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      color: "var(--muted)",
+                      fontSize: 10.5,
+                    }}
+                  >
+                    drag or Place
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setTrayOpen(false)}
+                    style={{
+                      marginLeft: "auto",
+                      border: 0,
+                      background: "transparent",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      lineHeight: 0,
+                    }}
+                  >
+                    <Icon d="M18 6 6 18 M6 6l12 12" size={14} />
+                  </button>
+                )}
               </div>
               {(() => {
                 // Group by theme (shelfGroup); authored cards from a clear
@@ -2457,6 +2495,10 @@ export default function StudyTableColumn({
                           </div>
                         );
                       }
+                      const rowColor =
+                        c.kind === "scripture" && c.shelfGroupColor != null
+                          ? COLOR_MAP[c.shelfGroupColor as MarkColor]
+                          : undefined;
                       return (
                         <div
                           key={c.id}
@@ -2467,46 +2509,99 @@ export default function StudyTableColumn({
                             try {
                               e.dataTransfer.setData("text/plain", c.id);
                             } catch {}
+                            // The card follows the pointer, as everywhere.
+                            if (c.kind === "scripture") {
+                              setVerseDragImage(
+                                e,
+                                (c.refs || []).map((r) => ({
+                                  reference: r,
+                                  text: verseTextFor ? verseTextFor(r) : "",
+                                }))
+                              );
+                            } else {
+                              setCardDragImage(e, rowLabel, c.text, accent);
+                            }
                           }}
                           onDragEnd={() => {
                             setTrayDragId(null);
                             setTrayOverIndex(null);
                           }}
+                          title="Drag to an exact spot"
                           style={{
                             display: "flex",
-                            alignItems: "center",
+                            alignItems: "flex-start",
                             gap: 8,
-                            padding: "6px 13px",
+                            padding: sideDock ? "8px 12px" : "6px 13px",
                             borderTop: "1px solid var(--border)",
                             fontFamily: SANS,
                             fontSize: 12,
+                            cursor: "grab",
                           }}
                         >
                           <span
                             style={{
-                              color: "var(--muted)",
+                              width: 20,
+                              height: 20,
+                              borderRadius: 6,
+                              border: "1px solid var(--grabBorder)",
+                              background: "var(--grabBg)",
+                              color: "var(--grabFg)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              fontFamily: "system-ui, sans-serif",
+                              flex: "0 0 auto",
                               cursor: "grab",
-                              fontSize: 14,
-                              lineHeight: 1,
+                              userSelect: "none",
+                              WebkitUserSelect: "none",
                             }}
-                            title="Drag to an exact spot"
                           >
                             ⠿
                           </span>
-                          <span
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            <span style={{ fontWeight: 700, color: accent }}>
-                              {rowLabel}
-                            </span>{" "}
+                          <span style={{ flex: 1, minWidth: 0 }}>
                             <span
-                              style={{ color: "var(--muted)", fontFamily: SERIF }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                minWidth: 0,
+                              }}
+                            >
+                              {rowColor && (
+                                <span
+                                  style={{
+                                    width: 9,
+                                    height: 9,
+                                    borderRadius: 3,
+                                    background: rowColor,
+                                    flex: "0 0 auto",
+                                  }}
+                                />
+                              )}
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  color: accent,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {rowLabel}
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                display: "block",
+                                color: "var(--muted)",
+                                fontFamily: SERIF,
+                                fontSize: 11.5,
+                                lineHeight: 1.45,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
                             >
                               {preview}
                             </span>
@@ -2555,7 +2650,8 @@ export default function StudyTableColumn({
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Floating merge bar: shown while cards are selected for merging */}
       {mergeSel.length > 0 && !mergePrompt && (
