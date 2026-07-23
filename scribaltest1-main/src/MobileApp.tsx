@@ -2248,19 +2248,31 @@ export default function MobileApp() {
     }
     const first = study.refs[0];
     const cl = first ? chapterLoc.get(refScope(first)) : undefined;
+    const id = newTabId();
     setTabs([
       ...tabs,
       {
-        id: "studytab_" + study.id,
+        id,
         v: cl ? cl.v : loc.v,
         b: cl ? cl.b : loc.b,
         c: cl ? cl.c : loc.c,
         studyId: study.id,
       },
     ]);
-    setActiveTabId("studytab_" + study.id);
+    setActiveTabId(id);
     setOpenStudyId(study.id);
     setScreensOpen(false);
+  };
+  // Leaving the study screen inside a tab turns it back into a plain reading
+  // tab, so switching back later lands on the last screen used there — not a
+  // forced reopen of the study. The active-tab effect handles the book restore.
+  const leaveStudyTab = () => {
+    setOpenStudyId(null);
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId && t.studyId ? { ...t, studyId: undefined } : t
+      )
+    );
   };
   const openStudyTabById = (id: string) => {
     const st = searchStudies.find((s) => s.id === id);
@@ -8425,7 +8437,7 @@ export default function MobileApp() {
               >
                 <button
                   onClick={() => {
-                    setOpenStudyId(null);
+                    leaveStudyTab();
                     setHomeOpen(true);
                   }}
                   aria-label="Home"
