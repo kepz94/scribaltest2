@@ -1435,48 +1435,10 @@ export default function App() {
 
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
 
-  // The study-table READER DOCK: a docked reading panel beside the open table.
-  // Browse any chapter with the real reader + marking toolbar, marks land in
-  // the table's marks home, dictionary tags work, and "Send verses" drops the
-  // chosen verses onto the table's shelf (Selected).
-  const [tableReader, setTableReader] = useState<{
-    tableId: string;
-    bookId: string;
-  } | null>(null);
-  const [trLoc, setTrLoc] = useState<{ v: number; b: number; c: number }>({
-    v: 0,
-    b: 0,
-    c: 0,
-  });
-  const [trJump, setTrJump] = useState<string | null>(null);
-  // Verse refs mid-drag from the reader's grabbers (null = no drag). The
-  // table surface listens so its column can catch the drop.
-  const [readerDrag, setReaderDrag] = useState<{ refs: string[] } | null>(
-    null
-  );
-  const openTableReader = (tableId: string, bookId: string, atRef?: string) => {
-    if (atRef) {
-      const cut = atRef.lastIndexOf(":");
-      const scope = cut > 0 ? atRef.slice(0, cut) : atRef;
-      const loc = chapterLoc.get(scope);
-      if (loc) setTrLoc({ v: loc.volume, b: loc.book, c: loc.chapter });
-      setTrJump(atRef);
-    }
-    setTableReader({ tableId, bookId });
-  };
-  const sendReaderVersesToTable = (refs: string[]) => {
-    if (!tableReader || refs.length === 0) return;
-    const t = studyTables.find((x) => x.id === tableReader.tableId);
-    if (!t) return;
-    const cards: TableCard[] = refs.map((r) => ({
-      id: newCardId(),
-      kind: "scripture" as const,
-      refs: [r],
-      bookId: tableReader.bookId,
-      shelfGroup: "Sent from reading",
-    }));
-    updateStudyTable(t.id, { shelf: [...(t.shelf || []), ...cards] });
-  };
+  // The study-table Scripture dock lives inside StudyTablesDesktop (unified
+  // Read | Search dock, Kepu Jul 23); App only tracks whether its Read tab is
+  // up so the global MarkingToolbar shows with it.
+  const [tableDockMarking, setTableDockMarking] = useState(false);
 
   // Desktop search is a set of persistent reading-row panels (SCR-28), not a
   // toggled overlay. Each open panel carries its own context: a plain panel is
@@ -10776,158 +10738,20 @@ export default function App() {
           openTableId={openTableId}
           onConsumeOpenTable={() => setOpenTableId(null)}
           onMarkVerses={openTableMarkPanel}
-          onOpenReader={openTableReader}
           wordTags={wordTags}
           onTagTap={openTagRef}
           addShelfArrivals={tableShelfArrivals}
           onRemoveVersesFromStudy={removeVersesFromStudy}
           setThemeLabel={setScopedLabelInBook}
-          readerDrag={
-            tableReader && readerDrag
-              ? { refs: readerDrag.refs, bookId: tableReader.bookId }
-              : null
-          }
-          leftInset={tableReader ? 452 : 0}
+          selectedTool={selectedTool}
+          selectedColor={selectedColor}
+          onChangeTool={setSelectedTool}
+          onChangeColor={setSelectedColor}
+          addMarksToBook={addMarksToBook}
+          deleteMarkInBook={deleteMarkInBook}
+          onDefine={handleDefine}
+          onReadMarkingChange={setTableDockMarking}
         />
-      )}
-
-      {/* READER DOCK for the open study table: browse, mark, define, send */}
-      {tableReader && (
-        <div
-          style={{
-            // Left dock (Kepu, Jul 22): the reader pops up on the LEFT of the
-            // table — the tray keeps the right — a notch narrower than the
-            // regular reader.
-            position: "fixed",
-            top: headerH,
-            left: 0,
-            bottom: 0,
-            width: "min(440px, 94vw)",
-            zIndex: 60,
-            display: "flex",
-            flexDirection: "column",
-            background: "var(--panel)",
-            borderRight: "1px solid var(--border)",
-            boxShadow: "18px 0 40px -28px rgba(0,0,0,.35)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 14px",
-              borderBottom: "1px solid var(--border)",
-              flex: "0 0 auto",
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text)" }}>
-                Reader
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 2,
-                }}
-              >
-                <span style={{ fontSize: 11.5, color: "var(--muted)", flex: "0 0 auto" }}>
-                  Marks go to
-                </span>
-                <select
-                  value={tableReader.bookId}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "__new") {
-                      const name = window.prompt("Name the new session:");
-                      if (name && name.trim()) {
-                        const id = createSession(name.trim());
-                        setTableReader((p) => (p ? { ...p, bookId: id } : p));
-                      }
-                      return;
-                    }
-                    setTableReader((p) => (p ? { ...p, bookId: v } : p));
-                  }}
-                  style={{
-                    fontFamily: "inherit",
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: "var(--text)",
-                    background: "var(--soft)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 7,
-                    padding: "3px 6px",
-                    maxWidth: 170,
-                  }}
-                >
-                  {books.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.isMaster ? "Master Chapter Book" : b.name || "Session"}
-                    </option>
-                  ))}
-                  <option value="__new">＋ New session…</option>
-                </select>
-                <span style={{ fontSize: 11.5, color: "var(--muted)", flex: "0 0 auto" }}>
-                  · Send → Selected
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setTableReader(null)}
-              aria-label="Close reader"
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "var(--panel)",
-                color: "var(--muted)",
-                cursor: "pointer",
-                display: "grid",
-                placeItems: "center",
-                lineHeight: 0,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <VerseViewer
-              selectedVolume={trLoc.v}
-              selectedBook={trLoc.b}
-              selectedChapter={trLoc.c}
-              onChange={(v, b, c) => setTrLoc({ v, b, c })}
-              selectedTool={selectedTool}
-              selectedColor={selectedColor}
-              onChangeTool={setSelectedTool}
-              onChangeColor={setSelectedColor}
-              onMark={(reference, verseText, markedText, startIndex, endIndex, style, color) =>
-                addMarksToBook(tableReader.bookId, [
-                  { reference, verseText, markedText, startIndex, endIndex, style, color },
-                ])
-              }
-              onMarkMany={(items) => addMarksToBook(tableReader.bookId, items)}
-              onEraseMark={(id) => deleteMarkInBook(tableReader.bookId, id)}
-              onDefine={handleDefine}
-              tags={wordTags}
-              onTagTap={openTagRef}
-              marks={getBook(tableReader.bookId).marks}
-              panelMode
-              fontScale={0.86}
-              dragVerses
-              onGrabDragState={(refs) =>
-                setReaderDrag(refs ? { refs } : null)
-              }
-              jumpTarget={trJump}
-              onJumpHandled={() => setTrJump(null)}
-              onSendVerses={sendReaderVersesToTable}
-            />
-          </div>
-        </div>
       )}
 
       {markPanel &&
@@ -11221,7 +11045,7 @@ export default function App() {
           when each surface rendered its own. */}
       {!gateOpen &&
         (mode === "read" ||
-          !!tableReader ||
+          tableDockMarking ||
           !!markPanel ||
           !!markVersesStudyId) && (
           <MarkingToolbar
@@ -11236,7 +11060,7 @@ export default function App() {
             onOrient={setToolbarOrient}
             scale={toolbarScale}
             zIndex={
-              markVersesStudyId ? 1250 : markPanel ? 430 : tableReader ? 70 : 60
+              markVersesStudyId ? 1250 : markPanel ? 430 : tableDockMarking ? 70 : 60
             }
           />
         )}

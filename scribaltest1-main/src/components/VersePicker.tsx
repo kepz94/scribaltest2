@@ -76,6 +76,10 @@ interface Props {
   // Desktop left-dock (Kepu, Jul 22): denser rows + narrower panel than the
   // regular reader, so the reader, column, and tray all fit side by side.
   compact?: boolean;
+  // Search tab of the unified Scripture dock (Kepu, Jul 23): the fixed shell
+  // owns geometry, header, tabs, and close — this renders only the search
+  // surface, filling the shell. Locked to the search tab.
+  embedded?: boolean;
   // Verse text for the drag ghost.
   verseTextFor?: (reference: string) => string;
   // Per-verse grab handles: dragging a verse hands its ref (and the current
@@ -169,6 +173,7 @@ export default function VersePicker({
   themeLabelFor,
   fullScreen = false,
   compact = false,
+  embedded = false,
   verseTextFor,
   onVerseDragStart,
   onVerseDragEnd,
@@ -465,6 +470,16 @@ export default function VersePicker({
               paddingTop: "env(safe-area-inset-top)",
               paddingBottom: "env(safe-area-inset-bottom)",
             }
+          : embedded
+          ? {
+              // The Scripture dock's shell owns geometry and chrome.
+              width: "100%",
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+            }
           : {
               width: compact ? 336 : 384,
               flex: "0 0 auto",
@@ -481,7 +496,8 @@ export default function VersePicker({
             }
       }
     >
-      {/* header + tabs */}
+      {/* header + tabs (the embedded dock brings its own) */}
+      {!embedded && (
       <div style={{ padding: "12px 12px 0", flex: "0 0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
           <span
@@ -546,8 +562,9 @@ export default function VersePicker({
           })}
         </div>
       </div>
+      )}
 
-      {tab === "shelf" ? (
+      {!embedded && tab === "shelf" ? (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
           {shelf.length === 0 ? (
             <div style={hintStyle}>
@@ -1121,7 +1138,7 @@ export default function VersePicker({
       )}
 
       {/* footer */}
-      {tab === "shelf" ? (
+      {!embedded && tab === "shelf" ? (
         shelf.length > 0 && (
           <div
             style={{

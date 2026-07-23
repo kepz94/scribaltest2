@@ -3,6 +3,8 @@ import { ACCENT } from "../theme";
 import {
   Mark,
   MarkColor,
+  MarkStyle,
+  Tool,
   WordTag,
   STYLE_POINTS,
   COLOR_MAP,
@@ -34,7 +36,14 @@ import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
 import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
-import { getVerse, sortRefs, verseList } from "../data/verseIndex";
+import {
+  getVerse,
+  sortRefs,
+  verseList,
+  chapterLocFor,
+  firstVerseRefOfScope,
+} from "../data/verseIndex";
+import VerseViewer from "./VerseViewer";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
 // one open table (its name, purpose, and the column surface). This owns the
@@ -90,16 +99,35 @@ interface Props {
   // Create a new session book (for "start from scratch" → new session): the
   // shell owns useMarks, so book creation happens there. Returns the book id.
   createSession: (name: string) => string;
-  // Open the reader dock beside the table: browse + mark + define + send.
-  // atRef navigates it straight to that verse's chapter.
-  onOpenReader?: (tableId: string, bookId: string, atRef?: string) => void;
-  // A grabber drag in flight from the reader dock (Kepu, Jul 22): the refs
-  // in hand + the reader's "marks go to" book. The column shows drop lines
-  // and inserts the verses where the drop lands.
-  readerDrag?: { refs: string[]; bookId: string } | null;
-  // Width the fixed left reader dock occupies — the editor shifts right by
-  // this much so the reader never covers the table.
-  leftInset?: number;
+  // The Scripture dock's Read tab is a full reading surface — marking state
+  // and mutations stay owned by App and arrive here as props (Kepu, Jul 23).
+  selectedTool?: Tool;
+  selectedColor?: MarkColor;
+  onChangeTool?: (t: Tool) => void;
+  onChangeColor?: (c: MarkColor) => void;
+  addMarksToBook?: (
+    bookId: string,
+    items: {
+      reference: string;
+      verseText: string;
+      markedText: string;
+      startIndex: number;
+      endIndex: number;
+      style: MarkStyle;
+      color: MarkColor;
+    }[]
+  ) => void;
+  deleteMarkInBook?: (bookId: string, id: string) => void;
+  onDefine?: (
+    reference: string,
+    verseText: string,
+    start: number,
+    end: number,
+    word: string
+  ) => void;
+  // Tells App whether the dock's Read tab is up, so the global MarkingToolbar
+  // shows/hides with it.
+  onReadMarkingChange?: (active: boolean) => void;
   // Dictionary word-tags: rendered on scripture cards (and in Present via the
   // shared renderVerse); tapping one opens its definition.
   wordTags?: WordTag[];
@@ -181,9 +209,14 @@ export default function StudyTablesDesktop({
   renameTable: renameTableReal,
   deleteTable: deleteTableReal,
   createSession,
-  onOpenReader,
-  readerDrag,
-  leftInset = 0,
+  selectedTool,
+  selectedColor,
+  onChangeTool,
+  onChangeColor,
+  addMarksToBook,
+  deleteMarkInBook,
+  onDefine,
+  onReadMarkingChange,
   wordTags,
   onTagTap,
   openTableId,
@@ -211,12 +244,21 @@ export default function StudyTablesDesktop({
   // Save indicator: every edit persists instantly; this makes that visible.
   // Flashes "Saving…" → "Saved" whenever the open table's updatedAt moves.
   const [saveFlash, setSaveFlash] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // The Scripture dock (Kepu, Jul 23): ONE fixed-left surface with Read and
+  // Search tabs — the Reader dock and the verse-picker drawer consolidated.
+  // Chapter tables are sealed to Read (ADR-007 §8).
+  const [dock, setDock] = useState<null | { tab: "read" | "search" }>(null);
+  // Read tab: the reading location, a one-shot verse to scroll to, and the
+  // "Marks go to" book (was App's tableReader state).
+  const [readLoc, setReadLoc] = useState<{ v: number; b: number; c: number }>({
+    v: 0,
+    b: 0,
+    c: 0,
+  });
+  const [readJump, setReadJump] = useState<string | null>(null);
+  const [readBookId, setReadBookId] = useState<string>("master");
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
-  // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
-  const [panelTab, setPanelTab] =
-    useState<"study" | "search" | "shelf">("search");
   // New-table flow: choose blank vs. import; "book" picks the marks home for a
   // from-scratch table (master / a session / a brand-new named session).
   const [creating, setCreating] = useState<
@@ -847,18 +889,14 @@ export default function StudyTablesDesktop({
   // Insert the picked verses as scripture cards at the spot the panel was opened
   // from (falling back to the end). Consecutive adds in one panel session stack
   // in order at the insertion point.
-  // A verse drag from the in-table reader (Kepu, Jul 22): the reader hands
-  // us the ref + "Marks from" book on dragstart; the column reports where
-  // the drop line landed and the card is inserted right there.
-  const [pickerDrag, setPickerDrag] = useState<{
-    ref: string;
+  // A verse drag from either dock tab (Kepu, Jul 22-23): the refs in hand +
+  // the book their marks come from. The column reports where the drop line
+  // landed and the cards are inserted right there.
+  const [externalDrag, setExternalDrag] = useState<{
+    refs: string[];
     bookId?: string;
   } | null>(null);
-  // Either external drag source — a reader-grabber verse group or a picker
-  // verse — inserts at the drop line the same way.
-  const externalInsert = pickerDrag
-    ? { refs: [pickerDrag.ref], bookId: pickerDrag.bookId }
-    : readerDrag || null;
+  const externalInsert = externalDrag;
   const dropFromPicker = (index: number) => {
     if (!open || !externalInsert) return;
     const base = columnCards;
@@ -868,7 +906,21 @@ export default function StudyTablesDesktop({
       ...makeScriptureCards(externalInsert.refs, false, externalInsert.bookId),
       ...base.slice(idx),
     ]);
-    setPickerDrag(null);
+    setExternalDrag(null);
+  };
+  // Send → Selected from the Read tab: the verses stage into the tray (was
+  // App's sendReaderVersesToTable — shadowed updateTable keeps the example
+  // table working).
+  const sendVersesToShelf = (refs: string[]) => {
+    if (!open || refs.length === 0) return;
+    const cards: TableCard[] = refs.map((r) => ({
+      id: newCardId(),
+      kind: "scripture" as const,
+      refs: [r],
+      bookId: readBookId,
+      shelfGroup: "Sent from reading",
+    }));
+    updateTable(open.id, { shelf: [...(open.shelf || []), ...cards] });
   };
 
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
@@ -917,14 +969,53 @@ export default function StudyTablesDesktop({
     setPendingIndex(idx + shelf.length);
   };
 
-  // Open the verse panel to add a scripture card at a given gap.
+  // Navigate the Read tab to a verse: resolve its chapter to reader indices
+  // and set the one-shot jump target.
+  const navigateReadTo = (atRef: string) => {
+    const cut = atRef.lastIndexOf(":");
+    const scope = cut > 0 ? atRef.slice(0, cut) : atRef;
+    const loc = chapterLocFor(scope);
+    if (loc) setReadLoc({ v: loc.volume, b: loc.book, c: loc.chapter });
+    setReadJump(atRef);
+  };
+  // Chapter tables are sealed to Read (ADR-007 §8) — Search never opens.
+  const isChapterTable = !!recStudy;
+  const dockTab: "read" | "search" | null = dock
+    ? isChapterTable
+      ? "read"
+      : dock.tab
+    : null;
+  // Table switch closes the dock and re-seeds the "Marks go to" book.
+  useEffect(() => {
+    setDock(null);
+    setPendingIndex(null);
+    setReadBookId(open ? open.bookId || "master" : "master");
+  }, [open ? open.id : null]);
+  // The global MarkingToolbar follows the Read tab.
+  useEffect(() => {
+    if (onReadMarkingChange) onReadMarkingChange(!!open && dockTab === "read");
+    return () => {
+      if (onReadMarkingChange) onReadMarkingChange(false);
+    };
+  }, [dockTab, open ? open.id : null]);
+  // Open the dock to add a scripture card at a given gap. Topic/blank tables
+  // land on Search; a sealed chapter table opens Read at its own chapter —
+  // its verses arrive by marking, dragging, or Send.
   const openPanelAt = (index: number) => {
     setPendingIndex(index);
-    setPanelTab("search");
-    setPanelOpen(true);
+    if (isChapterTable && recStudy) {
+      const scope =
+        (recStudy.memberScopes && recStudy.memberScopes[0]) ||
+        recStudy.scopeRef;
+      const first = firstVerseRefOfScope(scope);
+      if (first) navigateReadTo(first);
+      setDock({ tab: "read" });
+    } else {
+      setDock({ tab: "search" });
+    }
   };
   const closePanel = () => {
-    setPanelOpen(false);
+    setDock(null);
     setPendingIndex(null);
   };
 
@@ -957,14 +1048,12 @@ export default function StudyTablesDesktop({
   };
   const markCardVerses = (card: TableCard) => {
     if (card.kind !== "scripture" || !(card.refs || []).length) return;
-    // Prefer the reader dock: it opens at this verse's chapter with the full
-    // toolbar (and dictionary). Falls back to the mark screen if no dock.
-    if (onOpenReader && open) {
-      onOpenReader(
-        open.id,
-        card.bookId || open.bookId || "master",
-        (card.refs || [])[0]
-      );
+    // Prefer the dock's Read tab: it opens at this verse's chapter with the
+    // full toolbar (and dictionary). Falls back to the mark screen.
+    if (addMarksToBook && open) {
+      setReadBookId(card.bookId || open.bookId || "master");
+      navigateReadTo((card.refs || [])[0]);
+      setDock({ tab: "read" });
       return;
     }
     if (!onMarkVerses) return;
@@ -1153,9 +1242,9 @@ export default function StudyTablesDesktop({
     });
     if (cards.length) updateTable(id, { shelf: cards });
     setOpenId(id);
+    // The imported groups land in the always-docked right tray — no drawer
+    // needed (Kepu, Jul 23: the dock's Selected tab is gone on desktop).
     setPendingIndex(0);
-    setPanelTab("shelf");
-    setPanelOpen(true);
   };
 
   // ---- "From a study": the study list + per-study theme grouping ----
@@ -1298,18 +1387,18 @@ export default function StudyTablesDesktop({
     // The side tray is a fixed overlay at the viewport's right edge — the
     // header and body must clear its footprint or buttons hide beneath it.
     const trayDocked = (open.shelf || []).length > 0;
+    // The Scripture dock is a fixed left panel — while it's open the editor
+    // shifts right of it instead of centering underneath.
+    const dockInset = dock ? 452 : 0;
     const editorMax =
-      780 +
-      (hasRail && !panelOpen ? 200 : 0) +
-      (panelOpen ? 340 : 0) +
-      (trayDocked ? 288 : 0);
+      780 + (hasRail && !dock ? 200 : 0) + (trayDocked ? 288 : 0);
     return (
       <div
         style={{
           maxWidth: editorMax,
-          // The reader dock is a fixed panel on the left — shift the whole
-          // editor right of it instead of centering underneath it.
-          margin: leftInset ? "0 16px 0 " + (leftInset + 16) + "px" : "0 auto",
+          margin: dockInset
+            ? "0 16px 0 " + (dockInset + 16) + "px"
+            : "0 auto",
           padding: "16px 16px 120px",
         }}
       >
@@ -1427,22 +1516,28 @@ export default function StudyTablesDesktop({
               Example · not saved
             </span>
           )}
-          {onOpenReader && (
+          {addMarksToBook && (
             <button
               onClick={() => {
                 // Open at the table's own scripture — the first scripture
                 // card (column, then shelf) — instead of the reader's
-                // Genesis 1 default (SCR-16).
+                // Genesis 1 default (SCR-16). A chapter table with no cards
+                // yet opens at its study's chapter.
                 const sc = [...columnCards, ...(open.shelf || [])].find(
                   (cd) => cd.kind === "scripture" && (cd.refs || []).length
                 );
-                onOpenReader(
-                  open.id,
-                  open.bookId || "master",
-                  sc ? (sc.refs || [])[0] : undefined
-                );
+                let at = sc ? (sc.refs || [])[0] : undefined;
+                if (!at && recStudy) {
+                  const scope =
+                    (recStudy.memberScopes && recStudy.memberScopes[0]) ||
+                    recStudy.scopeRef;
+                  at = firstVerseRefOfScope(scope);
+                }
+                setReadBookId(open.bookId || "master");
+                if (at) navigateReadTo(at);
+                setDock({ tab: "read" });
               }}
-              title="Open a reading panel beside the table — browse, mark, and send verses"
+              title="Read, mark, search, and pull scripture into this table"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -1463,7 +1558,7 @@ export default function StudyTablesDesktop({
                 <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
                 <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
               </svg>
-              Reader
+              Scripture
             </button>
           )}
           {onMarkVerses && (
@@ -1886,48 +1981,260 @@ export default function StudyTablesDesktop({
           })}
         </div>
 
-        {/* three-zone body: reader OR outline rail on the left + column +
-            the tray's reserved right column. The in-table reader took the
-            left slot (Kepu, Jul 22) so the tray stays docked while picking. */}
+        {/* The Scripture dock (Kepu, Jul 23): ONE fixed-left surface — Read
+            (the reader: browse, mark, define, grab) | Search (the picker).
+            Chapter tables are sealed to Read (ADR-007 §8). */}
+        {dock && (
+          <div
+            style={{
+              position: "fixed",
+              top: headerOffset,
+              left: 0,
+              bottom: 0,
+              width: "min(440px, 94vw)",
+              zIndex: 60,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+              borderRight: "1px solid var(--border)",
+              boxShadow: "18px 0 40px -28px rgba(0,0,0,.35)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 14px",
+                borderBottom: "1px solid var(--border)",
+                flex: "0 0 auto",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      fontFamily: SANS,
+                    }}
+                  >
+                    Scripture
+                  </span>
+                  {!isChapterTable && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        gap: 3,
+                        padding: 2,
+                        background: "var(--soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                      }}
+                    >
+                      {(["read", "search"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setDock({ tab: t })}
+                          style={{
+                            fontFamily: SANS,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            border: 0,
+                            borderRadius: 999,
+                            padding: "3px 11px",
+                            cursor: "pointer",
+                            background:
+                              dockTab === t ? accent : "transparent",
+                            color: dockTab === t ? "#fff" : "var(--muted)",
+                          }}
+                        >
+                          {t === "read" ? "Read" : "Search"}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </div>
+                {dockTab === "read" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginTop: 3,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        color: "var(--muted)",
+                        flex: "0 0 auto",
+                        fontFamily: SANS,
+                      }}
+                    >
+                      Marks go to
+                    </span>
+                    <select
+                      value={readBookId}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__new") {
+                          const name = window.prompt("Name the new session:");
+                          if (name && name.trim() && createSession)
+                            setReadBookId(createSession(name.trim()));
+                          return;
+                        }
+                        setReadBookId(v);
+                      }}
+                      style={{
+                        fontFamily: "inherit",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        background: "var(--soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 7,
+                        padding: "3px 6px",
+                        maxWidth: 170,
+                      }}
+                    >
+                      {books.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.isMaster
+                            ? "Master Chapter Book"
+                            : b.name || "Session"}
+                        </option>
+                      ))}
+                      <option value="__new">＋ New session…</option>
+                    </select>
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        color: "var(--muted)",
+                        flex: "0 0 auto",
+                        fontFamily: SANS,
+                      }}
+                    >
+                      · Send → Selected
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={closePanel}
+                aria-label="Close the Scripture dock"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  display: "grid",
+                  placeItems: "center",
+                  lineHeight: 0,
+                  flex: "0 0 auto",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {dockTab === "read" &&
+              addMarksToBook &&
+              deleteMarkInBook &&
+              onChangeTool &&
+              onChangeColor &&
+              selectedTool &&
+              selectedColor && (
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                  <VerseViewer
+                    selectedVolume={readLoc.v}
+                    selectedBook={readLoc.b}
+                    selectedChapter={readLoc.c}
+                    onChange={(v, b, c) => setReadLoc({ v, b, c })}
+                    selectedTool={selectedTool}
+                    selectedColor={selectedColor}
+                    onChangeTool={onChangeTool}
+                    onChangeColor={onChangeColor}
+                    onMark={(reference, verseText, markedText, startIndex, endIndex, style, color) =>
+                      addMarksToBook(readBookId, [
+                        { reference, verseText, markedText, startIndex, endIndex, style, color },
+                      ])
+                    }
+                    onMarkMany={(items) => addMarksToBook(readBookId, items)}
+                    onEraseMark={(id) => deleteMarkInBook(readBookId, id)}
+                    onDefine={onDefine}
+                    tags={wordTags}
+                    onTagTap={onTagTap}
+                    marks={getBook(readBookId).marks}
+                    panelMode
+                    fontScale={0.86}
+                    dragVerses
+                    onGrabDragState={(refs) =>
+                      setExternalDrag(
+                        refs ? { refs, bookId: readBookId } : null
+                      )
+                    }
+                    jumpTarget={readJump}
+                    onJumpHandled={() => setReadJump(null)}
+                    onSendVerses={sendVersesToShelf}
+                  />
+                </div>
+              )}
+            {dockTab === "search" && (
+              <VersePicker
+                embedded
+                onAdd={addVerses}
+                renderVerse={renderVerse}
+                allMarks={allMarks}
+                books={books}
+                shelf={open.shelf || []}
+                onShelve={shelve}
+                onUnshelve={unshelve}
+                onShelfToColumn={shelfToColumn}
+                onShelfAllToColumn={shelfAllToColumn}
+                onClose={closePanel}
+                accent={accent}
+                headerOffset={headerOffset}
+                defaultBookId={open.bookId}
+                compact
+                verseTextFor={(r) => {
+                  const rec = getVerse(r);
+                  return rec ? rec.text : "";
+                }}
+                onVerseDragStart={(ref, bookId) =>
+                  setExternalDrag({ refs: [ref], bookId })
+                }
+                onVerseDragEnd={() => setExternalDrag(null)}
+                themeLabelFor={(ref, color, bookId) => {
+                  const bk = getBook(bookId || open.bookId || "master");
+                  const ix = ref.indexOf(":");
+                  const cs = ix < 0 ? ref : ref.slice(0, ix);
+                  const scope = chapterGroups[cs]
+                    ? "group:" + chapterGroups[cs]
+                    : cs;
+                  const scoped = bk.scopedLabels?.[scope]?.[color];
+                  return ((scoped || "") as string).trim();
+                }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* three-zone body: outline rail (hidden while the dock is open) +
+            column + the tray's reserved right column. */}
         <div style={{ display: "flex", gap: 26, alignItems: "flex-start" }}>
-          {panelOpen && (
-            <VersePicker
-              onAdd={addVerses}
-              renderVerse={renderVerse}
-              allMarks={allMarks}
-              books={books}
-              shelf={open.shelf || []}
-              onShelve={shelve}
-              onUnshelve={unshelve}
-              onShelfToColumn={shelfToColumn}
-              onShelfAllToColumn={shelfAllToColumn}
-              onClose={closePanel}
-              accent={accent}
-              headerOffset={headerOffset}
-              initialTab={panelTab}
-              defaultBookId={open.bookId}
-              compact
-              verseTextFor={(r) => {
-                const rec = getVerse(r);
-                return rec ? rec.text : "";
-              }}
-              onVerseDragStart={(ref, bookId) =>
-                setPickerDrag({ ref, bookId })
-              }
-              onVerseDragEnd={() => setPickerDrag(null)}
-              themeLabelFor={(ref, color, bookId) => {
-                const bk = getBook(bookId || open.bookId || "master");
-                const ix = ref.indexOf(":");
-                const cs = ix < 0 ? ref : ref.slice(0, ix);
-                const scope = chapterGroups[cs]
-                  ? "group:" + chapterGroups[cs]
-                  : cs;
-                const scoped = bk.scopedLabels?.[scope]?.[color];
-                return ((scoped || "") as string).trim();
-              }}
-            />
-          )}
-          {hasRail && !panelOpen && (
+          {hasRail && !dock && (
             <div
               style={{
                 width: 210,
