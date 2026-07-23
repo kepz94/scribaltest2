@@ -1558,7 +1558,7 @@ export default function StudyTablesDesktop({
                 <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
                 <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
               </svg>
-              Scripture
+              Reading panel
             </button>
           )}
           {onMarkVerses && (
@@ -2026,7 +2026,7 @@ export default function StudyTablesDesktop({
                       fontFamily: SANS,
                     }}
                   >
-                    Scripture
+                    Reading panel
                   </span>
                   {!isChapterTable && (
                     <span
@@ -2129,7 +2129,7 @@ export default function StudyTablesDesktop({
               </div>
               <button
                 onClick={closePanel}
-                aria-label="Close the Scripture dock"
+                aria-label="Close the reading panel"
                 style={{
                   width: 30,
                   height: 30,
