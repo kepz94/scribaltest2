@@ -2179,6 +2179,7 @@ export default function StudyTablesDesktop({
                     marks={getBook(readBookId).marks}
                     panelMode
                     fontScale={0.86}
+                    chromeBg="var(--panel)"
                     dragVerses
                     onGrabDragState={(refs) =>
                       setExternalDrag(

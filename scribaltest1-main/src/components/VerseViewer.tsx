@@ -95,6 +95,11 @@ interface VerseViewerProps {
   // (null = drag ended). The table column listens through this to show its
   // drop lines and insert the verses where the drop lands.
   onGrabDragState?: (refs: string[] | null) => void;
+  // Background of the sticky reading chrome. Defaults to the page background
+  // (invisible on the main screen); a host on a different surface (the
+  // Reading panel dock's white panel) passes its own so the header doesn't
+  // paint a box (Kepu, Jul 23).
+  chromeBg?: string;
   // With Select-mode verses checked, "Send to study…" routes them through the
   // parent's send picker — for a topic study that isn't open as a panel
   // (drag needs a visible target; this doesn't).
@@ -176,6 +181,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     onCompilePanel,
     dragVerses,
     onGrabDragState,
+    chromeBg = "var(--bg)",
     onSendSelection,
     controlsStickyTop = 0,
   } = props;
@@ -916,7 +922,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             position: "sticky",
             top: controlsStickyTop,
             zIndex: 20,
-            backgroundColor: "var(--bg)",
+            backgroundColor: chromeBg,
             paddingTop: "6px",
             marginBottom: "8px",
             borderBottom: "1px solid var(--border)",
