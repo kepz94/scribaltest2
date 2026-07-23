@@ -104,6 +104,10 @@ interface VerseViewerProps {
   // volume · book · chapter fit on ONE row instead of stacking (Kepu, Jul 23:
   // the full-size pills ate a quarter of the panel).
   compactChrome?: boolean;
+  // Host content for the function row's LEFT slot (empty unless a link
+  // button renders there). The Reading panel puts its "Marks go to" book
+  // select here instead of spending a header row on it (Kepu, Jul 23).
+  chromeExtra?: React.ReactNode;
   // With Select-mode verses checked, "Send to study…" routes them through the
   // parent's send picker — for a topic study that isn't open as a panel
   // (drag needs a visible target; this doesn't).
@@ -187,6 +191,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     onGrabDragState,
     chromeBg = "var(--bg)",
     compactChrome = false,
+    chromeExtra,
     onSendSelection,
     controlsStickyTop = 0,
   } = props;
@@ -1088,7 +1093,15 @@ export default function VerseViewer(props: VerseViewerProps) {
             marginBottom: "10px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              minWidth: 0,
+            }}
+          >
+          {chromeExtra}
           {linkScriptures && (
             <button
               onClick={linkScriptures.onClick}
@@ -1264,6 +1277,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                 fontFamily: "system-ui, sans-serif",
                 cursor: "pointer",
                 transition: "all 0.15s",
+                whiteSpace: "nowrap",
               }}
             >
               {sendMode ? "Selecting\u2026" : "Send verses"}

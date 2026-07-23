@@ -2062,70 +2062,6 @@ export default function StudyTablesDesktop({
                     </span>
                   )}
                 </div>
-                {dockTab === "read" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginTop: 3,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 11.5,
-                        color: "var(--muted)",
-                        flex: "0 0 auto",
-                        fontFamily: SANS,
-                      }}
-                    >
-                      Marks go to
-                    </span>
-                    <select
-                      value={readBookId}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === "__new") {
-                          const name = window.prompt("Name the new session:");
-                          if (name && name.trim() && createSession)
-                            setReadBookId(createSession(name.trim()));
-                          return;
-                        }
-                        setReadBookId(v);
-                      }}
-                      style={{
-                        fontFamily: "inherit",
-                        fontSize: 11.5,
-                        fontWeight: 600,
-                        color: "var(--text)",
-                        background: "var(--soft)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 7,
-                        padding: "3px 6px",
-                        maxWidth: 170,
-                      }}
-                    >
-                      {books.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.isMaster
-                            ? "Master Chapter Book"
-                            : b.name || "Session"}
-                        </option>
-                      ))}
-                      <option value="__new">＋ New session…</option>
-                    </select>
-                    <span
-                      style={{
-                        fontSize: 11.5,
-                        color: "var(--muted)",
-                        flex: "0 0 auto",
-                        fontFamily: SANS,
-                      }}
-                    >
-                      · Send → Selected
-                    </span>
-                  </div>
-                )}
               </div>
               <button
                 onClick={closePanel}
@@ -2190,6 +2126,63 @@ export default function StudyTablesDesktop({
                     jumpTarget={readJump}
                     onJumpHandled={() => setReadJump(null)}
                     onSendVerses={sendVersesToShelf}
+                    chromeExtra={
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          minWidth: 0,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--muted)",
+                            flex: "0 0 auto",
+                            fontFamily: SANS,
+                          }}
+                        >
+                          Marks go to
+                        </span>
+                        <select
+                          value={readBookId}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__new") {
+                              const name = window.prompt(
+                                "Name the new session:"
+                              );
+                              if (name && name.trim() && createSession)
+                                setReadBookId(createSession(name.trim()));
+                              return;
+                            }
+                            setReadBookId(v);
+                          }}
+                          style={{
+                            fontFamily: "inherit",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--text)",
+                            background: "var(--soft)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 7,
+                            padding: "3px 5px",
+                            maxWidth: 150,
+                            minWidth: 0,
+                          }}
+                        >
+                          {books.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.isMaster
+                                ? "Master Chapter Book"
+                                : b.name || "Session"}
+                            </option>
+                          ))}
+                          <option value="__new">＋ New session…</option>
+                        </select>
+                      </span>
+                    }
                   />
                 </div>
               )}
