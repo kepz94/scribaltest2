@@ -517,6 +517,12 @@ export default function StudyTablesDesktop({
     if (c.kind === "scripture")
       (c.refs || []).forEach((r) => shelfRefSet.add(r));
   });
+  // SCR-61: where a verse already lives, for the dock's row labels and the
+  // no-double-adding guard.
+  const refStatusFor = (ref: string): "in-table" | "in-tray" | null =>
+    placedRefs.has(ref) ? "in-table" : shelfRefSet.has(ref) ? "in-tray" : null;
+  const freshRefsOnly = (refs: string[]) =>
+    refs.filter((r) => !refStatusFor(r));
   // The meter only matters once the table is yours — while Compiled · live,
   // everything in scope is on screen by construction.
   const coverage =
@@ -899,11 +905,17 @@ export default function StudyTablesDesktop({
   const externalInsert = externalDrag;
   const dropFromPicker = (index: number) => {
     if (!open || !externalInsert) return;
+    // No double-adding (SCR-61): a verse already placed or waiting stays put.
+    const refs = freshRefsOnly(externalInsert.refs);
+    if (!refs.length) {
+      setExternalDrag(null);
+      return;
+    }
     const base = columnCards;
     const idx = Math.max(0, Math.min(index, base.length));
     commitCards([
       ...base.slice(0, idx),
-      ...makeScriptureCards(externalInsert.refs, false, externalInsert.bookId),
+      ...makeScriptureCards(refs, false, externalInsert.bookId),
       ...base.slice(idx),
     ]);
     setExternalDrag(null);
@@ -911,7 +923,8 @@ export default function StudyTablesDesktop({
   // Send → Selected from the Read tab: the verses stage into the tray (was
   // App's sendReaderVersesToTable — shadowed updateTable keeps the example
   // table working).
-  const sendVersesToShelf = (refs: string[]) => {
+  const sendVersesToShelf = (rawRefs: string[]) => {
+    const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
     const cards: TableCard[] = refs.map((r) => ({
       id: newCardId(),
@@ -923,7 +936,8 @@ export default function StudyTablesDesktop({
     updateTable(open.id, { shelf: [...(open.shelf || []), ...cards] });
   };
 
-  const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
+  const addVerses = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
+    const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const base = columnCards;
@@ -933,7 +947,8 @@ export default function StudyTablesDesktop({
   };
 
   // ---- staging shelf: set verses aside, then place them later ----
-  const shelve = (refs: string[], asPassage: boolean, bookId?: string) => {
+  const shelve = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
+    const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
     updateTable(open.id, {
       shelf: [...(open.shelf || []), ...makeScriptureCards(refs, asPassage, bookId)],
@@ -2126,6 +2141,8 @@ export default function StudyTablesDesktop({
                     jumpTarget={readJump}
                     onJumpHandled={() => setReadJump(null)}
                     onSendVerses={sendVersesToShelf}
+                    refStatusFor={refStatusFor}
+                    onStageVerse={(r) => sendVersesToShelf([r])}
                     chromeExtra={
                       <span
                         style={{
@@ -2211,6 +2228,7 @@ export default function StudyTablesDesktop({
                   setExternalDrag({ refs: [ref], bookId })
                 }
                 onVerseDragEnd={() => setExternalDrag(null)}
+                refStatusFor={refStatusFor}
                 themeLabelFor={(ref, color, bookId) => {
                   const bk = getBook(bookId || open.bookId || "master");
                   const ix = ref.indexOf(":");

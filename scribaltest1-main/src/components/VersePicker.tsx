@@ -87,6 +87,9 @@ interface Props {
   // drop line lands. Handles render only when these are provided.
   onVerseDragStart?: (ref: string, bookId?: string) => void;
   onVerseDragEnd?: () => void;
+  // SCR-61: where a verse already lives. Gathered rows show an in-table /
+  // in-tray label instead of intake controls — no double-adding.
+  refStatusFor?: (ref: string) => "in-table" | "in-tray" | null;
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -177,6 +180,7 @@ export default function VersePicker({
   verseTextFor,
   onVerseDragStart,
   onVerseDragEnd,
+  refStatusFor,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
     initialTab && initialTab !== "study" ? initialTab : "search"
@@ -990,21 +994,75 @@ export default function VersePicker({
                 {results.rows.map((ref) => {
                   const on = selected.includes(ref);
                   const themes = previewFor(ref);
+                  const status = refStatusFor ? refStatusFor(ref) : null;
                   return (
                     <div
                       key={ref}
-                      onClick={() => toggle(ref)}
+                      onClick={() => {
+                        if (status) return;
+                        toggle(ref);
+                      }}
                       style={{
                         display: "flex",
                         gap: compact ? 7 : 9,
                         alignItems: "flex-start",
                         padding: compact ? "5px 6px" : "9px 8px",
                         borderRadius: 10,
-                        cursor: "pointer",
+                        cursor: status ? "default" : "pointer",
                         background: on ? softAccent : "transparent",
+                        opacity: status ? 0.66 : 1,
                       }}
                     >
-                      {onVerseDragStart && (
+                      {status ? (
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            marginTop: 2,
+                            fontFamily: SANS,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: ".04em",
+                            color: "var(--muted)",
+                            background: "var(--soft)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 999,
+                            padding: "2px 7px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {status === "in-table" ? "in table" : "in tray"}
+                        </span>
+                      ) : (
+                        onShelve && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onShelve([ref], false, sourceBookId || undefined);
+                            }}
+                            title="Stage this verse in the tray"
+                            style={{
+                              flex: "0 0 auto",
+                              width: 20,
+                              height: 20,
+                              marginTop: 2,
+                              borderRadius: 6,
+                              border: "1px solid var(--border)",
+                              background: "var(--panel)",
+                              color: "var(--muted)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 13,
+                              lineHeight: 0,
+                              cursor: "pointer",
+                              padding: 0,
+                            }}
+                          >
+                            +
+                          </button>
+                        )
+                      )}
+                      {!status && onVerseDragStart && (
                         <span
                           draggable
                           onClick={(e) => e.stopPropagation()}
@@ -1046,23 +1104,25 @@ export default function VersePicker({
                           ⠿
                         </span>
                       )}
-                      <span
-                        style={{
-                          flex: "0 0 auto",
-                          width: 18,
-                          height: 18,
-                          marginTop: 3,
-                          borderRadius: 5,
-                          border: "1.5px solid " + (on ? accent : "var(--border)"),
-                          background: on ? accent : "transparent",
-                          color: "#fff",
-                          display: "grid",
-                          placeItems: "center",
-                          lineHeight: 0,
-                        }}
-                      >
-                        {on && <Ico d="M20 6 9 17l-5-5" size={12} />}
-                      </span>
+                      {!status && (
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            width: 18,
+                            height: 18,
+                            marginTop: 3,
+                            borderRadius: 5,
+                            border: "1.5px solid " + (on ? accent : "var(--border)"),
+                            background: on ? accent : "transparent",
+                            color: "#fff",
+                            display: "grid",
+                            placeItems: "center",
+                            lineHeight: 0,
+                          }}
+                        >
+                          {on && <Ico d="M20 6 9 17l-5-5" size={12} />}
+                        </span>
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{

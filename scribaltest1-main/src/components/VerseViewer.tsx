@@ -108,6 +108,11 @@ interface VerseViewerProps {
   // button renders there). The Reading panel puts its "Marks go to" book
   // select here instead of spending a header row on it (Kepu, Jul 23).
   chromeExtra?: React.ReactNode;
+  // SCR-61: where a verse already lives in the host table. Gathered rows show
+  // an in-table / in-tray label instead of the grabber — no double-adding.
+  refStatusFor?: (ref: string) => "in-table" | "in-tray" | null;
+  // SCR-61: per-verse "+" — stage this verse in the host table's tray.
+  onStageVerse?: (ref: string) => void;
   // With Select-mode verses checked, "Send to study…" routes them through the
   // parent's send picker — for a topic study that isn't open as a panel
   // (drag needs a visible target; this doesn't).
@@ -192,6 +197,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     chromeBg = "var(--bg)",
     compactChrome = false,
     chromeExtra,
+    refStatusFor,
+    onStageVerse,
     onSendSelection,
     controlsStickyTop = 0,
   } = props;
@@ -633,6 +640,30 @@ export default function VerseViewer(props: VerseViewerProps) {
     if (!dragVerses || sendMode || removeMode) return null;
     const checked = dragSel.includes(reference);
     const dragCount = grabberRefsFor(reference).length;
+    // Already in the host table or its tray: label instead of intake
+    // controls — no double-adding (SCR-61).
+    const refStatus = refStatusFor ? refStatusFor(reference) : null;
+    if (refStatus)
+      return (
+        <span
+          style={{
+            flexShrink: 0,
+            marginTop: "4px",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: ".04em",
+            color: "var(--muted)",
+            background: "var(--soft)",
+            border: "1px solid var(--border)",
+            borderRadius: "999px",
+            padding: "2px 7px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {refStatus === "in-table" ? "in table" : "in tray"}
+        </span>
+      );
     return (
       <span
         style={{
@@ -643,6 +674,33 @@ export default function VerseViewer(props: VerseViewerProps) {
           marginTop: "2px",
         }}
       >
+        {onStageVerse && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStageVerse(reference);
+            }}
+            title="Stage this verse in the tray"
+            style={{
+              width: "22px",
+              height: "22px",
+              borderRadius: "6px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              color: "var(--muted)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "14px",
+              lineHeight: 0,
+              cursor: "pointer",
+              padding: 0,
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            +
+          </button>
+        )}
         {dragSelMode && (
           <span
             onClick={() => toggleDragSel(reference)}
