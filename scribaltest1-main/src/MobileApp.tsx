@@ -4929,6 +4929,24 @@ export default function MobileApp() {
                 />
               )}
               {displayTitle}
+              <span style={{ flex: 1 }} />
+              <button
+                onClick={() => setLinkOpen(false)}
+                aria-label="Close link panel"
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: C.muted,
+                  fontSize: "22px",
+                  lineHeight: 1,
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
             </div>
             <div
               style={{
