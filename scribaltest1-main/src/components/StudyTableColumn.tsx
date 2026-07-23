@@ -1904,7 +1904,45 @@ export default function StudyTableColumn({
 
   // ---------- the column ----------
   return (
-    <div style={{ maxWidth: 660, margin: "0 auto", position: "relative" }}>
+    <div
+      style={{
+        maxWidth: 660,
+        margin: "0 auto",
+        position: "relative",
+        // While a drag is in flight the column grows a drop apron below its
+        // last card, so "just below the column" is droppable too — without
+        // it, the root ends at its content and drops there are refused.
+        paddingBottom: trayDragId || rowDragId ? "26vh" : undefined,
+      }}
+      // Catch-all drop target: a tray card or an outline row dropped anywhere
+      // in the column that no inner target claimed lands at the END. Without
+      // this, an empty column offered only the thin empty-message strip as a
+      // droppable area — the first drag from the tray read as "not allowed"
+      // everywhere else (Kepu's bug, Jul 22). Inner targets preventDefault
+      // first, so `defaultPrevented` marks them as having claimed the event.
+      onDragOver={(e) => {
+        if (e.defaultPrevented) return;
+        if ((e.target as HTMLElement).closest("[data-tray]")) return;
+        if (trayDragId || rowDragId) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setTrayOverIndex(cards.length);
+        }
+      }}
+      onDrop={(e) => {
+        if (e.defaultPrevented) return;
+        if ((e.target as HTMLElement).closest("[data-tray]")) return;
+        if (trayDragId || rowDragId) {
+          e.preventDefault();
+          if (trayDragId && onPlaceFromShelf)
+            onPlaceFromShelf(trayDragId, cards.length);
+          if (rowDragId) moveTo(rowDragId, cards.length);
+          setTrayDragId(null);
+          setRowDragId(null);
+          setTrayOverIndex(null);
+        }
+      }}
+    >
       {/* spine */}
       {!outlineMode && (
         <div
@@ -2219,9 +2257,18 @@ export default function StudyTableColumn({
               fontStyle: "italic",
               textAlign: "center",
               padding: "26px 10px 6px",
+              // The whole empty column is a drop zone (root catch-all) —
+              // this area just makes that visible and easy to hit.
+              minHeight: trayDragId ? "38vh" : undefined,
+              border: trayDragId ? "2px dashed " + accent : undefined,
+              borderRadius: trayDragId ? 14 : undefined,
+              display: trayDragId ? "grid" : undefined,
+              placeItems: trayDragId ? "center" : undefined,
             }}
           >
-            Your table is empty — place cards from the tray in any order.
+            {trayDragId
+              ? "Drop anywhere to place your first card."
+              : "Your table is empty — drag cards from the tray, or Place them, in any order."}
           </div>
         )}
         {(trayDragId || rowDragId) && trayOverIndex === cards.length && (
@@ -2245,6 +2292,7 @@ export default function StudyTableColumn({
         const sideDock = !!traySide && !!outlineMode;
         return (
         <div
+          data-tray
           style={
             sideDock
               ? {
