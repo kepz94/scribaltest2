@@ -6,6 +6,7 @@ import { verseList, sortRefs, isConsecutive, passageLabel } from "../data/verseI
 import { getScriptures, registerOnLoaded } from "../data/scripturesStore";
 import type { TableCard } from "../hooks/useStudyTables";
 import type { ThemeMark } from "./SearchPanel";
+import { setVerseDragImage } from "../dragGhost";
 
 // The docked verse panel for a Study Table. Its search IS the app's search — the
 // same shared matcher (searchMatch.ts), the same modes, operators, and legend —
@@ -72,6 +73,16 @@ interface Props {
   themeLabelFor?: (ref: string, color: MarkColor, bookId?: string) => string;
   // Mobile: render as a full-screen overlay instead of the docked side panel.
   fullScreen?: boolean;
+  // Desktop left-dock (Kepu, Jul 22): denser rows + narrower panel than the
+  // regular reader, so the reader, column, and tray all fit side by side.
+  compact?: boolean;
+  // Verse text for the drag ghost.
+  verseTextFor?: (reference: string) => string;
+  // Per-verse grab handles: dragging a verse hands its ref (and the current
+  // "Marks from" book) to the parent, which inserts it where the column's
+  // drop line lands. Handles render only when these are provided.
+  onVerseDragStart?: (ref: string, bookId?: string) => void;
+  onVerseDragEnd?: () => void;
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -157,6 +168,10 @@ export default function VersePicker({
   defaultBookId,
   themeLabelFor,
   fullScreen = false,
+  compact = false,
+  verseTextFor,
+  onVerseDragStart,
+  onVerseDragEnd,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
     initialTab && initialTab !== "study" ? initialTab : "search"
@@ -451,7 +466,7 @@ export default function VersePicker({
               paddingBottom: "env(safe-area-inset-bottom)",
             }
           : {
-              width: 384,
+              width: compact ? 336 : 384,
               flex: "0 0 auto",
               position: "sticky",
               top: headerOffset + 14,
@@ -964,14 +979,56 @@ export default function VersePicker({
                       onClick={() => toggle(ref)}
                       style={{
                         display: "flex",
-                        gap: 9,
+                        gap: compact ? 7 : 9,
                         alignItems: "flex-start",
-                        padding: "9px 8px",
+                        padding: compact ? "5px 6px" : "9px 8px",
                         borderRadius: 10,
                         cursor: "pointer",
                         background: on ? softAccent : "transparent",
                       }}
                     >
+                      {onVerseDragStart && (
+                        <span
+                          draggable
+                          onClick={(e) => e.stopPropagation()}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            onVerseDragStart(ref, sourceBookId || undefined);
+                            e.dataTransfer.effectAllowed = "move";
+                            try {
+                              e.dataTransfer.setData("text/plain", ref);
+                            } catch {}
+                            setVerseDragImage(e, [
+                              {
+                                reference: ref,
+                                text: verseTextFor ? verseTextFor(ref) : "",
+                              },
+                            ]);
+                          }}
+                          onDragEnd={() => onVerseDragEnd && onVerseDragEnd()}
+                          title="Drag into your table"
+                          style={{
+                            flex: "0 0 auto",
+                            width: 20,
+                            height: 20,
+                            marginTop: 2,
+                            borderRadius: 6,
+                            border: "1px solid var(--grabBorder)",
+                            background: "var(--grabBg)",
+                            color: "var(--grabFg)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 10,
+                            fontFamily: "system-ui, sans-serif",
+                            cursor: "grab",
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                          }}
+                        >
+                          ⠿
+                        </span>
+                      )}
                       <span
                         style={{
                           flex: "0 0 auto",
@@ -993,11 +1050,11 @@ export default function VersePicker({
                         <div
                           style={{
                             fontFamily: SANS,
-                            fontSize: 11,
+                            fontSize: compact ? 10.5 : 11,
                             fontWeight: 700,
                             letterSpacing: ".02em",
                             color: accent,
-                            marginBottom: 2,
+                            marginBottom: compact ? 1 : 2,
                           }}
                         >
                           {ref}
@@ -1005,8 +1062,8 @@ export default function VersePicker({
                         <div
                           style={{
                             fontFamily: SERIF,
-                            fontSize: 14.5,
-                            lineHeight: 1.6,
+                            fontSize: compact ? 13 : 14.5,
+                            lineHeight: compact ? 1.45 : 1.6,
                             color: "var(--text)",
                           }}
                         >

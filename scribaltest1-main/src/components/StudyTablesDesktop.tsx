@@ -838,6 +838,25 @@ export default function StudyTablesDesktop({
   // Insert the picked verses as scripture cards at the spot the panel was opened
   // from (falling back to the end). Consecutive adds in one panel session stack
   // in order at the insertion point.
+  // A verse drag from the in-table reader (Kepu, Jul 22): the reader hands
+  // us the ref + "Marks from" book on dragstart; the column reports where
+  // the drop line landed and the card is inserted right there.
+  const [pickerDrag, setPickerDrag] = useState<{
+    ref: string;
+    bookId?: string;
+  } | null>(null);
+  const dropFromPicker = (index: number) => {
+    if (!open || !pickerDrag) return;
+    const base = columnCards;
+    const idx = Math.max(0, Math.min(index, base.length));
+    commitCards([
+      ...base.slice(0, idx),
+      ...makeScriptureCards([pickerDrag.ref], false, pickerDrag.bookId),
+      ...base.slice(idx),
+    ]);
+    setPickerDrag(null);
+  };
+
   const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
     if (!open || refs.length === 0) return;
     const newCards = makeScriptureCards(refs, asPassage, bookId);
@@ -1262,11 +1281,27 @@ export default function StudyTablesDesktop({
   if (open) {
     const sections = columnCards.filter((c) => c.kind === "heading");
     const hasRail = sections.length > 0;
-    const editorMax = 780 + (hasRail ? 200 : 0) + (panelOpen ? 386 : 0);
+    // The side tray is a fixed overlay at the viewport's right edge — the
+    // header and body must clear its footprint or buttons hide beneath it.
+    const trayDocked = (open.shelf || []).length > 0;
+    const editorMax =
+      780 +
+      (hasRail && !panelOpen ? 200 : 0) +
+      (panelOpen ? 340 : 0) +
+      (trayDocked ? 288 : 0);
     return (
       <div style={{ maxWidth: editorMax, margin: "0 auto", padding: "16px 16px 120px" }}>
         {/* editor top bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginBottom: 6,
+            paddingRight: trayDocked ? 288 : 0,
+          }}
+        >
           <button
             onClick={() => {
               setExample(null);
@@ -1829,9 +1864,48 @@ export default function StudyTablesDesktop({
           })}
         </div>
 
-        {/* three-zone body: outline rail (appears once you add sections) + column */}
+        {/* three-zone body: reader OR outline rail on the left + column +
+            the tray's reserved right column. The in-table reader took the
+            left slot (Kepu, Jul 22) so the tray stays docked while picking. */}
         <div style={{ display: "flex", gap: 26, alignItems: "flex-start" }}>
-          {hasRail && (
+          {panelOpen && (
+            <VersePicker
+              onAdd={addVerses}
+              renderVerse={renderVerse}
+              allMarks={allMarks}
+              books={books}
+              shelf={open.shelf || []}
+              onShelve={shelve}
+              onUnshelve={unshelve}
+              onShelfToColumn={shelfToColumn}
+              onShelfAllToColumn={shelfAllToColumn}
+              onClose={closePanel}
+              accent={accent}
+              headerOffset={headerOffset}
+              initialTab={panelTab}
+              defaultBookId={open.bookId}
+              compact
+              verseTextFor={(r) => {
+                const rec = getVerse(r);
+                return rec ? rec.text : "";
+              }}
+              onVerseDragStart={(ref, bookId) =>
+                setPickerDrag({ ref, bookId })
+              }
+              onVerseDragEnd={() => setPickerDrag(null)}
+              themeLabelFor={(ref, color, bookId) => {
+                const bk = getBook(bookId || open.bookId || "master");
+                const ix = ref.indexOf(":");
+                const cs = ix < 0 ? ref : ref.slice(0, ix);
+                const scope = chapterGroups[cs]
+                  ? "group:" + chapterGroups[cs]
+                  : cs;
+                const scoped = bk.scopedLabels?.[scope]?.[color];
+                return ((scoped || "") as string).trim();
+              }}
+            />
+          )}
+          {hasRail && !panelOpen && (
             <div
               style={{
                 width: 210,
@@ -1878,43 +1952,17 @@ export default function StudyTablesDesktop({
               verseView={verseView}
               renderVerseFocused={renderVerseFocused}
               onRenameTheme={setThemeLabel ? renameTheme : undefined}
-              traySide={!panelOpen}
+              externalDragRef={pickerDrag ? pickerDrag.ref : null}
+              onExternalDrop={dropFromPicker}
+              traySide
               trayTop={headerOffset + 14}
             />
           </div>
           {/* Reserve the right column for the fixed tray panel so it never
-              overlaps the cards it places (Kepu, Jul 22). The verse picker
-              takes this slot when open — the tray falls back to its pill. */}
-          {!panelOpen && (open.shelf || []).length > 0 && (
+              overlaps the cards it places (Kepu, Jul 22). With the reader on
+              the left, the tray keeps this slot even while picking. */}
+          {(open.shelf || []).length > 0 && (
             <div style={{ width: 288, flex: "0 0 auto" }} />
-          )}
-          {panelOpen && (
-            <VersePicker
-              onAdd={addVerses}
-              renderVerse={renderVerse}
-              allMarks={allMarks}
-              books={books}
-              shelf={open.shelf || []}
-              onShelve={shelve}
-              onUnshelve={unshelve}
-              onShelfToColumn={shelfToColumn}
-              onShelfAllToColumn={shelfAllToColumn}
-              onClose={closePanel}
-              accent={accent}
-              headerOffset={headerOffset}
-              initialTab={panelTab}
-              defaultBookId={open.bookId}
-              themeLabelFor={(ref, color, bookId) => {
-                const bk = getBook(bookId || open.bookId || "master");
-                const ix = ref.indexOf(":");
-                const cs = ix < 0 ? ref : ref.slice(0, ix);
-                const scope = chapterGroups[cs]
-                  ? "group:" + chapterGroups[cs]
-                  : cs;
-                const scoped = bk.scopedLabels?.[scope]?.[color];
-                return ((scoped || "") as string).trim();
-              }}
-            />
           )}
         </div>
 

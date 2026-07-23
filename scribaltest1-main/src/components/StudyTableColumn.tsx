@@ -78,6 +78,12 @@ interface StudyTableColumnProps {
     themeColor?: MarkColor
   ) => React.ReactNode;
   onRenameTheme?: (color: MarkColor, name: string) => void;
+  // A verse drag from the in-table reader (VersePicker) in flight: the ref
+  // being dragged, or null. The column shows its drop lines and, on drop,
+  // calls onExternalDrop with the landing index — the caller inserts the
+  // scripture card there (Kepu, Jul 22: grab a verse, drag it straight in).
+  externalDragRef?: string | null;
+  onExternalDrop?: (index: number) => void;
   // Tray dock (Kepu, Jul 22): true = the tray is a fixed right-side panel,
   // always open while cards wait (desktop; the verse picker takes precedence —
   // the caller passes false while it's open, falling back to the bottom pill).
@@ -621,6 +627,8 @@ export default function StudyTableColumn({
   onDeleteFromShelf,
   verseTextFor,
   outlineMode,
+  externalDragRef,
+  onExternalDrop,
   traySide,
   trayTop,
   live,
@@ -642,6 +650,19 @@ export default function StudyTableColumn({
   const [trayConfirmId, setTrayConfirmId] = useState<string | null>(null);
   const [trayDragId, setTrayDragId] = useState<string | null>(null);
   const [trayOverIndex, setTrayOverIndex] = useState<number | null>(null);
+  // Any drag the column can receive: a tray card, a row reorder, or a verse
+  // from the in-table reader. One gate for drop lines / aprons, one executor
+  // for the drop itself.
+  const extDrag = !!(externalDragRef && onExternalDrop);
+  const dragInFlight = !!trayDragId || !!rowDragId || extDrag;
+  const performDrop = (at: number) => {
+    if (trayDragId && onPlaceFromShelf) onPlaceFromShelf(trayDragId, at);
+    else if (rowDragId) moveTo(rowDragId, at);
+    else if (extDrag) onExternalDrop!(at);
+    setTrayDragId(null);
+    setRowDragId(null);
+    setTrayOverIndex(null);
+  };
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
   // Newly inserted card to autofocus once.
@@ -1912,7 +1933,7 @@ export default function StudyTableColumn({
         // While a drag is in flight the column grows a drop apron below its
         // last card, so "just below the column" is droppable too — without
         // it, the root ends at its content and drops there are refused.
-        paddingBottom: trayDragId || rowDragId ? "26vh" : undefined,
+        paddingBottom: dragInFlight ? "26vh" : undefined,
       }}
       // Catch-all drop target: a tray card or an outline row dropped anywhere
       // in the column that no inner target claimed lands at the END. Without
@@ -1923,7 +1944,7 @@ export default function StudyTableColumn({
       onDragOver={(e) => {
         if (e.defaultPrevented) return;
         if ((e.target as HTMLElement).closest("[data-tray]")) return;
-        if (trayDragId || rowDragId) {
+        if (dragInFlight) {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
           setTrayOverIndex(cards.length);
@@ -1932,14 +1953,9 @@ export default function StudyTableColumn({
       onDrop={(e) => {
         if (e.defaultPrevented) return;
         if ((e.target as HTMLElement).closest("[data-tray]")) return;
-        if (trayDragId || rowDragId) {
+        if (dragInFlight) {
           e.preventDefault();
-          if (trayDragId && onPlaceFromShelf)
-            onPlaceFromShelf(trayDragId, cards.length);
-          if (rowDragId) moveTo(rowDragId, cards.length);
-          setTrayDragId(null);
-          setRowDragId(null);
-          setTrayOverIndex(null);
+          performDrop(cards.length);
         }
       }}
     >
@@ -1966,7 +1982,7 @@ export default function StudyTableColumn({
               onMouseEnter={() => setHoverGap(i)}
               onMouseLeave={() => setHoverGap((g) => (g === i ? null : g))}
             >
-              {(trayDragId || rowDragId) && trayOverIndex === i && (
+              {dragInFlight && trayOverIndex === i && (
                 <div
                   style={{
                     height: 3,
@@ -1996,9 +2012,10 @@ export default function StudyTableColumn({
                 setMergeOverId(null);
               }}
               onDragOver={(e) => {
-                // A tray card or an outline row in hand: show the drop line
-                // above or below this card by pointer half — exact placement.
-                if (trayDragId || rowDragId) {
+                // A tray card, an outline row, or a reader verse in hand:
+                // show the drop line above or below this card by pointer
+                // half — exact placement.
+                if (dragInFlight) {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
                   const r = e.currentTarget.getBoundingClientRect();
@@ -2021,15 +2038,9 @@ export default function StudyTableColumn({
                 setMergeOverId((p) => (p === card.id ? null : p))
               }
               onDrop={(e) => {
-                if (trayDragId || rowDragId) {
+                if (dragInFlight) {
                   e.preventDefault();
-                  const at = trayOverIndex ?? i;
-                  if (trayDragId && onPlaceFromShelf)
-                    onPlaceFromShelf(trayDragId, at);
-                  if (rowDragId) moveTo(rowDragId, at);
-                  setTrayDragId(null);
-                  setRowDragId(null);
-                  setTrayOverIndex(null);
+                  performDrop(trayOverIndex ?? i);
                   return;
                 }
                 if (
@@ -2230,21 +2241,16 @@ export default function StudyTableColumn({
       <div
         style={{ paddingLeft: 32 }}
         onDragOver={(e) => {
-          if (trayDragId || rowDragId) {
+          if (dragInFlight) {
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
             setTrayOverIndex(cards.length);
           }
         }}
         onDrop={(e) => {
-          if (trayDragId || rowDragId) {
+          if (dragInFlight) {
             e.preventDefault();
-            if (trayDragId && onPlaceFromShelf)
-              onPlaceFromShelf(trayDragId, cards.length);
-            if (rowDragId) moveTo(rowDragId, cards.length);
-            setTrayDragId(null);
-            setRowDragId(null);
-            setTrayOverIndex(null);
+            performDrop(cards.length);
           }
         }}
       >
@@ -2259,19 +2265,19 @@ export default function StudyTableColumn({
               padding: "26px 10px 6px",
               // The whole empty column is a drop zone (root catch-all) —
               // this area just makes that visible and easy to hit.
-              minHeight: trayDragId ? "38vh" : undefined,
-              border: trayDragId ? "2px dashed " + accent : undefined,
-              borderRadius: trayDragId ? 14 : undefined,
-              display: trayDragId ? "grid" : undefined,
-              placeItems: trayDragId ? "center" : undefined,
+              minHeight: dragInFlight ? "38vh" : undefined,
+              border: dragInFlight ? "2px dashed " + accent : undefined,
+              borderRadius: dragInFlight ? 14 : undefined,
+              display: dragInFlight ? "grid" : undefined,
+              placeItems: dragInFlight ? "center" : undefined,
             }}
           >
-            {trayDragId
+            {dragInFlight
               ? "Drop anywhere to place your first card."
               : "Your table is empty — drag cards from the tray, or Place them, in any order."}
           </div>
         )}
-        {(trayDragId || rowDragId) && trayOverIndex === cards.length && (
+        {dragInFlight && trayOverIndex === cards.length && (
           <div
             style={{
               height: 3,
