@@ -1449,6 +1449,11 @@ export default function App() {
     c: 0,
   });
   const [trJump, setTrJump] = useState<string | null>(null);
+  // Verse refs mid-drag from the reader's grabbers (null = no drag). The
+  // table surface listens so its column can catch the drop.
+  const [readerDrag, setReaderDrag] = useState<{ refs: string[] } | null>(
+    null
+  );
   const openTableReader = (tableId: string, bookId: string, atRef?: string) => {
     if (atRef) {
       const cut = atRef.lastIndexOf(":");
@@ -10777,6 +10782,12 @@ export default function App() {
           addShelfArrivals={tableShelfArrivals}
           onRemoveVersesFromStudy={removeVersesFromStudy}
           setThemeLabel={setScopedLabelInBook}
+          readerDrag={
+            tableReader && readerDrag
+              ? { refs: readerDrag.refs, bookId: tableReader.bookId }
+              : null
+          }
+          leftInset={tableReader ? 452 : 0}
         />
       )}
 
@@ -10784,17 +10795,20 @@ export default function App() {
       {tableReader && (
         <div
           style={{
+            // Left dock (Kepu, Jul 22): the reader pops up on the LEFT of the
+            // table — the tray keeps the right — a notch narrower than the
+            // regular reader.
             position: "fixed",
             top: headerH,
-            right: 0,
+            left: 0,
             bottom: 0,
-            width: "min(500px, 94vw)",
+            width: "min(440px, 94vw)",
             zIndex: 60,
             display: "flex",
             flexDirection: "column",
             background: "var(--panel)",
-            borderLeft: "1px solid var(--border)",
-            boxShadow: "-18px 0 40px -28px rgba(0,0,0,.35)",
+            borderRight: "1px solid var(--border)",
+            boxShadow: "18px 0 40px -28px rgba(0,0,0,.35)",
           }}
         >
           <div
@@ -10903,6 +10917,11 @@ export default function App() {
               onTagTap={openTagRef}
               marks={getBook(tableReader.bookId).marks}
               panelMode
+              fontScale={0.86}
+              dragVerses
+              onGrabDragState={(refs) =>
+                setReaderDrag(refs ? { refs } : null)
+              }
               jumpTarget={trJump}
               onJumpHandled={() => setTrJump(null)}
               onSendVerses={sendReaderVersesToTable}

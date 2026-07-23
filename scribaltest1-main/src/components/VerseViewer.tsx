@@ -91,6 +91,10 @@ interface VerseViewerProps {
   // dragging into a topic study panel. Chapter-book panels never get one —
   // chapter books LINK, topic books GRAB.
   dragVerses?: boolean;
+  // Table reader (Kepu, Jul 22): the grabbed refs while a drag is in flight
+  // (null = drag ended). The table column listens through this to show its
+  // drop lines and insert the verses where the drop lands.
+  onGrabDragState?: (refs: string[] | null) => void;
   // With Select-mode verses checked, "Send to study…" routes them through the
   // parent's send picker — for a topic study that isn't open as a panel
   // (drag needs a visible target; this doesn't).
@@ -171,6 +175,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     linkScriptures,
     onCompilePanel,
     dragVerses,
+    onGrabDragState,
     onSendSelection,
     controlsStickyTop = 0,
   } = props;
@@ -652,6 +657,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             } catch {
               /* some browsers require a payload; nothing else to do */
             }
+            if (onGrabDragState) onGrabDragState(group);
             // The verse itself follows the pointer (Kepu's call) — not the
             // bare chip.
             setVerseDragImage(e, group.map((ref) => ({
@@ -660,6 +666,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             })));
           }}
           onDragEnd={(e) => {
+            if (onGrabDragState) onGrabDragState(null);
             // A completed group drop clears the checks; a cancelled drag
             // keeps them so the user can re-aim.
             if (dragSelMode && e.dataTransfer.dropEffect !== "none")

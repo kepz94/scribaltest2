@@ -93,6 +93,13 @@ interface Props {
   // Open the reader dock beside the table: browse + mark + define + send.
   // atRef navigates it straight to that verse's chapter.
   onOpenReader?: (tableId: string, bookId: string, atRef?: string) => void;
+  // A grabber drag in flight from the reader dock (Kepu, Jul 22): the refs
+  // in hand + the reader's "marks go to" book. The column shows drop lines
+  // and inserts the verses where the drop lands.
+  readerDrag?: { refs: string[]; bookId: string } | null;
+  // Width the fixed left reader dock occupies — the editor shifts right by
+  // this much so the reader never covers the table.
+  leftInset?: number;
   // Dictionary word-tags: rendered on scripture cards (and in Present via the
   // shared renderVerse); tapping one opens its definition.
   wordTags?: WordTag[];
@@ -175,6 +182,8 @@ export default function StudyTablesDesktop({
   deleteTable: deleteTableReal,
   createSession,
   onOpenReader,
+  readerDrag,
+  leftInset = 0,
   wordTags,
   onTagTap,
   openTableId,
@@ -845,13 +854,18 @@ export default function StudyTablesDesktop({
     ref: string;
     bookId?: string;
   } | null>(null);
+  // Either external drag source — a reader-grabber verse group or a picker
+  // verse — inserts at the drop line the same way.
+  const externalInsert = pickerDrag
+    ? { refs: [pickerDrag.ref], bookId: pickerDrag.bookId }
+    : readerDrag || null;
   const dropFromPicker = (index: number) => {
-    if (!open || !pickerDrag) return;
+    if (!open || !externalInsert) return;
     const base = columnCards;
     const idx = Math.max(0, Math.min(index, base.length));
     commitCards([
       ...base.slice(0, idx),
-      ...makeScriptureCards([pickerDrag.ref], false, pickerDrag.bookId),
+      ...makeScriptureCards(externalInsert.refs, false, externalInsert.bookId),
       ...base.slice(idx),
     ]);
     setPickerDrag(null);
@@ -1290,7 +1304,15 @@ export default function StudyTablesDesktop({
       (panelOpen ? 340 : 0) +
       (trayDocked ? 288 : 0);
     return (
-      <div style={{ maxWidth: editorMax, margin: "0 auto", padding: "16px 16px 120px" }}>
+      <div
+        style={{
+          maxWidth: editorMax,
+          // The reader dock is a fixed panel on the left — shift the whole
+          // editor right of it instead of centering underneath it.
+          margin: leftInset ? "0 16px 0 " + (leftInset + 16) + "px" : "0 auto",
+          padding: "16px 16px 120px",
+        }}
+      >
         {/* editor top bar */}
         <div
           style={{
@@ -1952,7 +1974,7 @@ export default function StudyTablesDesktop({
               verseView={verseView}
               renderVerseFocused={renderVerseFocused}
               onRenameTheme={setThemeLabel ? renameTheme : undefined}
-              externalDragRef={pickerDrag ? pickerDrag.ref : null}
+              externalDragRef={externalInsert ? externalInsert.refs[0] : null}
               onExternalDrop={dropFromPicker}
               traySide
               trayTop={headerOffset + 14}
