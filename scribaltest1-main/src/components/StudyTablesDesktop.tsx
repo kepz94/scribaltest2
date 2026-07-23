@@ -2180,6 +2180,7 @@ export default function StudyTablesDesktop({
                     panelMode
                     fontScale={0.86}
                     chromeBg="var(--panel)"
+                    compactChrome
                     dragVerses
                     onGrabDragState={(refs) =>
                       setExternalDrag(

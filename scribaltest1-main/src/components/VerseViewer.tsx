@@ -100,6 +100,10 @@ interface VerseViewerProps {
   // Reading panel dock's white panel) passes its own so the header doesn't
   // paint a box (Kepu, Jul 23).
   chromeBg?: string;
+  // Narrow hosts (the 440px Reading panel dock): smaller pills and arrows so
+  // volume · book · chapter fit on ONE row instead of stacking (Kepu, Jul 23:
+  // the full-size pills ate a quarter of the panel).
+  compactChrome?: boolean;
   // With Select-mode verses checked, "Send to study…" routes them through the
   // parent's send picker — for a topic study that isn't open as a panel
   // (drag needs a visible target; this doesn't).
@@ -182,6 +186,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     dragVerses,
     onGrabDragState,
     chromeBg = "var(--bg)",
+    compactChrome = false,
     onSendSelection,
     controlsStickyTop = 0,
   } = props;
@@ -329,14 +334,14 @@ export default function VerseViewer(props: VerseViewerProps) {
   // header when reading in multiple panels (where the wide page margins that
   // hold the floating side arrows don't exist).
   const headerArrowStyle: React.CSSProperties = {
-    width: "30px",
-    height: "30px",
+    width: compactChrome ? "24px" : "30px",
+    height: compactChrome ? "24px" : "30px",
     flexShrink: 0,
     borderRadius: "50%",
     border: "1px solid var(--border)",
     backgroundColor: "var(--panel)",
     color: "var(--muted)",
-    fontSize: "20px",
+    fontSize: compactChrome ? "15px" : "20px",
     lineHeight: 1,
     cursor: "pointer",
     display: "flex",
@@ -531,21 +536,30 @@ export default function VerseViewer(props: VerseViewerProps) {
       style={{
         // SCR-34: sized for the 380px default panel width — big enough to
         // read and click, small enough that all three pills fit with air.
-        padding: "9px 16px",
+        // compactChrome shrinks them so all three share one row at 440px.
+        padding: compactChrome ? "5px 10px" : "9px 16px",
         borderRadius: "999px",
         border: "1px solid var(--border)",
         backgroundColor: "var(--panel)",
         color: "var(--text)",
-        fontSize: "15px",
+        fontSize: compactChrome ? "12.5px" : "15px",
         fontWeight: 600,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        gap: "8px",
+        gap: compactChrome ? "5px" : "8px",
+        whiteSpace: "nowrap",
       }}
     >
       {label}
-      <span style={{ color: "var(--muted)", fontSize: "11px" }}>▼</span>
+      <span
+        style={{
+          color: "var(--muted)",
+          fontSize: compactChrome ? "9px" : "11px",
+        }}
+      >
+        ▼
+      </span>
     </button>
   );
 
@@ -563,7 +577,7 @@ export default function VerseViewer(props: VerseViewerProps) {
         style={{
           // Sits just below the (SCR-34 smaller) pill button.
           position: "absolute",
-          top: "44px",
+          top: compactChrome ? "32px" : "44px",
           left: 0,
           width: width + "px",
           maxHeight: "340px",
@@ -966,8 +980,8 @@ export default function VerseViewer(props: VerseViewerProps) {
             display: "flex",
             justifyContent: "center",
             alignItems: "flex-start",
-            gap: "10px",
-            marginBottom: "12px",
+            gap: compactChrome ? "6px" : "10px",
+            marginBottom: compactChrome ? "7px" : "12px",
             flexWrap: "wrap",
           }}
         >
