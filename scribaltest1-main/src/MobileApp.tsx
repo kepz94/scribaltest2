@@ -2406,7 +2406,7 @@ export default function MobileApp() {
       .join(" ");
     return {
       study: false,
-      title: bk.book + " " + ch.chapter,
+      title: headerBookName(bk.book) + " " + ch.chapter,
       sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
       linked:
