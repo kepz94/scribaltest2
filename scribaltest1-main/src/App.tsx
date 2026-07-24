@@ -27,6 +27,7 @@ import PrintView from "./components/PrintView";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
+import { sortRefs as sortVerseRefs } from "./data/verseIndex";
 import {
   useSearchStudies,
   SearchStudy,
@@ -4328,6 +4329,17 @@ export default function App() {
     if (!study) return;
     const drop = new Set(refs);
     updateStudy(studyId, { refs: study.refs.filter((r) => !drop.has(r)) });
+  };
+  // SCR-61: verses gathered through the topic table's Reading panel join the
+  // study itself (scripture order), so scope/coverage stay true.
+  const addVersesToStudy = (studyId: string, refs: string[]) => {
+    if (!refs.length) return;
+    const study = searchStudies.find((s) => s.id === studyId);
+    if (!study) return;
+    const have = new Set(study.refs);
+    const fresh = refs.filter((r) => !have.has(r));
+    if (!fresh.length) return;
+    updateStudy(studyId, { refs: sortVerseRefs([...study.refs, ...fresh]) });
   };
   // Display name for a study's book in the send picker.
   const bookLabel = (bookId: string) => {
@@ -10742,6 +10754,7 @@ export default function App() {
           onTagTap={openTagRef}
           addShelfArrivals={tableShelfArrivals}
           onRemoveVersesFromStudy={removeVersesFromStudy}
+          onAddVersesToStudy={addVersesToStudy}
           setThemeLabel={setScopedLabelInBook}
           selectedTool={selectedTool}
           selectedColor={selectedColor}

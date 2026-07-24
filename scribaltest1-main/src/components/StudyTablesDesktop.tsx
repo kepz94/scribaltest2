@@ -154,6 +154,8 @@ interface Props {
   ) => void;
   // Remove verses from a topic study (the tray's confirmed delete).
   onRemoveVersesFromStudy?: (studyId: string, refs: string[]) => void;
+  // SCR-61: verses gathered through the dock join the topic study itself.
+  onAddVersesToStudy?: (studyId: string, refs: string[]) => void;
   // Rename a theme where the compile reads it: useMarks.setScopedLabelInBook.
   // Renaming a compiled heading while live edits the theme, never the cards.
   setThemeLabel?: (
@@ -224,6 +226,7 @@ export default function StudyTablesDesktop({
   onMarkVerses,
   addShelfArrivals,
   onRemoveVersesFromStudy,
+  onAddVersesToStudy,
   setThemeLabel,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -523,6 +526,12 @@ export default function StudyTablesDesktop({
     placedRefs.has(ref) ? "in-table" : shelfRefSet.has(ref) ? "in-tray" : null;
   const freshRefsOnly = (refs: string[]) =>
     refs.filter((r) => !refStatusFor(r));
+  // Verses gathered into a TOPIC table join the study itself (SCR-61), so
+  // scope and coverage stay true. Chapter tables never grow this way.
+  const joinTopicStudy = (refs: string[]) => {
+    if (topicStudy && onAddVersesToStudy && refs.length)
+      onAddVersesToStudy(topicStudy.id, refs);
+  };
   // The meter only matters once the table is yours — while Compiled · live,
   // everything in scope is on screen by construction.
   const coverage =
@@ -911,6 +920,7 @@ export default function StudyTablesDesktop({
       setExternalDrag(null);
       return;
     }
+    joinTopicStudy(refs);
     const base = columnCards;
     const idx = Math.max(0, Math.min(index, base.length));
     commitCards([
@@ -926,6 +936,7 @@ export default function StudyTablesDesktop({
   const sendVersesToShelf = (rawRefs: string[]) => {
     const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
+    joinTopicStudy(refs);
     const cards: TableCard[] = refs.map((r) => ({
       id: newCardId(),
       kind: "scripture" as const,
@@ -939,6 +950,7 @@ export default function StudyTablesDesktop({
   const addVerses = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
     const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
+    joinTopicStudy(refs);
     const newCards = makeScriptureCards(refs, asPassage, bookId);
     const base = columnCards;
     const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
@@ -950,6 +962,7 @@ export default function StudyTablesDesktop({
   const shelve = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
     const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
+    joinTopicStudy(refs);
     updateTable(open.id, {
       shelf: [...(open.shelf || []), ...makeScriptureCards(refs, asPassage, bookId)],
     });
