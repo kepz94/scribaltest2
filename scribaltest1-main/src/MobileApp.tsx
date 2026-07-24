@@ -1930,7 +1930,12 @@ export default function MobileApp() {
   );
   const go = (delta: number) => {
     const next = flat[curIndex + delta];
-    if (next) setLoc(next);
+    if (!next) return;
+    // Stepping prev/next means reading on — land at the top of the chapter,
+    // not wherever it was last scrolled to. (Jumping back in via browse or
+    // search still restores the saved position.)
+    delete scrollPos.current[locKey(next)];
+    setLoc(next);
   };
 
   // chapter reference ("Mosiah 18") -> location + canonical order, for jumping
