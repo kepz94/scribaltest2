@@ -526,6 +526,57 @@ export default function StudyTablesDesktop({
     placedRefs.has(ref) ? "in-table" : shelfRefSet.has(ref) ? "in-tray" : null;
   const freshRefsOnly = (refs: string[]) =>
     refs.filter((r) => !refStatusFor(r));
+  // ---- Chapter seal tombstoning (SCR-62) ----
+  // When a chapter is unlinked from the group, its scripture cards stay in
+  // the table's data — holding their authored position — but stop rendering.
+  // Re-linking the chapter makes them reappear exactly where they were.
+  // Nothing written is ever destroyed. Topic tables never have dormant cards.
+  const memberScopeSet = recStudy
+    ? new Set(
+        recStudy.memberScopes && recStudy.memberScopes.length
+          ? recStudy.memberScopes
+          : [recStudy.scopeRef]
+      )
+    : null;
+  const cardDormant = (c: TableCard): boolean => {
+    if (!memberScopeSet || c.kind !== "scripture" || !(c.refs || []).length)
+      return false;
+    return (c.refs || []).every((r) => {
+      const ix = r.lastIndexOf(":");
+      return !memberScopeSet.has(ix < 0 ? r : r.slice(0, ix));
+    });
+  };
+  const visibleColumnCards = columnCards.filter((c) => !cardDormant(c));
+  const visibleShelf = open
+    ? (open.shelf || []).filter((c) => !cardDormant(c))
+    : [];
+  // Card operations run in VISIBLE space (that's what the column renders and
+  // what drop indices mean); dormant cards are woven back beside their
+  // nearest surviving neighbor before anything persists.
+  const weaveDormant = (visible: TableCard[]): TableCard[] => {
+    const dorm = columnCards.filter(cardDormant);
+    if (!dorm.length) return visible;
+    const inInput = new Set(visible.map((c) => c.id));
+    const runs = new Map<string | null, TableCard[]>();
+    let anchor: string | null = null;
+    columnCards.forEach((c) => {
+      if (cardDormant(c) && !inInput.has(c.id)) {
+        const arr = runs.get(anchor) || [];
+        arr.push(c);
+        runs.set(anchor, arr);
+      } else if (!cardDormant(c)) anchor = c.id;
+    });
+    const out: TableCard[] = [...(runs.get(null) || [])];
+    visible.forEach((c) => {
+      out.push(c);
+      (runs.get(c.id) || []).forEach((d) => out.push(d));
+    });
+    const placed = new Set(out.map((c) => c.id));
+    dorm.forEach((d) => {
+      if (!placed.has(d.id)) out.push(d);
+    });
+    return out;
+  };
   // Verses gathered into a TOPIC table join the study itself (SCR-61), so
   // scope and coverage stay true. Chapter tables never grow this way.
   const joinTopicStudy = (refs: string[]) => {
@@ -552,10 +603,11 @@ export default function StudyTablesDesktop({
   // before, are absent after, and still belong to the study's scope. Merges
   // and reorders keep their refs in the column, so only real deletes return.
   const commitCards = (
-    cards: TableCard[],
+    visibleCards: TableCard[],
     extra?: Partial<Pick<StudyTable, "shelf">>
   ) => {
     if (!open) return;
+    const cards = weaveDormant(visibleCards);
     let shelfPatch = extra ? extra.shelf : undefined;
     if (scopeInfo) {
       const nextRefs = new Set<string>();
@@ -626,7 +678,7 @@ export default function StudyTablesDesktop({
     const shelfList = open.shelf || [];
     const card = shelfList.find((c) => c.id === cardId);
     if (!card) return;
-    const base = columnCards;
+    const base = visibleColumnCards;
     let idx: number;
     if (index !== undefined) {
       idx = Math.max(0, Math.min(index, base.length));
@@ -677,7 +729,7 @@ export default function StudyTablesDesktop({
   const clearToTray = () => {
     if (!open) return;
     const now = Date.now();
-    const moved: TableCard[] = columnCards
+    const moved: TableCard[] = visibleColumnCards
       .filter(
         (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
       )
@@ -715,7 +767,7 @@ export default function StudyTablesDesktop({
     const freshRefs = new Set<string>();
     fresh.forEach((c) => (c.refs || []).forEach((r) => freshRefs.add(r)));
     const now = Date.now();
-    const toTray: TableCard[] = columnCards
+    const toTray: TableCard[] = visibleColumnCards
       .filter(
         (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
       )
@@ -921,7 +973,7 @@ export default function StudyTablesDesktop({
       return;
     }
     joinTopicStudy(refs);
-    const base = columnCards;
+    const base = visibleColumnCards;
     const idx = Math.max(0, Math.min(index, base.length));
     commitCards([
       ...base.slice(0, idx),
@@ -952,7 +1004,7 @@ export default function StudyTablesDesktop({
     if (!open || refs.length === 0) return;
     joinTopicStudy(refs);
     const newCards = makeScriptureCards(refs, asPassage, bookId);
-    const base = columnCards;
+    const base = visibleColumnCards;
     const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
     commitCards([...base.slice(0, idx), ...newCards, ...base.slice(idx)]);
     setPendingIndex(idx + newCards.length);
@@ -978,7 +1030,7 @@ export default function StudyTablesDesktop({
     const shelf = open.shelf || [];
     const card = shelf.find((c) => c.id === cardId);
     if (!card) return;
-    const base = columnCards;
+    const base = visibleColumnCards;
     const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
     commitCards([...base.slice(0, idx), card, ...base.slice(idx)], {
       shelf: shelf.filter((c) => c.id !== cardId),
@@ -987,12 +1039,13 @@ export default function StudyTablesDesktop({
   };
   const shelfAllToColumn = () => {
     if (!open) return;
-    const shelf = open.shelf || [];
+    const shelf = visibleShelf;
     if (shelf.length === 0) return;
-    const base = columnCards;
+    const base = visibleColumnCards;
     const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    const movedIds = new Set(shelf.map((c) => c.id));
     commitCards([...base.slice(0, idx), ...shelf, ...base.slice(idx)], {
-      shelf: [],
+      shelf: (open.shelf || []).filter((c) => !movedIds.has(c.id)),
     });
     setPendingIndex(idx + shelf.length);
   };
@@ -1013,6 +1066,33 @@ export default function StudyTablesDesktop({
       ? "read"
       : dock.tab
     : null;
+  // Chapter seal (SCR-62): the Read tab is locked to the linked group's own
+  // chapters — reader navigation collapses to this list, and an out-of-scope
+  // location (e.g. a legacy card's chapter) snaps back to the first member.
+  const sealedReadLocs = (() => {
+    if (!recStudy) return undefined;
+    const scopes =
+      recStudy.memberScopes && recStudy.memberScopes.length
+        ? recStudy.memberScopes
+        : [recStudy.scopeRef];
+    const locs: { v: number; b: number; c: number; label: string }[] = [];
+    scopes.forEach((s) => {
+      const loc = chapterLocFor(s);
+      if (loc)
+        locs.push({ v: loc.volume, b: loc.book, c: loc.chapter, label: s });
+    });
+    return locs.length ? locs : undefined;
+  })();
+  useEffect(() => {
+    if (!dock || dockTab !== "read" || !sealedReadLocs) return;
+    const inScope = sealedReadLocs.some(
+      (l) => l.v === readLoc.v && l.b === readLoc.b && l.c === readLoc.c
+    );
+    if (!inScope) {
+      const f = sealedReadLocs[0];
+      setReadLoc({ v: f.v, b: f.b, c: f.c });
+    }
+  }, [dock, dockTab, open ? open.id : null]);
   // Table switch closes the dock and re-seeds the "Marks go to" book.
   useEffect(() => {
     setDock(null);
@@ -1069,8 +1149,8 @@ export default function StudyTablesDesktop({
   const markAllVerses = () => {
     if (!open || !onMarkVerses) return;
     const { refs, refBook } = collectMarkTargets([
-      ...columnCards,
-      ...(open.shelf || []),
+      ...visibleColumnCards,
+      ...visibleShelf,
     ]);
     onMarkVerses(refs, refBook, "Mark verses · " + (open.name || "table"));
   };
@@ -1089,7 +1169,7 @@ export default function StudyTablesDesktop({
     onMarkVerses(refs, refBook, "Mark verse");
   };
   const markTargetCount = open
-    ? collectMarkTargets([...columnCards, ...(open.shelf || [])]).refs.length
+    ? collectMarkTargets([...visibleColumnCards, ...visibleShelf]).refs.length
     : 0;
 
   // Theme chips for one scripture card: the colors marked on its verses, each
@@ -1414,7 +1494,7 @@ export default function StudyTablesDesktop({
     const hasRail = sections.length > 0;
     // The side tray is a fixed overlay at the viewport's right edge — the
     // header and body must clear its footprint or buttons hide beneath it.
-    const trayDocked = (open.shelf || []).length > 0;
+    const trayDocked = visibleShelf.length > 0;
     // The Scripture dock is a fixed left panel — while it's open the editor
     // shifts right of it instead of centering underneath.
     const dockInset = dock ? 452 : 0;
@@ -1551,7 +1631,7 @@ export default function StudyTablesDesktop({
                 // card (column, then shelf) — instead of the reader's
                 // Genesis 1 default (SCR-16). A chapter table with no cards
                 // yet opens at its study's chapter.
-                const sc = [...columnCards, ...(open.shelf || [])].find(
+                const sc = [...visibleColumnCards, ...visibleShelf].find(
                   (cd) => cd.kind === "scripture" && (cd.refs || []).length
                 );
                 let at = sc ? (sc.refs || [])[0] : undefined;
@@ -1624,10 +1704,10 @@ export default function StudyTablesDesktop({
             </button>
           )}
           <button
-            onClick={() => columnCards.length > 0 && setPresenting(true)}
-            disabled={columnCards.length === 0}
+            onClick={() => visibleColumnCards.length > 0 && setPresenting(true)}
+            disabled={visibleColumnCards.length === 0}
             title={
-              columnCards.length === 0
+              visibleColumnCards.length === 0
                 ? "Add cards first — the column becomes the lesson"
                 : "Present this table, beat by beat"
             }
@@ -1640,8 +1720,8 @@ export default function StudyTablesDesktop({
               border: 0,
               borderRadius: 999,
               padding: "9px 16px",
-              opacity: columnCards.length === 0 ? 0.4 : 1,
-              cursor: columnCards.length === 0 ? "not-allowed" : "pointer",
+              opacity: visibleColumnCards.length === 0 ? 0.4 : 1,
+              cursor: visibleColumnCards.length === 0 ? "not-allowed" : "pointer",
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
@@ -1708,7 +1788,7 @@ export default function StudyTablesDesktop({
           </button>
           <button
             onClick={() =>
-              columnCards.length > 0 && setClearConfirm(true)
+              visibleColumnCards.length > 0 && setClearConfirm(true)
             }
             title="Move every card to the tray"
             style={{
@@ -1721,8 +1801,8 @@ export default function StudyTablesDesktop({
               borderRadius: 999,
               padding: "6px 13px",
               flex: "0 0 auto",
-              opacity: columnCards.length > 0 ? 1 : 0.4,
-              cursor: columnCards.length > 0 ? "pointer" : "not-allowed",
+              opacity: visibleColumnCards.length > 0 ? 1 : 0.4,
+              cursor: visibleColumnCards.length > 0 ? "pointer" : "not-allowed",
             }}
           >
             Clear to tray
@@ -2154,6 +2234,7 @@ export default function StudyTablesDesktop({
                     jumpTarget={readJump}
                     onJumpHandled={() => setReadJump(null)}
                     onSendVerses={sendVersesToShelf}
+                    allowedLocs={sealedReadLocs}
                     refStatusFor={refStatusFor}
                     onStageVerse={(r) => sendVersesToShelf([r])}
                     chromeExtra={
@@ -2279,7 +2360,7 @@ export default function StudyTablesDesktop({
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <StudyTableColumn
-              cards={columnCards}
+              cards={visibleColumnCards}
               onChange={commitCards}
               accent={accent}
               renderVerse={renderVerse}
@@ -2291,7 +2372,7 @@ export default function StudyTablesDesktop({
                   ? "This makes the table yours — from here it keeps your order, and new marks wait in the tray instead of moving things."
                   : undefined
               }
-              shelf={open.shelf || []}
+              shelf={visibleShelf}
               onPlaceFromShelf={placeFromShelf}
               onDeleteFromShelf={
                 topicStudy && onRemoveVersesFromStudy
@@ -2316,7 +2397,7 @@ export default function StudyTablesDesktop({
           {/* Reserve the right column for the fixed tray panel so it never
               overlaps the cards it places (Kepu, Jul 22). With the reader on
               the left, the tray keeps this slot even while picking. */}
-          {(open.shelf || []).length > 0 && (
+          {visibleShelf.length > 0 && (
             <div style={{ width: 288, flex: "0 0 auto" }} />
           )}
         </div>
@@ -2361,7 +2442,7 @@ export default function StudyTablesDesktop({
 
         {presenting && (
           <StudyTablePresent
-            table={liveCompiled ? { ...open, cards: columnCards } : open}
+            table={{ ...open, cards: visibleColumnCards }}
             renderVerse={renderVerse}
             themesFor={cardThemes}
             accent={accent}
@@ -2376,7 +2457,7 @@ export default function StudyTablesDesktop({
                   string,
                   { color: number; label: string }[]
                 > = {};
-                [...columnCards, ...(open.shelf || [])].forEach((c) => {
+                [...visibleColumnCards, ...visibleShelf].forEach((c) => {
                   if (c.kind !== "scripture" || !c.refs || !c.refs.length)
                     return;
                   const bid = c.bookId || open.bookId || "master";
@@ -2397,7 +2478,7 @@ export default function StudyTablesDesktop({
                   tableJson: JSON.stringify(
                     // Presenting a Compiled · live table performs what's on
                     // screen — the generated arrangement — without promoting.
-                    redactTableForRoom({ ...open, cards: columnCards })
+                    redactTableForRoom({ ...open, cards: visibleColumnCards })
                   ),
                   marksJson: JSON.stringify(marks),
                   themesJson: JSON.stringify(themes),

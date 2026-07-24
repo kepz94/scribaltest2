@@ -2775,6 +2775,51 @@ export default function App() {
     });
   };
 
+  // SCR-62 (chapter seal): link/unlink used to leave a linked study's
+  // memberScopes snapshot stale until the next recompile — a departed
+  // chapter's verses stayed in the shared table's scope and kept arriving.
+  // Refresh every live study's snapshot from the group map the moment it
+  // changes (canonical chapter order); compiledAt bumps so the fix wins the
+  // sync merge and propagates, mirroring the open-time auto-heal.
+  const refreshMemberScopes = (groups: Record<string, string>) => {
+    const at = Date.now();
+    const orderOf = (sc: string) => {
+      const l = chapterLoc.get(sc);
+      return l ? l.volume * 1e6 + l.book * 1e3 + l.chapter : 1e9;
+    };
+    setRecordedStudies((prev) => {
+      let changed = false;
+      const out = prev.map((s) => {
+        if (isStudyDeleted(s)) return s;
+        if (s.type === "linked") {
+          const mem = Object.keys(groups)
+            .filter((c) => groups[c] === s.scopeRef)
+            .sort((a, b) => orderOf(a) - orderOf(b));
+          const cur = s.memberScopes || [];
+          if (
+            mem.length &&
+            (mem.length !== cur.length || mem.some((m, i) => m !== cur[i]))
+          ) {
+            changed = true;
+            return { ...s, memberScopes: mem, compiledAt: at };
+          }
+          return s;
+        }
+        // A chapter study answers for exactly its own chapter; a stale
+        // snapshot inherited from its linked days must not widen it.
+        if (
+          s.memberScopes &&
+          (s.memberScopes.length !== 1 || s.memberScopes[0] !== s.scopeRef)
+        ) {
+          changed = true;
+          return { ...s, memberScopes: [s.scopeRef], compiledAt: at };
+        }
+        return s;
+      });
+      return changed ? out : prev;
+    });
+  };
+
   // Apply the prompt: the clicked tab is linked with exactly the checked tabs.
   // Checking none unlinks it. Any old groups left with one chapter dissolve.
   const applyLinkPrompt = () => {
@@ -2801,6 +2846,7 @@ export default function App() {
       setChapterGroups(next);
       convertDissolvedStudies(survivors);
       if (mode === "compile") reCompileFromLink(next, csT);
+      refreshMemberScopes(next);
       return;
     }
     const all = [csT, ...members];
@@ -2918,6 +2964,7 @@ export default function App() {
         reCompileFromLink(next, csT);
       }
     }
+    refreshMemberScopes(next);
     };
     // The unlink confirmation fires the moment a linked chapter is unchecked
     // (see the link prompt's checkboxes), and linking never prompts, so the

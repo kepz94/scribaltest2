@@ -108,6 +108,10 @@ interface VerseViewerProps {
   // button renders there). The Reading panel puts its "Marks go to" book
   // select here instead of spending a header row on it (Kepu, Jul 23).
   chromeExtra?: React.ReactNode;
+  // SCR-62 chapter seal: when set, reading is locked to these chapters — the
+  // volume/book/chapter pickers collapse to one pill over this list and
+  // prev/next step within it. No path to anywhere else.
+  allowedLocs?: { v: number; b: number; c: number; label: string }[];
   // SCR-61: where a verse already lives in the host table. Gathered rows show
   // an in-table / in-tray label instead of the grabber — no double-adding.
   refStatusFor?: (ref: string) => "in-table" | "in-tray" | null;
@@ -197,6 +201,7 @@ export default function VerseViewer(props: VerseViewerProps) {
     chromeBg = "var(--bg)",
     compactChrome = false,
     chromeExtra,
+    allowedLocs,
     refStatusFor,
     onStageVerse,
     onSendSelection,
@@ -257,13 +262,30 @@ export default function VerseViewer(props: VerseViewerProps) {
   const lastVol = vols.length - 1;
   const lastBook = vols[lastVol].books.length - 1;
   const lastChap = vols[lastVol].books[lastBook].chapters.length - 1;
-  const atStart =
-    selectedVolume === 0 && selectedBook === 0 && selectedChapter === 0;
-  const atEnd =
-    selectedVolume === lastVol &&
-    selectedBook === lastBook &&
-    selectedChapter === lastChap;
+  // Chapter seal (SCR-62): reading locked to a fixed chapter list.
+  const sealed = !!(allowedLocs && allowedLocs.length);
+  const sealedIdx = sealed
+    ? allowedLocs!.findIndex(
+        (l) =>
+          l.v === selectedVolume &&
+          l.b === selectedBook &&
+          l.c === selectedChapter
+      )
+    : -1;
+  const atStart = sealed
+    ? sealedIdx <= 0
+    : selectedVolume === 0 && selectedBook === 0 && selectedChapter === 0;
+  const atEnd = sealed
+    ? sealedIdx >= allowedLocs!.length - 1
+    : selectedVolume === lastVol &&
+      selectedBook === lastBook &&
+      selectedChapter === lastChap;
   const stepChapter = (dir: number) => {
+    if (sealed) {
+      const next = allowedLocs![sealedIdx + dir];
+      if (next) onChange(next.v, next.b, next.c);
+      return;
+    }
     let v = selectedVolume;
     let b = selectedBook;
     let c = selectedChapter + dir;
@@ -1048,6 +1070,59 @@ export default function VerseViewer(props: VerseViewerProps) {
             flexWrap: "wrap",
           }}
         >
+          {/* Chapter seal (SCR-62): one pill over the linked group's own
+              chapters — the full volume/book/chapter pickers never render. */}
+          {sealed ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {panelMode && !atStart && (
+                <button
+                  onClick={() => stepChapter(-1)}
+                  title="Previous chapter"
+                  aria-label="Previous chapter"
+                  style={headerArrowStyle}
+                >
+                  ‹
+                </button>
+              )}
+              <div style={{ position: "relative" }}>
+                {allowedLocs!.length > 1 ? (
+                  <>
+                    {pillButton(
+                      sealedIdx >= 0 ? allowedLocs![sealedIdx].label : "—",
+                      () => setChapMenuOpen((o) => !o)
+                    )}
+                    {chapMenuOpen &&
+                      dropdownPanel(
+                        allowedLocs!.map((l, idx) =>
+                          menuItem(l.label, idx === sealedIdx, () => {
+                            onChange(l.v, l.b, l.c);
+                            setChapMenuOpen(false);
+                          })
+                        ),
+                        () => setChapMenuOpen(false),
+                        220
+                      )}
+                  </>
+                ) : (
+                  pillButton(
+                    sealedIdx >= 0 ? allowedLocs![sealedIdx].label : "—",
+                    () => {}
+                  )
+                )}
+              </div>
+              {panelMode && !atEnd && (
+                <button
+                  onClick={() => stepChapter(1)}
+                  title="Next chapter"
+                  aria-label="Next chapter"
+                  style={headerArrowStyle}
+                >
+                  ›
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
           {/* Volume */}
           <div style={{ position: "relative" }}>
             {pillButton(currentVolume.volume, () => {
@@ -1135,6 +1210,8 @@ export default function VerseViewer(props: VerseViewerProps) {
               </button>
             )}
           </div>
+            </>
+          )}
         </div>
         )}
 
