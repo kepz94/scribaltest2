@@ -855,6 +855,85 @@ const readScrollMap = (): Record<string, number> => {
   return {};
 };
 
+// Standard LDS abbreviations for the reading header ONLY — the header has
+// ~120px for the title, and long names otherwise swallow the chapter number
+// ("JST Revela…"). Full names show everywhere else. JST books abbreviate the
+// base book behind the JST prefix.
+const BOOK_ABBREV: Record<string, string> = {
+  "Doctrine and Covenants": "D&C", // matches the app's ref convention
+  "Joseph Smith—History": "JS—History",
+  "Joseph Smith—Matthew": "JS—Matthew",
+  "Articles of Faith": "A of F",
+  "Words of Mormon": "W of M",
+  "Solomon's Song": "Song",
+  "1 Chronicles": "1 Chr.",
+  "2 Chronicles": "2 Chr.",
+  "1 Corinthians": "1 Cor.",
+  "2 Corinthians": "2 Cor.",
+  "1 Thessalonians": "1 Thes.",
+  "2 Thessalonians": "2 Thes.",
+  "1 Samuel": "1 Sam.",
+  "2 Samuel": "2 Sam.",
+  "1 Kings": "1 Kgs.",
+  "2 Kings": "2 Kgs.",
+  "1 Peter": "1 Pet.",
+  "2 Peter": "2 Pet.",
+  "1 Timothy": "1 Tim.",
+  "2 Timothy": "2 Tim.",
+  Deuteronomy: "Deut.",
+  Ecclesiastes: "Eccl.",
+  Lamentations: "Lam.",
+  Philippians: "Philip.",
+  Colossians: "Col.",
+  Ephesians: "Eph.",
+  Galatians: "Gal.",
+  Hebrews: "Heb.",
+  Revelation: "Rev.",
+  Genesis: "Gen.",
+  Leviticus: "Lev.",
+  Numbers: "Num.",
+  Nehemiah: "Neh.",
+  Proverbs: "Prov.",
+  Jeremiah: "Jer.",
+  Ezekiel: "Ezek.",
+  Habakkuk: "Hab.",
+  Zephaniah: "Zeph.",
+  Zechariah: "Zech.",
+  Malachi: "Mal.",
+  Matthew: "Matt.",
+  Philemon: "Philem.",
+  Obadiah: "Obad.",
+};
+// Only these are abbreviated WITHOUT the JST prefix — short names like plain
+// "Genesis" fit the header fine and keep their full spelling; they sit in the
+// map above solely for the JST rule.
+const LONG_DIRECT = new Set([
+  "Doctrine and Covenants",
+  "Joseph Smith—History",
+  "Joseph Smith—Matthew",
+  "Articles of Faith",
+  "Words of Mormon",
+  "Solomon's Song",
+  "1 Chronicles",
+  "2 Chronicles",
+  "1 Corinthians",
+  "2 Corinthians",
+  "1 Thessalonians",
+  "2 Thessalonians",
+  "Deuteronomy",
+  "Ecclesiastes",
+  "Lamentations",
+  "Philippians",
+]);
+const headerBookName = (name: string): string => {
+  if (LONG_DIRECT.has(name) && BOOK_ABBREV[name]) return BOOK_ABBREV[name];
+  if (name.startsWith("JST ")) {
+    const ab = BOOK_ABBREV[name.slice(4)];
+    if (ab) return "JST " + ab;
+  }
+  return name;
+};
+
 const relTime = (ms: number | null): string => {
   if (!ms) return "not yet";
   const s = Math.floor((Date.now() - ms) / 1000);
@@ -2070,6 +2149,10 @@ export default function MobileApp() {
   const displayTitle = isSermonsVolume(vols[loc.v].volume)
     ? sermonLabel((chapter as { title?: string }).title, chapter.chapter)
     : bookName + " " + chapter.chapter;
+  // Header-only compact title; displayTitle keeps the full name everywhere else.
+  const headerTitle = isSermonsVolume(vols[loc.v].volume)
+    ? displayTitle
+    : headerBookName(bookName) + " " + chapter.chapter;
 
   // Gentle progress: a quiet reflection of the study so far — distinct chapters
   // and books marked, plus total marks across every book. No streaks, no goals.
@@ -4259,7 +4342,7 @@ export default function MobileApp() {
                 padding: "0 4px",
               }}
             >
-              {displayTitle}
+              {headerTitle}
               {activeBookId !== "master" && (
                 <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
                   {"  · session"}
