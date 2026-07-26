@@ -861,8 +861,8 @@ const readScrollMap = (): Record<string, number> => {
 // base book behind the JST prefix.
 const BOOK_ABBREV: Record<string, string> = {
   "Doctrine and Covenants": "D&C", // matches the app's ref convention
-  "Joseph Smith—History": "JS—History",
-  "Joseph Smith—Matthew": "JS—Matthew",
+  "Joseph Smith—History": "JS—Hist.",
+  "Joseph Smith—Matthew": "JS—Matt.",
   "Articles of Faith": "A of F",
   "Words of Mormon": "W of M",
   "Solomon's Song": "Song",
@@ -903,35 +903,32 @@ const BOOK_ABBREV: Record<string, string> = {
   Matthew: "Matt.",
   Philemon: "Philem.",
   Obadiah: "Obad.",
+  Romans: "Rom.",
+  Joshua: "Josh.",
+  Judges: "Judg.",
+  Exodus: "Ex.",
+  Esther: "Esth.",
+  Isaiah: "Isa.",
+  Daniel: "Dan.",
+  Hosea: "Hos.",
+  Haggai: "Hag.",
+  Psalms: "Ps.",
+  "1 John": "1 Jn.",
+  "2 John": "2 Jn.",
+  "3 John": "3 Jn.",
 };
-// Only these are abbreviated WITHOUT the JST prefix — short names like plain
-// "Genesis" fit the header fine and keep their full spelling; they sit in the
-// map above solely for the JST rule.
-const LONG_DIRECT = new Set([
-  "Doctrine and Covenants",
-  "Joseph Smith—History",
-  "Joseph Smith—Matthew",
-  "Articles of Faith",
-  "Words of Mormon",
-  "Solomon's Song",
-  "1 Chronicles",
-  "2 Chronicles",
-  "1 Corinthians",
-  "2 Corinthians",
-  "1 Thessalonians",
-  "2 Thessalonians",
-  "Deuteronomy",
-  "Ecclesiastes",
-  "Lamentations",
-  "Philippians",
-]);
-const headerBookName = (name: string): string => {
-  if (LONG_DIRECT.has(name) && BOOK_ABBREV[name]) return BOOK_ABBREV[name];
-  if (name.startsWith("JST ")) {
-    const ab = BOOK_ABBREV[name.slice(4)];
-    if (ab) return "JST " + ab;
-  }
-  return name;
+// One rule for every volume: a composed title that fits keeps its full name;
+// anything longer abbreviates (bare or behind the JST prefix). No hand-picked
+// name lists — the length decides.
+// "Revelation 12" (13 chars) is known to clip; 11 is the safe budget.
+const TITLE_LIMIT = 11;
+const compactTitle = (name: string, ch: string | number): string => {
+  const full = name + " " + ch;
+  if (full.length <= TITLE_LIMIT) return full;
+  const base = name.startsWith("JST ") ? name.slice(4) : name;
+  const ab = BOOK_ABBREV[base];
+  if (!ab) return full; // no abbreviation known — ellipsis CSS is the fallback
+  return (name === base ? ab : "JST " + ab) + " " + ch;
 };
 
 const relTime = (ms: number | null): string => {
@@ -2152,7 +2149,7 @@ export default function MobileApp() {
   // Header-only compact title; displayTitle keeps the full name everywhere else.
   const headerTitle = isSermonsVolume(vols[loc.v].volume)
     ? displayTitle
-    : headerBookName(bookName) + " " + chapter.chapter;
+    : compactTitle(bookName, chapter.chapter);
 
   // Gentle progress: a quiet reflection of the study so far — distinct chapters
   // and books marked, plus total marks across every book. No streaks, no goals.
@@ -2406,7 +2403,7 @@ export default function MobileApp() {
       .join(" ");
     return {
       study: false,
-      title: headerBookName(bk.book) + " " + ch.chapter,
+      title: compactTitle(bk.book, ch.chapter),
       sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
       linked:
