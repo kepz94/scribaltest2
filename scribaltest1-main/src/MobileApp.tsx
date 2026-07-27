@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import {
   Mark,
@@ -851,6 +851,143 @@ const readScrollMap = (): Record<string, number> => {
   } catch {}
   return {};
 };
+
+// Standard LDS abbreviations for the reading header ONLY — the header has
+// ~120px for the title, and long names otherwise swallow the chapter number
+// ("JST Revela…"). Full names show everywhere else. JST books abbreviate the
+// base book behind the JST prefix.
+const BOOK_ABBREV: Record<string, string> = {
+  "Doctrine and Covenants": "D&C", // matches the app's ref convention
+  "Joseph Smith—History": "JS—Hist.",
+  "Joseph Smith—Matthew": "JS—Matt.",
+  "Articles of Faith": "A of F",
+  "Words of Mormon": "W of M",
+  "Solomon's Song": "Song",
+  "1 Chronicles": "1 Chr.",
+  "2 Chronicles": "2 Chr.",
+  "1 Corinthians": "1 Cor.",
+  "2 Corinthians": "2 Cor.",
+  "1 Thessalonians": "1 Thes.",
+  "2 Thessalonians": "2 Thes.",
+  "1 Samuel": "1 Sam.",
+  "2 Samuel": "2 Sam.",
+  "1 Kings": "1 Kgs.",
+  "2 Kings": "2 Kgs.",
+  "1 Peter": "1 Pet.",
+  "2 Peter": "2 Pet.",
+  "1 Timothy": "1 Tim.",
+  "2 Timothy": "2 Tim.",
+  Deuteronomy: "Deut.",
+  Ecclesiastes: "Eccl.",
+  Lamentations: "Lam.",
+  Philippians: "Philip.",
+  Colossians: "Col.",
+  Ephesians: "Eph.",
+  Galatians: "Gal.",
+  Hebrews: "Heb.",
+  Revelation: "Rev.",
+  Genesis: "Gen.",
+  Leviticus: "Lev.",
+  Numbers: "Num.",
+  Nehemiah: "Neh.",
+  Proverbs: "Prov.",
+  Jeremiah: "Jer.",
+  Ezekiel: "Ezek.",
+  Habakkuk: "Hab.",
+  Zephaniah: "Zeph.",
+  Zechariah: "Zech.",
+  Malachi: "Mal.",
+  Matthew: "Matt.",
+  Philemon: "Philem.",
+  Obadiah: "Obad.",
+  Romans: "Rom.",
+  Joshua: "Josh.",
+  Judges: "Judg.",
+  Exodus: "Ex.",
+  Esther: "Esth.",
+  Isaiah: "Isa.",
+  Daniel: "Dan.",
+  Hosea: "Hos.",
+  Haggai: "Hag.",
+  Psalms: "Ps.",
+  "1 John": "1 Jn.",
+  "2 John": "2 Jn.",
+  "3 John": "3 Jn.",
+};
+// The abbreviated form of a title (bare or behind the JST prefix). Whether it
+// is USED is decided by measurement, not prediction: FitTitle renders the full
+// name and swaps to this only when the browser reports actual pixel overflow.
+const abbrevTitle = (name: string, ch: string | number): string => {
+  const base = name.startsWith("JST ") ? name.slice(4) : name;
+  const ab = BOOK_ABBREV[base];
+  if (!ab) return name + " " + ch;
+  return (name === base ? ab : "JST " + ab) + " " + ch;
+};
+
+// Shows the widest form of a title that actually fits its box — measured in
+// the DOM, so it adapts to any device width, font, or text-size setting.
+// Tiers: full name → abbreviated → abbreviated at 0.85em → (if a suffix tag
+// like "· session" is present) drop the tag. The chapter name always wins over
+// the tag; ellipsis CSS is the last resort for titles with no compact form
+// (e.g. sermon date labels). Measurement runs pre-paint, so a clipped wider
+// tier is never visible.
+function FitTitle({
+  full,
+  compact,
+  suffix,
+  suffixStyle,
+  style,
+}: {
+  full: string;
+  compact: string;
+  suffix?: string;
+  suffixStyle?: React.CSSProperties;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [tier, setTier] = useState(0);
+  // Ladder: full → compact → compact @0.85em → (drop the suffix tag) →
+  // compact @0.72em. The last step only triggers in the rarest squeeze
+  // (e.g. doubled JST names on the smallest phones).
+  const last = suffix ? 4 : 3;
+  // New title (or a resize) → start from the full name and re-measure.
+  useLayoutEffect(() => {
+    setTier(0);
+  }, [full, compact, suffix]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (tier < last && el && el.scrollWidth > el.clientWidth + 1)
+      setTier(tier + 1);
+  });
+  useEffect(() => {
+    const onResize = () => setTier(0);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return (
+    <span
+      ref={ref}
+      data-fittitle=""
+      style={{
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        ...style,
+      }}
+    >
+      <span
+        style={{
+          fontSize:
+            tier >= last ? "0.72em" : tier >= 2 ? "0.85em" : undefined,
+        }}
+      >
+        {tier === 0 ? full : compact}
+      </span>
+      {suffix && tier < 3 ? <span style={suffixStyle}>{suffix}</span> : null}
+    </span>
+  );
+}
 
 const relTime = (ms: number | null): string => {
   if (!ms) return "not yet";
@@ -1915,7 +2052,12 @@ export default function MobileApp() {
   );
   const go = (delta: number) => {
     const next = flat[curIndex + delta];
-    if (next) setLoc(next);
+    if (!next) return;
+    // Stepping prev/next means reading on — land at the top of the chapter,
+    // not wherever it was last scrolled to. (Jumping back in via browse or
+    // search still restores the saved position.)
+    delete scrollPos.current[locKey(next)];
+    setLoc(next);
   };
 
   // chapter reference ("Mosiah 18") -> location + canonical order, for jumping
@@ -2050,6 +2192,11 @@ export default function MobileApp() {
   const displayTitle = isSermonsVolume(vols[loc.v].volume)
     ? sermonLabel((chapter as { title?: string }).title, chapter.chapter)
     : bookName + " " + chapter.chapter;
+  // Header shows the full title when it fits; FitTitle swaps to this compact
+  // form only on measured overflow. displayTitle stays full everywhere else.
+  const headerCompact = isSermonsVolume(vols[loc.v].volume)
+    ? displayTitle
+    : abbrevTitle(bookName, chapter.chapter);
 
   // Gentle progress: a quiet reflection of the study so far — distinct chapters
   // and books marked, plus total marks across every book. No streaks, no goals.
@@ -2225,19 +2372,31 @@ export default function MobileApp() {
     }
     const first = study.refs[0];
     const cl = first ? chapterLoc.get(refScope(first)) : undefined;
+    const id = newTabId();
     setTabs([
       ...tabs,
       {
-        id: "studytab_" + study.id,
+        id,
         v: cl ? cl.v : loc.v,
         b: cl ? cl.b : loc.b,
         c: cl ? cl.c : loc.c,
         studyId: study.id,
       },
     ]);
-    setActiveTabId("studytab_" + study.id);
+    setActiveTabId(id);
     setOpenStudyId(study.id);
     setScreensOpen(false);
+  };
+  // Leaving the study screen inside a tab turns it back into a plain reading
+  // tab, so switching back later lands on the last screen used there — not a
+  // forced reopen of the study. The active-tab effect handles the book restore.
+  const leaveStudyTab = () => {
+    setOpenStudyId(null);
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId && t.studyId ? { ...t, studyId: undefined } : t
+      )
+    );
   };
   const openStudyTabById = (id: string) => {
     const st = searchStudies.find((s) => s.id === id);
@@ -2260,6 +2419,7 @@ export default function MobileApp() {
       return {
         study: true,
         title: st ? st.name : "Study",
+        titleCompact: st ? st.name : "Study",
         sub: st
           ? st.refs.length +
             (st.refs.length === 1 ? " verse · " : " verses · ") +
@@ -2284,6 +2444,7 @@ export default function MobileApp() {
     return {
       study: false,
       title: bk.book + " " + ch.chapter,
+      titleCompact: abbrevTitle(bk.book, ch.chapter),
       sub: vols[t.v].volume,
       preview: preview.length > 170 ? preview.slice(0, 170) + "\u2026" : preview,
       linked:
@@ -4193,9 +4354,9 @@ export default function MobileApp() {
               style={{
                 minWidth: 0,
                 flex: "0 1 auto",
+                display: "flex",
+                alignItems: "baseline",
                 overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
                 background: "transparent",
                 border: "none",
                 color: C.text,
@@ -4206,12 +4367,18 @@ export default function MobileApp() {
                 padding: "0 4px",
               }}
             >
-              {displayTitle}
-              {activeBookId !== "master" && (
-                <span style={{ color: C.muted, fontSize: "12px", fontWeight: 400 }}>
-                  {"  · session"}
-                </span>
-              )}
+              <FitTitle
+                full={displayTitle}
+                compact={headerCompact}
+                suffix={activeBookId !== "master" ? "  · session" : undefined}
+                suffixStyle={{
+                  color: C.muted,
+                  fontSize: "12px",
+                  fontWeight: 400,
+                  whiteSpace: "pre",
+                }}
+                style={{ flex: "0 1 auto" }}
+              />
             </button>
             <button
               onClick={() => go(1)}
@@ -4860,6 +5027,24 @@ export default function MobileApp() {
                 />
               )}
               {displayTitle}
+              <span style={{ flex: 1 }} />
+              <button
+                onClick={() => setLinkOpen(false)}
+                aria-label="Close link panel"
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: C.muted,
+                  fontSize: "22px",
+                  lineHeight: 1,
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
             </div>
             <div
               style={{
@@ -6632,14 +6817,11 @@ export default function MobileApp() {
                             <IconLink color={info.color} size={14} />
                           </span>
                         )}
-                        <span
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {info.title}
-                        </span>
+                        <FitTitle
+                          full={info.title}
+                          compact={info.titleCompact}
+                          style={{ flex: "0 1 auto" }}
+                        />
                       </div>
                       <div
                         style={{
@@ -8314,7 +8496,7 @@ export default function MobileApp() {
               >
                 <button
                   onClick={() => {
-                    setOpenStudyId(null);
+                    leaveStudyTab();
                     setHomeOpen(true);
                   }}
                   aria-label="Home"
