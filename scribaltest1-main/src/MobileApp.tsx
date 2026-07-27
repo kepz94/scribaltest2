@@ -929,27 +929,37 @@ const abbrevTitle = (name: string, ch: string | number): string => {
 
 // Shows the widest form of a title that actually fits its box — measured in
 // the DOM, so it adapts to any device width, font, or text-size setting.
-// Tiers: full name → abbreviated → abbreviated at 0.85em (covers titles with
-// no compact form, e.g. sermon date labels). Ellipsis CSS is the last resort.
-// Measurement runs pre-paint, so a clipped wider tier is never visible.
+// Tiers: full name → abbreviated → abbreviated at 0.85em → (if a suffix tag
+// like "· session" is present) drop the tag. The chapter name always wins over
+// the tag; ellipsis CSS is the last resort for titles with no compact form
+// (e.g. sermon date labels). Measurement runs pre-paint, so a clipped wider
+// tier is never visible.
 function FitTitle({
   full,
   compact,
+  suffix,
+  suffixStyle,
   style,
 }: {
   full: string;
   compact: string;
+  suffix?: string;
+  suffixStyle?: React.CSSProperties;
   style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [tier, setTier] = useState(0);
+  // Ladder: full → compact → compact @0.85em → (drop the suffix tag) →
+  // compact @0.72em. The last step only triggers in the rarest squeeze
+  // (e.g. doubled JST names on the smallest phones).
+  const last = suffix ? 4 : 3;
   // New title (or a resize) → start from the full name and re-measure.
   useLayoutEffect(() => {
     setTier(0);
-  }, [full, compact]);
+  }, [full, compact, suffix]);
   useLayoutEffect(() => {
     const el = ref.current;
-    if (tier < 2 && el && el.scrollWidth > el.clientWidth + 1)
+    if (tier < last && el && el.scrollWidth > el.clientWidth + 1)
       setTier(tier + 1);
   });
   useEffect(() => {
@@ -967,10 +977,17 @@ function FitTitle({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
         ...style,
-        fontSize: tier === 2 ? "0.85em" : undefined,
       }}
     >
-      {tier === 0 ? full : compact}
+      <span
+        style={{
+          fontSize:
+            tier >= last ? "0.72em" : tier >= 2 ? "0.85em" : undefined,
+        }}
+      >
+        {tier === 0 ? full : compact}
+      </span>
+      {suffix && tier < 3 ? <span style={suffixStyle}>{suffix}</span> : null}
     </span>
   );
 }
@@ -4389,21 +4406,15 @@ export default function MobileApp() {
               <FitTitle
                 full={displayTitle}
                 compact={headerCompact}
+                suffix={activeBookId !== "master" ? "  · session" : undefined}
+                suffixStyle={{
+                  color: C.muted,
+                  fontSize: "12px",
+                  fontWeight: 400,
+                  whiteSpace: "pre",
+                }}
                 style={{ flex: "0 1 auto" }}
               />
-              {activeBookId !== "master" && (
-                <span
-                  style={{
-                    color: C.muted,
-                    fontSize: "12px",
-                    fontWeight: 400,
-                    flexShrink: 0,
-                    whiteSpace: "pre",
-                  }}
-                >
-                  {"  · session"}
-                </span>
-              )}
             </button>
             <button
               onClick={() => go(1)}
