@@ -757,6 +757,191 @@ function VersePicker({
   );
 }
 
+// ═══ card-text helpers (SCR-63) ═══════════════════════════════════════════
+// A study-table card's text may be legacy plain text or Lexical HTML. These
+// two rules are THE way every surface displays it — editor column, Present
+// (and through it, Present Rooms), rails.
+
+// Card text counts as rich HTML only when it carries a tag Lexical actually
+// exports — the loose "any <x…>" test would eat hand-typed text like
+// "an <angle> example" as if it were markup.
+const RICH_TAG =
+  /<(p|br|span|strong|em|b|i|u|s|h[1-6]|ul|ol|li|blockquote|hr|div|a)\b/i;
+export const isRichHtml = (v: string): boolean => RICH_TAG.test(v || "");
+
+// Renderable HTML for a card-text value (escapes legacy plain text).
+export const richToHtml = (v: string): string =>
+  !isRichHtml(v || "")
+    ? (v || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>")
+    : v || "";
+
+// Plain words of a card-text value — for places that need text, not markup
+// (heading section names, outline rails, tooltips).
+export const richToPlain = (v: string): string => {
+  if (!v) return "";
+  if (!isRichHtml(v)) return v.trim();
+  const div = document.createElement("div");
+  div.innerHTML = v;
+  return (div.textContent || "").replace(/\u00a0+/g, " ").trim();
+};
+
+// ═══ RichCardText: a study-table card's text slot (SCR-63) ═════════════════
+// The lazy-mount rule in one component: at rest the value renders as static
+// HTML in the CARD's own typography — no editor mounted, so a table of 30+
+// text cards costs nothing. Tapping it mounts the same Lexical editor
+// RichNoteField uses (same toolbar, same capabilities); Done unmounts it back
+// to static HTML. The caller's style governs both states, so a card looks
+// like itself whether resting or editing.
+export function RichCardText({
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+  accent,
+  style,
+}: {
+  value: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  accent?: string;
+  style?: React.CSSProperties;
+}) {
+  const [editing, setEditing] = useState(!!autoFocus);
+  const htmlRef = useRef(value);
+  const has = (value || "").trim().length > 0;
+  const openEditor = () => {
+    htmlRef.current = value;
+    setEditing(true);
+  };
+
+  if (!editing) {
+    return has ? (
+      <div
+        className="scribal-rich-view"
+        onClick={openEditor}
+        title="Tap to edit"
+        style={{ cursor: "text", overflowWrap: "anywhere", minHeight: 22, ...style }}
+        dangerouslySetInnerHTML={{ __html: richToHtml(value) }}
+      />
+    ) : (
+      <div
+        onClick={openEditor}
+        style={{ cursor: "text", minHeight: 22, ...style, color: "var(--muted)" }}
+      >
+        {placeholder || "Write…"}
+      </div>
+    );
+  }
+
+  const initialConfig = {
+    namespace: "scribal-card",
+    theme: editorTheme,
+    onError: (e: Error) => console.error("Lexical:", e),
+    nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
+  };
+  const save = () => {
+    // an editor holding only an empty paragraph saves as empty
+    const out = htmlRef.current || "";
+    const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
+    onChange(textOnly ? out : "");
+    setEditing(false);
+  };
+  return (
+    <div
+      style={{
+        border: "1px solid " + (accent || ACCENT),
+        borderRadius: "8px",
+        background: "var(--soft)",
+      }}
+    >
+      <LexicalComposer initialConfig={initialConfig}>
+        <Toolbar
+          accent={accent || ACCENT}
+          hasVerses={false}
+          onLinkOpen={() => {}}
+        />
+        <div style={{ position: "relative" }}>
+          <RichTextPlugin
+            contentEditable={
+              <ContentEditable
+                className="scribal-rich-editor"
+                style={{
+                  padding: "10px 12px",
+                  minHeight: "56px",
+                  lineHeight: 1.6,
+                  color: "var(--text)",
+                  outline: "none",
+                  ...style,
+                }}
+              />
+            }
+            placeholder={
+              <div
+                style={{
+                  position: "absolute",
+                  top: "10px",
+                  left: "12px",
+                  pointerEvents: "none",
+                  ...style,
+                  color: "var(--muted)",
+                }}
+              >
+                {placeholder || "Write…"}
+              </div>
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+          />
+        </div>
+        <ListPlugin />
+        <CheckListPlugin />
+        <TabIndentationPlugin />
+        <HistoryPlugin />
+        {/* Seed through richToHtml so legacy plain text — including text with
+            accidental <tag>-looking tokens — enters the editor escaped, never
+            DOM-parsed as markup. */}
+        <InitPlugin html={value ? richToHtml(value) : ""} />
+        <OnChangePlugin
+          onChange={(editorState: any, editor: any) => {
+            editorState.read(() => {
+              htmlRef.current = $generateHtmlFromNodes(editor, null);
+            });
+          }}
+        />
+      </LexicalComposer>
+      <div
+        style={{
+          display: "flex",
+          padding: "8px 12px",
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={save}
+          style={{
+            background: accent || ACCENT,
+            color: "#fff",
+            border: "none",
+            borderRadius: "8px",
+            padding: "6px 15px",
+            fontSize: "12.5px",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ═══ the component ═══════════════════════════════════════════════════════
 export default function RichNoteField({
   value,

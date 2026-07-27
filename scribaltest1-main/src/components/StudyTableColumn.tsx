@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ACCENT } from "../theme";
 import { COLOR_MAP, MarkColor } from "../types";
 import { isConsecutive, sortRefs } from "../data/verseIndex";
@@ -10,6 +10,7 @@ import {
   newCardId,
 } from "../hooks/useStudyTables";
 import { setVerseDragImage, setCardDragImage } from "../dragGhost";
+import { RichCardText, richToPlain } from "./RichNoteField";
 
 // The COLUMN surface of a Study Table: an ordered stack of cards you build by
 // hand. The order is the lesson. This component only renders + edits the column
@@ -149,55 +150,6 @@ function Icon({ d, size = 16 }: { d: string; size?: number }) {
         <path key={i} d={(i === 0 ? seg : "M" + seg)} />
       ))}
     </svg>
-  );
-}
-
-// Textarea that grows to fit its content.
-function AutoTextarea({
-  value,
-  onChange,
-  placeholder,
-  autoFocus,
-  style,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-  style?: React.CSSProperties;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el) {
-      el.style.height = "auto";
-      el.style.height = Math.max(el.scrollHeight, 22) + "px";
-    }
-  }, [value]);
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      autoFocus={autoFocus}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      rows={1}
-      style={{
-        width: "100%",
-        border: 0,
-        outline: 0,
-        background: "transparent",
-        resize: "none",
-        overflow: "hidden",
-        display: "block",
-        color: "var(--text)",
-        fontFamily: SERIF,
-        fontSize: "16px",
-        lineHeight: 1.6,
-        padding: 0,
-        ...style,
-      }}
-    />
   );
 }
 
@@ -928,44 +880,53 @@ export default function StudyTableColumn({
 
   // ---------- per-kind editors ----------
   const renderCard = (card: TableCard, index: number) => {
-    const focus = card.id === focusId;
+    // Open the rich editor immediately for a freshly inserted card AND for a
+    // card expanded from its dense row — a dense tap means "edit this", same
+    // as when the dense line opened a bare textarea.
+    const focus = card.id === focusId || (!!outlineMode && editingId === card.id);
 
     if (card.kind === "heading") {
       return (
-        <input
-          value={card.text || ""}
-          autoFocus={focus}
-          placeholder="Name this section…"
-          onChange={(e) => patch(card.id, { text: e.target.value })}
+        <div
           style={{
-            display: "block",
-            width: "100%",
-            boxSizing: "border-box",
-            fontFamily: SANS,
-            fontSize: 15,
-            fontWeight: 700,
-            letterSpacing: ".12em",
-            textTransform: "uppercase",
-            color: "var(--text)",
-            background: "transparent",
-            border: 0,
             borderBottom: "1.5px dashed var(--border)",
-            outline: 0,
             padding: "6px 2px",
           }}
-        />
+        >
+          <RichCardText
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="Name this section…"
+            onChange={(v) => patch(card.id, { text: v })}
+            accent={accent}
+            style={{
+              fontFamily: SANS,
+              fontSize: COARSE ? 16 : 15,
+              fontWeight: 700,
+              letterSpacing: ".12em",
+              textTransform: "uppercase",
+              color: "var(--text)",
+            }}
+          />
+        </div>
       );
     }
 
     if (card.kind === "text") {
       return (
         <div style={{ borderLeft: "2px solid " + softAccentBorder, paddingLeft: 15 }}>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="Write your thought…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontSize: 15.5, color: "var(--text)" }}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: COARSE ? 16 : 15.5,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
             <span style={{ ...kicker, margin: 0 }}>optional</span>
@@ -992,11 +953,18 @@ export default function StudyTableColumn({
             padding: "13px 15px",
           }}
         >
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="Ask something…"
             onChange={(v) => patch(card.id, { text: v })}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: 16,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
             <span style={{ ...kicker, margin: 0 }}>type</span>
@@ -1017,12 +985,19 @@ export default function StudyTableColumn({
     if (card.kind === "quote") {
       return (
         <div style={{ borderLeft: "2px solid var(--pen3)", paddingLeft: 15 }}>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="The quote…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontStyle: "italic", fontSize: 15.5, color: "var(--text)" }}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontStyle: "italic",
+              fontSize: COARSE ? 16 : 15.5,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <input
             value={card.attribution || ""}
@@ -1057,12 +1032,19 @@ export default function StudyTableColumn({
           <div style={{ ...kicker, color: "var(--muted)" }}>
             <Icon d={ICON.note} size={12} /> Note to self · only you see this
           </div>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="A private note — pause here, tell the story…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontStyle: "italic", fontSize: 15, color: "var(--text)" }}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontStyle: "italic",
+              fontSize: COARSE ? 16 : 15,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
         </div>
       );
@@ -1614,7 +1596,9 @@ export default function StudyTableColumn({
       >
         {tag}
       </span>
-      {body || (
+      {/* Dense rows are deliberately tight plain-text lines — rich card text
+          shows its words here; formatting appears in the full rendering. */}
+      {richToPlain(body) || (
         <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
           tap to write…
         </span>
@@ -1649,7 +1633,7 @@ export default function StudyTableColumn({
             />
           )}
           <input
-            value={card.text || ""}
+            value={richToPlain(card.text || "")}
             placeholder="Name this theme…"
             onChange={(e) =>
               // While Compiled · live a compiled heading IS the theme — its
@@ -2142,7 +2126,7 @@ export default function StudyTableColumn({
                     } else {
                       const title =
                         card.kind === "heading"
-                          ? card.text || "Heading"
+                          ? richToPlain(card.text || "") || "Heading"
                           : (TYPES.find((t) => t.kind === card.kind) || {
                               name: "Card",
                             }).name;
@@ -2153,7 +2137,7 @@ export default function StudyTableColumn({
                           ? undefined
                           : card.kind === "clip"
                           ? card.clipTitle || card.url
-                          : card.text,
+                          : richToPlain(card.text || ""),
                         accent
                       );
                     }
@@ -2472,7 +2456,7 @@ export default function StudyTableColumn({
                       const preview =
                         c.kind === "scripture"
                           ? (verseTextFor ? verseTextFor(ref) : "")
-                          : c.text || "";
+                          : richToPlain(c.text || "");
                       const rowLabel =
                         c.kind === "scripture"
                           ? (c.refs || []).join(", ")
@@ -2573,7 +2557,12 @@ export default function StudyTableColumn({
                                 }))
                               );
                             } else {
-                              setCardDragImage(e, rowLabel, c.text, accent);
+                              setCardDragImage(
+                                e,
+                                rowLabel,
+                                richToPlain(c.text || ""),
+                                accent
+                              );
                             }
                           }}
                           onDragEnd={() => {

@@ -23,6 +23,7 @@ import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
 import StudyTablePresent from "./StudyTablePresent";
+import { richToPlain } from "./RichNoteField";
 import {
   newRoomCode,
   createRoom,
@@ -685,7 +686,9 @@ export default function StudyTablesDesktop({
     } else if (card.kind === "scripture" && card.shelfGroup) {
       const h = base.findIndex(
         (c) =>
-          c.kind === "heading" && (c.text || "").trim() === card.shelfGroup
+          // Compare heading text in plain form: a heading edited rich would
+          // otherwise never match its theme's shelfGroup string.
+          c.kind === "heading" && richToPlain(c.text || "") === card.shelfGroup
       );
       if (h === -1) {
         idx = base.length;
@@ -3098,7 +3101,7 @@ function OutlineRail({
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {sections.map((s) => {
-          const label = (s.text || "").trim() || "Untitled section";
+          const label = richToPlain(s.text || "") || "Untitled section";
           // A compiled theme heading carries its pen in the id — the rail
           // shows the same color dot the section header wears (Kepu, Jul 20).
           const n =

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TableCard, StudyTable } from "../hooks/useStudyTables";
 import { passageLabel } from "../data/verseIndex";
 import { ClipPlayer, parseYouTubeId, fmtTime } from "./StudyTableColumn";
+import { richToHtml, richToPlain } from "./RichNoteField";
 
 // Present mode: the table performed as a NOTEPAD. A dimmed desk backdrop with
 // one centered paper pad — bound top edge, faint ruled lines — and every beat
@@ -164,7 +165,7 @@ export default function StudyTablePresent({
       if (!hasContent(c)) return;
       if (c.kind === "heading") {
         n += 1;
-        section = (c.text || "").trim() || "Section " + n;
+        section = richToPlain(c.text || "") || "Section " + n;
         out.push({ kind: "section", title: section, n });
       } else {
         out.push({ kind: "card", card: c, section });
@@ -495,16 +496,15 @@ export default function StudyTablePresent({
             </div>
           )}
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(20px, 3.4vw, 26px)",
               lineHeight: 1.6,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
-          >
-            {c.text}
-          </div>
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
         </div>
       );
     }
@@ -516,16 +516,15 @@ export default function StudyTablePresent({
             {c.qtype ? c.qtype + " · question" : "Question"}
           </div>
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(22px, 3.8vw, 29px)",
               lineHeight: 1.45,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
-          >
-            {c.text}
-          </div>
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
           <div
             aria-hidden
             style={{
@@ -546,12 +545,14 @@ export default function StudyTablePresent({
         <div style={{ padding: "14px 0" }}>
           <div
             style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 6,
               fontFamily: SERIF,
               fontSize: "clamp(20px, 3.4vw, 25px)",
               fontStyle: "italic",
               lineHeight: 1.62,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
           >
             <span
@@ -559,16 +560,19 @@ export default function StudyTablePresent({
               style={{
                 fontStyle: "normal",
                 fontSize: "1.6em",
-                lineHeight: 0,
-                verticalAlign: "-0.28em",
+                lineHeight: 1,
                 color: accent,
                 opacity: 0.55,
-                marginRight: 6,
+                flexShrink: 0,
               }}
             >
               “
             </span>
-            {(c.text || "").trim()}
+            <div
+              className="scribal-rich-view"
+              style={{ flex: 1 }}
+              dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+            />
           </div>
           {c.attribution && (
             <div
@@ -594,17 +598,16 @@ export default function StudyTablePresent({
             Note to self · only you see this
           </div>
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(18px, 3vw, 22px)",
               fontStyle: "italic",
               lineHeight: 1.65,
               color: P.muted,
-              whiteSpace: "pre-wrap",
             }}
-          >
-            {c.text}
-          </div>
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
         </div>
       );
     }
