@@ -3961,6 +3961,45 @@ export default function MobileApp() {
     setSyncMsg("Signed out. Your study stays on this device.");
   };
 
+  // SCR-69: manual backup export — the phone's recovery path. Builds the same
+  // backup file desktop "Restore from backup" accepts, straight from
+  // localStorage (works offline and signed out — usable on a device being
+  // triaged in airplane mode), and hands it to the platform share sheet so it
+  // can leave the device (Files, AirDrop, Drive…). Falls back to a plain
+  // download where file-sharing isn't supported.
+  const exportBackup = async () => {
+    try {
+      const text = syncBuildBackupString(BACKUP_KEYS, true);
+      const name =
+        "scribal-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      const file = new File([text], name, { type: "application/json" });
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files: File[] }) => boolean;
+        share?: (data: { files: File[]; title?: string }) => Promise<void>;
+      };
+      if (nav.canShare && nav.share && nav.canShare({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: name });
+          return;
+        } catch (e) {
+          // Cancelling the share sheet isn't a failure — stop quietly.
+          // Anything else falls through to the plain download path.
+          if ((e as { name?: string } | null)?.name === "AbortError") return;
+        }
+      }
+      const url = URL.createObjectURL(
+        new Blob([text], { type: "application/json" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setSyncMsg("Could not create the backup file.");
+    }
+  };
+
   // (No on-open silent token refresh: on iOS Safari a silent GIS request can
   // surface a sign-in popup, so token refresh is now user-initiated via the
   // reconnect cue. The stored token is used directly while it is still valid.)
@@ -7629,6 +7668,22 @@ export default function MobileApp() {
                     {syncMsg}
                   </div>
                 )}
+
+                {label("Backup")}
+                {actionBtn("Export backup (.json)", () => {
+                  exportBackup();
+                })}
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: C.muted,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Saves everything on this phone as a file you can keep
+                  anywhere — works offline, and restores on desktop or another
+                  phone.
+                </div>
 
                 {label("Appearance")}
                 {actionBtn(dark ? "Switch to light" : "Switch to dark", () => {
