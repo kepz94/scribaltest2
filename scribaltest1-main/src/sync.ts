@@ -256,6 +256,109 @@ export function countStudiesFromJson(raw: string | null | undefined): number {
   }
 }
 
+// A tolerant census of every kind of user content Scribal syncs. The cloud
+// emptiness guard (SCR-68) uses these so a blank device can never overwrite a
+// cloud doc that still holds ANY content — the original guard only counted
+// marks, which left a doc holding only studies/tables/notes unprotected.
+export interface ContentCounts {
+  marks: number;
+  vault: number;
+  studies: number;
+  search: number;
+  tables: number;
+  notes: number;
+}
+
+export const totalContent = (c: ContentCounts): number =>
+  c.marks + c.vault + c.studies + c.search + c.tables + c.notes;
+
+// Counts live (non-tombstoned) vault entries.
+function countVaultFromJson(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter((e) => e && !e.deleted).length;
+  } catch {
+    return 0;
+  }
+}
+
+// Counts live study tables. A delete only counts while it is the table's
+// newest action — the same rule as useStudyTables.isTableDeleted, inlined here
+// so the sync layer stays hook-free.
+function countTablesFromJson(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter(
+      (t) =>
+        t &&
+        !(
+          t.deletedAt &&
+          t.deletedAt >= (t.nameAt || 0) &&
+          t.deletedAt >= (t.updatedAt || 0)
+        )
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
+// Counts non-empty entries in the scribal_notes ref→text map.
+function countNotesFromJson(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const map = JSON.parse(raw);
+    if (!map || typeof map !== "object" || Array.isArray(map)) return 0;
+    return Object.keys(map).filter((k) => {
+      const v = map[k];
+      return typeof v === "string" && v.trim() !== "";
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
+function countContent(get: (key: string) => string | null): ContentCounts {
+  return {
+    marks: countBookMarksFromJson(get("scribal_books_v1")),
+    vault: countVaultFromJson(get("scribal_vault_v1")),
+    studies: countStudiesFromJson(get("scribal_studies_v1")),
+    search: countStudiesFromJson(get("scribal_search_studies")),
+    tables: countTablesFromJson(get("scribal_tables_v1")),
+    notes: countNotesFromJson(get("scribal_notes")),
+  };
+}
+
+// Census of a backup/cloud payload string (parses the payload once).
+export function contentCountsFromBackup(text: string): ContentCounts {
+  let data: Record<string, unknown> | null = null;
+  try {
+    const p = JSON.parse(text);
+    const d = p && p.data ? p.data : p;
+    if (d && typeof d === "object" && !Array.isArray(d)) data = d;
+  } catch {
+    /* unreadable payload counts as empty */
+  }
+  return countContent((k) => {
+    const v = data ? data[k] : null;
+    return typeof v === "string" ? v : null;
+  });
+}
+
+// Census of this device's localStorage.
+export function contentCountsFromLocal(): ContentCounts {
+  return countContent((k) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  });
+}
+
 // Run a Drive operation with the CURRENT valid token, or skip it. Background
 // ops never attempt a token refresh: GIS's "silent" refresh (prompt: "")
 // still opens a popup window, so without a user gesture the browser blocks it
