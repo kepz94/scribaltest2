@@ -1906,6 +1906,10 @@ export default function App() {
   const [cloudSignedIn, setCloudSignedIn] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudEmail, setCloudEmail] = useState<string | null>(null);
+  // Whether the browser granted persistent storage. false = the browser may
+  // evict Scribal's on-device data under storage pressure (SCR-68), so the
+  // sync pill shows a warning. null = unknown / unsupported.
+  const [cloudPersisted, setCloudPersisted] = useState<boolean | null>(null);
   // Hide the legacy Google Drive sign-in UI while we run on Firebase. The Drive
   // code stays in place (so nothing breaks) but can't be triggered from the UI.
   const SHOW_LEGACY_DRIVE = false;
@@ -2148,6 +2152,7 @@ export default function App() {
       setCloudSignedIn(s.signedIn);
       setCloudSyncing(s.syncing);
       setCloudEmail(s.email);
+      setCloudPersisted(s.persisted);
       if (s.lastSync) setLastSync(s.lastSync);
     });
     initCloud();
@@ -2172,8 +2177,15 @@ export default function App() {
   ];
 
   // Push local changes to Firebase (debounced inside cloudSync; only acts when
-  // signed in). The live counterpart to the Drive auto-save below.
+  // signed in). The live counterpart to the Drive auto-save below. Skips the
+  // initial mount: the first run only means "the app loaded", and scheduling a
+  // push from it was one arm of the SCR-68 empty-overwrite race.
+  const cloudPushReady = useRef(false);
   useEffect(() => {
+    if (!cloudPushReady.current) {
+      cloudPushReady.current = true;
+      return;
+    }
     noteLocalChange();
   }, syncData);
 
@@ -8510,11 +8522,20 @@ export default function App() {
                   })
                 : null;
               const stale = driveConnected && saveStatus === "stale";
-              const label = !cloudSignedIn
-                ? "Local only"
-                : cloudSyncing
-                ? "Saving…"
-                : "Synced" + (timeStr ? " ✓ " + timeStr : " ✓");
+              // The browser refused protected storage — it may clear this
+              // device's local data under storage pressure (SCR-68), so keep
+              // a quiet warning on the sync pill.
+              const evictRisk = cloudPersisted === false;
+              const label =
+                (!cloudSignedIn
+                  ? "Local only"
+                  : cloudSyncing
+                  ? "Saving…"
+                  : "Synced" + (timeStr ? " ✓ " + timeStr : " ✓")) +
+                (evictRisk ? " ⚠" : "");
+              const evictNote = evictRisk
+                ? " Note: this browser declined protected storage, so it may clear Scribal's on-device data when space runs low — keep sync on or export a backup."
+                : "";
               const onClick = !cloudSignedIn
                 ? () => setBackupOpen(true)
                 : stale
@@ -8524,11 +8545,11 @@ export default function App() {
                 <span
                   onClick={onClick}
                   title={
-                    !cloudSignedIn
+                    (!cloudSignedIn
                       ? "Saved on this device only — click to sign in with Google and sync across your devices."
                       : timeStr
                       ? "Last synced at " + timeStr
-                      : "Synced to the cloud"
+                      : "Synced to the cloud") + evictNote
                   }
                   style={{
                     fontSize: "11px",

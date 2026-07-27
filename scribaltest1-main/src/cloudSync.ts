@@ -30,9 +30,11 @@ import {
   CORE_KEYS,
   buildBackupString,
   applyRemoteLive,
-  countBookMarksFromJson,
-  booksFromBackup,
+  contentCountsFromBackup,
+  contentCountsFromLocal,
+  totalContent,
 } from "./sync";
+import type { ContentCounts } from "./sync";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDz_Xhisj5POlSc0VFTDQ936Dm3p_j4stM",
@@ -72,6 +74,10 @@ export interface CloudState {
   email: string | null;
   syncing: boolean; // a write is in flight
   lastSync: number | null;
+  // Whether the browser granted persistent storage (navigator.storage.persist).
+  // false = the browser may EVICT local data under storage pressure — the
+  // condition that armed the SCR-68 wipe race. null = unknown / unsupported.
+  persisted: boolean | null;
 }
 
 // A stable id for this device/browser so a device never re-applies its OWN
@@ -98,7 +104,18 @@ let mergeBooks: MergeBooks = () => {};
 let mergeVault: MergeVault = () => {};
 let mergeOther: MergeOther = () => {};
 let onApplied: (() => void) | null = null;
-let lastRemoteMarks = -1;
+// What the cloud doc held in the last payload snapshot we saw — any writer,
+// our own past write included. null until a payload has been seen. Arms the
+// emptiness guards in doPush.
+let remoteCounts: ContentCounts | null = null;
+// True once THIS listen has received a server-confirmed snapshot (i.e. not
+// the offline cache). doPush is gated on it: before the server has told us
+// what the cloud actually holds, an empty device could overwrite a full doc
+// it has simply never seen — the SCR-68 data-loss race.
+let serverSnapSeen = false;
+// A push that arrived while the gate was closed; released on the first server
+// snapshot so no local change is lost.
+let pushHeld = false;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressEcho = false;
 // The `data` portion of the last payload this device successfully wrote (or
@@ -123,6 +140,7 @@ const state: CloudState = {
   signedIn: false,
   email: null,
   syncing: false,
+  persisted: null,
   lastSync:
     Date.parse(
       (typeof localStorage !== "undefined" &&
@@ -135,9 +153,31 @@ function emit() {
   if (stateCb) stateCb({ ...state });
 }
 
+// Ask the browser to protect this origin's storage from eviction. Without it
+// Chrome (around updates/cleanup) and Safari (~7 days unvisited) may silently
+// clear localStorage/IndexedDB — the emptied-device state that arms the
+// SCR-68 wipe race. Denial is surfaced in the sync/status UI via CloudState.
+function requestPersistentStorage() {
+  try {
+    const storage: StorageManager | undefined =
+      typeof navigator !== "undefined" ? navigator.storage : undefined;
+    if (!storage || typeof storage.persist !== "function") return; // unsupported — stays null
+    Promise.resolve(
+      typeof storage.persisted === "function" ? storage.persisted() : false
+    )
+      .then((already) => (already ? true : storage.persist()))
+      .then((granted) => {
+        state.persisted = !!granted;
+        emit();
+      })
+      .catch(() => {});
+  } catch {}
+}
+
 // Call once on app start (both shells). Attaches the auth listener; when a user
 // is signed in it begins the live two-way sync and stops it on sign-out.
 export function initCloud() {
+  requestPersistentStorage();
   onAuthStateChanged(auth, (user) => {
     state.ready = true;
     state.signedIn = !!user;
@@ -185,6 +225,11 @@ export function isSignedIn(): boolean {
 
 function startListening(uid: string) {
   stopListening();
+  // Fresh listen, fresh gate: nothing may be pushed for this user until the
+  // server has shown us their cloud doc at least once (SCR-68).
+  serverSnapSeen = false;
+  remoteCounts = null;
+  pushHeld = false;
   const ref = doc(db, "users", uid);
   unsub = onSnapshot(
     ref,
@@ -193,31 +238,57 @@ function startListening(uid: string) {
       // server-confirmed one (tagged with this device id) — so two devices
       // never ping-pong writes back and forth.
       if (snap.metadata.hasPendingWrites) return;
+      const fromServer = !snap.metadata.fromCache;
       const data = snap.data() as
         | { payload?: string; writer?: string }
         | undefined;
       if (!data || !data.payload) {
-        // No cloud copy yet — seed it from what's on this device.
-        schedulePush(true);
+        // Doc missing. Only a SERVER-confirmed miss means "no cloud copy yet"
+        // — a cache miss on a freshly-emptied device says nothing about the
+        // cloud, and seeding from it was one arm of the SCR-68 wipe.
+        if (fromServer) {
+          serverSnapSeen = true;
+          remoteCounts = null; // genuinely nothing in the cloud to protect
+          pushHeld = false; // the seed push below covers any held change
+          schedulePush(true);
+        }
         return;
       }
+      // Any payload snapshot — our own past write included — teaches us what
+      // the cloud holds, so the emptiness guards are armed before the first
+      // push can possibly fire.
+      remoteCounts = contentCountsFromBackup(data.payload);
+      if (fromServer) serverSnapSeen = true;
       if (data.writer === deviceId) {
         // Our own past write echoing back (e.g. from the offline cache on a
         // fresh page load). Seed the dirty-check baseline from it so boot
         // doesn't immediately re-write identical data to the cloud.
         if (lastPushedData === null) lastPushedData = dataPortion(data.payload);
+        releaseHeldPush();
         return;
       }
       const payload = data.payload;
-      try {
-        lastRemoteMarks = countBookMarksFromJson(booksFromBackup(payload));
-      } catch {
-        lastRemoteMarks = -1;
-      }
+      // Repair check (SCR-68): if the cloud doc lacks a whole category of
+      // content this device still holds — e.g. it was overwritten by the
+      // pre-fix race — the union we're about to merge must be pushed back up,
+      // not swallowed as an echo. That is how a data-holding device repairs a
+      // wiped cloud doc on its next sign-in.
+      const local = contentCountsFromLocal();
+      const repairNeeded =
+        (remoteCounts.marks === 0 && local.marks > 0) ||
+        (remoteCounts.vault === 0 && local.vault > 0) ||
+        (remoteCounts.studies === 0 && local.studies > 0) ||
+        (remoteCounts.search === 0 && local.search > 0) ||
+        (remoteCounts.tables === 0 && local.tables > 0) ||
+        (remoteCounts.notes === 0 && local.notes > 0);
+      const hadHeld = pushHeld;
+      pushHeld = false;
       // Merge the other device's snapshot into live state, and suppress the one
-      // local-change push this merge will trigger (otherwise it echoes back).
-      suppressEcho = true;
+      // local-change push this merge will trigger (otherwise it echoes back) —
+      // unless a repair or a held local change means that push must go out.
+      suppressEcho = !repairNeeded && !hadHeld;
       applyRemoteLive(payload, mergeBooks, mergeVault, mergeOther);
+      if (repairNeeded || hadHeld) schedulePush(false);
       state.lastSync = Date.now();
       emit();
       if (onApplied) onApplied();
@@ -226,6 +297,13 @@ function startListening(uid: string) {
       /* listener error — Firestore retries on its own */
     }
   );
+}
+
+// Release a push that was held behind the server-snapshot gate.
+function releaseHeldPush() {
+  if (!pushHeld) return;
+  pushHeld = false;
+  schedulePush(false);
 }
 
 function stopListening() {
@@ -253,17 +331,24 @@ function schedulePush(immediate: boolean) {
 async function doPush() {
   const user = auth.currentUser;
   if (!user) return;
-  let localMarks = 0;
-  try {
-    localMarks = countBookMarksFromJson(
-      localStorage.getItem("scribal_books_v1")
-    );
-  } catch {
-    localMarks = 0;
+  // SCR-68 gate: never write before a server-confirmed snapshot has shown us
+  // what the cloud actually holds. Before that, "the cloud looks empty" is a
+  // guess — and acting on it is exactly how an emptied device wiped a full
+  // doc. The held push is released by the first server snapshot.
+  if (!serverSnapSeen) {
+    pushHeld = true;
+    return;
   }
-  // Emptiness guard: never overwrite a cloud copy that has marks with an empty
-  // one (mirrors the Drive safeguard so a blank device can't wipe the cloud).
-  if (localMarks === 0 && lastRemoteMarks > 0) return;
+  const local = contentCountsFromLocal();
+  if (remoteCounts) {
+    // Emptiness guards: (a) the original marks rule — never overwrite a cloud
+    // copy that has marks with a payload that has none; (b) widened for
+    // SCR-68 — a payload with NO content of any kind (no marks, studies,
+    // keyword studies, tables, notes, or vault entries) never overwrites a
+    // cloud doc that still holds any of them.
+    if (local.marks === 0 && remoteCounts.marks > 0) return;
+    if (totalContent(local) === 0 && totalContent(remoteCounts) > 0) return;
+  }
   const payload = buildBackupString(backupKeys);
   // Dirty check: only the data matters, not the exportedAt stamp. Skipping
   // clean pushes (before the syncing emit) is what keeps the header indicator
@@ -279,6 +364,9 @@ async function doPush() {
       writer: deviceId,
     });
     lastPushedData = dataNow;
+    // The cloud now holds this payload — keep the emptiness guards tracking
+    // reality even before our own write echoes back through the listener.
+    remoteCounts = contentCountsFromBackup(payload);
     try {
       const p = JSON.parse(payload);
       if (p.exportedAt) localStorage.setItem("scribal_sync_seen", p.exportedAt);

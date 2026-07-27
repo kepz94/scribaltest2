@@ -1838,6 +1838,10 @@ export default function MobileApp() {
   // in, sync is automatic + cross-device and the old Drive path stays dormant.
   const [cloudSignedIn, setCloudSignedIn] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
+  // Whether the browser granted persistent storage. false = iOS/Chrome may
+  // evict Scribal's on-device data under storage pressure (SCR-68), so the
+  // sync status shows a warning. null = unknown / unsupported.
+  const [cloudPersisted, setCloudPersisted] = useState<boolean | null>(null);
   // A brief, tappable escape hatch after each fresh mark — undo on mobile is
   // otherwise a hidden gesture (two-finger tap), which fat-fingered marks need.
   const [undoFlash, setUndoFlash] = useState(false);
@@ -1909,6 +1913,7 @@ export default function MobileApp() {
       setCloudSignedIn(s.signedIn);
       setCloudSyncing(s.syncing);
       setCloudEmail(s.email);
+      setCloudPersisted(s.persisted);
       if (s.lastSync) setLastSync(s.lastSync);
     });
     initCloud();
@@ -3977,7 +3982,14 @@ export default function MobileApp() {
 
   // Push local changes to Firebase (debounced inside cloudSync; only acts when
   // signed in). This is the live counterpart to the Drive auto-save below.
+  // Skips the initial mount: the first run only means "the app loaded", and
+  // scheduling a push from it was one arm of the SCR-68 empty-overwrite race.
+  const cloudPushReady = useRef(false);
   useEffect(() => {
+    if (!cloudPushReady.current) {
+      cloudPushReady.current = true;
+      return;
+    }
     noteLocalChange();
   }, syncData);
 
@@ -4531,11 +4543,12 @@ export default function MobileApp() {
                 whiteSpace: "nowrap",
               }}
             >
-              {!cloudSignedIn
+              {(!cloudSignedIn
                 ? "Saved on this phone"
                 : cloudSyncing
                 ? "Saving…"
-                : "Synced " + relTime(lastSync)}
+                : "Synced " + relTime(lastSync)) +
+                (cloudPersisted === false ? " ⚠" : "")}
             </span>
           </button>
           <button
@@ -7497,6 +7510,20 @@ export default function MobileApp() {
                         ? "Syncing…"
                         : "Synced" + (cloudEmail ? " · " + cloudEmail : "")}
                     </div>
+                    {cloudPersisted === false && (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: C.muted,
+                          lineHeight: 1.5,
+                          marginBottom: "10px",
+                        }}
+                      >
+                        ⚠ This browser declined protected storage, so it may
+                        clear Scribal’s on-device data when space runs low.
+                        Your study is safe in the cloud while sync stays on.
+                      </div>
+                    )}
                     {actionBtn("Sign out", () => {
                       signOutCloud().catch(() => {});
                     })}
