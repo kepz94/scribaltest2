@@ -2888,7 +2888,8 @@ export default function MobileApp() {
     let bookId = "master";
     if (draftSource === "session") {
       if (draftSessionId) bookId = draftSessionId;
-      else bookId = createSession(draftNewName.trim() || name);
+      // Keyword studies live in topic books (SCR-46) — born typed (SCR-78).
+      else bookId = createSession(draftNewName.trim() || name, false, "topic");
     }
     const study: SearchStudy = {
       id: "ss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),

@@ -99,7 +99,11 @@ interface Props {
   deleteTable: (id: string) => void;
   // Create a new session book (for "start from scratch" → new session): the
   // shell owns useMarks, so book creation happens there. Returns the book id.
-  createSession: (name: string) => string;
+  createSession: (
+    name: string,
+    ephemeral?: boolean,
+    bookType?: "chapter" | "topic"
+  ) => string;
   // The Scripture dock's Read tab is a full reading surface — marking state
   // and mutations stay owned by App and arrive here as props (Kepu, Jul 23).
   selectedTool?: Tool;
@@ -269,6 +273,11 @@ export default function StudyTablesDesktop({
     null | "choose" | "import" | "book"
   >(null);
   const [newSessionName, setNewSessionName] = useState("");
+  // A new session book must be born typed (SCR-78): Kepu ruled the from-scratch
+  // flow ASKS chapter/topical rather than defaulting.
+  const [newSessionType, setNewSessionType] = useState<
+    "chapter" | "topic" | null
+  >(null);
   // The "how it works" intro on the home — shown until dismissed.
   const [showIntro, setShowIntro] = useState(
     () => localStorage.getItem("scribal_tables_intro_seen") !== "1"
@@ -1214,6 +1223,7 @@ export default function StudyTablesDesktop({
   // ---- New table: blank, or seeded from a study ----
   const startScratch = () => {
     setNewSessionName("");
+    setNewSessionType(null);
     setCreating("book");
   };
   // From-scratch step 2: the chosen marks home. All this table's marking pulls
@@ -1224,8 +1234,9 @@ export default function StudyTablesDesktop({
     setOpenId(id);
   };
   const createSessionAndPick = () => {
+    if (!newSessionType) return;
     const name = newSessionName.trim() || "Session";
-    pickBook(createSession(name));
+    pickBook(createSession(name, false, newSessionType));
   };
   // The example: a finished table that uses every card kind, so a new user can
   // see what a built lesson looks like — and Present it immediately. It's a
@@ -2763,55 +2774,139 @@ export default function StudyTablesDesktop({
                 </div>
                 <div
                   style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
                     borderTop: "1px solid var(--border)",
                     paddingTop: 12,
                   }}
                 >
-                  <input
-                    value={newSessionName}
-                    placeholder="Or name a new session…"
-                    onChange={(e) => setNewSessionName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newSessionName.trim()) {
-                        e.preventDefault();
-                        createSessionAndPick();
-                      }
-                    }}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      value={newSessionName}
+                      placeholder="Or name a new session…"
+                      onChange={(e) => setNewSessionName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === "Enter" &&
+                          newSessionName.trim() &&
+                          newSessionType
+                        ) {
+                          e.preventDefault();
+                          createSessionAndPick();
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        outline: 0,
+                        background: "var(--soft)",
+                        fontFamily: SANS,
+                        fontSize: 13.5,
+                        color: "var(--text)",
+                        padding: "10px 12px",
+                      }}
+                    />
+                    <button
+                      onClick={createSessionAndPick}
+                      disabled={!newSessionName.trim() || !newSessionType}
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 13,
+                        fontWeight: 650,
+                        color: "#fff",
+                        background: accent,
+                        border: 0,
+                        borderRadius: 10,
+                        padding: "10px 16px",
+                        opacity:
+                          newSessionName.trim() && newSessionType ? 1 : 0.45,
+                        cursor:
+                          newSessionName.trim() && newSessionType
+                            ? "pointer"
+                            : "not-allowed",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      Create
+                    </button>
+                  </div>
+                  <div
                     style={{
-                      flex: 1,
-                      minWidth: 0,
-                      border: "1px solid var(--border)",
-                      borderRadius: 10,
-                      outline: 0,
-                      background: "var(--soft)",
-                      fontFamily: SANS,
-                      fontSize: 13.5,
-                      color: "var(--text)",
-                      padding: "10px 12px",
-                    }}
-                  />
-                  <button
-                    onClick={createSessionAndPick}
-                    disabled={!newSessionName.trim()}
-                    style={{
-                      fontFamily: SANS,
-                      fontSize: 13,
-                      fontWeight: 650,
-                      color: "#fff",
-                      background: accent,
-                      border: 0,
-                      borderRadius: 10,
-                      padding: "10px 16px",
-                      opacity: newSessionName.trim() ? 1 : 0.45,
-                      cursor: newSessionName.trim() ? "pointer" : "not-allowed",
-                      flex: "0 0 auto",
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      marginTop: 8,
                     }}
                   >
-                    Create
-                  </button>
+                    <span
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 12,
+                        color: "var(--muted)",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      New session is a
+                    </span>
+                    {(
+                      [
+                        ["chapter", "Chapter book", "#ef4444"],
+                        ["topic", "Topical book", "#3b82f6"],
+                      ] as const
+                    ).map(([tp, label, color]) => (
+                      <button
+                        key={tp}
+                        onClick={() => setNewSessionType(tp)}
+                        style={{
+                          fontFamily: SANS,
+                          fontSize: 12,
+                          fontWeight: 650,
+                          color,
+                          background:
+                            newSessionType === tp ? "var(--soft)" : "transparent",
+                          border:
+                            "1.4px solid " +
+                            (newSessionType === tp ? color : "var(--border)"),
+                          borderRadius: 999,
+                          padding: "5px 11px",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 13 13"
+                          aria-hidden="true"
+                          style={{ flexShrink: 0, display: "block" }}
+                        >
+                          <circle
+                            cx="6.5"
+                            cy="6.5"
+                            r="5.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                          />
+                          <text
+                            x="6.5"
+                            y="6.9"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            fontSize="7.2"
+                            fontWeight="800"
+                            fill="currentColor"
+                            fontFamily="system-ui, sans-serif"
+                          >
+                            {tp === "chapter" ? "C" : "T"}
+                          </text>
+                        </svg>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div
                   style={{

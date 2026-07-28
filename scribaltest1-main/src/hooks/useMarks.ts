@@ -427,6 +427,18 @@ function initState(): State {
     if (!books[MASTER_TOPIC_ID]) books[MASTER_TOPIC_ID] = makeMasterTopic();
     else if (books[MASTER_TOPIC_ID].type !== "topic")
       books[MASTER_TOPIC_ID] = { ...books[MASTER_TOPIC_ID], type: "topic" };
+    // One-off owner-data repair (SCR-78): "deep studies" was created through a
+    // path that never asked its kind; Kepu ruled it topical. Only an UNTYPED
+    // book with this exact name is stamped, so it is a no-op everywhere else.
+    Object.keys(books).forEach((id) => {
+      const b = books[id];
+      if (
+        !b.type &&
+        !isBuiltinBook(id) &&
+        b.name.trim().toLowerCase() === "deep studies"
+      )
+        books[id] = { ...b, type: "topic" };
+    });
     let order: string[] = Array.isArray(saved.order)
       ? saved.order.filter((id: string) => books[id])
       : [];
