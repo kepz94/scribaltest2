@@ -27,6 +27,8 @@ interface Props {
   onDelete: (id: string) => void;
   // SCR-71: flip a book's lock (refused for built-ins at the reducer).
   onSetLocked: (id: string, locked: boolean) => void;
+  // SCR-70: open the chapter-transfer dialog for this book.
+  onTransfer: (id: string) => void;
   onClose: () => void;
 }
 
@@ -82,6 +84,7 @@ export default function BooksVault({
   onRename,
   onDelete,
   onSetLocked,
+  onTransfer,
   onClose,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(
@@ -306,6 +309,9 @@ export default function BooksVault({
                   ) : (
                     <div style={{ display: "flex", gap: "6px" }}>
                       {!b.active && pill("Switch to", () => onSetActive(b.id), true)}
+                      {/* SCR-70: chapter-level mark transfer — any book can
+                          be a source, master included. */}
+                      {pill("Transfer", () => onTransfer(b.id))}
                       {!(b.builtin ?? b.isMaster) &&
                         pill("Rename", () => {
                           setDraft(b.name);

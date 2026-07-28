@@ -180,6 +180,25 @@ type Action =
   | { type: "ensureBook"; id: string; name: string; bookType?: BookType }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
   | {
+      // SCR-70 copy phase: marks + per-verse notes + the scope entries
+      // (scopedLabels/scopedRoles) for whole chapters, non-destructively.
+      type: "copyChapters";
+      sourceId: string;
+      targetId: string;
+      refs: string[];
+      scopes: string[];
+    }
+  | {
+      // SCR-70 clear phase — dispatched only after the copy is VERIFIED in
+      // the target (the SCR-53 bar: copy → verify → clear, never one
+      // destructive move). keepScopeEntries leaves theme names in place.
+      type: "clearChapters";
+      bookId: string;
+      refs: string[];
+      scopes: string[];
+      keepScopeEntries: boolean;
+    }
+  | {
       type: "moveStudyMarks";
       sourceId: string;
       targetId: string;
@@ -809,6 +828,98 @@ function reducer(state: State, action: Action): State {
             notes: mergedNotes,
           },
         },
+      };
+    }
+
+    case "copyChapters": {
+      const source = state.books[action.sourceId];
+      const target = state.books[action.targetId];
+      if (!source || !target || action.sourceId === action.targetId)
+        return state;
+      const refSet = new Set(action.refs);
+      const haveIds = new Set(target.marks.map((m) => m.id));
+      const addMarks = source.marks.filter(
+        (m) => refSet.has(m.reference) && !haveIds.has(m.id)
+      );
+      // Color meanings: keep the target's named labels, fill blanks from the
+      // source (same rule as absorb/moveStudyMarks).
+      const mergedLabels: Record<number, string> = { ...source.colorLabels };
+      Object.keys(target.colorLabels).forEach((k) => {
+        const kn = Number(k);
+        if ((target.colorLabels[kn] || "").trim() !== "")
+          mergedLabels[kn] = target.colorLabels[kn];
+      });
+      // Per-verse notes for the chapters' refs: keep target's, fill missing.
+      const mergedNotes: Record<string, string> = { ...target.notes };
+      Object.keys(source.notes).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (ref && refSet.has(ref) && !(k in mergedNotes))
+          mergedNotes[k] = source.notes[k];
+      });
+      // Scope entries (theme names + relational roles): the target adopts the
+      // source's entry for each transferred scope it doesn't already have.
+      const tgtSL = { ...(target.scopedLabels || {}) };
+      const tgtSR = { ...(target.scopedRoles || {}) };
+      const srcSL = source.scopedLabels || {};
+      const srcSR = source.scopedRoles || {};
+      action.scopes.forEach((s) => {
+        if (s in srcSL && !(s in tgtSL)) tgtSL[s] = srcSL[s];
+        if (s in srcSR && !(s in tgtSR)) tgtSR[s] = srcSR[s];
+      });
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.targetId]: {
+            ...target,
+            marks: [...target.marks, ...addMarks],
+            colorLabels: mergedLabels,
+            notes: mergedNotes,
+            scopedLabels: tgtSL,
+            scopedRoles: tgtSR,
+          },
+        },
+      };
+    }
+
+    case "clearChapters": {
+      const bk = state.books[action.bookId];
+      if (!bk) return state;
+      const refSet = new Set(action.refs);
+      const newMarks = bk.marks.filter((m) => !refSet.has(m.reference));
+      const newNotes: Record<string, string> = {};
+      Object.keys(bk.notes).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (!(ref && refSet.has(ref))) newNotes[k] = bk.notes[k];
+      });
+      let sl = bk.scopedLabels || {};
+      let sr = bk.scopedRoles || {};
+      if (!action.keepScopeEntries) {
+        sl = { ...sl };
+        sr = { ...sr };
+        action.scopes.forEach((s) => {
+          delete sl[s];
+          delete sr[s];
+        });
+      }
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.bookId]: {
+            ...bk,
+            marks: newMarks,
+            // Tombstone the cleared marks so the removal syncs instead of an
+            // old copy resurrecting them on the next pull.
+            tombstones: diffTombstones(bk.marks, newMarks, bk.tombstones),
+            notes: newNotes,
+            scopedLabels: sl,
+            scopedRoles: sr,
+          },
+        },
+        // Undo history is per active book; a cross-book transfer invalidates it.
+        past: [],
+        future: [],
       };
     }
 
@@ -1711,6 +1822,28 @@ export function useMarks() {
     []
   );
 
+  // SCR-70: the two halves of a verified chapter transfer.
+  const copyChapters = useCallback(
+    (sourceId: string, targetId: string, refs: string[], scopes: string[]) =>
+      dispatch({ type: "copyChapters", sourceId, targetId, refs, scopes }),
+    []
+  );
+  const clearChapters = useCallback(
+    (
+      bookId: string,
+      refs: string[],
+      scopes: string[],
+      keepScopeEntries: boolean
+    ) =>
+      dispatch({
+        type: "clearChapters",
+        bookId,
+        refs,
+        scopes,
+        keepScopeEntries,
+      }),
+    []
+  );
   const absorb = useCallback(
     (targetId: string, sourceId: string, refs: string[]) =>
       dispatch({ type: "absorb", targetId, sourceId, refs }),
@@ -1914,6 +2047,8 @@ export function useMarks() {
     getBook,
     ensureBook,
     absorb,
+    copyChapters,
+    clearChapters,
     moveStudyMarks,
     importStudy,
     freezeChapter,

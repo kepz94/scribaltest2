@@ -974,6 +974,8 @@ export default function App() {
     deleteBook,
     getBook,
     absorb,
+    copyChapters,
+    clearChapters,
     moveStudyMarks,
     mergeRemoteBooks,
     twoCanvasMigrate,
@@ -1955,7 +1957,29 @@ export default function App() {
     }
   }, [moveTarget]);
 
-  // ScriptureNotes importer
+  // ---- SCR-70: chapter-level mark transfer between books ----
+  // The Vault's "Transfer" opens this dialog for a source book; chapters are
+  // picked by their marks' scopes, independent of any study record.
+  const [transferBook, setTransferBook] = useState<string | null>(null);
+  const [transferSel, setTransferSel] = useState<string[]>([]);
+  const [transferDest, setTransferDest] = useState<string>("__new__");
+  const [transferNewName, setTransferNewName] = useState("");
+  // Entangled selection (chapter belongs to a study / link group):
+  // "all" = move everything the study/group covers; "copy" = copy just the
+  // selected chapters into a NEW session, source keeps its copy (Kepu's two
+  // options — the app never picks silently).
+  const [transferMode, setTransferMode] = useState<"all" | "copy">("all");
+  // Copy → VERIFY → clear (the SCR-53 bar): after the copy dispatch, this
+  // holds what must be verified in the target before the source is cleared.
+  const [transferPending, setTransferPending] = useState<null | {
+    sourceId: string;
+    targetId: string;
+    refs: string[];
+    scopes: string[];
+    chapters: string[];
+    expectIds: string[];
+    clear: boolean;
+  }>(null);
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
@@ -4690,6 +4714,164 @@ export default function App() {
     });
   }, [mode, books, setBookLocked]);
 
+  // ---- SCR-70: chapter-level mark transfer ----
+  // Everything a selection drags in when "move everything" is chosen: the
+  // full membership of any link group touched, plus every scope of any
+  // source-book study that covers a selected chapter.
+  const transferEntangled = (sel: string[]): string[] => {
+    if (!transferBook) return sel;
+    const out = new Set(sel);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      Array.from(out).forEach((ch) => {
+        const gid = chapterGroups[ch];
+        if (gid)
+          Object.keys(chapterGroups).forEach((c) => {
+            if (chapterGroups[c] === gid && !out.has(c)) {
+              out.add(c);
+              grew = true;
+            }
+          });
+        recordedStudies.forEach((s) => {
+          if (s.bookId !== transferBook || isStudyDeleted(s)) return;
+          const scopes =
+            s.type === "linked"
+              ? s.memberScopes && s.memberScopes.length
+                ? s.memberScopes
+                : Object.keys(chapterGroups).filter(
+                    (c) => chapterGroups[c] === s.scopeRef
+                  )
+              : [s.scopeRef];
+          if (scopes.includes(ch))
+            scopes.forEach((c) => {
+              if (!out.has(c)) {
+                out.add(c);
+                grew = true;
+              }
+            });
+        });
+      });
+    }
+    return Array.from(out);
+  };
+
+  // Names of the studies / link groups the selection touches. Kepu's choice
+  // (move everything vs copy-to-new-session) appears whenever a study is
+  // involved AT ALL — including one that exactly matches the selection.
+  const transferInvolved = (sel: string[]): string[] => {
+    if (!transferBook) return [];
+    const names: string[] = [];
+    sel.forEach((ch) => {
+      if (chapterGroups[ch]) names.push("the linked group around " + ch);
+    });
+    recordedStudies.forEach((s) => {
+      if (s.bookId !== transferBook || isStudyDeleted(s)) return;
+      const scopes =
+        s.type === "linked"
+          ? s.memberScopes && s.memberScopes.length
+            ? s.memberScopes
+            : Object.keys(chapterGroups).filter(
+                (c) => chapterGroups[c] === s.scopeRef
+              )
+          : [s.scopeRef];
+      if (sel.some((c) => scopes.includes(c))) names.push("“" + s.name + "”");
+    });
+    return Array.from(new Set(names));
+  };
+
+  const runTransfer = () => {
+    if (!transferBook || transferSel.length === 0) return;
+    const src = getBook(transferBook);
+    const entangledAll = transferEntangled(transferSel);
+    const entangled = transferInvolved(transferSel).length > 0;
+    const isCopy = entangled && transferMode === "copy";
+    // "Move everything" carries the whole study/group; the copy option keeps
+    // the source whole and takes ONLY the selected chapters.
+    const chapters = entangled && !isCopy ? entangledAll : transferSel;
+    const chSet = new Set(chapters);
+    const inScope = src.marks.filter((m) => chSet.has(scopeOfRef(m.reference)));
+    const refs = Array.from(new Set(inScope.map((m) => m.reference)));
+    const expectIds = inScope.map((m) => m.id);
+    const scopes = Array.from(new Set(chapters.map((c) => resolveScope(c))));
+
+    // Destination. A copy ALWAYS lands in a new session (Kepu's option b),
+    // and a collision — the destination already marked in these chapters —
+    // FORCES a new session too (linkGatheredToChapter's rule: never block,
+    // never silently merge).
+    const newSession = () =>
+      createSession(
+        transferNewName.trim() || "Session · " + fmtShortDate(Date.now()),
+        false,
+        "chapter"
+      );
+    let targetId: string;
+    if (transferDest === "__new__" || isCopy) {
+      targetId = newSession();
+    } else {
+      const collide = getBook(transferDest).marks.some((m) =>
+        chSet.has(scopeOfRef(m.reference))
+      );
+      targetId = collide ? newSession() : transferDest;
+    }
+    copyChapters(transferBook, targetId, refs, scopes);
+    setTransferPending({
+      sourceId: transferBook,
+      targetId,
+      refs,
+      scopes,
+      chapters,
+      expectIds,
+      clear: !isCopy,
+    });
+    setTransferBook(null);
+    setTransferSel([]);
+    setTransferNewName("");
+  };
+
+  // VERIFY, then clear (SCR-53 bar): the source loses its copy only after
+  // every copied mark id is confirmed present in the target. Until then the
+  // copy is harmless and the source is untouched.
+  useEffect(() => {
+    if (!transferPending) return;
+    const t = transferPending;
+    const tgt = getBook(t.targetId);
+    const ids = new Set(tgt.marks.map((m) => m.id));
+    if (!t.expectIds.every((id) => ids.has(id))) return; // not settled yet
+    if (t.clear) {
+      clearChapters(t.sourceId, t.refs, t.scopes, false);
+      // Studies wholly covered by the moved chapters follow their marks, so
+      // no study row is left pointing at an emptied scope.
+      setRecordedStudies((prev) =>
+        prev.map((s) => {
+          if (s.bookId !== t.sourceId || isStudyDeleted(s)) return s;
+          const scopes =
+            s.type === "linked"
+              ? s.memberScopes && s.memberScopes.length
+                ? s.memberScopes
+                : Object.keys(chapterGroups).filter(
+                    (c) => chapterGroups[c] === s.scopeRef
+                  )
+              : [s.scopeRef];
+          return scopes.length && scopes.every((c) => t.chapters.includes(c))
+            ? { ...s, bookId: t.targetId }
+            : s;
+        })
+      );
+    }
+    setShareMsg(
+      (t.clear ? "Moved " : "Copied ") +
+        t.chapters.length +
+        (t.chapters.length === 1 ? " chapter" : " chapters") +
+        " to “" +
+        (getBook(t.targetId).name || "book") +
+        "”"
+    );
+    setTimeout(() => setShareMsg(null), 2600);
+    setTransferPending(null);
+    // eslint-disable-next-line
+  }, [transferPending, books]);
+
   // ---- header control helpers ----
   const vDivider = (
     <div
@@ -7373,6 +7555,286 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* SCR-70: chapter-level mark transfer — the Vault's "Transfer" */}
+      {transferBook &&
+        (() => {
+          const src = getBook(transferBook);
+          const counts = new Map<string, number>();
+          src.marks.forEach((m) => {
+            const ch = scopeOfRef(m.reference);
+            counts.set(ch, (counts.get(ch) || 0) + 1);
+          });
+          const chapterList = Array.from(counts.keys()).sort((a, b) => {
+            const la = refLoc.get(a + ":1");
+            const lb = refLoc.get(b + ":1");
+            if (la && lb)
+              return (
+                la.volume - lb.volume ||
+                la.book - lb.book ||
+                la.chapter - lb.chapter
+              );
+            return a.localeCompare(b);
+          });
+          const entangledAll = transferEntangled(transferSel);
+          const extras = entangledAll.filter(
+            (c) => !transferSel.includes(c)
+          );
+          const involved = transferInvolved(transferSel);
+          const entangled = involved.length > 0;
+          const isCopy = entangled && transferMode === "copy";
+          const destBooks = books.filter(
+            (b) => b.id !== transferBook && b.type !== "topic"
+          );
+          const effSet = new Set(
+            entangled && !isCopy ? entangledAll : transferSel
+          );
+          const collide =
+            !isCopy &&
+            transferDest !== "__new__" &&
+            destBooks.some((b) => b.id === transferDest) &&
+            getBook(transferDest).marks.some((m) =>
+              effSet.has(scopeOfRef(m.reference))
+            );
+          const needsName =
+            transferDest === "__new__" || isCopy || collide;
+          const toggleCh = (ch: string) =>
+            setTransferSel((p) =>
+              p.includes(ch) ? p.filter((x) => x !== ch) : [...p, ch]
+            );
+          const label: React.CSSProperties = {
+            fontSize: "11px",
+            textTransform: "uppercase",
+            letterSpacing: ".08em",
+            color: "var(--muted)",
+            margin: "14px 0 7px",
+          };
+          return (
+            <div
+              className="scribal-fade"
+              onClick={() => setTransferBook(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 390,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+              }}
+            >
+              <div
+                className="scribal-rise"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "440px",
+                  maxHeight: "calc(100vh - 80px)",
+                  overflowY: "auto",
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "14px",
+                  padding: "18px 20px",
+                }}
+              >
+                <div style={{ fontSize: "17px", fontWeight: 700, color: "var(--text)" }}>
+                  Transfer chapters
+                </div>
+                <div style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: 3 }}>
+                  Move this book’s markings — marks, notes, and theme names —
+                  chapter by chapter. From “{src.name}”.
+                </div>
+
+                <div style={label}>Chapters with marks</div>
+                {chapterList.length === 0 && (
+                  <div style={{ fontSize: "13px", color: "var(--muted)" }}>
+                    This book has no marked chapters.
+                  </div>
+                )}
+                {chapterList.map((ch) => (
+                  <label
+                    key={ch}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      padding: "6px 2px",
+                      fontSize: "13.5px",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={transferSel.includes(ch)}
+                      onChange={() => toggleCh(ch)}
+                    />
+                    <span style={{ flex: 1 }}>{ch}</span>
+                    <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                      {counts.get(ch)}{" "}
+                      {counts.get(ch) === 1 ? "mark" : "marks"}
+                    </span>
+                  </label>
+                ))}
+
+                {entangled && (
+                  <>
+                    <div style={label}>
+                      Part of a study or linked group
+                    </div>
+                    <div style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5, marginBottom: 8 }}>
+                      Your selection is part of {involved.join(" and ")}
+                      {extras.length
+                        ? " — moving everything also brings " +
+                          extras.join(", ")
+                        : ""}
+                      . Choose how to keep things whole:
+                    </div>
+                    {(
+                      [
+                        {
+                          v: "all" as const,
+                          t: "Move everything",
+                          d: "The whole study / linked group moves together.",
+                        },
+                        {
+                          v: "copy" as const,
+                          t: "Copy just my selection to a new session",
+                          d: "The source keeps its copy, so the study stays complete.",
+                        },
+                      ]
+                    ).map((o) => (
+                      <label
+                        key={o.v}
+                        style={{
+                          display: "flex",
+                          gap: 9,
+                          padding: "6px 2px",
+                          fontSize: "13px",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="transferMode"
+                          checked={transferMode === o.v}
+                          onChange={() => setTransferMode(o.v)}
+                        />
+                        <span>
+                          <span style={{ fontWeight: 600 }}>{o.t}</span>
+                          <span style={{ display: "block", fontSize: "11.5px", color: "var(--muted)" }}>
+                            {o.d}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </>
+                )}
+
+                <div style={label}>Destination</div>
+                {isCopy ? (
+                  <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                    A copy always lands in a new session.
+                  </div>
+                ) : (
+                  <select
+                    value={
+                      destBooks.some((b) => b.id === transferDest)
+                        ? transferDest
+                        : "__new__"
+                    }
+                    onChange={(e) => setTransferDest(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 10px",
+                      borderRadius: "9px",
+                      border: "1px solid var(--border)",
+                      background: "var(--soft)",
+                      color: "var(--text)",
+                      fontSize: "13.5px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <option value="__new__">New session…</option>
+                    {destBooks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {collide && (
+                  <div style={{ fontSize: "12px", color: "var(--pen2)", marginTop: 7, lineHeight: 1.5 }}>
+                    That book already has marks in{" "}
+                    {chapterList.filter((c) => effSet.has(c)).join(", ")} — the
+                    transfer will go to a new session instead, so nothing
+                    merges silently.
+                  </div>
+                )}
+                {needsName && (
+                  <input
+                    value={transferNewName}
+                    onChange={(e) => setTransferNewName(e.target.value)}
+                    placeholder="New session name…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      marginTop: 8,
+                      padding: "9px 10px",
+                      borderRadius: "9px",
+                      border: "1px solid var(--border)",
+                      background: "var(--soft)",
+                      color: "var(--text)",
+                      fontSize: "13.5px",
+                      fontFamily: "inherit",
+                      outline: "none",
+                    }}
+                  />
+                )}
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+                  <button
+                    onClick={() => setTransferBook(null)}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      borderRadius: "9px",
+                      padding: "8px 15px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={runTransfer}
+                    disabled={transferSel.length === 0}
+                    style={{
+                      border: "none",
+                      background: ICON_ACCENT,
+                      color: "#fff",
+                      borderRadius: "9px",
+                      padding: "8px 16px",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: transferSel.length ? "pointer" : "default",
+                      opacity: transferSel.length ? 1 : 0.5,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {isCopy ? "Copy" : "Transfer"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {moveTarget && (
         <div
@@ -11208,6 +11670,13 @@ export default function App() {
                 })
               }
               onSetLocked={(id, locked) => setBookLocked(id, locked)}
+              onTransfer={(id) => {
+                setTransferBook(id);
+                setTransferSel([]);
+                setTransferDest("__new__");
+                setTransferMode("all");
+                setTransferNewName("");
+              }}
               onClose={() => setMode("read")}
             />
           );

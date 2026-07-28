@@ -754,6 +754,10 @@ export default function StudyTableColumn({
     onChange([...cards.slice(0, index), card, ...cards.slice(index)]);
     setOpenAt(null);
     setFocusId(card.id);
+    // In the dense (outline) rendering a fresh card must EXPAND to its
+    // editor — otherwise the insert lands as a collapsed one-line row and
+    // the user has to find and tap it again.
+    if (outlineMode) setEditingId(card.id);
   };
   // Choosing a type from the chooser. Scripture opens the verse panel (so verses
   // come in already carrying their marks) instead of dropping an empty card.
