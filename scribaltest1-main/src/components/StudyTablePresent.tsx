@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TableCard, StudyTable } from "../hooks/useStudyTables";
-import { passageLabel } from "../data/verseIndex";
+import { passageLabel, isConsecutive } from "../data/verseIndex";
 import { ClipPlayer, parseYouTubeId, fmtTime } from "./StudyTableColumn";
 import { richToHtml, richToPlain } from "./RichNoteField";
 
@@ -426,7 +426,10 @@ export default function StudyTablePresent({
 
     if (c.kind === "scripture") {
       const refs = c.refs || [];
-      const label = c.passage ? passageLabel(refs) : refs.join("  ·  ");
+      // Passage only counts while the verses truly run unbroken — a stale
+      // passage flag on a since-merged card must not collapse the rendering.
+      const asPassage = !!c.passage && isConsecutive(refs);
+      const label = asPassage ? passageLabel(refs) : refs.join("  ·  ");
       const themes = themesFor ? themesFor(refs, c.bookId) : [];
       return (
         <div>
@@ -485,8 +488,28 @@ export default function StudyTablePresent({
               color: P.text,
             }}
           >
-            {refs.map((r) => (
-              <div key={r}>{renderVerse(r, c.bookId)}</div>
+            {refs.map((r, vi) => (
+              <div
+                key={r}
+                style={{ marginTop: vi > 0 && !asPassage ? 20 : 0 }}
+              >
+                {/* SCR-79: merged verses present labeled and separated, same
+                    as the column view; a true passage reads continuously. */}
+                {refs.length > 1 && !asPassage && (
+                  <div
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      color: accent,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {r}
+                  </div>
+                )}
+                {renderVerse(r, c.bookId)}
+              </div>
             ))}
           </div>
         </div>

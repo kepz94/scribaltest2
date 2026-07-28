@@ -1295,6 +1295,10 @@ export default function StudyTableColumn({
 
     if (card.kind === "scripture") {
       const refs = card.refs || [];
+      // Passage only counts while the verses truly run unbroken (same chapter,
+      // sequential) — a stale flag on a since-merged card must not collapse
+      // the per-verse labels.
+      const asPassage = !!card.passage && isConsecutive(refs);
       return (
         <div style={{ ...cardBox, borderLeft: "3px solid " + accent }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -1558,7 +1562,10 @@ export default function StudyTableColumn({
                 </div>
               );
             })()}
-          {refs.length > 1 && (
+          {/* Offered only when the verses actually form one unbroken passage —
+              on a cross-chapter merge "one passage" is meaningless and only
+              strips the per-verse labels. */}
+          {refs.length > 1 && isConsecutive(refs) && (
             <label
               style={{
                 display: "inline-flex",
@@ -1597,7 +1604,7 @@ export default function StudyTableColumn({
                       reference — without this the verses read as one
                       continuous text. Passage mode stays continuous on
                       purpose (that is what "Show as one passage" means). */}
-                  {refs.length > 1 && !card.passage && (
+                  {refs.length > 1 && !asPassage && (
                     <div
                       style={{
                         fontFamily: SANS,
