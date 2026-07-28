@@ -35,6 +35,7 @@ import {
 } from "../presentRoom";
 import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
+import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
 import {
   getVerse,
@@ -207,9 +208,9 @@ export default function StudyTablesDesktop({
   chapterGroups,
   tables,
   createTable,
-  updateTable,
-  renameTable,
-  deleteTable,
+  updateTable: updateTableReal,
+  renameTable: renameTableReal,
+  deleteTable: deleteTableReal,
   createSession,
   selectedTool,
   selectedColor,
@@ -233,11 +234,13 @@ export default function StudyTablesDesktop({
 
   // Deep-link: when the shell asks for a specific table (a study opened via
   // Studies/Compile, or a send-sheet drop), open it and clear the request.
-  // SCR-66: this is the ONLY way in — the standalone tables list is gone, so
-  // the back arrow always returns to the reading screen.
+  // Entered this way, the back arrow returns to the READING screen (SCR-59) —
+  // the tables list is only home when the user came from it.
+  const [cameFromShell, setCameFromShell] = useState(false);
   useEffect(() => {
     if (openTableId) {
       setOpenId(openTableId);
+      setCameFromShell(true);
       onConsumeOpenTable?.();
     }
   }, [openTableId]);
@@ -260,13 +263,56 @@ export default function StudyTablesDesktop({
   const [readBookId, setReadBookId] = useState<string>("master");
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
+  // New-table flow: choose blank vs. import; "book" picks the marks home for a
+  // from-scratch table (master / a session / a brand-new named session).
+  const [creating, setCreating] = useState<
+    null | "choose" | "import" | "book"
+  >(null);
+  const [newSessionName, setNewSessionName] = useState("");
+  // The "how it works" intro on the home — shown until dismissed.
+  const [showIntro, setShowIntro] = useState(
+    () => localStorage.getItem("scribal_tables_intro_seen") !== "1"
+  );
+  const dismissIntro = () => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem("scribal_tables_intro_seen", "1");
+    } catch {}
+  };
+  // The example table is EPHEMERAL: it lives only in this state, is never
+  // persisted or synced, never appears in any list, and vanishes on close.
+  // These shadows route edits to it in-memory and everything else to the real
+  // store — so every existing call site works unchanged for both.
+  const [example, setExample] = useState<StudyTable | null>(null);
+  const updateTable: typeof updateTableReal = (id, changes) => {
+    if (example && id === example.id) {
+      setExample((p) => (p ? { ...p, ...changes, updatedAt: Date.now() } : p));
+      return;
+    }
+    updateTableReal(id, changes);
+  };
+  const renameTable: typeof renameTableReal = (id, name) => {
+    if (example && id === example.id) {
+      setExample((p) => (p ? { ...p, name } : p));
+      return;
+    }
+    renameTableReal(id, name);
+  };
+  const deleteTable: typeof deleteTableReal = (id) => {
+    if (example && id === example.id) {
+      setExample(null);
+      return;
+    }
+    deleteTableReal(id);
+  };
   // Present mode: the open table performed full-screen, beat by beat.
   const [presenting, setPresenting] = useState(false);
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
 
-  const open = openId ? tables.find((t) => t.id === openId) || null : null;
+  const open =
+    example || (openId ? tables.find((t) => t.id === openId) || null : null);
   const openUpdatedAt = open ? open.updatedAt : 0;
   useEffect(() => {
     if (!openUpdatedAt) return;
@@ -274,13 +320,6 @@ export default function StudyTablesDesktop({
     const t = window.setTimeout(() => setSaveFlash(false), 1400);
     return () => window.clearTimeout(t);
   }, [openUpdatedAt]);
-
-  // SCR-66: with the standalone list gone, this surface only exists while a
-  // table is open. No open table and no pending deep-link (table deleted, or
-  // a stale id) → hand control straight back to the reading screen.
-  useEffect(() => {
-    if (!open && !openTableId) onClose();
-  }, [open, openTableId]);
 
   // ---- Table-as-notes lifecycle (SCR-56, ADR-007 §3) ----
   // A study-attached table that hasn't been promoted is Compiled · live: its
@@ -947,7 +986,8 @@ export default function StudyTablesDesktop({
     setExternalDrag(null);
   };
   // Send → Selected from the Read tab: the verses stage into the tray (was
-  // App's sendReaderVersesToTable).
+  // App's sendReaderVersesToTable — shadowed updateTable keeps the example
+  // table working).
   const sendVersesToShelf = (rawRefs: string[]) => {
     const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
@@ -1171,6 +1211,252 @@ export default function StudyTablesDesktop({
       .map(([color, label]) => ({ color, label }));
   };
 
+  // ---- New table: blank, or seeded from a study ----
+  const startScratch = () => {
+    setNewSessionName("");
+    setCreating("book");
+  };
+  // From-scratch step 2: the chosen marks home. All this table's marking pulls
+  // from (and writes to) this book unless a card says otherwise.
+  const pickBook = (bookId: string) => {
+    setCreating(null);
+    const id = createTable("Untitled", undefined, bookId);
+    setOpenId(id);
+  };
+  const createSessionAndPick = () => {
+    const name = newSessionName.trim() || "Session";
+    pickBook(createSession(name));
+  };
+  // The example: a finished table that uses every card kind, so a new user can
+  // see what a built lesson looks like — and Present it immediately. It's a
+  // real table (homed to master, so their own marks show if they have any):
+  // explore it, change it, delete it.
+  const makeExample = () => {
+    setCreating(null);
+    const now = Date.now();
+    const cards: TableCard[] = [
+      { id: newCardId(), kind: "heading", text: "An experiment on the word" },
+      {
+        id: newCardId(),
+        kind: "text",
+        role: "thought",
+        text:
+          "Alma is talking to people who feel like outsiders — thrown out of their own synagogues. He doesn't start with an argument. He starts with an invitation to try something small.",
+      },
+      {
+        id: newCardId(),
+        kind: "scripture",
+        refs: ["Alma 32:21"],
+        bookId: "master",
+      },
+      {
+        id: newCardId(),
+        kind: "question",
+        qtype: "analysis",
+        text: "Why would Alma define faith by what it is NOT?",
+      },
+      {
+        id: newCardId(),
+        kind: "note",
+        text:
+          "Pause here. Let two or three people answer before moving on — the silence is doing work.",
+      },
+      { id: newCardId(), kind: "heading", text: "Plant the seed" },
+      {
+        id: newCardId(),
+        kind: "scripture",
+        refs: ["Alma 32:27", "Alma 32:28"],
+        passage: true,
+        bookId: "master",
+      },
+      {
+        id: newCardId(),
+        kind: "quote",
+        text:
+          "Faith is a principle of action and of power.",
+        attribution: "True to the Faith",
+      },
+      {
+        id: newCardId(),
+        kind: "clip",
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        startSec: 0,
+        endSec: 12,
+        clipSaved: true,
+      },
+      {
+        id: newCardId(),
+        kind: "question",
+        qtype: "application",
+        text: "What is one place in your life where you could give the word a place to be planted this week?",
+      },
+    ];
+    setExample({
+      id: "example",
+      name: "Example · Faith as a Seed",
+      purpose: "lesson",
+      bookId: "master",
+      cards,
+      createdAt: now,
+      updatedAt: now,
+    });
+    setOpenId(null);
+  };
+  // Import a study: gather every marked verse in the study (across its themes)
+  // and set them aside on the new table's shelf, then open it on the shelf tab
+  // so they're waiting in "Selected". The study's own book becomes the table's
+  // marks home.
+  const importStudy = (meta: StudyMeta) => {
+    setCreating(null);
+    const id = createTable(
+      meta.name?.trim() || "Untitled",
+      undefined,
+      meta.bookId
+    );
+    // Build the shelf theme-by-theme, in the study's own order, tagging every
+    // card with its theme so Selected mirrors the study's structure exactly.
+    const cards: TableCard[] = [];
+    const covered = new Set<string>();
+    studyThemes(meta.id).forEach((t) => {
+      const label = (t.label || "").trim() || "Theme " + t.color;
+      sortRefs(t.refs).forEach((r) => {
+        if (covered.has(r)) return;
+        covered.add(r);
+        cards.push({
+          id: newCardId(),
+          kind: "scripture" as const,
+          refs: [r],
+          bookId: meta.bookId,
+          shelfGroup: label,
+          shelfGroupColor: t.color,
+        });
+      });
+    });
+    // Extra verses added to the study (keyword additions) that carry no marks
+    // never appear in a theme — without this they'd silently not import.
+    const rec = recordedStudies.find((s) => s.id === meta.id);
+    const kw = searchStudies.find((s) => s.id === meta.id);
+    const extras = sortRefs(
+      Array.from(
+        new Set([...(rec?.extraRefs || []), ...(kw ? kw.refs : [])])
+      ).filter((r) => !covered.has(r))
+    );
+    extras.forEach((r) => {
+      covered.add(r);
+      cards.push({
+        id: newCardId(),
+        kind: "scripture" as const,
+        refs: [r],
+        bookId: meta.bookId,
+        shelfGroup: "Added verses",
+      });
+    });
+    if (cards.length) updateTable(id, { shelf: cards });
+    setOpenId(id);
+    // The imported groups land in the always-docked right tray — no drawer
+    // needed (Kepu, Jul 23: the dock's Selected tab is gone on desktop).
+    setPendingIndex(0);
+  };
+
+  // ---- "From a study": the study list + per-study theme grouping ----
+
+  // The flat study list the panel shows (recorded chapter/linked + keyword).
+  const studyMetas: StudyMeta[] = [
+    ...recordedStudies.map((s) => ({
+      id: s.id,
+      name: s.name,
+      bookId: s.bookId,
+      kind: s.type,
+    })),
+    ...searchStudies.map((s) => ({
+      id: s.id,
+      name: s.name,
+      bookId: s.bookId,
+      kind: "keyword" as const,
+    })),
+  ];
+
+  // Group a study's marked verses under its theme names. Scope + label
+  // resolution mirror the reader exactly:
+  //   scope:  chapter → its chapter; linked → the group's chapters; keyword → its
+  //           refs. Loose extraRefs fold in for recorded studies.
+  //   name:   scopedLabels[resolveScope(scopeOfRef(ref))][color], falling back to
+  //           the book-level color name (same precedence the reader uses).
+  const studyThemes = useCallback(
+    (studyId: string): StudyTheme[] => {
+      const rec = recordedStudies.find((s) => s.id === studyId);
+      const kw = searchStudies.find((s) => s.id === studyId);
+      const study = rec || kw;
+      if (!study) return [];
+      const bookId = study.bookId;
+
+      const scopeOfRef = (ref: string) => {
+        const i = ref.indexOf(":");
+        return i < 0 ? ref : ref.slice(0, i);
+      };
+      const resolveScope = (cs: string) =>
+        chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+
+      // Which references belong to this study.
+      let inScope: (ref: string) => boolean;
+      if (kw) {
+        const set = new Set(kw.refs);
+        inScope = (r) => set.has(r);
+      } else if (rec && rec.type === "linked") {
+        // Resolve the study's link-group id tolerantly: records have stored it
+        // raw ("abc123"), prefixed ("group:abc123"), or as the anchor chapter
+        // ("Alma 32") depending on where the study was created. All linked
+        // chapters must import, whichever convention this record carries.
+        const raw = rec.scopeRef || "";
+        const gid = raw.startsWith("group:")
+          ? raw.slice(6)
+          : chapterGroups[raw] || raw;
+        const chapters = new Set(
+          Object.keys(chapterGroups).filter((cs) => chapterGroups[cs] === gid)
+        );
+        // The anchor itself belongs too, even if the group map lost it.
+        if (chapterGroups[raw] || !raw.startsWith("group:")) chapters.add(raw);
+        const extra = new Set(rec.extraRefs || []);
+        inScope = (r) => chapters.has(scopeOfRef(r)) || extra.has(r);
+      } else {
+        const extra = new Set((rec && rec.extraRefs) || []);
+        inScope = (r) => scopeOfRef(r) === (rec ? rec.scopeRef : "") || extra.has(r);
+      }
+
+      // Marked references in scope, grouped by color.
+      const byColor = new Map<number, Set<string>>();
+      for (const m of allMarks) {
+        if (m.bookId !== bookId) continue;
+        if (!inScope(m.reference)) continue;
+        let s = byColor.get(m.color);
+        if (!s) {
+          s = new Set();
+          byColor.set(m.color, s);
+        }
+        s.add(m.reference);
+      }
+
+      const bk = getBook(bookId);
+      const nameFor = (ref: string, color: number): string => {
+        const scoped = bk.scopedLabels?.[resolveScope(scopeOfRef(ref))]?.[color];
+        const book = bk.colorLabels?.[color];
+        return ((scoped || book || "") as string).trim();
+      };
+
+      return Array.from(byColor.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([color, refset]) => {
+          const refs = sortRefs(Array.from(refset));
+          return {
+            color: color as MarkColor,
+            label: refs.length ? nameFor(refs[0], color) : "",
+            refs,
+          };
+        });
+    },
+    [recordedStudies, searchStudies, chapterGroups, allMarks, getBook]
+  );
+
   const iconBtn: React.CSSProperties = {
     width: 32,
     height: 32,
@@ -1240,11 +1526,15 @@ export default function StudyTablesDesktop({
         >
           <button
             onClick={() => {
+              setExample(null);
               setOpenId(null);
-              onClose();
+              if (cameFromShell) {
+                setCameFromShell(false);
+                onClose();
+              }
             }}
             style={iconBtn}
-            title="Back to reading"
+            title={cameFromShell ? "Back to reading" : "Back to your tables"}
           >
             <Ico d="M15 6l-6 6 6 6" />
           </button>
@@ -1318,6 +1608,24 @@ export default function StudyTablesDesktop({
             >
               {coverage.placed} of {coverage.total} placed
             </button>
+          )}
+          {example && open.id === example.id && (
+            <span
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: ".08em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                border: "1.5px dashed var(--border)",
+                borderRadius: 999,
+                padding: "5px 12px",
+                flex: "0 0 auto",
+              }}
+            >
+              Example · not saved
+            </span>
           )}
           {addMarksToBook && (
             <button
@@ -2190,10 +2498,572 @@ export default function StudyTablesDesktop({
     );
   }
 
-  // SCR-66: no list screen — this surface exists only while a table is
-  // open (each study opens its own table; the send sheet creates and opens
-  // directly). The auto-exit effect above returns to reading otherwise.
-  return null;
+  // ---------------- LIST ----------------
+  return (
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "18px 16px 80px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
+        <button onClick={onClose} style={iconBtn} title="Back to reading">
+          <Ico d="M15 6l-6 6 6 6" />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 10.5,
+              letterSpacing: ".14em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+            }}
+          >
+            Study tables
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: "var(--text)" }}>
+            Build a lesson
+          </div>
+        </div>
+        <button
+          onClick={() => setCreating("choose")}
+          style={{
+            fontFamily: SANS,
+            fontSize: 13.5,
+            fontWeight: 650,
+            color: "#fff",
+            cursor: "pointer",
+            background: accent,
+            border: 0,
+            borderRadius: 10,
+            padding: "10px 16px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Ico d="M12 5v14 M5 12h14" size={15} /> New table
+        </button>
+      </div>
+
+      {showIntro && (
+        <div
+          style={{
+            border: "1px solid " + softAccentBorder,
+            background: softAccent,
+            borderRadius: 14,
+            padding: "16px 18px",
+            marginBottom: 18,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                fontFamily: SERIF,
+                fontSize: 17,
+                fontWeight: 600,
+                color: "var(--text)",
+              }}
+            >
+              How a study table works
+            </div>
+            <button
+              onClick={dismissIntro}
+              aria-label="Dismiss"
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "var(--muted)",
+                cursor: "pointer",
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              color: "var(--text)",
+              lineHeight: 1.7,
+            }}
+          >
+            <b>1 · Gather</b> — pull verses in from your studies or search (or
+            send them here from any reading panel).{" "}
+            <b>2 · Arrange</b> — stack cards in order: scripture, your words,
+            questions, quotes, a clip; the column becomes the lesson.{" "}
+            <b>3 · Mark</b> — open Mark verses, mark everything in one screen,
+            and name your themes; they appear on the cards.{" "}
+            <b>4 · Present</b> — perform it beat by beat, and share a QR so
+            others follow along live.
+          </div>
+          <button
+            onClick={makeExample}
+            style={{
+              marginTop: 12,
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 650,
+              color: accent,
+              background: "transparent",
+              border: "1px solid " + accent,
+              borderRadius: 999,
+              padding: "8px 16px",
+              cursor: "pointer",
+            }}
+          >
+            Open the example table →
+          </button>
+        </div>
+      )}
+
+      {tables.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "60px 22px",
+            color: "var(--muted)",
+            fontFamily: SANS,
+            fontSize: 14,
+            border: "1px dashed var(--border)",
+            borderRadius: 14,
+          }}
+        >
+          No tables yet. Start one and gather your parts — verses, your words, questions, a clip.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {tables.map((t) => (
+            <TableRow
+              key={t.id}
+              table={t}
+              accent={accent}
+              softAccent={softAccent}
+              softAccentBorder={softAccentBorder}
+              onOpen={() => setOpenId(t.id)}
+              onDelete={() => setConfirmId(t.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {confirmId && (
+        <ConfirmDelete
+          name={tables.find((t) => t.id === confirmId)?.name || "this table"}
+          onCancel={() => setConfirmId(null)}
+          onConfirm={() => {
+            deleteTable(confirmId);
+            setConfirmId(null);
+          }}
+          accent={accent}
+        />
+      )}
+
+      {creating && (
+        <div
+          onClick={() => setCreating(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 500,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              maxHeight: "84vh",
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--bg)",
+              color: "var(--text)",
+              borderRadius: 16,
+              border: "1px solid var(--border)",
+              padding: 22,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.4)",
+            }}
+          >
+            {creating === "book" ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  Where should marking live?
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 16,
+                  }}
+                >
+                  This table pulls its verse marking from the book you pick —
+                  and marks you make from the table go there too.
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    overflowY: "auto",
+                    marginBottom: 12,
+                  }}
+                >
+                  {books.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => pickBook(b.id)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "11px 13px",
+                        borderRadius: 10,
+                        border:
+                          "1px solid " +
+                          (b.isMaster ? softAccentBorder : "var(--border)"),
+                        background: b.isMaster ? softAccent : "var(--panel)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontFamily: SANS,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {b.isMaster ? "Master Chapter Book" : b.name || "Session"}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}
+                      >
+                        {b.markCount === 1
+                          ? "1 mark"
+                          : b.markCount + " marks"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    borderTop: "1px solid var(--border)",
+                    paddingTop: 12,
+                  }}
+                >
+                  <input
+                    value={newSessionName}
+                    placeholder="Or name a new session…"
+                    onChange={(e) => setNewSessionName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newSessionName.trim()) {
+                        e.preventDefault();
+                        createSessionAndPick();
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                      outline: 0,
+                      background: "var(--soft)",
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      color: "var(--text)",
+                      padding: "10px 12px",
+                    }}
+                  />
+                  <button
+                    onClick={createSessionAndPick}
+                    disabled={!newSessionName.trim()}
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: "#fff",
+                      background: accent,
+                      border: 0,
+                      borderRadius: 10,
+                      padding: "10px 16px",
+                      opacity: newSessionName.trim() ? 1 : 0.45,
+                      cursor: newSessionName.trim() ? "pointer" : "not-allowed",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    Create
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-start",
+                    marginTop: 12,
+                  }}
+                >
+                  <button
+                    onClick={() => setCreating("choose")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            ) : creating === "choose" ? (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  New study table
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 18,
+                  }}
+                >
+                  Begin from a study you’ve already gathered, or from a blank
+                  table.
+                </div>
+                {[
+                  {
+                    on: () => setCreating("import"),
+                    d: "M12 3v12 M7 10l5 5 5-5 M5 20h14",
+                    title: "Import a study",
+                    sub: "Its marked verses arrive in Selected, ready to place",
+                    strong: true,
+                  },
+                  {
+                    on: startScratch,
+                    d: "M12 5v14 M5 12h14",
+                    title: "Start from scratch",
+                    sub: "A blank table — you pick where its marking lives",
+                    strong: false,
+                  },
+                  {
+                    on: makeExample,
+                    d: "M12 2l2.4 4.9L20 8l-4 3.9.9 5.6-4.9-2.6L7.1 17.5 8 11.9 4 8l5.6-1.1z",
+                    title: "See the example",
+                    sub: "A finished lesson using every card — open it, present it",
+                    strong: false,
+                  },
+                ].map((o) => (
+                  <button
+                    key={o.title}
+                    onClick={o.on}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 13,
+                      width: "100%",
+                      textAlign: "left",
+                      marginBottom: 10,
+                      padding: "14px 15px",
+                      borderRadius: 12,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      background: o.strong ? softAccent : "var(--panel)",
+                      border:
+                        "1px solid " +
+                        (o.strong ? softAccentBorder : "var(--border)"),
+                      color: "var(--text)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        flex: "0 0 auto",
+                        display: "grid",
+                        placeItems: "center",
+                        background: o.strong ? accent : "var(--soft)",
+                        color: o.strong ? "#fff" : accent,
+                      }}
+                    >
+                      <Ico d={o.d} size={18} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 14.5,
+                          fontWeight: 650,
+                        }}
+                      >
+                        {o.title}
+                      </span>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 12,
+                          color: "var(--muted)",
+                          marginTop: 2,
+                        }}
+                      >
+                        {o.sub}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                  <button
+                    onClick={() => setCreating(null)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600 }}>
+                  Import a study
+                </div>
+                <div
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 13,
+                    color: "var(--muted)",
+                    marginTop: 4,
+                    marginBottom: 16,
+                  }}
+                >
+                  Its marked verses will be set aside in the new table’s Selected
+                  tab.
+                </div>
+                {studyMetas.length === 0 ? (
+                  <div
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      color: "var(--muted)",
+                      lineHeight: 1.5,
+                      padding: "8px 2px 16px",
+                    }}
+                  >
+                    You don’t have any studies yet. Start from scratch instead.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      overflowY: "auto",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {studyMetas.map((m) => {
+                      const count = new Set(
+                        studyThemes(m.id).flatMap((t) => t.refs)
+                      ).size;
+                      const kindLabel =
+                        m.kind === "linked"
+                          ? "Linked study"
+                          : m.kind === "keyword"
+                          ? "Keyword study"
+                          : "Chapter study";
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => importStudy(m)}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "11px 13px",
+                            borderRadius: 10,
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            fontFamily: SANS,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 600,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {m.name || "Untitled study"}
+                          </div>
+                          <div
+                            style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}
+                          >
+                            {kindLabel} ·{" "}
+                            {count === 1 ? "1 verse" : count + " verses"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 12 }}>
+                  <button
+                    onClick={() => setCreating("choose")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: SANS,
+                      padding: "6px 4px",
+                    }}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---- the outline rail: a sticky list of the table's section headings ----
@@ -2294,6 +3164,117 @@ function OutlineRail({
         })}
       </div>
     </nav>
+  );
+}
+
+// ---- one row in the list ----
+function TableRow({
+  table,
+  accent,
+  softAccent,
+  softAccentBorder,
+  onOpen,
+  onDelete,
+}: {
+  table: StudyTable;
+  accent: string;
+  softAccent: string;
+  softAccentBorder: string;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const count = table.cards.length;
+  const purpose = table.purpose
+    ? table.purpose.charAt(0).toUpperCase() + table.purpose.slice(1)
+    : null;
+  return (
+    <div
+      onClick={onOpen}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "14px 16px",
+        borderRadius: 12,
+        border: "1px solid var(--border)",
+        background: "var(--panel)",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: SERIF,
+            fontSize: 16.5,
+            fontWeight: 600,
+            color: "var(--text)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {table.name || "Untitled"}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 3,
+            fontFamily: SANS,
+            fontSize: 12,
+            color: "var(--muted)",
+            flexWrap: "wrap",
+          }}
+        >
+          {purpose && (
+            <span
+              style={{
+                color: accent,
+                background: softAccent,
+                border: "1px solid " + softAccentBorder,
+                borderRadius: 999,
+                padding: "1px 9px",
+                fontWeight: 600,
+                fontSize: 11,
+              }}
+            >
+              {purpose}
+            </span>
+          )}
+          <span>
+            {count} {count === 1 ? "card" : "cards"}
+          </span>
+          <span>· edited {relTime(table.updatedAt)}</span>
+        </div>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        title="Delete"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--muted)",
+          cursor: "pointer",
+          display: "grid",
+          placeItems: "center",
+          lineHeight: 0,
+          flex: "0 0 auto",
+        }}
+      >
+        <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6h18" />
+          <path d="M8 6V4h8v2" />
+          <path d="M19 6l-1 14H6L5 6" />
+        </svg>
+      </button>
+    </div>
   );
 }
 
