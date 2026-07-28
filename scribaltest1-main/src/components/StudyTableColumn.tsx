@@ -1591,8 +1591,28 @@ export default function StudyTableColumn({
                 color: "var(--text)",
               }}
             >
-              {refs.map((r) => (
-                <Fragment key={r}>{renderVerse(r, card.bookId)}</Fragment>
+              {refs.map((r, vi) => (
+                <Fragment key={r}>
+                  {/* SCR-79: a merged card labels every verse with its own
+                      reference — without this the verses read as one
+                      continuous text. Passage mode stays continuous on
+                      purpose (that is what "Show as one passage" means). */}
+                  {refs.length > 1 && !card.passage && (
+                    <div
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: accent,
+                        marginTop: vi > 0 ? 12 : 0,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {r}
+                    </div>
+                  )}
+                  {renderVerse(r, card.bookId)}
+                </Fragment>
               ))}
             </div>
           ) : refs.length === 0 && onPickScripture ? (
