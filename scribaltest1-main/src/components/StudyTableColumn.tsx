@@ -663,7 +663,9 @@ export default function StudyTableColumn({
   const [dragId, setDragId] = useState<string | null>(null);
   // Button-driven merge (works everywhere, incl. touch): tap Merge on a card
   // to arm the mode, tap more scripture cards to add them, then hit "Merge
-  // cards" in the floating bar. Verses always combine in scripture order.
+  // cards" in the floating bar. Verses combine in COLUMN PLACEMENT order —
+  // the order is the lesson (Kepu, SCR-76); the opened card's chip arrows and
+  // Scripture-order sort rearrange them afterwards.
   const [mergeSel, setMergeSel] = useState<string[]>([]);
   const toggleMergeSel = (id: string) =>
     setMergeSel((p) =>
@@ -683,10 +685,11 @@ export default function StudyTableColumn({
     );
     if (chosen.length < 2) return;
     // The topmost selected card (column order) receives everyone's verses,
-    // ALWAYS re-sorted into scripture order.
+    // kept in the order the cards sat in the column (SCR-76: placement order,
+    // not scripture order — resort within the card afterwards if wanted).
     const target = chosen[0];
-    const merged = sortRefs(
-      Array.from(new Set(chosen.flatMap((c) => c.refs || [])))
+    const merged = Array.from(
+      new Set(chosen.flatMap((c) => c.refs || []))
     );
     const dropIds = new Set(chosen.slice(1).map((c) => c.id));
     onChange(
@@ -1336,6 +1339,35 @@ export default function StudyTableColumn({
                   : mergeSel.length
                   ? "Select"
                   : "Merge"}
+              </button>
+            )}
+            {refs.length > 1 && (
+              <button
+                onClick={() => {
+                  const sorted = sortRefs([...refs]);
+                  patch(card.id, {
+                    refs: sorted,
+                    passage: !!card.passage && isConsecutive(sorted),
+                  });
+                }}
+                title="Re-sort this card's verses into scripture order (merge keeps them in placement order)"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: COARSE ? 12.5 : 11.5,
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: COARSE ? "6px 13px" : "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon d="M3 6h13M3 12h9M3 18h5 M17 8v10 M14 15l3 3 3-3" size={11} />
+                Sort
               </button>
             )}
             {onMarkCard && refs.length > 0 && (
@@ -1989,6 +2021,25 @@ export default function StudyTableColumn({
         zIndex: 5,
       }}
     >
+      {card.kind === "scripture" && (
+        <button
+          onClick={() => toggleMergeSel(card.id)}
+          title={
+            mergeSel.includes(card.id)
+              ? "Remove from the merge"
+              : mergeSel.length
+              ? "Add this card to the merge"
+              : "Merge cards — tap here, then tap the other cards to combine"
+          }
+          style={
+            mergeSel.includes(card.id)
+              ? { ...toolBtn, background: accent, borderColor: accent, color: "#fff" }
+              : toolBtn
+          }
+        >
+          ⧉
+        </button>
+      )}
       {card.kind === "scripture" && (
         <button
           onClick={() => setEditingId(card.id)}
@@ -3153,7 +3204,8 @@ export default function StudyTableColumn({
                   }}
                 >
                   {total === 1 ? "1 verse combines" : total + " verses combine"}{" "}
-                  onto one card, in scripture order. They'll present together.
+                  onto one card, in the order the cards sit in the column.
+                  They'll present together.
                 </div>
                 <div
                   style={{
