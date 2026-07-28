@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ACCENT } from "../theme";
 import { COLOR_MAP, MarkColor } from "../types";
 import { isConsecutive, sortRefs } from "../data/verseIndex";
@@ -114,6 +114,7 @@ const ICON: Record<CardKind, string> = {
   clip: "M10 8l6 4-6 4V8z M3 5h18v14H3z",
   heading: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
   note: "M2 12s3.5-7 10-7 10 7 10 7 M2 12s3.5 7 10 7 10-7 10-7 M4 4l16 16",
+  grid: "M4 4h16v16H4z M4 10h16 M4 15h16 M10 4v16 M15 10v10",
 };
 const TYPES: { kind: CardKind; name: string; desc: string }[] = [
   { kind: "scripture", name: "Scripture", desc: "your marks come with it" },
@@ -123,6 +124,7 @@ const TYPES: { kind: CardKind; name: string; desc: string }[] = [
   { kind: "clip", name: "Clip", desc: "a video, starting where you want" },
   { kind: "heading", name: "Heading", desc: "start a section" },
   { kind: "note", name: "Note to self", desc: "private — only you" },
+  { kind: "grid", name: "Grid", desc: "rows and columns of info" },
 ];
 
 const ROLES: WordRole[] = ["thought", "story", "invitation"];
@@ -150,6 +152,39 @@ function Icon({ d, size = 16 }: { d: string; size?: number }) {
         <path key={i} d={(i === 0 ? seg : "M" + seg)} />
       ))}
     </svg>
+  );
+}
+
+// One grid cell (SCR-73): a plain-text textarea that grows with its wrapped
+// content, so the grid never scrolls sideways and never clips a cell.
+function GridCell({
+  value,
+  onChange,
+  placeholder,
+  style,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = Math.max(el.scrollHeight, 34) + "px";
+    }
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      rows={1}
+      style={style}
+    />
   );
 }
 
@@ -710,6 +745,12 @@ export default function StudyTableColumn({
     const card: TableCard = { id: newCardId(), kind };
     if (kind === "scripture") card.refs = [];
     if (kind === "clip") card.url = "";
+    // Grid (SCR-73): starts as 2 columns × 1 body row; the editor's column
+    // chips (1–3) and add-row control take it from there.
+    if (kind === "grid") {
+      card.gridHead = ["", ""];
+      card.gridRows = [["", ""]];
+    }
     onChange([...cards.slice(0, index), card, ...cards.slice(index)]);
     setOpenAt(null);
     setFocusId(card.id);
@@ -1014,6 +1055,174 @@ export default function StudyTableColumn({
               marginTop: 8,
             }}
           />
+        </div>
+      );
+    }
+
+    if (card.kind === "grid") {
+      // SCR-73: header row + up to 4 body rows, up to 3 columns, plain-text
+      // wrapped cells (never sideways scroll). The description OUTSIDE the
+      // grid is rich text like every other card text.
+      const head = card.gridHead && card.gridHead.length ? card.gridHead : ["", ""];
+      const cols = Math.max(1, Math.min(3, head.length));
+      const rows = (card.gridRows || []).map((r) => {
+        const c = r.slice(0, cols);
+        while (c.length < cols) c.push("");
+        return c;
+      });
+      const setCols = (n: number) => {
+        if (n === cols) return;
+        if (n < cols) {
+          const dropped =
+            head.slice(n).some((x) => (x || "").trim()) ||
+            rows.some((r) => r.slice(n).some((x) => (x || "").trim()));
+          if (
+            dropped &&
+            !window.confirm(
+              "Dropping to " +
+                n +
+                (n === 1 ? " column" : " columns") +
+                " deletes the text in the removed column" +
+                (cols - n > 1 ? "s" : "") +
+                ". Continue?"
+            )
+          )
+            return;
+        }
+        const resize = (r: string[]) => {
+          const c = r.slice(0, n);
+          while (c.length < n) c.push("");
+          return c;
+        };
+        patch(card.id, {
+          gridHead: resize(head),
+          gridRows: rows.map(resize),
+        });
+      };
+      const setCell = (row: number, col: number, v: string) => {
+        if (row < 0) {
+          const h = head.slice();
+          h[col] = v;
+          patch(card.id, { gridHead: h });
+        } else {
+          const rs = rows.map((r) => r.slice());
+          rs[row][col] = v;
+          patch(card.id, { gridRows: rs });
+        }
+      };
+      const cellBox: React.CSSProperties = {
+        width: "100%",
+        boxSizing: "border-box",
+        border: "1px solid var(--border)",
+        background: "var(--panel)",
+        color: "var(--text)",
+        fontFamily: SANS,
+        fontSize: COARSE ? 16 : 13,
+        lineHeight: 1.45,
+        padding: "7px 8px",
+        resize: "none",
+        outline: "none",
+        overflow: "hidden",
+        display: "block",
+        borderRadius: 0,
+      };
+      return (
+        <div style={{ ...cardBox, borderLeft: "3px solid var(--pen5)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ ...kicker, margin: 0, flex: 1 }}>
+              <Icon d={ICON.grid} size={12} /> Grid
+            </div>
+            <span style={{ ...kicker, margin: 0 }}>columns</span>
+            {[1, 2, 3].map((n) => (
+              <Chip
+                key={n}
+                on={cols === n}
+                label={String(n)}
+                onClick={() => setCols(n)}
+              />
+            ))}
+          </div>
+          <RichCardText
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="What does this table hold?…"
+            onChange={(v) => patch(card.id, { text: v })}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: COARSE ? 16 : 14.5,
+              lineHeight: 1.55,
+              color: "var(--muted)",
+            }}
+          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(" + cols + ", 1fr)",
+              gap: 0,
+              marginTop: 10,
+              border: "1px solid var(--border)",
+              borderRadius: 9,
+              overflow: "hidden",
+            }}
+          >
+            {head.map((h, ci) => (
+              <GridCell
+                key={"h" + ci}
+                value={h}
+                placeholder={"Header " + (ci + 1)}
+                onChange={(v) => setCell(-1, ci, v)}
+                style={{
+                  ...cellBox,
+                  fontWeight: 700,
+                  background: "var(--soft)",
+                }}
+              />
+            ))}
+            {rows.map((r, ri) =>
+              r.map((cell, ci) => (
+                <GridCell
+                  key={ri + "." + ci}
+                  value={cell}
+                  placeholder=""
+                  onChange={(v) => setCell(ri, ci, v)}
+                  style={cellBox}
+                />
+              ))
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 7, marginTop: 9, alignItems: "center" }}>
+            {rows.length < 4 ? (
+              <Chip
+                on={false}
+                label="+ row"
+                onClick={() =>
+                  patch(card.id, {
+                    gridRows: [...rows, Array.from({ length: cols }, () => "")],
+                  })
+                }
+              />
+            ) : (
+              <span style={{ ...kicker, margin: 0 }}>4 rows is the ceiling</span>
+            )}
+            {rows.length > 1 && (
+              <Chip
+                on={false}
+                label="− row"
+                onClick={() => {
+                  const last = rows[rows.length - 1];
+                  if (
+                    last.some((x) => (x || "").trim()) &&
+                    !window.confirm(
+                      "Remove the last row? Its text will be deleted."
+                    )
+                  )
+                    return;
+                  patch(card.id, { gridRows: rows.slice(0, -1) });
+                }}
+              />
+            )}
+          </div>
         </div>
       );
     }
@@ -1704,6 +1913,16 @@ export default function StudyTableColumn({
       return denseLine(card, "var(--muted)", "Quote", card.text || "", card.attribution);
     if (card.kind === "note")
       return denseLine(card, "var(--border)", "Note · private", card.text || "");
+    if (card.kind === "grid")
+      return denseLine(
+        card,
+        "var(--pen5)",
+        "Grid",
+        card.text || "",
+        (card.gridHead || []).length +
+          " × " +
+          ((card.gridRows || []).length + 1)
+      );
     // clip: title + slice; the full player lives in the expanded editor.
     return denseLine(
       card,

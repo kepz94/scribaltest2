@@ -108,6 +108,12 @@ function hasContent(c: TableCard): boolean {
   if (c.kind === "heading") return true;
   if (c.kind === "scripture") return (c.refs || []).length > 0;
   if (c.kind === "clip") return !!(c.url && parseYouTubeId(c.url));
+  if (c.kind === "grid")
+    return !!(
+      (c.text || "").trim() ||
+      (c.gridHead || []).some((x) => (x || "").trim()) ||
+      (c.gridRows || []).some((r) => r.some((x) => (x || "").trim()))
+    );
   return !!(c.text || "").trim();
 }
 
@@ -608,6 +614,69 @@ export default function StudyTablePresent({
             }}
             dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
           />
+        </div>
+      );
+    }
+
+    if (c.kind === "grid") {
+      // SCR-73: the WHOLE grid at once (Kepu's rule — no row-by-row reveal),
+      // description above it as rich HTML. Cells wrap; never sideways scroll.
+      const head = c.gridHead || [];
+      const cols = Math.max(1, Math.min(3, head.length || 1));
+      const rows = (c.gridRows || []).map((r) => {
+        const cells = r.slice(0, cols);
+        while (cells.length < cols) cells.push("");
+        return cells;
+      });
+      const cell: React.CSSProperties = {
+        border: "1px solid " + P.faint,
+        padding: "10px 12px",
+        fontFamily: SANS,
+        fontSize: "clamp(14px, 2vw, 17px)",
+        lineHeight: 1.5,
+        color: P.text,
+        overflowWrap: "anywhere",
+      };
+      return (
+        <div style={{ padding: "14px 0" }}>
+          <div style={{ ...kicker, marginBottom: 12 }}>Grid</div>
+          {(c.text || "").trim() && (
+            <div
+              className="scribal-rich-view"
+              style={{
+                fontFamily: SERIF,
+                fontSize: "clamp(16px, 2.4vw, 20px)",
+                lineHeight: 1.6,
+                color: P.muted,
+                marginBottom: 14,
+              }}
+              dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+            />
+          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(" + cols + ", 1fr)",
+              borderRadius: 10,
+              overflow: "hidden",
+            }}
+          >
+            {head.map((h, i) => (
+              <div
+                key={"h" + i}
+                style={{ ...cell, fontWeight: 800, background: "rgba(127,127,127,.12)" }}
+              >
+                {h}
+              </div>
+            ))}
+            {rows.map((r, ri) =>
+              r.map((x, ci) => (
+                <div key={ri + "." + ci} style={cell}>
+                  {x}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       );
     }

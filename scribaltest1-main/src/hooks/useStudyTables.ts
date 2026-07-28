@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 // the user picks one). It quietly tailors the experience; it never gates.
 export type TablePurpose = "lesson" | "talk" | "study" | "open";
 
-// The seven kinds of card, and nothing else:
+// The kinds of card (the palette is open — ADR-008):
 //  heading    — a section beat; its text is the section name (a fold point + a
 //               natural stop when presenting).
 //  scripture  — one or more verse references. Marks are NOT stored here; they
@@ -34,6 +34,9 @@ export type TablePurpose = "lesson" | "talk" | "study" | "open";
 //  quote      — an outside voice in text, with an optional `attribution`.
 //  clip       — an outside voice on video: a link plus the exact slice to play.
 //  note       — a private note-to-self. Never shown to a class or a room.
+//  grid       — a small rows/columns table for structured info (SCR-73).
+// The palette is OPEN (ADR-008) — new kinds may be added when they earn
+// their place; the old seven-kind cap is lifted.
 export type CardKind =
   | "heading"
   | "scripture"
@@ -41,7 +44,8 @@ export type CardKind =
   | "question"
   | "quote"
   | "clip"
-  | "note";
+  | "note"
+  | "grid";
 
 export type WordRole = "thought" | "story" | "invitation";
 export type QuestionType = "fact" | "analysis" | "application" | "feeling";
@@ -61,9 +65,18 @@ export interface TableCard {
   // content here. Only the fields relevant to `kind` are set.
   text?: string;
 
-  // text (your words): optional role tag. Story + invitation live here as roles
-  // rather than as their own kinds, so the palette stays at seven.
+  // text (your words): optional role tag. Story + invitation live here as
+  // roles rather than as their own kinds.
   role?: WordRole;
+
+  // grid (SCR-73): a rows/columns table. `gridHead` is the header row and its
+  // length IS the column count (max 3 — fits a phone with no sideways
+  // scrolling); `gridRows` are the body rows (max 4), each sized to the
+  // column count. Cells are PLAIN TEXT (Kepu's rule — no verses, links, or
+  // formatting); the card's description lives in `text` like every other
+  // text-bearing kind (Lexical HTML per SCR-63).
+  gridHead?: string[];
+  gridRows?: string[][];
 
   // question: optional type tag.
   qtype?: QuestionType;
