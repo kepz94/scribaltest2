@@ -1370,6 +1370,43 @@ export default function StudyTableColumn({
                 Sort
               </button>
             )}
+            {refs.length > 1 && (
+              <button
+                onClick={() => {
+                  // One tap undoes a merge: one card per verse, in the card's
+                  // current order, standing where the merged card stood. The
+                  // first split keeps this card's id so nothing else re-keys.
+                  const split: TableCard[] = refs.map((r, k) => ({
+                    id: k === 0 ? card.id : newCardId(),
+                    kind: "scripture",
+                    refs: [r],
+                    bookId: card.bookId,
+                  }));
+                  onChange(
+                    cards.flatMap((c) => (c.id === card.id ? split : [c]))
+                  );
+                  setEditingId(null);
+                }}
+                title="Split this card back into one card per verse, in this order"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: COARSE ? 12.5 : 11.5,
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: COARSE ? "6px 13px" : "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon d="M8 7h8M8 12h8M8 17h8 M4 5v14 M20 5v14" size={11} />
+                Unmerge
+              </button>
+            )}
             {onMarkCard && refs.length > 0 && (
               <button
                 onClick={() => onMarkCard(card)}
