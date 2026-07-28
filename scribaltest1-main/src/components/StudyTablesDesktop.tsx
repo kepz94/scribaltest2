@@ -71,7 +71,15 @@ interface Props {
     colorLabels?: Record<number, string>;
     scopedLabels?: Record<string, Record<number, string>>;
   };
-  books: { id: string; name: string; isMaster: boolean; markCount: number }[];
+  books: {
+    id: string;
+    name: string;
+    isMaster: boolean;
+    markCount: number;
+    // Canvas kind — colors the "Marks go to" options (SCR-78). Absent only
+    // on pre-migration untyped books, which render plain.
+    type?: "chapter" | "topic";
+  }[];
   // The user's studies (recorded chapter/linked + keyword) and the chapter-link
   // groups, so the verse panel can group a study's verses under its themes.
   recordedStudies: Study[];
@@ -2295,7 +2303,18 @@ export default function StudyTablesDesktop({
                             fontFamily: "inherit",
                             fontSize: 11,
                             fontWeight: 600,
-                            color: "var(--text)",
+                            // The closed control wears the selected book's
+                            // canvas color, matching its option below.
+                            color: (() => {
+                              const cur = books.find(
+                                (b) => b.id === readBookId
+                              );
+                              return cur && cur.type === "chapter"
+                                ? "#ef4444"
+                                : cur && cur.type === "topic"
+                                ? "#3b82f6"
+                                : "var(--text)";
+                            })(),
                             background: "var(--soft)",
                             border: "1px solid var(--border)",
                             borderRadius: 7,
@@ -2305,10 +2324,26 @@ export default function StudyTablesDesktop({
                           }}
                         >
                           {books.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.isMaster
-                                ? "Master Chapter Book"
-                                : b.name || "Session"}
+                            <option
+                              key={b.id}
+                              value={b.id}
+                              style={{
+                                color:
+                                  b.type === "chapter"
+                                    ? "#ef4444"
+                                    : b.type === "topic"
+                                    ? "#3b82f6"
+                                    : undefined,
+                              }}
+                            >
+                              {(b.type === "chapter"
+                                ? "Ⓒ "
+                                : b.type === "topic"
+                                ? "Ⓣ "
+                                : "") +
+                                (b.isMaster
+                                  ? "Master Chapter Book"
+                                  : b.name || "Session")}
                             </option>
                           ))}
                           <option value="__new">＋ New session…</option>
