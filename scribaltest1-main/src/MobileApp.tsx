@@ -10765,7 +10765,14 @@ export default function MobileApp() {
               {choiceBtn("New session", "a fresh dedicated book", () => {
                 const nm = window.prompt("Name this session", target.name);
                 if (nm === null) return;
-                const id = createSession(nm.trim() || "Session · " + dateStr);
+                // Born typed (SCR-78): the new book carries the study's canvas
+                // type — keyword → topic, chapter/linked → chapter (SCR-46),
+                // same derivation as the desktop move flow.
+                const id = createSession(
+                  nm.trim() || "Session · " + dateStr,
+                  false,
+                  target.kind === "keyword" ? "topic" : "chapter"
+                );
                 performMove(target, id);
               })}
             </div>
@@ -10831,7 +10838,9 @@ export default function MobileApp() {
               )}
 
               {choice("Open in a new session", "start a fresh study layer", () => {
-                const id = createSession("Session · " + dateStr);
+                // Born typed (SCR-78): opening a verse to read and mark is the
+                // chapter canvas — matches the desktop twin's "chapter" stamp.
+                const id = createSession("Session · " + dateStr, false, "chapter");
                 setActiveBook(id);
                 jumpToRef(ref);
               })}
