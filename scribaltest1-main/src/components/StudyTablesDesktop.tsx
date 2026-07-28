@@ -265,6 +265,11 @@ export default function StudyTablesDesktop({
   });
   const [readJump, setReadJump] = useState<string | null>(null);
   const [readBookId, setReadBookId] = useState<string>("master");
+  // "＋ New session…" in the Marks-go-to selector: the named session waits
+  // here until a kind is picked — books are born typed (SCR-78).
+  const [pendingReadSession, setPendingReadSession] = useState<string | null>(
+    null
+  );
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   // New-table flow: choose blank vs. import; "book" picks the marks home for a
@@ -1110,6 +1115,7 @@ export default function StudyTablesDesktop({
     setDock(null);
     setPendingIndex(null);
     setReadBookId(open ? open.bookId || "master" : "master");
+    setPendingReadSession(null);
   }, [open ? open.id : null]);
   // The global MarkingToolbar follows the Read tab.
   useEffect(() => {
@@ -2258,6 +2264,7 @@ export default function StudyTablesDesktop({
                           alignItems: "center",
                           gap: 5,
                           minWidth: 0,
+                          position: "relative",
                         }}
                       >
                         <span
@@ -2278,8 +2285,8 @@ export default function StudyTablesDesktop({
                               const name = window.prompt(
                                 "Name the new session:"
                               );
-                              if (name && name.trim() && createSession)
-                                setReadBookId(createSession(name.trim()));
+                              if (name && name.trim())
+                                setPendingReadSession(name.trim());
                               return;
                             }
                             setReadBookId(v);
@@ -2306,6 +2313,135 @@ export default function StudyTablesDesktop({
                           ))}
                           <option value="__new">＋ New session…</option>
                         </select>
+                        {pendingReadSession && (
+                          // The named session waits for its kind — same C/T
+                          // ask as the from-scratch flow, in a popover so the
+                          // narrow chrome row never clips it (SCR-78).
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: "100%",
+                              left: 0,
+                              marginTop: 6,
+                              zIndex: 30,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              background: "var(--panel)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 10,
+                              boxShadow: "0 6px 18px rgba(0,0,0,0.14)",
+                              padding: "7px 9px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--muted)",
+                                fontFamily: SANS,
+                                flex: "0 0 auto",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  maxWidth: 90,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                “{pendingReadSession}”
+                              </span>
+                              is a
+                            </span>
+                            {(
+                              [
+                                ["chapter", "Chapter", "#ef4444"],
+                                ["topic", "Topical", "#3b82f6"],
+                              ] as const
+                            ).map(([tp, label, color]) => (
+                              <button
+                                key={tp}
+                                onClick={() => {
+                                  if (createSession)
+                                    setReadBookId(
+                                      createSession(
+                                        pendingReadSession,
+                                        false,
+                                        tp
+                                      )
+                                    );
+                                  setPendingReadSession(null);
+                                }}
+                                style={{
+                                  fontFamily: SANS,
+                                  fontSize: 11,
+                                  fontWeight: 650,
+                                  color,
+                                  background: "transparent",
+                                  border: "1.4px solid " + color,
+                                  borderRadius: 999,
+                                  padding: "3px 8px",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  flex: "0 0 auto",
+                                }}
+                              >
+                                <svg
+                                  width="11"
+                                  height="11"
+                                  viewBox="0 0 13 13"
+                                  aria-hidden="true"
+                                  style={{ flexShrink: 0, display: "block" }}
+                                >
+                                  <circle
+                                    cx="6.5"
+                                    cy="6.5"
+                                    r="5.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.4"
+                                  />
+                                  <text
+                                    x="6.5"
+                                    y="6.9"
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                    fontSize="7.2"
+                                    fontWeight="800"
+                                    fill="currentColor"
+                                    fontFamily="system-ui, sans-serif"
+                                  >
+                                    {tp === "chapter" ? "C" : "T"}
+                                  </text>
+                                </svg>
+                                {label}
+                              </button>
+                            ))}
+                            <button
+                              onClick={() => setPendingReadSession(null)}
+                              aria-label="Cancel new session"
+                              style={{
+                                fontFamily: SANS,
+                                fontSize: 11,
+                                color: "var(--muted)",
+                                background: "transparent",
+                                border: 0,
+                                padding: "3px 2px",
+                                cursor: "pointer",
+                                flex: "0 0 auto",
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        )}
                       </span>
                     }
                   />
