@@ -1086,8 +1086,6 @@ export default function App() {
     );
 
   const [mode, setMode] = useState<Mode>("read");
-  // The built-in, read-only "See how it works" example (marked John 1 + a live
-  // compile using the real desktop views). Opens over everything; writes nothing.
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
     return saved === "outline" ||

@@ -11952,7 +11952,8 @@ export default function MobileApp() {
           );
         })()}
 
-      {/* First-run: sign-in choice, then the live guided tour */}
+      {/* First-run: one-time sign-in choice — afterwards sign-in lives in
+          the settings sheet (Kepu's rule: prompt once, settings forever) */}
       {signInOpen && (
         <div
           style={{
