@@ -27,6 +27,12 @@ interface StudyBook {
   // (implicitly chapter) and on pre-migration books (which behave as today
   // until the migration pass runs). Persisted + synced with the book.
   type?: BookType;
+  // SCR-71 book lock: a locked book cannot be deleted by ANY caller — the
+  // reducer refuses. ABSENCE MEANS LOCKED (locked is the default for new
+  // books and for every pre-update book), and only an explicit false is
+  // unlocked. Unlock lives in the Vault and auto-re-locks, so false is
+  // always short-lived.
+  locked?: boolean;
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
@@ -141,6 +147,7 @@ type Action =
   | { type: "rename"; id: string; name: string }
   | { type: "setBookType"; id: string; bookType: BookType }
   | { type: "deleteBook"; id: string }
+  | { type: "setBookLocked"; id: string; locked: boolean }
   | { type: "setLabel"; color: MarkColor; label: string }
   | { type: "setScopedLabel"; scope: string; color: MarkColor; label: string }
   | {
@@ -923,8 +930,28 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "setBookLocked": {
+      const bk = state.books[action.id];
+      // Built-ins are permanently locked — the Vault control renders
+      // disabled for them, and the reducer refuses just in case.
+      if (!bk || isBuiltinBook(action.id)) return state;
+      if ((bk.locked === false) === (action.locked === false)) return state;
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.id]: { ...bk, locked: action.locked !== false },
+        },
+      };
+    }
+
     case "deleteBook": {
-      if (isBuiltinBook(action.id) || !state.books[action.id]) return state;
+      const bkDel = state.books[action.id];
+      // SCR-71: a locked book (locked !== false — absence means locked) can
+      // never be deleted, no matter which surface asks. The only path is
+      // Vault → unlock → delete.
+      if (isBuiltinBook(action.id) || !bkDel || bkDel.locked !== false)
+        return state;
       const books = { ...state.books };
       delete books[action.id];
       const order = state.order.filter((x) => x !== action.id);
@@ -1140,6 +1167,9 @@ function reducer(state: State, action: Action): State {
             name:
               rb.name || (id === "master" ? "Master Chapter Book" : "Session"),
             type: asBookType(rb.type),
+            // SCR-71: adopt the remote lock state; anything but an explicit
+            // false lands locked (the default).
+            locked: rb.locked === false ? false : true,
             marks: cleanMarks,
             colorLabels: rColorLabels,
             notes: rb.notes && typeof rb.notes === "object" ? rb.notes : {},
@@ -1263,6 +1293,10 @@ function reducer(state: State, action: Action): State {
         // copies always agree.
         const remoteType = asBookType(rb.type);
         const typeChanged = !local.type && !!remoteType;
+        // SCR-71: locked wins on merge — the book stays unlocked only when
+        // BOTH copies are explicitly unlocked. Unlock is ephemeral (Vault
+        // auto-re-locks), so a remote copy re-locking mid-unlock is safe.
+        const lockChanged = local.locked === false && rb.locked !== false;
         if (
           marksChanged ||
           labelsChanged ||
@@ -1270,11 +1304,13 @@ function reducer(state: State, action: Action): State {
           tombChanged ||
           scopedChanged ||
           rolesChanged ||
-          typeChanged
+          typeChanged ||
+          lockChanged
         ) {
           books[id] = {
             ...local,
             type: typeChanged ? remoteType : local.type,
+            locked: lockChanged ? true : local.locked,
             marks: finalMarks,
             colorLabels: labels,
             notes,
@@ -1721,6 +1757,13 @@ export function useMarks() {
     (id: string, name: string) => dispatch({ type: "rename", id, name }),
     []
   );
+  // SCR-71: flip a book's lock. Only the Vault surfaces this; the reducer
+  // refuses it for built-ins either way.
+  const setBookLocked = useCallback(
+    (id: string, locked: boolean) =>
+      dispatch({ type: "setBookLocked", id, locked }),
+    []
+  );
   const deleteBook = useCallback(
     (id: string) => dispatch({ type: "deleteBook", id }),
     []
@@ -1823,6 +1866,8 @@ export function useMarks() {
       // Master is treated as chapter-typed everywhere the type is consulted;
       // untyped pre-migration session books surface undefined (behave as today).
       type: id === "master" ? ("chapter" as BookType) : state.books[id].type,
+      // SCR-71: resolved lock state (absence means locked).
+      locked: state.books[id].locked !== false,
       markCount: state.books[id].marks.length,
       createdAt: state.books[id].createdAt,
       lastStudiedAt: state.books[id].lastStudiedAt,
@@ -1864,6 +1909,7 @@ export function useMarks() {
     createSession,
     renameBook,
     setBookType,
+    setBookLocked,
     deleteBook,
     getBook,
     ensureBook,

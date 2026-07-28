@@ -970,6 +970,7 @@ export default function App() {
     setActiveBook,
     createSession,
     renameBook,
+    setBookLocked,
     deleteBook,
     getBook,
     absorb,
@@ -4679,14 +4680,15 @@ export default function App() {
       setEditDraft("");
     }
   };
-  const handleDeleteBook = (b: { id: string; name: string }) => {
-    askConfirm({
-      title: "Delete this session?",
-      body:
-        'Delete "' + b.name + "\" and all of its markings? This can't be undone.",
-      onConfirm: () => deleteBook(b.id),
+  // SCR-71: deleting a book happens ONLY in the Vault (unlock → delete).
+  // The old book-menu delete entry is gone; unlock is ephemeral — leaving
+  // the Vault re-locks every book, so a lock can never be left open.
+  useEffect(() => {
+    if (mode === "vault") return;
+    books.forEach((b) => {
+      if (!isBuiltinBook(b.id) && !b.locked) setBookLocked(b.id, true);
     });
-  };
+  }, [mode, books, setBookLocked]);
 
   // ---- header control helpers ----
   const vDivider = (
@@ -7927,22 +7929,6 @@ export default function App() {
                             }}
                           >
                             ✎
-                          </button>
-                        )}
-                        {!isBuiltinBook(b.id) && !editing && (
-                          <button
-                            onClick={() => handleDeleteBook(b)}
-                            title="Delete session"
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              color: "var(--muted)",
-                              cursor: "pointer",
-                              fontSize: "12px",
-                              padding: "2px",
-                            }}
-                          >
-                            ✕
                           </button>
                         )}
                       </div>
@@ -11199,6 +11185,7 @@ export default function App() {
               active: b.id === activeBookId,
               builtin: isBuiltinBook(b.id),
               type: b.type,
+              locked: b.locked,
               rows: all.filter((r) => r.bookId === b.id),
             }));
           return (
@@ -11220,6 +11207,7 @@ export default function App() {
                   },
                 })
               }
+              onSetLocked={(id, locked) => setBookLocked(id, locked)}
               onClose={() => setMode("read")}
             />
           );

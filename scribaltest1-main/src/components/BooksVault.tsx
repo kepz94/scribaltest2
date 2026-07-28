@@ -13,6 +13,9 @@ export type VaultBook = {
   // Two-canvas book type (SCR-54): shown on the book row. Undefined =
   // pre-migration book (no tag).
   type?: "chapter" | "topic";
+  // SCR-71: resolved lock state. Locked books cannot be deleted; the Vault
+  // is the only surface that unlocks (and unlock auto-re-locks on leaving).
+  locked: boolean;
   rows: StudyRow[];
 };
 
@@ -22,6 +25,8 @@ interface Props {
   onNewSession: () => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  // SCR-71: flip a book's lock (refused for built-ins at the reducer).
+  onSetLocked: (id: string, locked: boolean) => void;
   onClose: () => void;
 }
 
@@ -76,6 +81,7 @@ export default function BooksVault({
   onNewSession,
   onRename,
   onDelete,
+  onSetLocked,
   onClose,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(
@@ -305,17 +311,43 @@ export default function BooksVault({
                           setDraft(b.name);
                           setEditingId(b.id);
                         })}
-                      {!(b.builtin ?? b.isMaster) &&
-                        pill("Delete", () => {
-                          if (
-                            window.confirm(
-                              'Delete "' +
-                                b.name +
-                                '"? Its marks and studies will be removed. This cannot be undone.'
+                      {/* SCR-71: the lock. Built-ins show it disabled (they
+                          are permanently locked); session books toggle here
+                          and NOWHERE else. Delete only exists while unlocked,
+                          so deleting is always: unlock, then delete. */}
+                      {(b.builtin ?? b.isMaster) ? (
+                        <span
+                          title="Master books are permanently locked"
+                          style={{
+                            border: "1px solid var(--border)",
+                            color: "var(--muted)",
+                            opacity: 0.55,
+                            borderRadius: "999px",
+                            padding: "4px 10px",
+                            fontSize: "11.5px",
+                            whiteSpace: "nowrap",
+                            userSelect: "none",
+                          }}
+                        >
+                          🔒 Locked
+                        </span>
+                      ) : b.locked ? (
+                        pill("🔒 Unlock", () => onSetLocked(b.id, false))
+                      ) : (
+                        <>
+                          {pill("🔓 Lock", () => onSetLocked(b.id, true), true)}
+                          {pill("Delete", () => {
+                            if (
+                              window.confirm(
+                                'Delete "' +
+                                  b.name +
+                                  '"? Its marks and studies will be removed. This cannot be undone.'
+                              )
                             )
-                          )
-                            onDelete(b.id);
-                        })}
+                              onDelete(b.id);
+                          })}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

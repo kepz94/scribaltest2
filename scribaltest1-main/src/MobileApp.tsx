@@ -3829,6 +3829,14 @@ export default function MobileApp() {
 
   // ---- Close (delete) a session study book ----
   const closeSession = (id: string, name: string, markCount: number) => {
+    // SCR-71: books are locked by default and the reducer refuses to delete
+    // a locked book. Until the mobile lock UI lands (follow-up), say where
+    // the key is instead of letting the tap dead-end.
+    const bk = books.find((b) => b.id === id);
+    if (!bk || bk.locked) {
+      flash("This book is locked — unlock it in the Vault on desktop first");
+      return;
+    }
     const warn =
       markCount > 0
         ? "Close “" +
@@ -11770,6 +11778,14 @@ export default function MobileApp() {
                           {!b.isMaster && (
                             <button
                               onClick={() => {
+                                // SCR-71: locked books never delete — point
+                                // at the Vault instead of a dead tap.
+                                if (b.locked) {
+                                  flash(
+                                    "This book is locked — unlock it in the Vault on desktop first"
+                                  );
+                                  return;
+                                }
                                 if (
                                   window.confirm(
                                     'Delete "' +
