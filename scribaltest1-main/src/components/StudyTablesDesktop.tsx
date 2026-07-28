@@ -2253,7 +2253,9 @@ export default function StudyTablesDesktop({
                     fontScale={0.86}
                     chromeBg="var(--panel)"
                     compactChrome
-                    dragVerses
+                    // Grab is the topic signature verb (ADR-006 / SCR-50) —
+                    // sealed chapter Reads take verses via tray/Send/insert.
+                    dragVerses={!isChapterTable}
                     onGrabDragState={(refs) =>
                       setExternalDrag(
                         refs ? { refs, bookId: readBookId } : null
