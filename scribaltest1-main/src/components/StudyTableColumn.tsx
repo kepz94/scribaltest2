@@ -773,7 +773,13 @@ export default function StudyTableColumn({
   // ---------- shared bits ----------
   const cardBox: React.CSSProperties = {
     background: "var(--panel)",
-    border: "1px solid var(--border)",
+    // Longhand on purpose: scripture/grid cards override borderLeft with their
+    // accent bar, and React warns when a shorthand and a longhand for the same
+    // edge trade places across rerenders (the Focused/Full density flip).
+    borderTop: "1px solid var(--border)",
+    borderRight: "1px solid var(--border)",
+    borderBottom: "1px solid var(--border)",
+    borderLeft: "1px solid var(--border)",
     borderRadius: 13,
     padding: "14px 16px",
     boxShadow: "0 1px 2px rgba(60,50,30,.04), 0 8px 20px -14px rgba(60,50,30,.16)",

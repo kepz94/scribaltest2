@@ -2386,7 +2386,7 @@ export default function StudyTablesDesktop({
                 const rec = getVerse(r);
                 return rec ? rec.text : "";
               }}
-              outlineMode
+              outlineMode={verseView === "focused"}
               live={liveCompiled}
               verseView={verseView}
               renderVerseFocused={renderVerseFocused}
