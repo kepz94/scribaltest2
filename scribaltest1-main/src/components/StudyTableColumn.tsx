@@ -2119,7 +2119,31 @@ export default function StudyTableColumn({
   // Clear to tray), the main render carries the tray and its drop target.
   if (cards.length === 0 && !(shelf && shelf.length)) {
     return (
-      <div style={{ maxWidth: 660, margin: "0 auto" }}>
+      <div
+        style={{
+          maxWidth: 660,
+          margin: "0 auto",
+          // Droppable like the main column (SCR-75): this early return used
+          // to carry no drag handlers at all, so a blank table refused every
+          // drop — the reader drag only "worked" via the tray detour.
+          borderRadius: 13,
+          border: dragInFlight
+            ? "2px dashed var(--muted)"
+            : "2px dashed transparent",
+        }}
+        onDragOver={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
+          }
+        }}
+        onDrop={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            performDrop(0);
+          }
+        }}
+      >
         {openAt === 0 ? (
           <Chooser index={0} />
         ) : (
@@ -2182,7 +2206,12 @@ export default function StudyTableColumn({
         if ((e.target as HTMLElement).closest("[data-tray]")) return;
         if (dragInFlight) {
           e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
+          // Reader/search grabbers start their drag with effectAllowed
+          // "copy" (the verse is copied in; the source keeps it). Answering
+          // "move" made the browser refuse the drop outright — the drop line
+          // showed but releasing did nothing (SCR-75). Internal tray/reorder
+          // drags stay moves.
+          e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
           setTrayOverIndex(cards.length);
         }
       }}
@@ -2253,7 +2282,10 @@ export default function StudyTableColumn({
                 // half — exact placement.
                 if (dragInFlight) {
                   e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
+                  // "copy" for reader/search verses, "move" for internal
+                  // drags — a dropEffect outside the source's effectAllowed
+                  // makes the browser refuse the drop (SCR-75).
+                  e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
                   const r = e.currentTarget.getBoundingClientRect();
                   setTrayOverIndex(
                     e.clientY < r.top + r.height / 2 ? i : i + 1
@@ -2510,7 +2542,9 @@ export default function StudyTableColumn({
         onDragOver={(e) => {
           if (dragInFlight) {
             e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
+            // Same rule as the other drop zones: match the source's
+            // effectAllowed or the browser refuses the drop (SCR-75).
+            e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
             setTrayOverIndex(cards.length);
           }
         }}

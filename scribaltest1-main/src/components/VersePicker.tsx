@@ -1069,7 +1069,11 @@ export default function VersePicker({
                           onDragStart={(e) => {
                             e.stopPropagation();
                             onVerseDragStart(ref, sourceBookId || undefined);
-                            e.dataTransfer.effectAllowed = "move";
+                            // "copy" like every verse grabber (the source
+                            // keeps its verse) — the column answers copy for
+                            // external drags, and a mismatch here makes the
+                            // browser refuse the drop (SCR-75).
+                            e.dataTransfer.effectAllowed = "copy";
                             try {
                               e.dataTransfer.setData("text/plain", ref);
                             } catch {}
