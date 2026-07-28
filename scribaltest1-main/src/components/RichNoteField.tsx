@@ -757,6 +757,39 @@ function VersePicker({
   );
 }
 
+// ═══ style-preserving HTML import (SCR-77) ═════════════════════════════════
+// Lexical's HTML EXPORT writes text color / highlight as inline span styles,
+// but its default IMPORT ($generateNodesFromDOM) discards style attributes —
+// so the first reopen of a saved note/card loaded a colorless copy and the
+// next save wrote that loss back over the original. This conversion map
+// carries color + background-color from incoming spans onto their text nodes.
+// Registered via the composers' `html.import` config below.
+const styleImportMap: any = {
+  span: (el: HTMLElement) => {
+    const color = el.style ? el.style.color : "";
+    const bg = el.style ? el.style.backgroundColor : "";
+    if (!color && !bg) return null; // plain span — default handling
+    return {
+      conversion: () => ({
+        forChild: (child: any) => {
+          // instanceof instead of $isTextNode: TS 4.4.4 can't see that
+          // export in lexical's types (the standing shim gotcha).
+          if (child instanceof TextNode) {
+            const parts: string[] = [];
+            const prev = child.getStyle();
+            if (prev) parts.push(prev);
+            if (color) parts.push("color: " + color);
+            if (bg) parts.push("background-color: " + bg);
+            child.setStyle(parts.join("; "));
+          }
+          return child;
+        },
+      }),
+      priority: 1,
+    };
+  },
+};
+
 // ═══ card-text helpers (SCR-63) ═══════════════════════════════════════════
 // A study-table card's text may be legacy plain text or Lexical HTML. These
 // two rules are THE way every surface displays it — editor column, Present
@@ -855,6 +888,7 @@ export function RichCardText({
     theme: editorTheme,
     onError: (e: Error) => console.error("Lexical:", e),
     nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
+    html: { import: styleImportMap },
   };
   const save = () => {
     // an editor holding only an empty paragraph saves as empty
@@ -1000,6 +1034,7 @@ export default function RichNoteField({
       theme: editorTheme,
       onError: (e: Error) => console.error("Lexical:", e),
       nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
+      html: { import: styleImportMap },
     };
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
