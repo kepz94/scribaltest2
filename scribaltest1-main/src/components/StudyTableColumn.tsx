@@ -1727,11 +1727,13 @@ export default function StudyTableColumn({
     lineHeight: 0,
   };
   const rowTools = (card: TableCard, i: number) => (
+    // Anchored to the card's own bounded surface (SCR-72) — the tools sit
+    // just inside its border, never floating in the gutter between cards.
     <div
       style={{
         position: "absolute",
-        right: 0,
-        top: card.kind === "heading" ? 14 : 4,
+        right: 6,
+        top: card.kind === "heading" ? 14 : 5,
         display: "flex",
         gap: 4,
         zIndex: 5,
@@ -2176,47 +2178,76 @@ export default function StudyTableColumn({
                 style={{
                   gridColumn: 2,
                   minWidth: 0,
-                  padding: outlineMode ? "1px 0" : "8px 0 8px 4px",
+                  padding: outlineMode ? "3px 0" : "8px 0 8px 4px",
                 }}
               >
-                {outlineMode && editingId !== card.id ? (
-                  denseRow(card, sectionColorAt(i))
-                ) : (
-                  <>
-                    {outlineMode && (
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          margin: "6px 0 4px",
-                        }}
-                      >
-                        <button
-                          onClick={() => setEditingId(null)}
+                {outlineMode ? (
+                  // SCR-72: every card sits in its own bounded surface so its
+                  // controls — hover tools, the Controls row, the delete
+                  // confirm — visibly belong to THIS card and no other. While
+                  // a delete is armed the border turns red, identifying the
+                  // card that's about to go.
+                  <div
+                    style={{
+                      position: "relative",
+                      background: "var(--panel)",
+                      border:
+                        "1px solid " +
+                        (outlineConfirmId === card.id || confirmId === card.id
+                          ? "#b3452f"
+                          : "var(--border)"),
+                      boxShadow:
+                        outlineConfirmId === card.id || confirmId === card.id
+                          ? "0 0 0 3px rgba(179,69,47,.14)"
+                          : "0 1px 2px rgba(60,50,30,.04)",
+                      borderRadius: 11,
+                      padding:
+                        editingId === card.id ? "8px 12px 12px" : "2px 10px 4px",
+                      transition: "border-color .12s ease, box-shadow .12s ease",
+                    }}
+                  >
+                    {editingId !== card.id ? (
+                      denseRow(card, sectionColorAt(i))
+                    ) : (
+                      <>
+                        <div
                           style={{
-                            fontFamily: SANS,
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            color: "#fff",
-                            background: accent,
-                            border: 0,
-                            borderRadius: 999,
-                            padding: "4px 14px",
-                            cursor: "pointer",
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            margin: "2px 0 4px",
                           }}
                         >
-                          Done
-                        </button>
-                      </div>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            style={{
+                              fontFamily: SANS,
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: "#fff",
+                              background: accent,
+                              border: 0,
+                              borderRadius: 999,
+                              padding: "4px 14px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                        {renderCard(card, i)}
+                        <Controls id={card.id} />
+                      </>
                     )}
+                    {editingId !== card.id &&
+                      hoverRowId === card.id &&
+                      rowTools(card, i)}
+                  </div>
+                ) : (
+                  <>
                     {renderCard(card, i)}
                     <Controls id={card.id} />
                   </>
                 )}
-                {outlineMode &&
-                  editingId !== card.id &&
-                  hoverRowId === card.id &&
-                  rowTools(card, i)}
               </div>
             </div>
           </Fragment>
@@ -2468,8 +2499,15 @@ export default function StudyTableColumn({
                           <div
                             key={c.id}
                             style={{
-                              padding: "8px 13px",
-                              borderTop: "1px solid var(--border)",
+                              // SCR-72: the confirm keeps the row's bounded
+                              // tile, turned red — no doubt which entry the
+                              // remove acts on.
+                              margin: "6px 8px",
+                              padding: "8px 11px",
+                              border: "1px solid #b3452f",
+                              boxShadow: "0 0 0 3px rgba(179,69,47,.14)",
+                              borderRadius: 9,
+                              background: "var(--panel)",
                               fontFamily: SANS,
                               fontSize: 12,
                             }}
@@ -2571,11 +2609,17 @@ export default function StudyTableColumn({
                           }}
                           title="Drag to an exact spot"
                           style={{
+                            // SCR-72: each waiting entry is its own bounded
+                            // tile, so its Place/remove controls read as its
+                            // own — same rule as the column's cards.
                             display: "flex",
                             alignItems: "flex-start",
                             gap: 8,
-                            padding: sideDock ? "8px 12px" : "6px 13px",
-                            borderTop: "1px solid var(--border)",
+                            margin: "6px 8px",
+                            padding: sideDock ? "8px 10px" : "6px 11px",
+                            border: "1px solid var(--border)",
+                            borderRadius: 9,
+                            background: "var(--panel)",
                             fontFamily: SANS,
                             fontSize: 12,
                             cursor: "grab",
