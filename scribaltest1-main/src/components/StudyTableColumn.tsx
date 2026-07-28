@@ -924,11 +924,27 @@ export default function StudyTableColumn({
   }
 
   // ---------- per-kind editors ----------
+  // Text-bearing kinds get ONE Done: the editor's, which saves AND collapses
+  // the card (Kepu, Jul 28 — never two Done buttons on one box). The outer
+  // collapse Done renders only for multi-part kinds (scripture, clip, grid).
+  const SINGLE_DONE_KINDS: CardKind[] = [
+    "heading",
+    "text",
+    "question",
+    "quote",
+    "note",
+  ];
+  const collapseCard = (id: string) =>
+    setEditingId((p) => (p === id ? null : p));
+
   const renderCard = (card: TableCard, index: number) => {
     // Open the rich editor immediately for a freshly inserted card AND for a
     // card expanded from its dense row — a dense tap means "edit this", same
     // as when the dense line opened a bare textarea.
     const focus = card.id === focusId || (!!outlineMode && editingId === card.id);
+    const doneCollapse = outlineMode
+      ? () => collapseCard(card.id)
+      : undefined;
 
     if (card.kind === "heading") {
       return (
@@ -943,6 +959,7 @@ export default function StudyTableColumn({
             autoFocus={focus}
             placeholder="Name this section…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
             accent={accent}
             style={{
               fontFamily: SANS,
@@ -965,6 +982,7 @@ export default function StudyTableColumn({
             autoFocus={focus}
             placeholder="Write your thought…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
             accent={accent}
             style={{
               fontFamily: SERIF,
@@ -1003,6 +1021,7 @@ export default function StudyTableColumn({
             autoFocus={focus}
             placeholder="Ask something…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
             accent={accent}
             style={{
               fontFamily: SERIF,
@@ -1035,6 +1054,7 @@ export default function StudyTableColumn({
             autoFocus={focus}
             placeholder="The quote…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
             accent={accent}
             style={{
               fontFamily: SERIF,
@@ -1250,6 +1270,7 @@ export default function StudyTableColumn({
             autoFocus={focus}
             placeholder="A private note — pause here, tell the story…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
             accent={accent}
             style={{
               fontFamily: SERIF,
@@ -2433,6 +2454,7 @@ export default function StudyTableColumn({
                       denseRow(card, sectionColorAt(i))
                     ) : (
                       <>
+                        {!SINGLE_DONE_KINDS.includes(card.kind) && (
                         <div
                           style={{
                             display: "flex",
@@ -2457,6 +2479,7 @@ export default function StudyTableColumn({
                             Done
                           </button>
                         </div>
+                        )}
                         {renderCard(card, i)}
                         <Controls id={card.id} />
                       </>

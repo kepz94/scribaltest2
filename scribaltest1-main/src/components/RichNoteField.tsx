@@ -803,6 +803,7 @@ export function RichCardText({
   autoFocus,
   accent,
   style,
+  onDone,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -810,6 +811,10 @@ export function RichCardText({
   autoFocus?: boolean;
   accent?: string;
   style?: React.CSSProperties;
+  // Called after Done saves. The dense column passes the card-collapse here
+  // so a text-bearing card has exactly ONE Done — it saves AND closes the
+  // card (Kepu's rule, Jul 28: never two Done buttons on one box).
+  onDone?: () => void;
 }) {
   const [editing, setEditing] = useState(!!autoFocus);
   const htmlRef = useRef(value);
@@ -818,6 +823,13 @@ export function RichCardText({
     htmlRef.current = value;
     setEditing(true);
   };
+  // If the parent re-mounts this slot mid-flow (e.g. a live table
+  // materializing on the first authoring act), a still-true autoFocus
+  // re-opens the editor instead of stranding the card at rest.
+  useEffect(() => {
+    if (autoFocus && !editing) openEditor();
+    // eslint-disable-next-line
+  }, [autoFocus]);
 
   if (!editing) {
     return has ? (
@@ -850,6 +862,7 @@ export function RichCardText({
     const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
     onChange(textOnly ? out : "");
     setEditing(false);
+    if (onDone) onDone();
   };
   return (
     <div
