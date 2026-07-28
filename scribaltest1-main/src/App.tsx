@@ -9405,8 +9405,6 @@ export default function App() {
               !canRedo
             )}
             {vDivider}
-            {mode === "read" &&
-              actionButton("Study tables", () => setMode("table"))}
             {mode === "compile" &&
               actionButton(
                 "← Back to Reading",
