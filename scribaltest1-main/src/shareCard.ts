@@ -343,7 +343,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const { canvas, ctx } = newCanvas();
   if (!ctx) return canvas;
 
-  const verses = o.verses.slice(0, 4);
+  const verses = o.verses.slice(0, 5);
   const showNotes = !!o.showNotes;
   const syntheses =
     o.showSynthesis && o.syntheses
@@ -536,7 +536,13 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   };
 
   // Comfortable, readable text sized by how many verses are on the card.
-  const baseByCount: { [k: number]: number } = { 1: 48, 2: 44, 3: 42, 4: 40 };
+  const baseByCount: { [k: number]: number } = {
+    1: 48,
+    2: 44,
+    3: 42,
+    4: 40,
+    5: 38,
+  };
   const maxSize = 64;
   const minSize = 22;
   const minContent = MIN_H - top - FOOTER_SPACE;

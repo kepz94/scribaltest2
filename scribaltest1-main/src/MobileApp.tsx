@@ -25,6 +25,7 @@ import CompileBook, {
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview from "./SharePreview";
+import type { VersesCardEntry } from "./shareCard";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
 import { useMarks } from "./hooks/useMarks";
@@ -1815,6 +1816,11 @@ export default function MobileApp() {
     style: string;
     color: number;
   } | null>(null);
+  // Send → Share: the selected verses as card entries. SharePreview turns
+  // them into one image card (≤5 verses) or a multi-page PDF (more).
+  const [shareVerses, setShareVerses] = useState<VersesCardEntry[] | null>(
+    null
+  );
   const [signInOpen, setSignInOpen] = useState(
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
@@ -8217,6 +8223,63 @@ export default function MobileApp() {
                 </button>
                 <button
                   onClick={() => {
+                    const refs = sendRefs;
+                    const VI = verseByRef();
+                    const bookMarks = getBook(activeBookId).marks;
+                    const entries: VersesCardEntry[] = refs.map((ref) => {
+                      const info = VI.get(ref);
+                      const vMarks = bookMarks.filter(
+                        (m) => m.reference === ref
+                      );
+                      const first = vMarks[0];
+                      return {
+                        reference: ref,
+                        theme: first
+                          ? chapterColorName(scopeOf(ref), first.color)
+                          : "",
+                        color: first ? first.color : 7,
+                        phrases: vMarks.map((m) => ({
+                          text: m.markedText,
+                          style: m.style,
+                        })),
+                        view: "full" as const,
+                        fullText: info ? info.text : "",
+                        verseNumber: info ? info.verse : undefined,
+                        marks: vMarks.map((m) => ({
+                          startIndex: m.startIndex,
+                          endIndex: m.endIndex,
+                          style: m.style,
+                          color: m.color,
+                        })),
+                      };
+                    });
+                    setSendRefs(null);
+                    setSendPicking(false);
+                    setShareVerses(entries);
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid " + C.border,
+                    background: C.panel,
+                    color: C.text,
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Share
+                  {sendRefs.length > 5
+                    ? " as a PDF"
+                    : sendRefs.length === 1
+                    ? " as an image"
+                    : " as an image card"}
+                </button>
+                <button
+                  onClick={() => {
                     setSendRefs(null);
                     setSendPicking(false);
                   }}
@@ -11556,6 +11619,19 @@ export default function MobileApp() {
           kind="verse"
           verse={versePreview}
           onClose={() => setVersePreview(null)}
+          onFlash={flash}
+        />
+      )}
+
+      {/* Share preview (verses picked via Send → Share) */}
+      {shareVerses && (
+        <SharePreview
+          C={C}
+          appDark={dark}
+          kind="verses"
+          verses={shareVerses}
+          marksToggle
+          onClose={() => setShareVerses(null)}
           onFlash={flash}
         />
       )}

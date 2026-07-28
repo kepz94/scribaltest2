@@ -9,6 +9,11 @@ import {
   VersesCardEntry,
   VersesSynthesis,
 } from "./shareCard";
+import { canvasesToPdf, sharePdf } from "./sharePdf";
+
+// One image card holds up to this many verses; a bigger selection becomes a
+// multi-page PDF whose pages are the same rendered cards.
+const CARD_MAX = 5;
 
 interface CC {
   bg: string;
@@ -45,6 +50,9 @@ interface Props {
   comp?: CompData;
   verses?: VersesCardEntry[];
   syntheses?: VersesSynthesis[];
+  // Show a "Markings" on/off chip (reader-share flow): off strips the marks
+  // so the card carries clean verse text.
+  marksToggle?: boolean;
   onClose: () => void;
   onFlash: (m: string) => void;
 }
@@ -57,6 +65,7 @@ export default function SharePreview({
   comp,
   verses,
   syntheses,
+  marksToggle,
   onClose,
   onFlash,
 }: Props) {
@@ -64,11 +73,27 @@ export default function SharePreview({
   const [featured, setFeatured] = useState(comp ? comp.defaultFeatured : 0);
   const [showNotes, setShowNotes] = useState(true);
   const [showSynthesis, setShowSynthesis] = useState(false);
+  const [showMarks, setShowMarks] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   const hasNotes = !!verses && verses.some((v) => (v.note || "").trim());
   const hasSynth = !!syntheses && syntheses.some((s) => s.text.trim());
+
+  // The verses as the card should draw them (markings stripped when toggled off).
+  const effVerses = (): VersesCardEntry[] =>
+    (verses || []).map((v) =>
+      marksToggle && !showMarks ? { ...v, marks: [] } : v
+    );
+  // More verses than one card holds → a multi-page PDF of card-pages.
+  const pdfMode = kind === "verses" && !!verses && verses.length > CARD_MAX;
+  const pdfPages = (): VersesCardEntry[][] => {
+    const vs = effVerses();
+    const pages: VersesCardEntry[][] = [];
+    for (let i = 0; i < vs.length; i += CARD_MAX)
+      pages.push(vs.slice(i, i + CARD_MAX));
+    return pages;
+  };
 
   const build = (): HTMLCanvasElement | null => {
     if (kind === "verse" && verse) {
@@ -76,7 +101,7 @@ export default function SharePreview({
     }
     if (kind === "verses" && verses) {
       return renderVersesCard({
-        verses,
+        verses: pdfMode ? pdfPages()[0] : effVerses(),
         dark: cardDark,
         showNotes,
         showSynthesis,
@@ -108,14 +133,9 @@ export default function SharePreview({
     const c = build();
     if (c) setUrl(canvasURL(c));
     // eslint: re-render preview when inputs change
-  }, [cardDark, featured, kind, showNotes, showSynthesis]);
+  }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks]);
 
   const doShare = async () => {
-    const c = build();
-    if (!c) {
-      onFlash("Couldn't create image");
-      return;
-    }
     setBusy(true);
     const caption =
       kind === "verse" && verse
@@ -127,6 +147,39 @@ export default function SharePreview({
           (comp.studyLabel.trim() ? " · " + comp.studyLabel.trim() : "") +
           " — a study in Scribal"
         : "Scribal";
+
+    if (pdfMode) {
+      // Each page is the same rendered card; the whole set ships as one PDF.
+      const canvases = pdfPages().map((page) =>
+        renderVersesCard({
+          verses: page,
+          dark: cardDark,
+          showNotes,
+          showSynthesis: false,
+        })
+      );
+      const blob = canvasesToPdf(canvases);
+      const r = blob
+        ? await sharePdf(blob, "scribal-verses.pdf", caption)
+        : "failed";
+      setBusy(false);
+      if (r === "downloaded") {
+        onFlash("PDF saved");
+        onClose();
+      } else if (r === "failed") {
+        onFlash("Couldn't create PDF");
+      } else {
+        onClose();
+      }
+      return;
+    }
+
+    const c = build();
+    if (!c) {
+      setBusy(false);
+      onFlash("Couldn't create image");
+      return;
+    }
     const r = await shareCanvas(
       c,
       kind === "verse"
@@ -300,6 +353,34 @@ export default function SharePreview({
                   {showSynthesis ? "\u2713 Synthesis" : "Synthesis"}
                 </button>
               )}
+            </div>
+          )}
+
+          {kind === "verses" && marksToggle && (
+            <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+              <button
+                onClick={() => setShowMarks((s) => !s)}
+                style={seg(showMarks)}
+                data-share-marks=""
+              >
+                {showMarks ? "\u2713 Markings" : "Markings"}
+              </button>
+            </div>
+          )}
+
+          {pdfMode && verses && (
+            <div
+              data-share-pdfnote=""
+              style={{
+                fontSize: "12px",
+                color: C.muted,
+                textAlign: "center",
+                marginBottom: "10px",
+              }}
+            >
+              {verses.length} verses \u00b7 shares as a PDF (
+              {Math.ceil(verses.length / CARD_MAX)} pages) \u2014 preview shows page
+              1
             </div>
           )}
 
