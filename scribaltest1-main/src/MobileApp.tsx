@@ -377,9 +377,9 @@ interface SearchStudy {
   // Delete tombstone — counts as deleted only while newest (>= updatedAt); a
   // later edit revives it. Carried in the record so the delete syncs.
   deletedAt?: number;
-  // Optional free-text overview shown atop the study on desktop (carried in by
-  // the ScriptureNotes importer). Mobile doesn't show or edit it, but stores and
-  // syncs it so it round-trips between devices without being lost or reverted.
+  // Optional free-text overview shown atop the study on desktop (written by the
+  // retired ScriptureNotes importer, SCR-23). Mobile doesn't show or edit it,
+  // but stores and syncs it so it round-trips between devices without loss.
   note?: string;
   // The compile view this keyword study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.

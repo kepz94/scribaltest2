@@ -18,8 +18,8 @@ export interface SearchStudy {
   // action (>= updatedAt), so a later edit/rename revives it. Carried in the
   // record so a delete on one device propagates to the other.
   deletedAt?: number;
-  // Optional free-text overview shown atop the study. Used by the ScriptureNotes
-  // importer to carry the report's description (and favorites list) across.
+  // Optional free-text overview shown atop the study. Written by the retired
+  // ScriptureNotes importer (SCR-23) — kept so those studies stay whole.
   note?: string;
   // The compile view this study was last on — topic studies reopen there
   // (Outline / Distilled / Relational / single-line Semantic). Carried so it
