@@ -1495,6 +1495,30 @@ export default function StudyTablesDesktop({
     lineHeight: 0,
     flex: "0 0 auto",
   };
+  // Header layout E (Kepu, Jul 29): every action pill shares ONE scale, and
+  // the action row's groups are atomic — they wrap as whole units, never
+  // mid-group. Present is the row's only filled pill.
+  const headerGroup: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    flex: "0 0 auto",
+  };
+  const headerPill: React.CSSProperties = {
+    fontFamily: SANS,
+    fontSize: 12.5,
+    fontWeight: 650,
+    color: "var(--text)",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: 999,
+    padding: "7px 14px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    flex: "0 0 auto",
+  };
 
   function Ico({ d, size = 15 }: { d: string; size?: number }) {
     return (
@@ -1538,7 +1562,11 @@ export default function StudyTablesDesktop({
           padding: "16px 16px 120px",
         }}
       >
-        {/* editor top bar */}
+        {/* Editor top bar — layout E (Kepu, Jul 29): the name row carries the
+            purpose pills (purpose is identity, not an action), status sits at
+            its right end, and the actions live below in grouped clusters. The
+            wrapper keeps both rows clear of the docked tray. */}
+        <div style={{ paddingRight: trayDocked ? 288 : 0 }}>
         <div
           style={{
             display: "flex",
@@ -1546,7 +1574,6 @@ export default function StudyTablesDesktop({
             gap: 10,
             flexWrap: "wrap",
             marginBottom: 6,
-            paddingRight: trayDocked ? 288 : 0,
           }}
         >
           <button
@@ -1569,7 +1596,8 @@ export default function StudyTablesDesktop({
             onChange={(e) => renameTable(open.id, e.target.value)}
             style={{
               flex: 1,
-              minWidth: 180,
+              minWidth: 150,
+              maxWidth: 320,
               height: 40,
               padding: "0 12px",
               borderRadius: 10,
@@ -1582,6 +1610,32 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          {PURPOSES.map(({ p, label }) => {
+            const on = open.purpose === p;
+            return (
+              <button
+                key={p}
+                onClick={() =>
+                  updateTable(open.id, { purpose: on ? undefined : p })
+                }
+                title="What this table is for"
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  color: on ? accent : "var(--muted)",
+                  background: on ? softAccent : "transparent",
+                  border: "1px solid " + (on ? accent : "var(--border)"),
+                  borderRadius: 999,
+                  padding: "5px 13px",
+                  flex: "0 0 auto",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
           <span
             title="Every change saves automatically"
             style={{
@@ -1593,6 +1647,7 @@ export default function StudyTablesDesktop({
               fontWeight: 600,
               color: saveFlash ? accent : "var(--muted)",
               flex: "0 0 auto",
+              marginLeft: "auto",
               transition: "color .2s ease",
             }}
           >
@@ -1652,196 +1707,179 @@ export default function StudyTablesDesktop({
               Example · not saved
             </span>
           )}
-          {addMarksToBook && (
+        </div>
+        {/* Actions row: primary · view · build · housekeeping (far right) —
+            each group an atomic cluster, one shared pill scale. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            rowGap: 8,
+            columnGap: 18,
+            paddingLeft: 42,
+            margin: "8px 0 4px",
+          }}
+        >
+          <span style={headerGroup}>
             <button
-              onClick={() => {
-                // Open at the table's own scripture — the first scripture
-                // card (column, then shelf) — instead of the reader's
-                // Genesis 1 default (SCR-16). A chapter table with no cards
-                // yet opens at its study's chapter.
-                const sc = [...visibleColumnCards, ...visibleShelf].find(
-                  (cd) => cd.kind === "scripture" && (cd.refs || []).length
-                );
-                let at = sc ? (sc.refs || [])[0] : undefined;
-                if (!at && recStudy) {
-                  const scope =
-                    (recStudy.memberScopes && recStudy.memberScopes[0]) ||
-                    recStudy.scopeRef;
-                  at = firstVerseRefOfScope(scope);
-                }
-                setReadBookId(open.bookId || "master");
-                if (at) navigateReadTo(at);
-                setDock({ tab: "read" });
-              }}
-              title="Read, mark, search, and pull scripture into this table"
+              onClick={() =>
+                visibleColumnCards.length > 0 && setPresenting(true)
+              }
+              disabled={visibleColumnCards.length === 0}
+              title={
+                visibleColumnCards.length === 0
+                  ? "Add cards first — the column becomes the lesson"
+                  : "Present this table, beat by beat"
+              }
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontFamily: SANS,
-                fontSize: 12.5,
-                fontWeight: 650,
+                ...headerPill,
                 color: "#fff",
                 background: accent,
-                border: 0,
+                border: "1px solid " + accent,
+                opacity: visibleColumnCards.length === 0 ? 0.4 : 1,
+                cursor:
+                  visibleColumnCards.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              <Ico d="M8 5v14l11-7z" size={13} /> Present
+            </button>
+          </span>
+          <span style={headerGroup}>
+            <div
+              style={{
+                display: "inline-flex",
+                border: "1px solid var(--border)",
                 borderRadius: 999,
-                padding: "7px 14px",
-                cursor: "pointer",
+                overflow: "hidden",
                 flex: "0 0 auto",
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
-                <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
-              </svg>
-              Reading panel
-            </button>
+              {(["focused", "full"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => flipVerseView(v)}
+                  title={
+                    v === "focused"
+                      ? "Only the marked fragments of each verse"
+                      : "The whole verse, marks inline"
+                  }
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: verseView === v ? 700 : 400,
+                    padding: "7px 13px",
+                    border: 0,
+                    cursor: "pointer",
+                    background:
+                      verseView === v ? "var(--text)" : "transparent",
+                    color: verseView === v ? "var(--bg)" : "var(--muted)",
+                  }}
+                >
+                  {v === "focused" ? "Focused" : "Full"}
+                </button>
+              ))}
+            </div>
+          </span>
+          {(addMarksToBook || onMarkVerses) && (
+            <span style={headerGroup}>
+              {addMarksToBook && (
+                <button
+                  onClick={() => {
+                    // Open at the table's own scripture — the first scripture
+                    // card (column, then shelf) — instead of the reader's
+                    // Genesis 1 default (SCR-16). A chapter table with no cards
+                    // yet opens at its study's chapter.
+                    const sc = [...visibleColumnCards, ...visibleShelf].find(
+                      (cd) => cd.kind === "scripture" && (cd.refs || []).length
+                    );
+                    let at = sc ? (sc.refs || [])[0] : undefined;
+                    if (!at && recStudy) {
+                      const scope =
+                        (recStudy.memberScopes && recStudy.memberScopes[0]) ||
+                        recStudy.scopeRef;
+                      at = firstVerseRefOfScope(scope);
+                    }
+                    setReadBookId(open.bookId || "master");
+                    if (at) navigateReadTo(at);
+                    setDock({ tab: "read" });
+                  }}
+                  title="Read, mark, search, and pull scripture into this table"
+                  style={headerPill}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
+                    <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
+                  </svg>
+                  Reading panel
+                </button>
+              )}
+              {onMarkVerses && (
+                <button
+                  onClick={markAllVerses}
+                  disabled={markTargetCount === 0}
+                  title={
+                    markTargetCount === 0
+                      ? "Add scripture cards first"
+                      : "Mark all this table’s verses in one panel"
+                  }
+                  style={{
+                    ...headerPill,
+                    color:
+                      markTargetCount === 0 ? "var(--muted)" : "var(--text)",
+                    opacity: markTargetCount === 0 ? 0.5 : 1,
+                    cursor: markTargetCount === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <Ico
+                    d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+                    size={13}
+                  />{" "}
+                  Mark verses
+                </button>
+              )}
+            </span>
           )}
-          {onMarkVerses && (
+          <span style={{ ...headerGroup, marginLeft: "auto" }}>
             <button
-              onClick={markAllVerses}
-              disabled={markTargetCount === 0}
+              onClick={() => canOrganize && setOrganizeConfirm(true)}
               title={
-                markTargetCount === 0
-                  ? "Add scripture cards first"
-                  : "Mark all this table’s verses in one panel"
+                canOrganize
+                  ? "Rebuild the column as the compiled outline"
+                  : "A live table already is the outline"
               }
               style={{
-                fontFamily: SANS,
-                fontSize: 13,
-                fontWeight: 650,
-                color: markTargetCount === 0 ? "var(--muted)" : accent,
-                background: "transparent",
-                border:
-                  "1px solid " +
-                  (markTargetCount === 0 ? "var(--border)" : accent),
-                borderRadius: 999,
-                padding: "9px 15px",
-                opacity: markTargetCount === 0 ? 0.5 : 1,
-                cursor: markTargetCount === 0 ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
+                ...headerPill,
+                opacity: canOrganize ? 1 : 0.4,
+                cursor: canOrganize ? "pointer" : "not-allowed",
               }}
             >
-              <Ico
-                d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
-                size={13}
-              />{" "}
-              Mark verses
+              Organize as outline
             </button>
-          )}
-          <button
-            onClick={() => visibleColumnCards.length > 0 && setPresenting(true)}
-            disabled={visibleColumnCards.length === 0}
-            title={
-              visibleColumnCards.length === 0
-                ? "Add cards first — the column becomes the lesson"
-                : "Present this table, beat by beat"
-            }
-            style={{
-              fontFamily: SANS,
-              fontSize: 13,
-              fontWeight: 650,
-              color: "#fff",
-              background: accent,
-              border: 0,
-              borderRadius: 999,
-              padding: "9px 16px",
-              opacity: visibleColumnCards.length === 0 ? 0.4 : 1,
-              cursor: visibleColumnCards.length === 0 ? "not-allowed" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-            }}
-          >
-            <Ico d="M8 5v14l11-7z" size={13} /> Present
-          </button>
-          <div
-            style={{
-              display: "inline-flex",
-              border: "1px solid var(--border)",
-              borderRadius: 999,
-              overflow: "hidden",
-              flex: "0 0 auto",
-            }}
-          >
-            {(["focused", "full"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => flipVerseView(v)}
-                title={
-                  v === "focused"
-                    ? "Only the marked fragments of each verse"
-                    : "The whole verse, marks inline"
-                }
-                style={{
-                  fontFamily: SANS,
-                  fontSize: 12,
-                  fontWeight: verseView === v ? 700 : 400,
-                  padding: "6px 13px",
-                  border: 0,
-                  cursor: "pointer",
-                  background:
-                    verseView === v ? "var(--text)" : "transparent",
-                  color: verseView === v ? "var(--bg)" : "var(--muted)",
-                }}
-              >
-                {v === "focused" ? "Focused" : "Full"}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => canOrganize && setOrganizeConfirm(true)}
-            title={
-              canOrganize
-                ? "Rebuild the column as the compiled outline"
-                : "A live table already is the outline"
-            }
-            style={{
-              fontFamily: SANS,
-              fontSize: 12,
-              fontWeight: 600,
-              color: "var(--text)",
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 999,
-              padding: "6px 13px",
-              flex: "0 0 auto",
-              opacity: canOrganize ? 1 : 0.4,
-              cursor: canOrganize ? "pointer" : "not-allowed",
-            }}
-          >
-            Organize as outline
-          </button>
-          <button
-            onClick={() =>
-              visibleColumnCards.length > 0 && setClearConfirm(true)
-            }
-            title="Move every card to the tray"
-            style={{
-              fontFamily: SANS,
-              fontSize: 12,
-              fontWeight: 600,
-              color: "#b3452f",
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 999,
-              padding: "6px 13px",
-              flex: "0 0 auto",
-              opacity: visibleColumnCards.length > 0 ? 1 : 0.4,
-              cursor: visibleColumnCards.length > 0 ? "pointer" : "not-allowed",
-            }}
-          >
-            Clear to tray
-          </button>
-          <button
-            onClick={() => setConfirmId(open.id)}
-            style={iconBtn}
-            title="Delete this table"
-          >
-            <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
-          </button>
+            <button
+              onClick={() =>
+                visibleColumnCards.length > 0 && setClearConfirm(true)
+              }
+              title="Move every card to the tray"
+              style={{
+                ...headerPill,
+                color: "#b3452f",
+                opacity: visibleColumnCards.length > 0 ? 1 : 0.4,
+                cursor:
+                  visibleColumnCards.length > 0 ? "pointer" : "not-allowed",
+              }}
+            >
+              Clear to tray
+            </button>
+            <button
+              onClick={() => setConfirmId(open.id)}
+              style={iconBtn}
+              title="Delete this table"
+            >
+              <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
+            </button>
+          </span>
+        </div>
         </div>
 
         {/* Coverage panel: the unplaced verses, grouped by theme, each marked
@@ -2079,43 +2117,9 @@ export default function StudyTablesDesktop({
           </div>
         )}
 
-        {/* purpose */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "10px 0 22px", paddingLeft: 42 }}>
-          <span
-            style={{
-              fontFamily: SANS,
-              fontSize: 10.5,
-              fontWeight: 700,
-              letterSpacing: ".13em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-            }}
-          >
-            Purpose
-          </span>
-          {PURPOSES.map(({ p, label }) => {
-            const on = open.purpose === p;
-            return (
-              <button
-                key={p}
-                onClick={() => updateTable(open.id, { purpose: on ? undefined : p })}
-                style={{
-                  fontFamily: SANS,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  color: on ? accent : "var(--muted)",
-                  background: on ? softAccent : "transparent",
-                  border: "1px solid " + (on ? accent : "var(--border)"),
-                  borderRadius: 999,
-                  padding: "5px 13px",
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Purpose moved onto the name row (layout E) — the old standalone
+            purpose row is gone; this gap keeps the column's breathing room. */}
+        <div style={{ height: 18 }} />
 
         {/* The Scripture dock (Kepu, Jul 23): ONE fixed-left surface — Read
             (the reader: browse, mark, define, grab) | Search (the picker).
