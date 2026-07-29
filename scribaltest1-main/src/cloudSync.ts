@@ -4,9 +4,20 @@
 // sessions and devices (it refreshes the login token silently, so there are no
 // reconnect prompts), and Firestore's real-time listeners + offline cache sync
 // changes between devices on their own. We reuse the proven merge logic from
-// sync.ts: a remote snapshot is merged into live state with applyRemoteLive
-// (union marks/vault by id, fill-blank notes/themes), and a local change is
-// serialized with buildBackupString and written to the user's own document.
+// sync.ts: a remote value is merged into live state (union marks/vault by id,
+// fill-blank notes/themes), and local changes are written to the user's own
+// documents.
+//
+// STORAGE MODEL (SCR-84). The original design serialized EVERY backup key into
+// one JSON string stored in a single doc (users/{uid}.payload). Firestore
+// rejects any document over 1,048,487 bytes, and on Jul 24 2026 the payload
+// quietly outgrew that ceiling — every write 400'd, the bare catch swallowed
+// it, and the sync UI kept saying "Synced" while devices diverged. The store
+// is now one document PER BACKUP KEY under users/{uid}/sync/{key}, each doc
+// { v, updatedAt, writer }. Pushes write only the keys whose value actually
+// changed, so a mark edit no longer re-uploads the whole dataset, and each
+// doc stays far below the ceiling. The legacy users/{uid} doc is read once
+// per device (to migrate its content forward) and never written again.
 
 import { initializeApp } from "firebase/app";
 import {
@@ -21,14 +32,15 @@ import {
 import {
   getFirestore,
   doc,
+  collection,
   onSnapshot,
-  setDoc,
+  getDoc,
+  writeBatch,
   enableIndexedDbPersistence,
 } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
 import {
   CORE_KEYS,
-  buildBackupString,
   applyRemoteLive,
   contentCountsFromBackup,
   contentCountsFromLocal,
@@ -74,6 +86,10 @@ export interface CloudState {
   email: string | null;
   syncing: boolean; // a write is in flight
   lastSync: number | null;
+  // The last push failure, or null when pushes are healthy. The single-doc era
+  // swallowed write rejections in a bare catch — devices diverged for DAYS
+  // while every surface said "Synced". Never hide a failed write again.
+  lastError: string | null;
   // Whether the browser granted persistent storage (navigator.storage.persist).
   // false = the browser may EVICT local data under storage pressure — the
   // condition that armed the SCR-68 wipe race. null = unknown / unsupported.
@@ -104,10 +120,14 @@ let mergeBooks: MergeBooks = () => {};
 let mergeVault: MergeVault = () => {};
 let mergeOther: MergeOther = () => {};
 let onApplied: (() => void) | null = null;
-// What the cloud doc held in the last payload snapshot we saw — any writer,
-// our own past write included. null until a payload has been seen. Arms the
-// emptiness guards in doPush.
-let remoteCounts: ContentCounts | null = null;
+// The cloud's confirmed per-key values as this session knows them — from
+// received snapshots AND our own successful writes. This is both the merge
+// baseline and the per-key dirty check: doPush only writes keys whose local
+// value differs from what the cloud already holds, which (a) keeps writes
+// small, (b) makes echo pushes no-ops naturally, and (c) subsumes the SCR-68
+// repair path — after merging a lacking cloud doc, the local union differs
+// from the cloud value, so the union is pushed back up.
+let cloudVals: Record<string, string> = {};
 // True once THIS listen has received a server-confirmed snapshot (i.e. not
 // the offline cache). doPush's empty-device gate is armed on it: before the
 // server has told us what the cloud actually holds, an empty device could
@@ -117,29 +137,13 @@ let serverSnapSeen = false;
 // snapshot so no local change is lost.
 let pushHeld = false;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
-let suppressEcho = false;
-// The `data` portion of the last payload this device successfully wrote (or
-// saw echoed back from its own past write). buildBackupString stamps a fresh
-// exportedAt into every payload, so comparing whole payloads always says
-// "changed" — this holds just the data, letting doPush skip writes when
-// nothing real changed. That guard is what stops the idle write loop:
-// push → syncing state emit → re-render → effect → push → … (SCR-10).
-let lastPushedData: string | null = null;
-
-// Extract the comparable `data` object from a backup payload string.
-function dataPortion(payload: string): string {
-  try {
-    return JSON.stringify(JSON.parse(payload).data ?? null);
-  } catch {
-    return payload;
-  }
-}
 
 const state: CloudState = {
   ready: false,
   signedIn: false,
   email: null,
   syncing: false,
+  lastError: null,
   persisted: null,
   lastSync:
     Date.parse(
@@ -223,87 +227,117 @@ export function isSignedIn(): boolean {
   return !!auth.currentUser;
 }
 
+// Route one received key/value into the right merge hook. Books and vault have
+// dedicated hooks; everything else accumulates into one record for mergeOther
+// (matching what applyRemoteLive fed it in the single-doc era).
+function routeValue(
+  key: string,
+  v: string,
+  otherAcc: Record<string, string | null>
+) {
+  if (key === "scribal_books_v1") mergeBooks(v);
+  else if (key === "scribal_vault_v1") mergeVault(v);
+  else otherAcc[key] = v;
+}
+
+// One-time forward migration: read the legacy single-doc payload and merge its
+// content into live state, exactly as an inbound snapshot would have. The doc
+// is never written again; a flag stops the (frozen) payload from re-merging on
+// every launch — after tombstones GC, a perpetual re-merge would resurrect
+// long-deleted marks.
+function migrateLegacyDoc(uid: string) {
+  const flagKey = "scribal_split_migrated_" + uid;
+  try {
+    if (localStorage.getItem(flagKey)) return;
+  } catch {}
+  getDoc(doc(db, "users", uid))
+    .then((snap) => {
+      try {
+        const data = snap.data() as { payload?: string } | undefined;
+        if (data && data.payload) {
+          applyRemoteLive(data.payload, mergeBooks, mergeVault, mergeOther);
+          state.lastSync = Date.now();
+          emit();
+          if (onApplied) onApplied();
+        }
+        try {
+          localStorage.setItem(flagKey, "1");
+        } catch {}
+        // Whatever the legacy merge added to local state is data the split
+        // store may not hold yet — let the per-key dirty check decide.
+        schedulePush(false);
+      } catch {}
+    })
+    .catch(() => {
+      /* offline — retry on the next launch (flag not set) */
+    });
+}
+
 function startListening(uid: string) {
   stopListening();
-  // Fresh listen, fresh gate: nothing may be pushed for this user until the
-  // server has shown us their cloud doc at least once (SCR-68).
+  // Fresh listen, fresh gate: an empty-looking device may push nothing for
+  // this user until the server has shown us their cloud data at least once
+  // (SCR-68, narrowed by SCR-83 to empty devices only).
   serverSnapSeen = false;
-  remoteCounts = null;
+  cloudVals = {};
   pushHeld = false;
-  const ref = doc(db, "users", uid);
+  migrateLegacyDoc(uid);
+  const ref = collection(db, "users", uid, "sync");
   unsub = onSnapshot(
     ref,
-    (snap) => {
-      // Skip our own write — both the optimistic local echo and the
-      // server-confirmed one (tagged with this device id) — so two devices
-      // never ping-pong writes back and forth.
-      if (snap.metadata.hasPendingWrites) return;
+    { includeMetadataChanges: false },
+    (snap: any) => {
       const fromServer = !snap.metadata.fromCache;
-      const data = snap.data() as
-        | { payload?: string; writer?: string }
-        | undefined;
-      if (!data || !data.payload) {
-        // Doc missing. Only a SERVER-confirmed miss means "no cloud copy yet"
-        // — a cache miss on a freshly-emptied device says nothing about the
-        // cloud, and seeding from it was one arm of the SCR-68 wipe.
-        if (fromServer) {
-          serverSnapSeen = true;
-          remoteCounts = null; // genuinely nothing in the cloud to protect
-          pushHeld = false; // the seed push below covers any held change
-          schedulePush(true);
-        }
-        return;
-      }
-      // Any payload snapshot — our own past write included — teaches us what
-      // the cloud holds, so the emptiness guards are armed before the first
-      // push can possibly fire.
-      remoteCounts = contentCountsFromBackup(data.payload);
       if (fromServer) serverSnapSeen = true;
-      if (data.writer === deviceId) {
-        // Our own past write echoing back (e.g. from the offline cache on a
-        // fresh page load). Seed the dirty-check baseline from it so boot
-        // doesn't immediately re-write identical data to the cloud.
-        if (lastPushedData === null) lastPushedData = dataPortion(data.payload);
-        releaseHeldPush();
-        return;
+      const otherAcc: Record<string, string | null> = {};
+      let applied = false;
+      const changes =
+        typeof snap.docChanges === "function" ? snap.docChanges() : [];
+      changes.forEach((change: any) => {
+        if (change.type === "removed") return;
+        const d = change.doc;
+        // Skip the optimistic local echo of our own in-flight write; the
+        // server-confirmed copy still lands below and updates cloudVals.
+        if (d.metadata && d.metadata.hasPendingWrites) return;
+        const body = d.data() as { v?: string; writer?: string } | undefined;
+        if (!body || typeof body.v !== "string") return;
+        const key = d.id;
+        // Any confirmed doc — our own past write included — teaches us what
+        // the cloud holds, arming the emptiness guards and the dirty check.
+        cloudVals[key] = body.v;
+        if (body.writer === deviceId) return; // our own write echoing back
+        routeValue(key, body.v, otherAcc);
+        applied = true;
+      });
+      if (applied) {
+        if (Object.keys(otherAcc).length) mergeOther(otherAcc);
+        state.lastSync = Date.now();
+        emit();
+        if (onApplied) onApplied();
+        // The merge may have produced a union richer than what the cloud
+        // holds (a device coming back after divergence). The per-key dirty
+        // check pushes exactly those keys back up — the repair path.
+        schedulePush(false);
+      } else if (fromServer && pushHeld) {
+        // Gate open (server has spoken) and a push was held — release it.
+        pushHeld = false;
+        schedulePush(false);
+      } else if (
+        fromServer &&
+        snap.empty &&
+        Object.keys(cloudVals).length === 0
+      ) {
+        // Server-confirmed empty store: a genuinely new account (or one doc
+        // short of migration). Seed it from this device — the emptiness
+        // guards in doPush still apply.
+        pushHeld = false;
+        schedulePush(true);
       }
-      const payload = data.payload;
-      // Repair check (SCR-68): if the cloud doc lacks a whole category of
-      // content this device still holds — e.g. it was overwritten by the
-      // pre-fix race — the union we're about to merge must be pushed back up,
-      // not swallowed as an echo. That is how a data-holding device repairs a
-      // wiped cloud doc on its next sign-in.
-      const local = contentCountsFromLocal();
-      const repairNeeded =
-        (remoteCounts.marks === 0 && local.marks > 0) ||
-        (remoteCounts.vault === 0 && local.vault > 0) ||
-        (remoteCounts.studies === 0 && local.studies > 0) ||
-        (remoteCounts.search === 0 && local.search > 0) ||
-        (remoteCounts.tables === 0 && local.tables > 0) ||
-        (remoteCounts.notes === 0 && local.notes > 0);
-      const hadHeld = pushHeld;
-      pushHeld = false;
-      // Merge the other device's snapshot into live state, and suppress the one
-      // local-change push this merge will trigger (otherwise it echoes back) —
-      // unless a repair or a held local change means that push must go out.
-      suppressEcho = !repairNeeded && !hadHeld;
-      applyRemoteLive(payload, mergeBooks, mergeVault, mergeOther);
-      if (repairNeeded || hadHeld) schedulePush(false);
-      state.lastSync = Date.now();
-      emit();
-      if (onApplied) onApplied();
     },
     () => {
       /* listener error — Firestore retries on its own */
     }
   );
-}
-
-// Release a push that was held behind the server-snapshot gate.
-function releaseHeldPush() {
-  if (!pushHeld) return;
-  pushHeld = false;
-  schedulePush(false);
 }
 
 function stopListening() {
@@ -320,12 +354,13 @@ export function noteLocalChange() {
 
 function schedulePush(immediate: boolean) {
   if (!state.signedIn) return;
-  if (suppressEcho && !immediate) {
-    suppressEcho = false;
-    return;
-  }
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(doPush, immediate ? 0 : 1200);
+}
+
+// Census of what the cloud holds, from the per-key values we know.
+function cloudCounts(): ContentCounts {
+  return contentCountsFromBackup(JSON.stringify({ data: cloudVals }));
 }
 
 async function doPush() {
@@ -334,50 +369,66 @@ async function doPush() {
   const local = contentCountsFromLocal();
   // SCR-68 gate, narrowed for SCR-83: only a device that LOOKS EMPTY waits
   // for a server-confirmed snapshot — the wipe incident was an empty device
-  // overwriting a full doc it had never seen, and only that side needs the
+  // overwriting a full store it had never seen, and only that side needs the
   // gate. A data-holding device writes immediately, so its change reaches
-  // Firestore's persisted offline queue and survives short sessions / app
-  // kills (gating everything kept held pushes in memory, where they died
-  // with the process and devices silently diverged). The held empty-device
-  // push is released by the first server snapshot.
+  // Firestore's persisted offline queue and survives short sessions.
   if (!serverSnapSeen && totalContent(local) === 0) {
     pushHeld = true;
     return;
   }
-  if (remoteCounts) {
-    // Emptiness guards: (a) the original marks rule — never overwrite a cloud
-    // copy that has marks with a payload that has none; (b) widened for
-    // SCR-68 — a payload with NO content of any kind (no marks, studies,
-    // keyword studies, tables, notes, or vault entries) never overwrites a
-    // cloud doc that still holds any of them.
-    if (local.marks === 0 && remoteCounts.marks > 0) return;
-    if (totalContent(local) === 0 && totalContent(remoteCounts) > 0) return;
-  }
-  const payload = buildBackupString(backupKeys);
-  // Dirty check: only the data matters, not the exportedAt stamp. Skipping
-  // clean pushes (before the syncing emit) is what keeps the header indicator
-  // steady and the write count bounded.
-  const dataNow = dataPortion(payload);
-  if (dataNow === lastPushedData) return;
+  const remote = cloudCounts();
+  // Emptiness guards: (a) the original marks rule — never overwrite a cloud
+  // copy that has marks with a payload that has none; (b) widened for SCR-68
+  // — a device with NO content of any kind never overwrites a cloud store
+  // that still holds any.
+  if (local.marks === 0 && remote.marks > 0) return;
+  if (totalContent(local) === 0 && totalContent(remote) > 0) return;
+  // Per-key dirty check: write ONLY keys whose local value differs from what
+  // the cloud already holds. This is what keeps pushes small (a mark edit
+  // uploads one book-store key, not the whole dataset) and what stops echo
+  // loops — after applying a remote change, local equals cloud and nothing
+  // is written (SCR-10's concern, solved structurally).
+  const changed: Array<{ key: string; v: string }> = [];
+  backupKeys.forEach((key) => {
+    let v: string | null = null;
+    try {
+      v = localStorage.getItem(key);
+    } catch {}
+    if (v === null) return; // never sync deletions of whole keys
+    if (cloudVals[key] !== v) changed.push({ key, v });
+  });
+  if (!changed.length) return;
   state.syncing = true;
   emit();
   try {
-    await setDoc(doc(db, "users", user.uid), {
-      payload,
-      updatedAt: Date.now(),
-      writer: deviceId,
+    const batch = writeBatch(db);
+    const now = Date.now();
+    changed.forEach((c) => {
+      batch.set(doc(db, "users", user.uid, "sync", c.key), {
+        v: c.v,
+        updatedAt: now,
+        writer: deviceId,
+      });
     });
-    lastPushedData = dataNow;
-    // The cloud now holds this payload — keep the emptiness guards tracking
-    // reality even before our own write echoes back through the listener.
-    remoteCounts = contentCountsFromBackup(payload);
+    await batch.commit();
+    // The cloud now holds these values — keep the dirty check and emptiness
+    // guards tracking reality even before our writes echo back.
+    changed.forEach((c) => {
+      cloudVals[c.key] = c.v;
+    });
     try {
-      const p = JSON.parse(payload);
-      if (p.exportedAt) localStorage.setItem("scribal_sync_seen", p.exportedAt);
+      localStorage.setItem("scribal_sync_seen", new Date().toISOString());
     } catch {}
-    state.lastSync = Date.now();
-  } catch {
-    /* offline or transient — Firestore retries queued writes automatically */
+    state.lastSync = now;
+    state.lastError = null;
+  } catch (e: any) {
+    // A rejected write is a fact the user must be able to see — the
+    // single-doc era swallowed these and the sync UI lied for days.
+    state.lastError = (e && (e.message || e.code)) || "write failed";
+    try {
+      // eslint-disable-next-line no-console
+      console.error("Scribal cloud push failed:", e);
+    } catch {}
   } finally {
     state.syncing = false;
     emit();
