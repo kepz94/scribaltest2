@@ -1,7 +1,11 @@
-// Regression tests for the SCR-68 data-loss incident: an emptied, signed-in
-// device could overwrite (wipe) the user's cloud doc before the first
-// Firestore snapshot arrived. These tests drive cloudSync.ts against mocked
-// Firebase modules and re-create the exact race.
+// Regression tests for the cloud sync layer, covering three incidents:
+// - SCR-68 (Jul 25): an emptied, signed-in device could overwrite (wipe) the
+//   user's cloud data before the first Firestore snapshot arrived.
+// - SCR-83 (Jul 28): gating EVERY push on a server snapshot silently discarded
+//   short-session pushes from a data-holding device.
+// - SCR-84 (Jul 29): the single-doc payload outgrew Firestore's 1 MiB doc
+//   ceiling; every write 400'd silently while the UI said "Synced". The store
+//   is now one doc per key — these tests drive that model end to end.
 
 // jest.mock factories are hoisted, so everything they capture must be
 // `mock`-prefixed module-scope state.
@@ -10,7 +14,12 @@ let mockSnapCb: ((snap: unknown) => void) | null = null;
 const mockAuth: { currentUser: { uid: string; email: string } | null } = {
   currentUser: null,
 };
-const mockSetDoc = jest.fn(() => Promise.resolve());
+// Every batch.set() lands here as {path, body}; commit() resolves by default.
+let mockBatchWrites: Array<{ path: string; body: any }> = [];
+let mockCommitImpl: () => Promise<void> = () => Promise.resolve();
+let mockCommitCount = 0;
+// getDoc(users/{uid}) — the legacy single-doc read for migration.
+let mockLegacyDoc: { payload?: string } | undefined = undefined;
 
 jest.mock("firebase/app", () => ({ initializeApp: () => ({}) }));
 jest.mock("firebase/auth", () => ({
@@ -26,12 +35,31 @@ jest.mock("firebase/auth", () => ({
 }));
 jest.mock("firebase/firestore", () => ({
   getFirestore: () => ({}),
-  doc: () => ({}),
-  onSnapshot: (_ref: unknown, cb: (snap: unknown) => void) => {
+  doc: (_db: unknown, ...path: string[]) => ({ __path: path.join("/") }),
+  collection: (_db: unknown, ...path: string[]) => ({
+    __path: path.join("/"),
+  }),
+  onSnapshot: (
+    _ref: unknown,
+    _opts: unknown,
+    cb: (snap: unknown) => void
+  ) => {
     mockSnapCb = cb;
     return () => {};
   },
-  setDoc: (...args: unknown[]) => mockSetDoc(...(args as [])),
+  getDoc: () =>
+    Promise.resolve({
+      data: () => mockLegacyDoc,
+    }),
+  writeBatch: () => ({
+    set: (ref: { __path: string }, body: unknown) => {
+      mockBatchWrites.push({ path: ref.__path, body });
+    },
+    commit: () => {
+      mockCommitCount++;
+      return mockCommitImpl();
+    },
+  }),
   enableIndexedDbPersistence: () => Promise.resolve(),
 }));
 
@@ -39,46 +67,49 @@ jest.mock("firebase/firestore", () => ({
 
 const PUSH_DEBOUNCE_MS = 1200;
 
-// A cloud payload string in the real backup shape.
-function payloadOf(data: Record<string, string>): string {
-  return JSON.stringify({
-    app: "scribal",
-    version: 2,
-    exportedAt: "2026-07-25T00:00:00.000Z",
-    data,
-  });
-}
-
 const BOOKS_WITH_MARK = JSON.stringify({
   books: { master: { marks: [{ id: "m1" }] } },
 });
 const BOOKS_EMPTY = JSON.stringify({ books: { master: { marks: [] } } });
 const ONE_STUDY = JSON.stringify([{ id: "s1", name: "Faith" }]);
 
-// A Firestore snapshot as cloudSync sees it.
-function snap(opts: {
+// A per-key collection snapshot as cloudSync sees it. `docs` maps key → value
+// (all attributed to another device unless writer says otherwise).
+function collSnap(opts: {
   fromCache?: boolean;
-  pending?: boolean;
-  payload?: string;
+  docs?: Record<string, string>;
   writer?: string;
+  pending?: boolean;
 }) {
-  return {
-    metadata: {
-      hasPendingWrites: !!opts.pending,
-      fromCache: !!opts.fromCache,
+  const entries = Object.keys(opts.docs || {}).map((key) => ({
+    type: "added",
+    doc: {
+      id: key,
+      metadata: { hasPendingWrites: !!opts.pending },
+      data: () => ({
+        v: (opts.docs as Record<string, string>)[key],
+        writer: opts.writer || "other_device",
+      }),
     },
-    data: () =>
-      opts.payload === undefined
-        ? undefined
-        : { payload: opts.payload, writer: opts.writer || "other_device" },
+  }));
+  return {
+    metadata: { fromCache: !!opts.fromCache },
+    empty: entries.length === 0,
+    docChanges: () => entries,
   };
 }
 
 // Fresh cloudSync module, configured and signed in — the listener is live and
 // mockSnapCb captured, but NO snapshot has been delivered yet.
-function bootSignedIn() {
+function bootSignedIn(hooks?: {
+  mergeRemoteBooks?: (json: string) => void;
+  legacy?: { payload?: string };
+}) {
   jest.resetModules();
-  mockSetDoc.mockClear();
+  mockBatchWrites = [];
+  mockCommitCount = 0;
+  mockCommitImpl = () => Promise.resolve();
+  mockLegacyDoc = hooks && hooks.legacy;
   mockAuthCb = null;
   mockSnapCb = null;
   const cloud = require("./cloudSync");
@@ -91,7 +122,7 @@ function bootSignedIn() {
       "scribal_notes",
       "scribal_tables_v1",
     ],
-    mergeRemoteBooks: jest.fn(),
+    mergeRemoteBooks: (hooks && hooks.mergeRemoteBooks) || jest.fn(),
     vaultMergeRemote: jest.fn(),
     mergeRemoteStudies: jest.fn(),
   });
@@ -101,13 +132,20 @@ function bootSignedIn() {
   return cloud;
 }
 
-// The payload data written by the last setDoc call.
-function lastWrittenData(): Record<string, string> {
-  const call = mockSetDoc.mock.calls[mockSetDoc.mock.calls.length - 1] as
-    | unknown[]
-    | undefined;
-  const body = (call ? call[1] : null) as { payload: string } | null;
-  return JSON.parse(body!.payload).data;
+function writtenKeys(): string[] {
+  return mockBatchWrites.map((w) => w.path.split("/").pop() as string);
+}
+
+function writtenValue(key: string): string | undefined {
+  const hit = mockBatchWrites.filter(
+    (w) => w.path === "users/u1/sync/" + key
+  );
+  return hit.length ? hit[hit.length - 1].body.v : undefined;
+}
+
+// Let the microtask queue drain (getDoc/commit promises) under fake timers.
+async function flush() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -118,136 +156,211 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// ---- the tests -------------------------------------------------------------
+// ---- SCR-68: the wipe race --------------------------------------------------
 
-test("THE RACE: an empty device's early push never fires before the first server snapshot, and never overwrites a full cloud doc after it", () => {
+test("THE RACE: an empty device's early push never fires before the first server snapshot, and never overwrites a full cloud store after it", async () => {
   const cloud = bootSignedIn();
-
-  // Freshly-evicted device: localStorage is empty. A local change is noted
-  // right away (pre-fix, the shells did this on mount) and the debounce
-  // elapses while the network is still slow — no snapshot yet.
+  await flush();
+  // Freshly-evicted device: localStorage is empty. A local change is noted and
+  // the debounce elapses while the network is still slow — no snapshot yet.
   cloud.noteLocalChange();
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  expect(mockSetDoc).not.toHaveBeenCalled(); // gate held it
-
-  // The first server snapshot finally lands: the cloud doc is FULL.
+  await flush();
+  expect(mockCommitCount).toBe(0); // gate held it
+  // The first server snapshot finally lands: the cloud store is FULL.
   mockSnapCb!(
-    snap({ payload: payloadOf({ scribal_books_v1: BOOKS_WITH_MARK }) })
+    collSnap({ docs: { scribal_books_v1: BOOKS_WITH_MARK } })
   );
-  // The held push is released, but the emptiness guard must block it.
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  expect(mockSetDoc).not.toHaveBeenCalled();
+  await flush();
+  // Released, but the emptiness guard must block it.
+  expect(mockCommitCount).toBe(0);
 });
 
-test("a cache-only 'doc missing' snapshot never seeds the cloud (second arm of the race)", () => {
+test("a cache-only empty snapshot never seeds the cloud (second arm of the race)", async () => {
   bootSignedIn();
-  // Firestore's offline cache answers first on a fresh profile: no doc.
-  mockSnapCb!(snap({ fromCache: true }));
+  await flush();
+  // Firestore's offline cache answers first on a fresh profile: nothing there.
+  mockSnapCb!(collSnap({ fromCache: true }));
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  expect(mockSetDoc).not.toHaveBeenCalled();
+  await flush();
+  expect(mockCommitCount).toBe(0);
 });
 
-test("widened guard: zero marks AND zero studies/tables/notes never overwrites a doc holding only studies", () => {
+test("widened guard: a device with no content never overwrites a store holding only studies", async () => {
   const cloud = bootSignedIn();
-  // Cloud doc has no marks but DOES have a study — the old marks-only guard
-  // (localMarks===0 && lastRemoteMarks>0) would have let this through.
+  await flush();
   mockSnapCb!(
-    snap({
-      payload: payloadOf({
+    collSnap({
+      docs: {
         scribal_books_v1: BOOKS_EMPTY,
         scribal_studies_v1: ONE_STUDY,
-      }),
+      },
     })
   );
-  cloud.noteLocalChange(); // the merge's own echo — consumed by suppressEcho
   cloud.noteLocalChange(); // a real local change on the still-empty device
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  expect(mockSetDoc).not.toHaveBeenCalled();
+  await flush();
+  expect(mockCommitCount).toBe(0);
 });
 
-test("a genuinely new account still seeds the cloud from the device", () => {
+test("a genuinely new account still seeds the cloud from the device", async () => {
   bootSignedIn();
+  await flush();
   localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
-  // SERVER-confirmed miss: there really is no cloud doc.
-  mockSnapCb!(snap({ fromCache: false }));
+  // SERVER-confirmed empty store: there really is nothing in the cloud.
+  mockSnapCb!(collSnap({ fromCache: false }));
   jest.advanceTimersByTime(10);
-  expect(mockSetDoc).toHaveBeenCalledTimes(1);
-  expect(lastWrittenData()["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
+  await flush();
+  expect(mockCommitCount).toBe(1);
+  expect(writtenValue("scribal_books_v1")).toBe(BOOKS_WITH_MARK);
 });
 
-test("repair: a data-holding device pushes its data back over a wiped cloud doc on sign-in", () => {
+test("repair: a data-holding device pushes its data back over a wiped store", async () => {
   bootSignedIn();
+  await flush();
   localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
   localStorage.setItem("scribal_studies_v1", ONE_STUDY);
-  // The cloud doc is the factory-fresh wipe payload another device wrote.
-  mockSnapCb!(
-    snap({ payload: payloadOf({ scribal_books_v1: BOOKS_EMPTY }) })
-  );
+  // The cloud holds the factory-fresh wipe payload another device wrote.
+  mockSnapCb!(collSnap({ docs: { scribal_books_v1: BOOKS_EMPTY } }));
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
-  expect(mockSetDoc).toHaveBeenCalledTimes(1);
-  const written = lastWrittenData();
-  expect(written["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
-  expect(written["scribal_studies_v1"]).toBe(ONE_STUDY);
+  await flush();
+  expect(mockCommitCount).toBe(1);
+  expect(writtenValue("scribal_books_v1")).toBe(BOOKS_WITH_MARK);
+  expect(writtenValue("scribal_studies_v1")).toBe(ONE_STUDY);
 });
 
-test("SCR-83: a data-holding device pushes before the first server snapshot (short-session delivery)", () => {
+// ---- SCR-83: the silent-discard wedge ---------------------------------------
+
+test("SCR-83: a data-holding device pushes before the first server snapshot (short-session delivery)", async () => {
   const cloud = bootSignedIn();
-  // This device HOLDS content — the gate must not apply to it. Pre-fix, this
-  // push was held in memory and died when iOS suspended the PWA before the
-  // server round-trip completed: the silent-discard divergence.
+  await flush();
   localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
   cloud.noteLocalChange();
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
-  expect(mockSetDoc).toHaveBeenCalledTimes(1);
-  expect(lastWrittenData()["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
+  await flush();
+  expect(mockCommitCount).toBe(1);
+  expect(writtenValue("scribal_books_v1")).toBe(BOOKS_WITH_MARK);
 });
 
-test("SCR-83: an empty device is still held before the server snapshot, and released by the first one", () => {
-  const cloud = bootSignedIn();
-  // Merge hook behaves like the real shells: applying a remote snapshot
-  // lands its books in localStorage.
-  cloud.configureSync({
-    backupKeys: [
-      "scribal_books_v1",
-      "scribal_vault_v1",
-      "scribal_studies_v1",
-      "scribal_search_studies",
-      "scribal_notes",
-      "scribal_tables_v1",
-    ],
-    mergeRemoteBooks: jest.fn(() => {
-      localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
-    }),
-    vaultMergeRemote: jest.fn(),
-    mergeRemoteStudies: jest.fn(),
+test("SCR-83: an empty device is held before the server snapshot, and released by the first one", async () => {
+  const cloud = bootSignedIn({
+    // Merge hook behaves like the real shells: applying a remote snapshot
+    // lands its books in localStorage.
+    mergeRemoteBooks: (json: string) => {
+      localStorage.setItem("scribal_books_v1", json);
+    },
   });
-  // Empty device, change noted before any snapshot: the gate holds it.
+  await flush();
   cloud.noteLocalChange();
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  expect(mockSetDoc).not.toHaveBeenCalled();
-  // First server snapshot: the merge lands the cloud's data locally and the
-  // held push is released, carrying the union back up.
+  await flush();
+  expect(mockCommitCount).toBe(0); // held — device looks empty
+  // First server snapshot: the merge lands the cloud's books locally; local
+  // now equals cloud for that key, so nothing needs writing — and nothing is.
   mockSnapCb!(
-    snap({ payload: payloadOf({ scribal_books_v1: BOOKS_WITH_MARK }) })
+    collSnap({ docs: { scribal_books_v1: BOOKS_WITH_MARK } })
   );
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
-  expect(mockSetDoc).toHaveBeenCalledTimes(1);
-  expect(lastWrittenData()["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
-});
-
-test("normal editing still syncs: local changes push after the server snapshot arrives", () => {
-  const cloud = bootSignedIn();
-  // Cloud has the user's data; this device has the same PLUS a new study.
-  mockSnapCb!(
-    snap({ payload: payloadOf({ scribal_books_v1: BOOKS_WITH_MARK }) })
-  );
-  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
-  cloud.noteLocalChange(); // the merge's own echo — consumed by suppressEcho
-  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
-  mockSetDoc.mockClear(); // ignore any merge-echo push before the edit
+  await flush();
+  expect(mockCommitCount).toBe(0);
+  // A real local change after the merge pushes normally.
   localStorage.setItem("scribal_studies_v1", ONE_STUDY);
   cloud.noteLocalChange();
   jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
-  expect(mockSetDoc).toHaveBeenCalledTimes(1);
-  expect(lastWrittenData()["scribal_studies_v1"]).toBe(ONE_STUDY);
+  await flush();
+  expect(mockCommitCount).toBe(1);
+  expect(writtenKeys()).toEqual(["scribal_studies_v1"]);
+});
+
+// ---- SCR-84: the per-key store ----------------------------------------------
+
+test("SCR-84: only changed keys are written — an edit does not re-upload the dataset", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  localStorage.setItem("scribal_studies_v1", ONE_STUDY);
+  // Cloud already holds the identical books value.
+  mockSnapCb!(
+    collSnap({ docs: { scribal_books_v1: BOOKS_WITH_MARK } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // Only the studies key (cloud lacks it) goes up — books is clean.
+  expect(mockCommitCount).toBe(1);
+  expect(writtenKeys()).toEqual(["scribal_studies_v1"]);
+});
+
+test("SCR-84: an inbound apply produces no echo write when nothing else differs", async () => {
+  bootSignedIn({
+    mergeRemoteBooks: (json: string) => {
+      localStorage.setItem("scribal_books_v1", json);
+    },
+  });
+  await flush();
+  mockSnapCb!(
+    collSnap({ docs: { scribal_books_v1: BOOKS_WITH_MARK } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+  await flush();
+  expect(mockCommitCount).toBe(0);
+});
+
+test("SCR-84: our own write echoing back is never re-applied", async () => {
+  const applied: string[] = [];
+  bootSignedIn({
+    mergeRemoteBooks: (json: string) => {
+      applied.push(json);
+    },
+  });
+  await flush();
+  const myId = localStorage.getItem("scribal_device_id") as string;
+  mockSnapCb!(
+    collSnap({
+      docs: { scribal_books_v1: BOOKS_WITH_MARK },
+      writer: myId,
+    })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+  await flush();
+  expect(applied).toEqual([]);
+});
+
+test("SCR-84: a failed write surfaces in CloudState.lastError instead of being swallowed", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const states: any[] = [];
+  cloud.onCloudState((s: any) => states.push(s));
+  mockCommitImpl = () =>
+    Promise.reject(new Error("document too large"));
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  const last = states[states.length - 1];
+  expect(last.lastError).toBe("document too large");
+  expect(last.syncing).toBe(false);
+});
+
+test("SCR-84: the legacy single-doc payload is merged forward exactly once", async () => {
+  const applied: string[] = [];
+  const legacyPayload = JSON.stringify({
+    app: "scribal",
+    version: 2,
+    exportedAt: "2026-07-20T00:00:00.000Z",
+    data: { scribal_books_v1: BOOKS_WITH_MARK },
+  });
+  bootSignedIn({
+    legacy: { payload: legacyPayload },
+    mergeRemoteBooks: (json: string) => {
+      applied.push(json);
+    },
+  });
+  await flush();
+  expect(applied).toEqual([BOOKS_WITH_MARK]);
+  expect(localStorage.getItem("scribal_split_migrated_u1")).toBe("1");
+  // A second listen (relaunch) must NOT re-merge the frozen payload.
+  mockAuthCb!({ uid: "u1", email: "kepu@example.com" });
+  await flush();
+  expect(applied).toEqual([BOOKS_WITH_MARK]);
 });
