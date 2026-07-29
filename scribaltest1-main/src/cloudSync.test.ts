@@ -342,6 +342,82 @@ test("SCR-84: a failed write surfaces in CloudState.lastError instead of being s
   expect(last.syncing).toBe(false);
 });
 
+// ---- SCR-85: value compression ------------------------------------------------
+
+const LZ = require("lz-string");
+
+// A big, repetitive books payload — the shape that hit 97% of the doc ceiling.
+const BIG_BOOKS = JSON.stringify({
+  books: {
+    master: {
+      marks: Array.from({ length: 200 }, (_, i) => ({
+        id: "mark_" + i,
+        style: "underline",
+        color: "pen3",
+        ref: "1 Nephi 3:" + ((i % 30) + 1),
+        start: i,
+        end: i + 12,
+      })),
+    },
+  },
+});
+
+test("SCR-85: large values are written compressed (z1: base64) and much smaller", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", BIG_BOOKS);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(mockCommitCount).toBe(1);
+  const stored = writtenValue("scribal_books_v1") as string;
+  expect(stored.indexOf("z1:")).toBe(0);
+  expect(stored.length).toBeLessThan(BIG_BOOKS.length / 2);
+  expect(LZ.decompressFromBase64(stored.slice(3))).toBe(BIG_BOOKS);
+});
+
+test("SCR-85: an inbound compressed doc merges as raw JSON and produces no echo write", async () => {
+  const applied: string[] = [];
+  bootSignedIn({
+    mergeRemoteBooks: (json: string) => {
+      applied.push(json);
+      localStorage.setItem("scribal_books_v1", json);
+    },
+  });
+  await flush();
+  mockSnapCb!(
+    collSnap({
+      docs: { scribal_books_v1: "z1:" + LZ.compressToBase64(BIG_BOOKS) },
+    })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+  await flush();
+  expect(applied).toEqual([BIG_BOOKS]); // merge saw RAW json
+  expect(mockCommitCount).toBe(0); // local == cloud → no echo
+});
+
+test("SCR-85: small values stay uncompressed and pre-compression docs read back as-is", async () => {
+  const applied: string[] = [];
+  const cloud = bootSignedIn({
+    mergeRemoteBooks: (json: string) => {
+      applied.push(json);
+      localStorage.setItem("scribal_books_v1", json);
+    },
+  });
+  await flush();
+  // Pre-SCR-85 doc: raw value, no prefix — must merge unchanged.
+  mockSnapCb!(collSnap({ docs: { scribal_books_v1: BOOKS_WITH_MARK } }));
+  jest.advanceTimersByTime(10);
+  await flush();
+  expect(applied).toEqual([BOOKS_WITH_MARK]);
+  // Small local value pushes raw (no z1: prefix).
+  localStorage.setItem("scribal_studies_v1", ONE_STUDY);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenValue("scribal_studies_v1")).toBe(ONE_STUDY);
+});
+
 test("SCR-84: the legacy single-doc payload is merged forward exactly once", async () => {
   const applied: string[] = [];
   const legacyPayload = JSON.stringify({

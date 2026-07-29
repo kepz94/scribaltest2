@@ -39,6 +39,7 @@ import {
   enableIndexedDbPersistence,
 } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
+import LZString from "lz-string";
 import {
   CORE_KEYS,
   applyRemoteLive,
@@ -227,6 +228,40 @@ export function isSignedIn(): boolean {
   return !!auth.currentUser;
 }
 
+// ---- value compression (SCR-85) --------------------------------------------
+// Firestore's ~1 MiB doc ceiling applies PER KEY in the split store, and the
+// books key (all marks) reached 97% of it within Scribal's first month. Values
+// are LZ-compressed to base64 before writing (JSON this repetitive shrinks
+// 4-8x; base64 keeps Firestore's UTF-8 byte accounting honest) and transparently
+// decompressed on receipt. The prefix marks compressed values — raw JSON can
+// never start with it, and docs written before compression read back as-is.
+const COMPRESS_PREFIX = "z1:";
+// Values below this size aren't worth the prefix + CPU.
+const COMPRESS_MIN = 512;
+
+function packValue(raw: string): string {
+  if (raw.length < COMPRESS_MIN) return raw;
+  try {
+    const z = LZString.compressToBase64(raw);
+    // Guard against pathological input where compression doesn't help.
+    if (z && z.length + COMPRESS_PREFIX.length < raw.length)
+      return COMPRESS_PREFIX + z;
+  } catch {}
+  return raw;
+}
+
+function unpackValue(stored: string): string | null {
+  if (stored.indexOf(COMPRESS_PREFIX) !== 0) return stored;
+  try {
+    const raw = LZString.decompressFromBase64(
+      stored.slice(COMPRESS_PREFIX.length)
+    );
+    return typeof raw === "string" && raw.length ? raw : null;
+  } catch {
+    return null; // corrupt blob — never merge garbage
+  }
+}
+
 // Route one received key/value into the right merge hook. Books and vault have
 // dedicated hooks; everything else accumulates into one record for mergeOther
 // (matching what applyRemoteLive fed it in the single-doc era).
@@ -301,12 +336,15 @@ function startListening(uid: string) {
         if (d.metadata && d.metadata.hasPendingWrites) return;
         const body = d.data() as { v?: string; writer?: string } | undefined;
         if (!body || typeof body.v !== "string") return;
+        const raw = unpackValue(body.v);
+        if (raw === null) return; // undecodable blob — ignore, never merge
         const key = d.id;
         // Any confirmed doc — our own past write included — teaches us what
         // the cloud holds, arming the emptiness guards and the dirty check.
-        cloudVals[key] = body.v;
+        // cloudVals always holds RAW values; compression is a wire format.
+        cloudVals[key] = raw;
         if (body.writer === deviceId) return; // our own write echoing back
-        routeValue(key, body.v, otherAcc);
+        routeValue(key, raw, otherAcc);
         applied = true;
       });
       if (applied) {
@@ -405,7 +443,7 @@ async function doPush() {
     const now = Date.now();
     changed.forEach((c) => {
       batch.set(doc(db, "users", user.uid, "sync", c.key), {
-        v: c.v,
+        v: packValue(c.v),
         updatedAt: now,
         writer: deviceId,
       });
