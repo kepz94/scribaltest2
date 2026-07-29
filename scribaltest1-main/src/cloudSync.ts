@@ -109,9 +109,9 @@ let onApplied: (() => void) | null = null;
 // emptiness guards in doPush.
 let remoteCounts: ContentCounts | null = null;
 // True once THIS listen has received a server-confirmed snapshot (i.e. not
-// the offline cache). doPush is gated on it: before the server has told us
-// what the cloud actually holds, an empty device could overwrite a full doc
-// it has simply never seen — the SCR-68 data-loss race.
+// the offline cache). doPush's empty-device gate is armed on it: before the
+// server has told us what the cloud actually holds, an empty device could
+// overwrite a full doc it has simply never seen — the SCR-68 data-loss race.
 let serverSnapSeen = false;
 // A push that arrived while the gate was closed; released on the first server
 // snapshot so no local change is lost.
@@ -331,15 +331,19 @@ function schedulePush(immediate: boolean) {
 async function doPush() {
   const user = auth.currentUser;
   if (!user) return;
-  // SCR-68 gate: never write before a server-confirmed snapshot has shown us
-  // what the cloud actually holds. Before that, "the cloud looks empty" is a
-  // guess — and acting on it is exactly how an emptied device wiped a full
-  // doc. The held push is released by the first server snapshot.
-  if (!serverSnapSeen) {
+  const local = contentCountsFromLocal();
+  // SCR-68 gate, narrowed for SCR-83: only a device that LOOKS EMPTY waits
+  // for a server-confirmed snapshot — the wipe incident was an empty device
+  // overwriting a full doc it had never seen, and only that side needs the
+  // gate. A data-holding device writes immediately, so its change reaches
+  // Firestore's persisted offline queue and survives short sessions / app
+  // kills (gating everything kept held pushes in memory, where they died
+  // with the process and devices silently diverged). The held empty-device
+  // push is released by the first server snapshot.
+  if (!serverSnapSeen && totalContent(local) === 0) {
     pushHeld = true;
     return;
   }
-  const local = contentCountsFromLocal();
   if (remoteCounts) {
     // Emptiness guards: (a) the original marks rule — never overwrite a cloud
     // copy that has marks with a payload that has none; (b) widened for

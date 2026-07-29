@@ -190,6 +190,51 @@ test("repair: a data-holding device pushes its data back over a wiped cloud doc 
   expect(written["scribal_studies_v1"]).toBe(ONE_STUDY);
 });
 
+test("SCR-83: a data-holding device pushes before the first server snapshot (short-session delivery)", () => {
+  const cloud = bootSignedIn();
+  // This device HOLDS content — the gate must not apply to it. Pre-fix, this
+  // push was held in memory and died when iOS suspended the PWA before the
+  // server round-trip completed: the silent-discard divergence.
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  expect(mockSetDoc).toHaveBeenCalledTimes(1);
+  expect(lastWrittenData()["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
+});
+
+test("SCR-83: an empty device is still held before the server snapshot, and released by the first one", () => {
+  const cloud = bootSignedIn();
+  // Merge hook behaves like the real shells: applying a remote snapshot
+  // lands its books in localStorage.
+  cloud.configureSync({
+    backupKeys: [
+      "scribal_books_v1",
+      "scribal_vault_v1",
+      "scribal_studies_v1",
+      "scribal_search_studies",
+      "scribal_notes",
+      "scribal_tables_v1",
+    ],
+    mergeRemoteBooks: jest.fn(() => {
+      localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+    }),
+    vaultMergeRemote: jest.fn(),
+    mergeRemoteStudies: jest.fn(),
+  });
+  // Empty device, change noted before any snapshot: the gate holds it.
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+  expect(mockSetDoc).not.toHaveBeenCalled();
+  // First server snapshot: the merge lands the cloud's data locally and the
+  // held push is released, carrying the union back up.
+  mockSnapCb!(
+    snap({ payload: payloadOf({ scribal_books_v1: BOOKS_WITH_MARK }) })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  expect(mockSetDoc).toHaveBeenCalledTimes(1);
+  expect(lastWrittenData()["scribal_books_v1"]).toBe(BOOKS_WITH_MARK);
+});
+
 test("normal editing still syncs: local changes push after the server snapshot arrives", () => {
   const cloud = bootSignedIn();
   // Cloud has the user's data; this device has the same PLUS a new study.
