@@ -278,6 +278,23 @@ const MAX_PANEL_WIDTH = 900;
 // Cap on open reading tabs (matches mobile's MAX_TABS).
 const MAX_TABS = 8;
 
+// SCR-87: refs carried by a verse drag ("scribalverse|<ref>[;;<ref>...]|<src>"
+// — the shared grabber payload; StudyPanel keeps its own parser because it
+// also reads the source for self/reorder detection). Null for any other drag.
+const parseVerseDropRefs = (e: React.DragEvent): string[] | null => {
+  let raw = "";
+  try {
+    raw = e.dataTransfer.getData("text/plain");
+  } catch {
+    return null;
+  }
+  if (!raw.startsWith("scribalverse|")) return null;
+  const parts = raw.split("|");
+  if (parts.length < 3) return null;
+  const refs = parts[1].split(";;").filter(Boolean);
+  return refs.length ? refs : null;
+};
+
 // "Genesis 1:5" -> "Genesis 1". Matches the per-chapter label scope in useMarks.
 const scopeOfRef = (ref: string) => {
   const i = ref.indexOf(":");
@@ -10317,6 +10334,29 @@ export default function App() {
                   data-compile-tab={t.id}
                   data-row-panel={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
+                  // SCR-87: a topic study's reading panel accepts verse drags
+                  // directly — no need to open the study panel to add by drag.
+                  // Same add path as the table Reading panel's gatherer
+                  // (SCR-61): dedupe + canon-sort; an all-duplicate drop
+                  // no-ops, so the study's own grabbers land harmlessly. The
+                  // grow watcher pulses the panel on any real add.
+                  onDragOver={
+                    t.studyId
+                      ? (e) => {
+                          e.preventDefault();
+                        }
+                      : undefined
+                  }
+                  onDrop={
+                    t.studyId
+                      ? (e) => {
+                          const refs = parseVerseDropRefs(e);
+                          if (!refs) return;
+                          e.preventDefault();
+                          addVersesToStudy(t.studyId as string, refs);
+                        }
+                      : undefined
+                  }
                   style={{
                     // SCR-29: panels hold a set width (no flex-grow) when
                     // several are open, so they don't balloon to fill the row
