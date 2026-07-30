@@ -133,15 +133,49 @@ describe("buildStudySummary", () => {
     expect(s.totalMarks).toBe(2);
   });
 
-  it("spans a chapter range within one book", () => {
-    const marks = [mark("Alma 30:1", 5), mark("Alma 32:21", 5)];
+  it("spans a contiguous chapter run as a range", () => {
+    const marks = [mark("Alma 30:1", 5), mark("Alma 31:5", 5), mark("Alma 32:21", 5)];
     const s = buildStudySummary({
       ...base,
       marks,
       orderOf: orderBy(marks.map((m) => m.reference)),
     });
     expect(s.scopeTitle).toBe("Alma 30–32");
-    expect(s.passages).toBe(2);
+    expect(s.passages).toBe(3);
+  });
+
+  it("lists scattered chapters instead of implying a range", () => {
+    // A keyword study lands where the words are. min–max would claim "Alma
+    // 5–45" — forty-one chapters — while the count says three.
+    const marks = [mark("Alma 5:26", 5), mark("Alma 32:21", 5), mark("Alma 45:1", 4)];
+    const s = buildStudySummary({
+      ...base,
+      marks,
+      orderOf: orderBy(marks.map((m) => m.reference)),
+    });
+    expect(s.scopeTitle).toBe("Alma 5, 32, 45");
+    expect(s.passages).toBe(3);
+  });
+
+  it("collapses to a count once the chapter list would run long", () => {
+    const refs = [3, 5, 12, 32, 45, 60].map((c) => "Alma " + c + ":1");
+    const marks = refs.map((r) => mark(r, 5));
+    const s = buildStudySummary({
+      ...base,
+      marks,
+      orderOf: orderBy(refs),
+    });
+    expect(s.scopeTitle).toBe("Alma 3, 5, 12 + 3 more");
+    expect(s.passages).toBe(6);
+  });
+
+  it("never names a chapter the marks don't touch", () => {
+    const refs = ["Alma 5:26", "Alma 32:21", "Alma 45:1"];
+    const marks = refs.map((r) => mark(r, 5));
+    const s = buildStudySummary({ ...base, marks, orderOf: orderBy(refs) });
+    const named = (s.scopeTitle.match(/\d+/g) || []).map(Number);
+    const touched = new Set([5, 32, 45]);
+    named.forEach((n) => expect(touched.has(n)).toBe(true));
   });
 
   it("lists two or three books by name", () => {

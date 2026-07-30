@@ -954,6 +954,14 @@ function paintCompilationCard(
   ctx.fillText(o.dateStr.toUpperCase(), W - padX, y);
   y += 78;
 
+  // The study's NAME is the headline — it is what this is. The scripture range
+  // is a fact about it and sits underneath. A compile with no named study falls
+  // back to the scope for the headline and then has no subhead to draw.
+  const label = (o.studyLabel || "").trim();
+  const scope = o.scopeTitle.trim();
+  const named = !!label && label.toLowerCase() !== scope.toLowerCase();
+  const headline = named ? label : scope;
+
   ctx.fillStyle = p.text;
   ctx.textAlign = "left";
   const tSizes = [70, 60, 52, 44, 38];
@@ -961,30 +969,25 @@ function paintCompilationCard(
   let tLines: string[] = [];
   for (const sz of tSizes) {
     ctx.font = "600 " + sz + "px " + SERIF;
-    tLines = wrap(ctx, o.scopeTitle, maxW);
+    tLines = wrap(ctx, headline, maxW);
     tSize = sz;
     if (tLines.length <= 2) break;
   }
   ctx.font = "600 " + tSize + "px " + SERIF;
-  tLines.slice(0, 2).forEach((ln) => {
+  // clampLines adds the ellipsis; a bare slice dropped the tail in silence.
+  clampLines(tLines, 2).forEach((ln) => {
     y += tSize;
     ctx.fillText(ln, padX, y);
     y += 6;
   });
 
-  // The study's own name, under the scope. Skipped when it is empty or just
-  // restates the scope (a compile with no named study would print it twice).
-  const label = (o.studyLabel || "").trim();
-  if (label && label.toLowerCase() !== o.scopeTitle.trim().toLowerCase()) {
-    y += 46;
+  if (named) {
+    y += 44;
     ctx.fillStyle = p.muted;
-    ctx.font = "italic 34px " + SERIF;
+    ctx.font = "500 32px " + SERIF;
     ctx.textAlign = "left";
-    const lLines = wrap(ctx, label, maxW);
-    let l = lLines[0] || "";
-    if (lLines.length > 1) l = l.replace(/\s+\S*$/, "") + "…";
-    ctx.fillText(l, padX, y);
-    y += 18; // the name and the counts are separate facts — don't crowd them
+    ctx.fillText(clampLines(wrap(ctx, scope, maxW), 1)[0] || "", padX, y);
+    y += 14; // the range and the counts are separate facts — don't crowd them
   }
 
   y += 30;

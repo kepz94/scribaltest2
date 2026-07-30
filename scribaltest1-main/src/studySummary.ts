@@ -6,6 +6,10 @@
 import { Mark, COLORS, STYLE_POINTS } from "./types";
 import { CompTheme } from "./shareCard";
 
+// Scattered chapters are listed by name up to this many, then collapsed to a
+// count — a title should never be longer than the thing it titles.
+const SCOPE_CHAPTER_LIST_MAX = 4;
+
 export interface StudySummary {
   scopeTitle: string;
   studyLabel: string;
@@ -78,8 +82,26 @@ export function buildStudySummary(input: StudySummaryInput): StudySummary {
   let scopeTitle = "Scripture Study";
   if (bookEntries.length === 1) {
     const [name, v] = bookEntries[0];
-    scopeTitle =
-      v.min === v.max ? name + " " + v.min : name + " " + v.min + "–" + v.max;
+    // Name the chapters that are actually marked. A keyword study can land on
+    // Alma 5, 32 and 45 — calling that "Alma 5–45" claims forty-one chapters
+    // while the count beside it says three.
+    const chaps = Array.from(v.chaps).sort((a, b) => a - b);
+    const contiguous = chaps[chaps.length - 1] - chaps[0] === chaps.length - 1;
+    if (chaps.length === 1) scopeTitle = name + " " + chaps[0];
+    else if (contiguous)
+      scopeTitle = name + " " + chaps[0] + "–" + chaps[chaps.length - 1];
+    else if (chaps.length <= SCOPE_CHAPTER_LIST_MAX)
+      scopeTitle = name + " " + chaps.join(", ");
+    else
+      // Name the first few and count the rest — "Alma 3 + 5 more chapters"
+      // says less than the count line already beside it.
+      scopeTitle =
+        name +
+        " " +
+        chaps.slice(0, SCOPE_CHAPTER_LIST_MAX - 1).join(", ") +
+        " + " +
+        (chaps.length - (SCOPE_CHAPTER_LIST_MAX - 1)) +
+        " more";
   } else if (bookEntries.length >= 2 && bookEntries.length <= 3) {
     scopeTitle = bookEntries.map(([n]) => n).join(" · ");
   } else if (bookEntries.length > 3) {
