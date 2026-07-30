@@ -8,6 +8,7 @@ import {
 import type { VerseAnchor } from "../scrollAnchor";
 import MarkedVerse from "./MarkedVerse";
 import StyleGlyph from "./StyleGlyph";
+import { setVerseDragImage } from "../dragGhost";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag, COLORS, COLOR_MAP } from "../types";
 import { isSermonsVolume, sermonLabel } from "../sermons";
 
@@ -109,6 +110,29 @@ interface VerseViewerProps {
   hideStudyHeader?: boolean;
   jumpTarget: string | null;
   onJumpHandled: () => void;
+  // Show a grabber at each verse's end for dragging the verse into a host
+  // surface (the study table's column). Off unless a host asks for it.
+  dragVerses?: boolean;
+  // The grabbed refs while a drag is in flight (null = drag ended). The table
+  // column listens through this to show its drop lines and insert the verses
+  // where the drop lands.
+  onGrabDragState?: (refs: string[] | null) => void;
+  // Background of the sticky reading chrome. Defaults to the page background
+  // (invisible on the main screen); a host on a different surface (the
+  // Reading panel dock's panel) passes its own so the header doesn't paint a
+  // box.
+  chromeBg?: string;
+  // Narrow hosts (the 440px Reading panel dock): smaller pills and arrows so
+  // volume · book · chapter fit on ONE row instead of stacking.
+  compactChrome?: boolean;
+  // Host content for the function row's LEFT slot. The Reading panel puts its
+  // "Marks go to" book select here instead of spending a header row on it.
+  chromeExtra?: React.ReactNode;
+  // Where a verse already lives in the host table: gathered rows show an
+  // in-table / in-tray label instead of the grabber — no double-adding.
+  refStatusFor?: (ref: string) => "in-table" | "in-tray" | null;
+  // Per-verse "+" — stage this verse in the host table's tray.
+  onStageVerse?: (ref: string) => void;
   // Optional: enable "Send verses" mode (toolbar button + verse checkboxes).
   // Emits the chosen verse references; the parent runs the send/create-study UI.
   onSendVerses?: (refs: string[]) => void;
@@ -206,6 +230,13 @@ export default function VerseViewer(props: VerseViewerProps) {
     onSendVerses,
     onRemoveVerses,
     linkScriptures,
+    dragVerses,
+    onGrabDragState,
+    chromeBg = "var(--bg)",
+    compactChrome = false,
+    chromeExtra,
+    refStatusFor,
+    onStageVerse,
     toolbarPos: pos,
     onToolbarPos: setPos,
     toolbarOrient: orientation,
@@ -779,6 +810,129 @@ export default function VerseViewer(props: VerseViewerProps) {
     </div>
   );
 
+  // A host surface (the study table's Reading panel) can take verses straight
+  // out of the reader: each row ends in a grabber to drag it in, and a "+" to
+  // stage it in the tray. A verse the host already holds shows a label
+  // instead, so nothing is added twice.
+  const handleColumn = (reference: string) => {
+    if (!dragVerses || sendMode || removeMode) return null;
+    const refStatus = refStatusFor ? refStatusFor(reference) : null;
+    if (refStatus)
+      return (
+        <span
+          style={{
+            flexShrink: 0,
+            marginTop: "4px",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: ".04em",
+            color: "var(--muted)",
+            background: "var(--soft)",
+            border: "1px solid var(--border)",
+            borderRadius: "999px",
+            padding: "2px 7px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {refStatus === "in-table" ? "in table" : "in tray"}
+        </span>
+      );
+    return (
+      <span
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          marginTop: "2px",
+        }}
+      >
+        {onStageVerse && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStageVerse(reference);
+            }}
+            title="Stage this verse in the tray"
+            style={{
+              width: "22px",
+              height: "22px",
+              borderRadius: "6px",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              color: "var(--muted)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "14px",
+              lineHeight: 0,
+              cursor: "pointer",
+              padding: 0,
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            +
+          </button>
+        )}
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            try {
+              e.dataTransfer.setData(
+                "text/plain",
+                "scribalverse|" + reference + "|reading"
+              );
+              e.dataTransfer.effectAllowed = "copy";
+            } catch {
+              /* some browsers require a payload; nothing else to do */
+            }
+            if (onGrabDragState) onGrabDragState([reference]);
+            // The verse itself follows the pointer, not the bare chip.
+            const rec = verseByRef.get(reference);
+            setVerseDragImage(e, [
+              { reference, text: rec ? rec.text : undefined },
+            ]);
+          }}
+          onDragEnd={() => {
+            if (onGrabDragState) onGrabDragState(null);
+          }}
+          title="Drag this verse into the table"
+          style={{
+            width: "22px",
+            height: "22px",
+            borderRadius: "6px",
+            border: "1px solid var(--grabBorder)",
+            background: "var(--grabBg)",
+            color: "var(--grabFg)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "11px",
+            cursor: "grab",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          ⠿
+        </span>
+      </span>
+    );
+  };
+  // A verse row with its handle column pinned far right, in a uniform line.
+  const withHandleColumn = (reference: string, body: React.ReactNode) => {
+    const col = handleColumn(reference);
+    if (!col) return body;
+    return (
+      <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+        {col}
+      </div>
+    );
+  };
+
   // Study tabs render their verses with a heading whenever the chapter
   // changes, so cross-chapter sets stay readable. Factored into a helper so the
   // "mark added verses" screen can render two labeled sections (added + study).
@@ -929,7 +1083,7 @@ export default function VerseViewer(props: VerseViewerProps) {
                     </div>
                   </div>
                 ) : (
-                  marked
+                  withHandleColumn(r, marked)
                 )}
               </div>
             );
@@ -1786,16 +1940,19 @@ export default function VerseViewer(props: VerseViewerProps) {
                 </span>
               )}
               <div style={sendMode ? { flex: 1, minWidth: 0 } : undefined}>
-                <MarkedVerse
-                  reference={verse.reference}
-                  verseNumber={verse.verse}
-                  text={verse.text}
-                  marks={marks}
-                  onEraseMark={erasing ? onEraseMark : undefined}
-                  dark={dark}
-                  tags={tags}
-                  onTagTap={onTagTap}
-                />
+                {withHandleColumn(
+                  verse.reference,
+                  <MarkedVerse
+                    reference={verse.reference}
+                    verseNumber={verse.verse}
+                    text={verse.text}
+                    marks={marks}
+                    onEraseMark={erasing ? onEraseMark : undefined}
+                    dark={dark}
+                    tags={tags}
+                    onTagTap={onTagTap}
+                  />
+                )}
               </div>
             </div>
             );

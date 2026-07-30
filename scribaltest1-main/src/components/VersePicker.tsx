@@ -6,6 +6,7 @@ import { verseList, sortRefs, isConsecutive, passageLabel } from "../data/verseI
 import { getScriptures, registerOnLoaded } from "../data/scripturesStore";
 import type { TableCard } from "../hooks/useStudyTables";
 import type { ThemeMark } from "./SearchPanel";
+import { setVerseDragImage } from "../dragGhost";
 
 // The docked verse panel for a Study Table. Its search IS the app's search — the
 // same shared matcher (searchMatch.ts), the same modes, operators, and legend —
@@ -72,6 +73,23 @@ interface Props {
   themeLabelFor?: (ref: string, color: MarkColor, bookId?: string) => string;
   // Mobile: render as a full-screen overlay instead of the docked side panel.
   fullScreen?: boolean;
+  // Desktop left-dock (Kepu, Jul 22): denser rows + narrower panel than the
+  // regular reader, so the reader, column, and tray all fit side by side.
+  compact?: boolean;
+  // Search tab of the unified Scripture dock (Kepu, Jul 23): the fixed shell
+  // owns geometry, header, tabs, and close — this renders only the search
+  // surface, filling the shell. Locked to the search tab.
+  embedded?: boolean;
+  // Verse text for the drag ghost.
+  verseTextFor?: (reference: string) => string;
+  // Per-verse grab handles: dragging a verse hands its ref (and the current
+  // "Marks from" book) to the parent, which inserts it where the column's
+  // drop line lands. Handles render only when these are provided.
+  onVerseDragStart?: (ref: string, bookId?: string) => void;
+  onVerseDragEnd?: () => void;
+  // SCR-61: where a verse already lives. Gathered rows show an in-table /
+  // in-tray label instead of intake controls — no double-adding.
+  refStatusFor?: (ref: string) => "in-table" | "in-tray" | null;
 }
 
 function hexToRgba(hex: string, a: number): string {
@@ -157,6 +175,12 @@ export default function VersePicker({
   defaultBookId,
   themeLabelFor,
   fullScreen = false,
+  compact = false,
+  embedded = false,
+  verseTextFor,
+  onVerseDragStart,
+  onVerseDragEnd,
+  refStatusFor,
 }: Props) {
   const [tab, setTab] = useState<"study" | "search" | "shelf">(
     initialTab && initialTab !== "study" ? initialTab : "search"
@@ -450,8 +474,18 @@ export default function VersePicker({
               paddingTop: "env(safe-area-inset-top)",
               paddingBottom: "env(safe-area-inset-bottom)",
             }
+          : embedded
+          ? {
+              // The Scripture dock's shell owns geometry and chrome.
+              width: "100%",
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+            }
           : {
-              width: 384,
+              width: compact ? 336 : 384,
               flex: "0 0 auto",
               position: "sticky",
               top: headerOffset + 14,
@@ -466,7 +500,8 @@ export default function VersePicker({
             }
       }
     >
-      {/* header + tabs */}
+      {/* header + tabs (the embedded dock brings its own) */}
+      {!embedded && (
       <div style={{ padding: "12px 12px 0", flex: "0 0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
           <span
@@ -531,8 +566,9 @@ export default function VersePicker({
           })}
         </div>
       </div>
+      )}
 
-      {tab === "shelf" ? (
+      {!embedded && tab === "shelf" ? (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
           {shelf.length === 0 ? (
             <div style={hintStyle}>
@@ -933,7 +969,7 @@ export default function VersePicker({
             >
               {markSourceBooks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.isMaster ? "Master" : b.name}
+                  {b.isMaster ? "Master Book" : b.name}
                 </option>
               ))}
               <option value="">Empty (no marks)</option>
@@ -958,46 +994,148 @@ export default function VersePicker({
                 {results.rows.map((ref) => {
                   const on = selected.includes(ref);
                   const themes = previewFor(ref);
+                  const status = refStatusFor ? refStatusFor(ref) : null;
                   return (
                     <div
                       key={ref}
-                      onClick={() => toggle(ref)}
+                      onClick={() => {
+                        if (status) return;
+                        toggle(ref);
+                      }}
                       style={{
                         display: "flex",
-                        gap: 9,
+                        gap: compact ? 7 : 9,
                         alignItems: "flex-start",
-                        padding: "9px 8px",
+                        padding: compact ? "5px 6px" : "9px 8px",
                         borderRadius: 10,
-                        cursor: "pointer",
+                        cursor: status ? "default" : "pointer",
                         background: on ? softAccent : "transparent",
+                        opacity: status ? 0.66 : 1,
                       }}
                     >
-                      <span
-                        style={{
-                          flex: "0 0 auto",
-                          width: 18,
-                          height: 18,
-                          marginTop: 3,
-                          borderRadius: 5,
-                          border: "1.5px solid " + (on ? accent : "var(--border)"),
-                          background: on ? accent : "transparent",
-                          color: "#fff",
-                          display: "grid",
-                          placeItems: "center",
-                          lineHeight: 0,
-                        }}
-                      >
-                        {on && <Ico d="M20 6 9 17l-5-5" size={12} />}
-                      </span>
+                      {status ? (
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            marginTop: 2,
+                            fontFamily: SANS,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: ".04em",
+                            color: "var(--muted)",
+                            background: "var(--soft)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 999,
+                            padding: "2px 7px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {status === "in-table" ? "in table" : "in tray"}
+                        </span>
+                      ) : (
+                        onShelve && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onShelve([ref], false, sourceBookId || undefined);
+                            }}
+                            title="Stage this verse in the tray"
+                            style={{
+                              flex: "0 0 auto",
+                              width: 20,
+                              height: 20,
+                              marginTop: 2,
+                              borderRadius: 6,
+                              border: "1px solid var(--border)",
+                              background: "var(--panel)",
+                              color: "var(--muted)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 13,
+                              lineHeight: 0,
+                              cursor: "pointer",
+                              padding: 0,
+                            }}
+                          >
+                            +
+                          </button>
+                        )
+                      )}
+                      {!status && onVerseDragStart && (
+                        <span
+                          draggable
+                          onClick={(e) => e.stopPropagation()}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            onVerseDragStart(ref, sourceBookId || undefined);
+                            // "copy" like every verse grabber (the source
+                            // keeps its verse) — the column answers copy for
+                            // external drags, and a mismatch here makes the
+                            // browser refuse the drop (SCR-75).
+                            e.dataTransfer.effectAllowed = "copy";
+                            try {
+                              e.dataTransfer.setData("text/plain", ref);
+                            } catch {}
+                            setVerseDragImage(e, [
+                              {
+                                reference: ref,
+                                text: verseTextFor ? verseTextFor(ref) : "",
+                              },
+                            ]);
+                          }}
+                          onDragEnd={() => onVerseDragEnd && onVerseDragEnd()}
+                          title="Drag into your table"
+                          style={{
+                            flex: "0 0 auto",
+                            width: 20,
+                            height: 20,
+                            marginTop: 2,
+                            borderRadius: 6,
+                            border: "1px solid var(--grabBorder)",
+                            background: "var(--grabBg)",
+                            color: "var(--grabFg)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 10,
+                            fontFamily: "system-ui, sans-serif",
+                            cursor: "grab",
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                          }}
+                        >
+                          ⠿
+                        </span>
+                      )}
+                      {!status && (
+                        <span
+                          style={{
+                            flex: "0 0 auto",
+                            width: 18,
+                            height: 18,
+                            marginTop: 3,
+                            borderRadius: 5,
+                            border: "1.5px solid " + (on ? accent : "var(--border)"),
+                            background: on ? accent : "transparent",
+                            color: "#fff",
+                            display: "grid",
+                            placeItems: "center",
+                            lineHeight: 0,
+                          }}
+                        >
+                          {on && <Ico d="M20 6 9 17l-5-5" size={12} />}
+                        </span>
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
                             fontFamily: SANS,
-                            fontSize: 11,
+                            fontSize: compact ? 10.5 : 11,
                             fontWeight: 700,
                             letterSpacing: ".02em",
                             color: accent,
-                            marginBottom: 2,
+                            marginBottom: compact ? 1 : 2,
                           }}
                         >
                           {ref}
@@ -1005,8 +1143,8 @@ export default function VersePicker({
                         <div
                           style={{
                             fontFamily: SERIF,
-                            fontSize: 14.5,
-                            lineHeight: 1.6,
+                            fontSize: compact ? 13 : 14.5,
+                            lineHeight: compact ? 1.45 : 1.6,
                             color: "var(--text)",
                           }}
                         >
@@ -1064,7 +1202,7 @@ export default function VersePicker({
       )}
 
       {/* footer */}
-      {tab === "shelf" ? (
+      {!embedded && tab === "shelf" ? (
         shelf.length > 0 && (
           <div
             style={{

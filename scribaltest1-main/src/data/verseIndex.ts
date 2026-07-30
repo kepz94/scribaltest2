@@ -14,6 +14,12 @@ export interface VerseRec {
 
 const list: VerseRec[] = [];
 const byRef = new Map<string, VerseRec>();
+// Chapter scope ("Alma 32") -> the reader's volume/book/chapter indices and
+// the chapter's first verse ref — for opening a reading view at a scope.
+const chapterLoc = new Map<
+  string,
+  { volume: number; book: number; chapter: number; firstRef: string }
+>();
 
 let indexBuilt = false;
 registerOnLoaded(() => buildVerseIndex());
@@ -27,11 +33,14 @@ export function buildVerseIndex(): void {
   indexBuilt = true;
   let order = 0;
   const vols: any[] = getScriptures().volumes || [];
-  for (const vol of vols) {
+  for (let vi = 0; vi < vols.length; vi++) {
+    const vol = vols[vi];
     const books: any[] = vol.books || [];
-    for (const book of books) {
+    for (let bi = 0; bi < books.length; bi++) {
+      const book = books[bi];
       const chapters: any[] = book.chapters || [];
-      for (const ch of chapters) {
+      for (let ci = 0; ci < chapters.length; ci++) {
+        const ch = chapters[ci];
         const verses: any[] = ch.verses || [];
         for (const v of verses) {
           const reference: string = v.reference;
@@ -47,10 +56,34 @@ export function buildVerseIndex(): void {
           };
           list.push(rec);
           byRef.set(reference, rec);
+          if (!chapterLoc.has(chapterRef))
+            chapterLoc.set(chapterRef, {
+              volume: vi,
+              book: bi,
+              chapter: ci,
+              firstRef: reference,
+            });
         }
       }
     }
   }
+}
+
+// Reader indices for a chapter scope, or undefined for an unknown scope.
+export function chapterLocFor(
+  scope: string
+): { volume: number; book: number; chapter: number } | undefined {
+  const loc = chapterLoc.get(scope);
+  return loc
+    ? { volume: loc.volume, book: loc.book, chapter: loc.chapter }
+    : undefined;
+}
+
+// The first verse reference of a chapter scope (a real ref, so it can be a
+// reading view's jump target), or undefined.
+export function firstVerseRefOfScope(scope: string): string | undefined {
+  const loc = chapterLoc.get(scope);
+  return loc ? loc.firstRef : undefined;
 }
 
 export const verseList = list;

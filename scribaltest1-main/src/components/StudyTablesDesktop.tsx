@@ -1,16 +1,28 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ACCENT } from "../theme";
-import { Mark, MarkColor, WordTag } from "../types";
+import {
+  Mark,
+  MarkColor,
+  MarkStyle,
+  Tool,
+  WordTag,
+  STYLE_POINTS,
+  COLOR_MAP,
+  markStyleCSS,
+} from "../types";
+import { mergedRunsFor } from "../outlineAssembly";
 import {
   StudyTable,
   TablePurpose,
   TableCard,
   newCardId,
 } from "../hooks/useStudyTables";
+import { compiledCards } from "../outlineAssembly";
 import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
 import StudyTablePresent from "./StudyTablePresent";
+import { richToPlain } from "./RichNoteField";
 import {
   newRoomCode,
   createRoom,
@@ -24,7 +36,14 @@ import MarkedVerse from "./MarkedVerse";
 import VersePicker from "./VersePicker";
 import type { StudyMeta, StudyTheme } from "./VersePicker";
 import type { ThemeMark } from "./SearchPanel";
-import { getVerse, sortRefs } from "../data/verseIndex";
+import {
+  getVerse,
+  sortRefs,
+  verseList,
+  chapterLocFor,
+  firstVerseRefOfScope,
+} from "../data/verseIndex";
+import VerseViewer from "./VerseViewer";
 
 // The desktop home for Study Tables: a list of your tables, and the editor for
 // one open table (its name, purpose, and the column surface). This owns the
@@ -51,7 +70,12 @@ interface Props {
     colorLabels?: Record<number, string>;
     scopedLabels?: Record<string, Record<number, string>>;
   };
-  books: { id: string; name: string; isMaster: boolean; markCount: number }[];
+  books: {
+    id: string;
+    name: string;
+    isMaster: boolean;
+    markCount: number;
+  }[];
   // The user's studies (recorded chapter/linked + keyword) and the chapter-link
   // groups, so the verse panel can group a study's verses under its themes.
   recordedStudies: Study[];
@@ -64,20 +88,49 @@ interface Props {
   createTable: (
     name?: string,
     purpose?: TablePurpose,
-    bookId?: string
+    bookId?: string,
+    studyId?: string
   ) => string;
   updateTable: (
     id: string,
-    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
+    changes: Partial<
+      Pick<
+        StudyTable,
+        "name" | "cards" | "purpose" | "shelf" | "studyId" | "promotedAt"
+      >
+    >
   ) => void;
   renameTable: (id: string, name: string) => void;
   deleteTable: (id: string) => void;
   // Create a new session book (for "start from scratch" → new session): the
   // shell owns useMarks, so book creation happens there. Returns the book id.
-  createSession: (name: string) => string;
-  // Open the reader dock beside the table: browse + mark + define + send.
-  // atRef navigates it straight to that verse's chapter.
-  onOpenReader?: (tableId: string, bookId: string, atRef?: string) => void;
+  createSession: (name: string, ephemeral?: boolean) => string;
+  // The Scripture dock's Read tab is a full reading surface — marking state
+  // and mutations stay owned by App and arrive here as props (Kepu, Jul 23).
+  selectedTool?: Tool;
+  selectedColor?: MarkColor;
+  onChangeTool?: (t: Tool) => void;
+  onChangeColor?: (c: MarkColor) => void;
+  addMarksToBook?: (
+    bookId: string,
+    items: {
+      reference: string;
+      verseText: string;
+      markedText: string;
+      startIndex: number;
+      endIndex: number;
+      style: MarkStyle;
+      color: MarkColor;
+    }[]
+  ) => void;
+  deleteMarkInBook?: (bookId: string, id: string) => void;
+  onDefine?: (
+    reference: string,
+    verseText: string,
+    start: number,
+    end: number,
+    word: string
+  ) => void;
   // Dictionary word-tags: rendered on scripture cards (and in Present via the
   // shared renderVerse); tapping one opens its definition.
   wordTags?: WordTag[];
@@ -92,6 +145,27 @@ interface Props {
     refs: string[],
     refBook: Record<string, string>,
     title?: string
+  ) => void;
+  // Deliver mark arrivals to a table's tray (useStudyTables.addShelfArrivals);
+  // the reconciliation effect calls it whenever scope verses are missing.
+  addShelfArrivals?: (
+    id: string,
+    refs: string[],
+    extras?: Partial<
+      Pick<TableCard, "bookId" | "shelfGroup" | "shelfGroupColor">
+    >
+  ) => void;
+  // Remove verses from a topic study (the tray's confirmed delete).
+  onRemoveVersesFromStudy?: (studyId: string, refs: string[]) => void;
+  // SCR-61: verses gathered through the dock join the topic study itself.
+  onAddVersesToStudy?: (studyId: string, refs: string[]) => void;
+  // Rename a theme where the compile reads it: useMarks.setScopedLabelInBook.
+  // Renaming a compiled heading while live edits the theme, never the cards.
+  setThemeLabel?: (
+    bookId: string,
+    scope: string,
+    color: MarkColor,
+    label: string
   ) => void;
 }
 
@@ -140,20 +214,34 @@ export default function StudyTablesDesktop({
   renameTable: renameTableReal,
   deleteTable: deleteTableReal,
   createSession,
-  onOpenReader,
+  selectedTool,
+  selectedColor,
+  onChangeTool,
+  onChangeColor,
+  addMarksToBook,
+  deleteMarkInBook,
+  onDefine,
   wordTags,
   onTagTap,
   openTableId,
   onConsumeOpenTable,
   onMarkVerses,
+  addShelfArrivals,
+  onRemoveVersesFromStudy,
+  onAddVersesToStudy,
+  setThemeLabel,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Deep-link: when the shell asks for a specific table (e.g. tapped in the
-  // Studies hub), open it and clear the request.
+  // Deep-link: when the shell asks for a specific table (a study opened via
+  // Studies/Compile, or a send-sheet drop), open it and clear the request.
+  // Entered this way, the back arrow returns to the READING screen (SCR-59) —
+  // the tables list is only home when the user came from it.
+  const [cameFromShell, setCameFromShell] = useState(false);
   useEffect(() => {
     if (openTableId) {
       setOpenId(openTableId);
+      setCameFromShell(true);
       onConsumeOpenTable?.();
     }
   }, [openTableId]);
@@ -161,12 +249,29 @@ export default function StudyTablesDesktop({
   // Save indicator: every edit persists instantly; this makes that visible.
   // Flashes "Saving…" → "Saved" whenever the open table's updatedAt moves.
   const [saveFlash, setSaveFlash] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // The Scripture dock (Kepu, Jul 23): ONE fixed-left surface with Read and
+  // Search tabs — the Reader dock and the verse-picker drawer consolidated.
+  const [dock, setDock] = useState<null | { tab: "read" | "search" }>(null);
+  // The Read tab hosts a full VerseViewer, and on main the marking toolbar
+  // lives INSIDE it (ADR-011 kept it inline rather than extracting it), so the
+  // dock owns the toolbar's floating position for its own reader.
+  const [dockToolbarPos, setDockToolbarPos] = useState<{ x: number; y: number }>(
+    { x: 24, y: 140 }
+  );
+  const [dockToolbarOrient, setDockToolbarOrient] = useState<
+    "horizontal" | "vertical"
+  >("horizontal");
+  // Read tab: the reading location, a one-shot verse to scroll to, and the
+  // "Marks go to" book (was App's tableReader state).
+  const [readLoc, setReadLoc] = useState<{ v: number; b: number; c: number }>({
+    v: 0,
+    b: 0,
+    c: 0,
+  });
+  const [readJump, setReadJump] = useState<string | null>(null);
+  const [readBookId, setReadBookId] = useState<string>("master");
   // Where the verse panel will drop cards: the chooser gap that opened it.
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
-  // Which tab the verse panel opens on. Import lands on the shelf ("Selected").
-  const [panelTab, setPanelTab] =
-    useState<"study" | "search" | "shelf">("search");
   // New-table flow: choose blank vs. import; "book" picks the marks home for a
   // from-scratch table (master / a session / a brand-new named session).
   const [creating, setCreating] = useState<
@@ -225,6 +330,463 @@ export default function StudyTablesDesktop({
     return () => window.clearTimeout(t);
   }, [openUpdatedAt]);
 
+  // ---- Table-as-notes lifecycle (SCR-56, ADR-007 §3) ----
+  // A study-attached table that hasn't been promoted is Compiled · live: its
+  // column is GENERATED from the study's marks (the Outline arrangement —
+  // themes as headings, verses in canon order) and re-sorts as marks change.
+  // The first authoring act persists what's on screen and stamps promotedAt;
+  // from then on the system never rearranges.
+  // Coverage panel and the two table-action confirms (SCR-57 / SCR-56 v2;
+  // Kepu Jul 22: both actions are visible header buttons, each behind a
+  // confirm that says what it will do).
+  const [covOpen, setCovOpen] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [organizeConfirm, setOrganizeConfirm] = useState(false);
+  // Focused | Full verse rendering (Kepu, Jul 20: Focused IS the spec's
+  // Compact — tables open in it; Full is the flip). Display-only, remembered
+  // per table, never synced.
+  const [verseView, setVerseView] = useState<"full" | "focused">("focused");
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const v = localStorage.getItem("scribal_table_view_" + open.id);
+      setVerseView(v === "full" ? "full" : "focused");
+    } catch {
+      setVerseView("focused");
+    }
+  }, [open ? open.id : null]);
+  const flipVerseView = (v: "full" | "focused") => {
+    setVerseView(v);
+    if (!open) return;
+    try {
+      localStorage.setItem("scribal_table_view_" + open.id, v);
+    } catch {}
+  };
+  const recStudy =
+    open && open.studyId
+      ? recordedStudies.find((s) => s.id === open.studyId)
+      : undefined;
+  const topicStudy =
+    open && open.studyId
+      ? searchStudies.find((s) => s.id === open.studyId)
+      : undefined;
+  // The compiled outline arrangement for the open table's study — the live
+  // column's source, and what "Organize as outline" rebuilds a promoted
+  // column into.
+  const buildCompiledColumn = (): TableCard[] => {
+    if (!open || !(recStudy || topicStudy)) return [];
+    const bid =
+      open.bookId ||
+      (topicStudy ? topicStudy.bookId : recStudy && recStudy.bookId) ||
+      "master";
+    const bk = getBook(bid);
+    // Compile scope: a topic study's gathered refs in their saved order; a
+    // chapter study's member chapters' verses in canon order.
+    const entries = topicStudy
+      ? topicStudy.refs.map((r, i) => ({ reference: r, order: i }))
+      : (() => {
+          const scopes = new Set(
+            recStudy!.memberScopes && recStudy!.memberScopes.length
+              ? recStudy!.memberScopes
+              : [recStudy!.scopeRef]
+          );
+          return verseList
+            .filter((v) => scopes.has(v.chapterRef))
+            .map((v) => ({ reference: v.reference, order: v.order }));
+        })();
+    // A heading's name resolves like the card theme chips do: the scoped label
+    // (chapter/group) of THIS study's marked verses. The scan must stay inside
+    // the study's own scope — unscoped it took the first labeled mark of that
+    // color anywhere in the book, so every study inherited one chapter study's
+    // theme names (Kepu, Jul 20).
+    const scopeOf = (ref: string) => {
+      const ix = ref.indexOf(":");
+      return ix < 0 ? ref : ref.slice(0, ix);
+    };
+    const resolveScope = (cs: string) =>
+      chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const inScopeRefs = new Set(entries.map((e) => e.reference));
+    const themeName = (color: MarkColor): string => {
+      for (const m of bk.marks) {
+        if (m.color !== color || !inScopeRefs.has(m.reference)) continue;
+        const scoped = bk.scopedLabels?.[resolveScope(scopeOf(m.reference))]?.[
+          color
+        ];
+        const label = ((scoped || "") as string).trim();
+        if (label) return label;
+      }
+      // Book-level fallback — the reader's precedence. Without it, themes
+      // named only at book level compiled into BLANK headings (Kepu hit this
+      // on real data Jul 19).
+      return ((bk.colorLabels?.[color] || "") as string).trim();
+    };
+    return compiledCards(entries, bk.marks, themeName).map((c) =>
+      c.kind === "scripture" ? { ...c, bookId: bid } : c
+    );
+  };
+  // Tables open EMPTY and stay exactly what the user built (Kepu, Jul 30).
+  // The outline arrives only when "Organize as outline" is pressed.
+  const columnCards: TableCard[] = open ? open.cards : [];
+  // ---- Study scope + coverage plumbing (SCR-57) ----
+  // The verses this table answers for: a topic study's gathered refs, or a
+  // chapter/linked study's MARKED verses across its member chapters.
+  const scopeInfo = (() => {
+    if (!open || !(recStudy || topicStudy)) return null;
+    const bid =
+      open.bookId ||
+      (topicStudy ? topicStudy.bookId : recStudy && recStudy.bookId) ||
+      "master";
+    const bk = getBook(bid);
+    let refs: string[];
+    if (topicStudy) {
+      refs = topicStudy.refs;
+    } else {
+      const scopes = new Set(
+        recStudy!.memberScopes && recStudy!.memberScopes.length
+          ? recStudy!.memberScopes
+          : [recStudy!.scopeRef]
+      );
+      const seen = new Set<string>();
+      refs = [];
+      bk.marks.forEach((m) => {
+        const ix = m.reference.indexOf(":");
+        const cs = ix < 0 ? m.reference : m.reference.slice(0, ix);
+        if (scopes.has(cs) && !seen.has(m.reference)) {
+          seen.add(m.reference);
+          refs.push(m.reference);
+        }
+      });
+      refs = sortRefs(refs);
+    }
+    return { bid, bk, refs };
+  })();
+  // A verse's theme, resolved like the card chips: dominant color by merged
+  // points, named by its scoped label (no book-level fallback).
+  const refTheme = (
+    ref: string
+  ): { color: MarkColor; label: string } | null => {
+    if (!scopeInfo || !ref) return null;
+    const ms = scopeInfo.bk.marks.filter((m) => m.reference === ref);
+    if (!ms.length) return null;
+    const w = new Map<MarkColor, number>();
+    ms.forEach((m) =>
+      w.set(m.color, (w.get(m.color) || 0) + STYLE_POINTS[m.style])
+    );
+    let color: MarkColor | null = null;
+    let best = -1;
+    w.forEach((v, c) => {
+      if (v > best) {
+        best = v;
+        color = c;
+      }
+    });
+    if (color == null) return null;
+    const ix = ref.indexOf(":");
+    const cs = ix < 0 ? ref : ref.slice(0, ix);
+    const scope = chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs;
+    const scoped = scopeInfo.bk.scopedLabels?.[scope]?.[color];
+    const label =
+      ((scoped || "") as string).trim() ||
+      ((scopeInfo.bk.colorLabels?.[color] || "") as string).trim();
+    return { color, label };
+  };
+  // Rename a theme from its compiled heading while Compiled · live: writes
+  // the scoped label everywhere the study's compile reads it (never promotes;
+  // the regenerated heading picks the new name up on the next render).
+  const renameTheme = (color: MarkColor, name: string) => {
+    if (!scopeInfo || !setThemeLabel) return;
+    const scopes = new Set<string>();
+    if (recStudy) {
+      (recStudy.memberScopes && recStudy.memberScopes.length
+        ? recStudy.memberScopes
+        : [recStudy.scopeRef]
+      ).forEach((cs) =>
+        scopes.add(chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs)
+      );
+    } else if (topicStudy) {
+      topicStudy.refs.forEach((r) => {
+        const ix = r.indexOf(":");
+        const cs = ix < 0 ? r : r.slice(0, ix);
+        scopes.add(chapterGroups[cs] ? "group:" + chapterGroups[cs] : cs);
+      });
+    }
+    scopes.forEach((scope) =>
+      setThemeLabel(scopeInfo.bid, scope, color, name)
+    );
+  };
+
+  const placedRefs = new Set<string>();
+  columnCards.forEach((c) => {
+    if (c.kind === "scripture") (c.refs || []).forEach((r) => placedRefs.add(r));
+  });
+  const shelfRefSet = new Set<string>();
+  (open ? open.shelf || [] : []).forEach((c) => {
+    if (c.kind === "scripture")
+      (c.refs || []).forEach((r) => shelfRefSet.add(r));
+  });
+  // SCR-61: where a verse already lives, for the dock's row labels and the
+  // no-double-adding guard.
+  const refStatusFor = (ref: string): "in-table" | "in-tray" | null =>
+    placedRefs.has(ref) ? "in-table" : shelfRefSet.has(ref) ? "in-tray" : null;
+  const freshRefsOnly = (refs: string[]) =>
+    refs.filter((r) => !refStatusFor(r));
+  // ---- Chapter seal tombstoning (SCR-62) ----
+  // When a chapter is unlinked from the group, its scripture cards stay in
+  // the table's data — holding their authored position — but stop rendering.
+  // Re-linking the chapter makes them reappear exactly where they were.
+  // Nothing written is ever destroyed. Topic tables never have dormant cards.
+  // SCR-62 chapter seal is not ported to main: there are no dormant cards,
+  // so visible space IS card space.
+  const visibleColumnCards = columnCards;
+  const visibleShelf = open ? open.shelf || [] : [];
+  // The meter only matters once the table is yours — while Compiled · live,
+  // everything in scope is on screen by construction.
+  const coverage =
+    open && scopeInfo && scopeInfo.refs.length
+      ? {
+          total: scopeInfo.refs.length,
+          placed: scopeInfo.refs.filter((r) => placedRefs.has(r)).length,
+        }
+      : null;
+  const unplacedRefs = coverage
+    ? scopeInfo!.refs.filter((r) => !placedRefs.has(r))
+    : [];
+
+  // Every column mutation funnels through here: while Compiled · live, the
+  // first change writes the on-screen arrangement AND the promotion stamp in
+  // one edit, and announces the deal once (no dialog). A verse card deleted
+  // from the column RETURNS TO THE TRAY (Kepu's rule) — its refs were present
+  // before, are absent after, and still belong to the study's scope. Merges
+  // and reorders keep their refs in the column, so only real deletes return.
+  const commitCards = (
+    visibleCards: TableCard[],
+    extra?: Partial<Pick<StudyTable, "shelf">>
+  ) => {
+    if (!open) return;
+    const cards = visibleCards;
+    let shelfPatch = extra ? extra.shelf : undefined;
+    if (scopeInfo) {
+      const nextRefs = new Set<string>();
+      cards.forEach((c) => {
+        if (c.kind === "scripture")
+          (c.refs || []).forEach((r) => nextRefs.add(r));
+      });
+      const scopeSet = new Set(scopeInfo.refs);
+      const returned: string[] = [];
+      columnCards.forEach((c) => {
+        if (c.kind !== "scripture") return;
+        (c.refs || []).forEach((r) => {
+          if (!nextRefs.has(r) && scopeSet.has(r)) returned.push(r);
+        });
+      });
+      if (returned.length) {
+        const baseShelf =
+          shelfPatch !== undefined ? shelfPatch : open.shelf || [];
+        const have = new Set<string>();
+        baseShelf.forEach((c) => (c.refs || []).forEach((r) => have.add(r)));
+        const now = Date.now();
+        const additions: TableCard[] = returned
+          .filter((r) => !have.has(r))
+          .map((r) => {
+            const t = refTheme(r);
+            const card: TableCard = {
+              id: newCardId(),
+              kind: "scripture",
+              refs: [r],
+              bookId: scopeInfo.bid,
+              shelfSource: "mark",
+              arrivedAt: now,
+            };
+            if (t && t.label) {
+              card.shelfGroup = t.label;
+              card.shelfGroupColor = t.color;
+            }
+            return card;
+          });
+        if (additions.length) shelfPatch = [...baseShelf, ...additions];
+      }
+    }
+    const withShelf =
+      shelfPatch !== undefined ? { shelf: shelfPatch } : {};
+    updateTable(open.id, { cards, ...withShelf });
+  };
+
+  // Place a waiting card: at an exact index (grab-drag), else at the end of
+  // its theme's section, else the end of the column. Placement is the act
+  // that turns an arrival into an authored card — the tray-only fields drop.
+  const placeFromShelf = (cardId: string, index?: number) => {
+    if (!open) return;
+    const shelfList = open.shelf || [];
+    const card = shelfList.find((c) => c.id === cardId);
+    if (!card) return;
+    const base = visibleColumnCards;
+    let idx: number;
+    if (index !== undefined) {
+      idx = Math.max(0, Math.min(index, base.length));
+    } else if (card.kind === "scripture" && card.shelfGroup) {
+      const h = base.findIndex(
+        (c) =>
+          // Compare heading text in plain form: a heading edited rich would
+          // otherwise never match its theme's shelfGroup string.
+          c.kind === "heading" && richToPlain(c.text || "") === card.shelfGroup
+      );
+      if (h === -1) {
+        idx = base.length;
+      } else {
+        let j = h + 1;
+        while (j < base.length && base[j].kind !== "heading") j++;
+        idx = j;
+      }
+    } else {
+      idx = base.length;
+    }
+    const placed: TableCard = { ...card };
+    delete placed.shelfSource;
+    delete placed.arrivedAt;
+    delete placed.shelfGroup;
+    delete placed.shelfGroupColor;
+    commitCards([...base.slice(0, idx), placed, ...base.slice(idx)], {
+      shelf: shelfList.filter((c) => c.id !== cardId),
+    });
+  };
+
+  // Tray delete — topic tables only (Kepu's ruling): the confirmed delete
+  // removes the verse from the STUDY itself; its marks stay in the book.
+  const deleteFromShelf = (cardId: string) => {
+    if (!open || !topicStudy || !onRemoveVersesFromStudy) return;
+    const shelfList = open.shelf || [];
+    const card = shelfList.find((c) => c.id === cardId);
+    if (!card) return;
+    updateTable(open.id, {
+      shelf: shelfList.filter((c) => c.id !== cardId),
+    });
+    if ((card.refs || []).length)
+      onRemoveVersesFromStudy(topicStudy.id, card.refs || []);
+  };
+
+  // Clear to tray (SCR-56 v2, approved): every card moves to the tray —
+  // verses AND authored cards; only GENERATED theme headings are removed
+  // (their compiled_h ids mark them). A heading the user typed is authored
+  // content and moves to the tray like everything else — nothing written is
+  // ever destroyed. On a live table this is also the promotion.
+  const clearToTray = () => {
+    if (!open) return;
+    const now = Date.now();
+    const moved: TableCard[] = visibleColumnCards
+      .filter(
+        (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
+      )
+      .map((c) => {
+        const m: TableCard = { ...c, arrivedAt: now };
+        if (c.kind === "scripture") {
+          if (!m.shelfSource) m.shelfSource = "mark";
+          if (!m.bookId && scopeInfo) m.bookId = scopeInfo.bid;
+          if (!m.shelfGroup) {
+            const t = refTheme((c.refs || [])[0] || "");
+            if (t && t.label) {
+              m.shelfGroup = t.label;
+              m.shelfGroupColor = t.color;
+            }
+          }
+        }
+        return m;
+      });
+    commitCards([], { shelf: [...(open.shelf || []), ...moved] });
+    setClearConfirm(false);
+  };
+
+  // Organize as outline (Kepu, Jul 22): recompile the study into the column —
+  // theme headings with their verses in scripture order, exactly the compiled
+  // starting state. Authored cards can't be auto-placed (the system never
+  // interprets), so they move to the tray; tray verses the fresh outline
+  // covers come out (they're placed now); a placed verse the compile no
+  // longer covers drops to the tray instead of vanishing. Nothing written is
+  // ever destroyed. Only meaningful on a promoted table — a live one already
+  // is the outline.
+  const canOrganize = !!open && !!(recStudy || topicStudy);
+  const organizeAsOutline = () => {
+    if (!canOrganize || !open) return;
+    const fresh = buildCompiledColumn();
+    const freshRefs = new Set<string>();
+    fresh.forEach((c) => (c.refs || []).forEach((r) => freshRefs.add(r)));
+    const now = Date.now();
+    const toTray: TableCard[] = visibleColumnCards
+      .filter(
+        (c) => !(c.kind === "heading" && c.id.indexOf("compiled_h") === 0)
+      )
+      .filter(
+        (c) =>
+          c.kind !== "scripture" ||
+          (c.refs || []).some((r) => !freshRefs.has(r))
+      )
+      .map((c) => {
+        const m: TableCard = { ...c, arrivedAt: now };
+        if (c.kind === "scripture") {
+          if (!m.shelfSource) m.shelfSource = "mark";
+          if (!m.bookId && scopeInfo) m.bookId = scopeInfo.bid;
+          if (!m.shelfGroup) {
+            const t = refTheme((c.refs || [])[0] || "");
+            if (t && t.label) {
+              m.shelfGroup = t.label;
+              m.shelfGroupColor = t.color;
+            }
+          }
+        }
+        return m;
+      });
+    const keptShelf = (open.shelf || []).filter(
+      (c) =>
+        !(
+          c.kind === "scripture" &&
+          (c.refs || []).length &&
+          (c.refs || []).every((r) => freshRefs.has(r))
+        )
+    );
+    commitCards(fresh, { shelf: [...keptShelf, ...toTray] });
+    setOrganizeConfirm(false);
+  };
+
+  // Mark arrivals (SCR-57): on a study-attached table, anything in scope that
+  // is neither placed nor already waiting gets DELIVERED to the tray, grouped
+  // by theme. Runs on open and whenever marks or the table change; the hook
+  // no-ops (identity-stable) when nothing is missing, and unattached tables
+  // have no scope so they never receive arrivals.
+  useEffect(() => {
+    if (!open || !addShelfArrivals || !scopeInfo) return;
+    const missing = scopeInfo.refs.filter(
+      (r) => !placedRefs.has(r) && !shelfRefSet.has(r)
+    );
+    if (!missing.length) return;
+    const byTheme = new Map<
+      string,
+      { refs: string[]; color?: MarkColor; label?: string }
+    >();
+    missing.forEach((r) => {
+      const t = refTheme(r);
+      const key = t && t.label ? t.label + "|" + t.color : "";
+      if (!byTheme.has(key))
+        byTheme.set(key, {
+          refs: [],
+          color: t ? t.color : undefined,
+          label: t && t.label ? t.label : undefined,
+        });
+      byTheme.get(key)!.refs.push(r);
+    });
+    byTheme.forEach((g) =>
+      addShelfArrivals(
+        open.id,
+        g.refs,
+        g.label
+          ? {
+              bookId: scopeInfo.bid,
+              shelfGroup: g.label,
+              shelfGroupColor: g.color,
+            }
+          : { bookId: scopeInfo.bid }
+      )
+    );
+  }, [open ? open.id : null, open ? open.updatedAt : 0, allMarks]);
+
 
   // Smooth-scroll a card into view (used by the outline rail).
   const scrollToCard = (id: string) => {
@@ -236,7 +798,14 @@ export default function StudyTablesDesktop({
   // Render one verse's text + the marks from a specific book (undefined = an
   // empty, unmarked verse). Same MarkedVerse the reader uses + that book's real
   // marks, so a card shows exactly the marking that book has on the verse.
-  const renderVerse = (reference: string, bookId?: string): React.ReactNode => {
+  // themeColor (Kepu, Jul 20): inside a compiled theme section only that pen's
+  // marks render — other colors' words show as plain text; the verse repeats
+  // under each theme it's marked in, wearing only that theme's color.
+  const renderVerse = (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ): React.ReactNode => {
     const rec = getVerse(reference);
     if (!rec)
       return (
@@ -244,7 +813,9 @@ export default function StudyTablesDesktop({
           {reference} — not found
         </span>
       );
-    const bookMarks = bookId ? getBook(bookId).marks : [];
+    const bookMarks = (bookId ? getBook(bookId).marks : []).filter(
+      (m) => themeColor == null || m.color === themeColor
+    );
     return (
       <MarkedVerse
         reference={reference}
@@ -254,6 +825,56 @@ export default function StudyTablesDesktop({
         tags={wordTags}
         onTagTap={onTagTap}
       />
+    );
+  };
+
+  // Focused rendering: only the marked fragments, each in its mark's own
+  // style + color (merged runs per color, SCR-12 semantics), joined inline.
+  const renderVerseFocused = (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ): React.ReactNode => {
+    const rec = getVerse(reference);
+    if (!rec)
+      return (
+        <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          {reference} — not found
+        </span>
+      );
+    const ms = (bookId ? getBook(bookId).marks : []).filter(
+      (m) =>
+        m.reference === reference &&
+        (themeColor == null || m.color === themeColor)
+    );
+    const colors = Array.from(new Set(ms.map((m) => m.color)));
+    const frags = colors
+      .flatMap((c) =>
+        mergedRunsFor(ms.filter((m) => m.color === c)).map((f) => ({
+          ...f,
+          color: c,
+        }))
+      )
+      .sort((a, b) => a.start - b.start);
+    if (!frags.length)
+      return (
+        <span
+          style={{ color: "var(--muted)", fontStyle: "italic", fontSize: 13 }}
+        >
+          no marks yet — Full shows the whole verse
+        </span>
+      );
+    return (
+      <span>
+        {frags.map((f, k) => (
+          <span key={f.color + ":" + f.style + ":" + f.start}>
+            {k > 0 && <span style={{ color: "var(--muted)" }}> · </span>}
+            <span style={markStyleCSS(f.style, f.color)}>
+              {rec.text.slice(f.start, f.end)}
+            </span>
+          </span>
+        ))}
+      </span>
     );
   };
 
@@ -278,18 +899,60 @@ export default function StudyTablesDesktop({
   // Insert the picked verses as scripture cards at the spot the panel was opened
   // from (falling back to the end). Consecutive adds in one panel session stack
   // in order at the insertion point.
-  const addVerses = (refs: string[], asPassage: boolean, bookId?: string) => {
+  // A verse drag from either dock tab (Kepu, Jul 22-23): the refs in hand +
+  // the book their marks come from. The column reports where the drop line
+  // landed and the cards are inserted right there.
+  const [externalDrag, setExternalDrag] = useState<{
+    refs: string[];
+    bookId?: string;
+  } | null>(null);
+  const externalInsert = externalDrag;
+  const dropFromPicker = (index: number) => {
+    if (!open || !externalInsert) return;
+    // No double-adding (SCR-61): a verse already placed or waiting stays put.
+    const refs = freshRefsOnly(externalInsert.refs);
+    if (!refs.length) {
+      setExternalDrag(null);
+      return;
+    }
+    const base = visibleColumnCards;
+    const idx = Math.max(0, Math.min(index, base.length));
+    commitCards([
+      ...base.slice(0, idx),
+      ...makeScriptureCards(refs, false, externalInsert.bookId),
+      ...base.slice(idx),
+    ]);
+    setExternalDrag(null);
+  };
+  // Send → Selected from the Read tab: the verses stage into the tray (was
+  // App's sendReaderVersesToTable — shadowed updateTable keeps the example
+  // table working).
+  const sendVersesToShelf = (rawRefs: string[]) => {
+    const refs = freshRefsOnly(rawRefs);
+    if (!open || refs.length === 0) return;
+    const cards: TableCard[] = refs.map((r) => ({
+      id: newCardId(),
+      kind: "scripture" as const,
+      refs: [r],
+      bookId: readBookId,
+      shelfGroup: "Sent from reading",
+    }));
+    updateTable(open.id, { shelf: [...(open.shelf || []), ...cards] });
+  };
+
+  const addVerses = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
+    const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
     const newCards = makeScriptureCards(refs, asPassage, bookId);
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), ...newCards, ...open.cards.slice(idx)],
-    });
+    const base = visibleColumnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    commitCards([...base.slice(0, idx), ...newCards, ...base.slice(idx)]);
     setPendingIndex(idx + newCards.length);
   };
 
   // ---- staging shelf: set verses aside, then place them later ----
-  const shelve = (refs: string[], asPassage: boolean, bookId?: string) => {
+  const shelve = (rawRefs: string[], asPassage: boolean, bookId?: string) => {
+    const refs = freshRefsOnly(rawRefs);
     if (!open || refs.length === 0) return;
     updateTable(open.id, {
       shelf: [...(open.shelf || []), ...makeScriptureCards(refs, asPassage, bookId)],
@@ -306,33 +969,52 @@ export default function StudyTablesDesktop({
     const shelf = open.shelf || [];
     const card = shelf.find((c) => c.id === cardId);
     if (!card) return;
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), card, ...open.cards.slice(idx)],
+    const base = visibleColumnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    commitCards([...base.slice(0, idx), card, ...base.slice(idx)], {
       shelf: shelf.filter((c) => c.id !== cardId),
     });
     setPendingIndex(idx + 1);
   };
   const shelfAllToColumn = () => {
     if (!open) return;
-    const shelf = open.shelf || [];
+    const shelf = visibleShelf;
     if (shelf.length === 0) return;
-    const idx = Math.max(0, Math.min(pendingIndex ?? open.cards.length, open.cards.length));
-    updateTable(open.id, {
-      cards: [...open.cards.slice(0, idx), ...shelf, ...open.cards.slice(idx)],
-      shelf: [],
+    const base = visibleColumnCards;
+    const idx = Math.max(0, Math.min(pendingIndex ?? base.length, base.length));
+    const movedIds = new Set(shelf.map((c) => c.id));
+    commitCards([...base.slice(0, idx), ...shelf, ...base.slice(idx)], {
+      shelf: (open.shelf || []).filter((c) => !movedIds.has(c.id)),
     });
     setPendingIndex(idx + shelf.length);
   };
 
-  // Open the verse panel to add a scripture card at a given gap.
+  // Navigate the Read tab to a verse: resolve its chapter to reader indices
+  // and set the one-shot jump target.
+  const navigateReadTo = (atRef: string) => {
+    const cut = atRef.lastIndexOf(":");
+    const scope = cut > 0 ? atRef.slice(0, cut) : atRef;
+    const loc = chapterLocFor(scope);
+    if (loc) setReadLoc({ v: loc.volume, b: loc.book, c: loc.chapter });
+    setReadJump(atRef);
+  };
+  // SCR-62 chapter seal is not ported: the dock reads freely, and both tabs
+  // are available on every table.
+  const dockTab: "read" | "search" | null = dock ? dock.tab : null;
+  // Table switch closes the dock and re-seeds the "Marks go to" book.
+  useEffect(() => {
+    setDock(null);
+    setPendingIndex(null);
+    setReadBookId(open ? open.bookId || "master" : "master");
+  }, [open ? open.id : null]);
+  // Open the dock to add a scripture card at a given gap — Search first, the
+  // Read tab is one click away.
   const openPanelAt = (index: number) => {
     setPendingIndex(index);
-    setPanelTab("search");
-    setPanelOpen(true);
+    setDock({ tab: "search" });
   };
   const closePanel = () => {
-    setPanelOpen(false);
+    setDock(null);
     setPendingIndex(null);
   };
 
@@ -358,21 +1040,19 @@ export default function StudyTablesDesktop({
   const markAllVerses = () => {
     if (!open || !onMarkVerses) return;
     const { refs, refBook } = collectMarkTargets([
-      ...open.cards,
-      ...(open.shelf || []),
+      ...visibleColumnCards,
+      ...visibleShelf,
     ]);
     onMarkVerses(refs, refBook, "Mark verses · " + (open.name || "table"));
   };
   const markCardVerses = (card: TableCard) => {
     if (card.kind !== "scripture" || !(card.refs || []).length) return;
-    // Prefer the reader dock: it opens at this verse's chapter with the full
-    // toolbar (and dictionary). Falls back to the mark screen if no dock.
-    if (onOpenReader && open) {
-      onOpenReader(
-        open.id,
-        card.bookId || open.bookId || "master",
-        (card.refs || [])[0]
-      );
+    // Prefer the dock's Read tab: it opens at this verse's chapter with the
+    // full toolbar (and dictionary). Falls back to the mark screen.
+    if (addMarksToBook && open) {
+      setReadBookId(card.bookId || open.bookId || "master");
+      navigateReadTo((card.refs || [])[0]);
+      setDock({ tab: "read" });
       return;
     }
     if (!onMarkVerses) return;
@@ -380,7 +1060,7 @@ export default function StudyTablesDesktop({
     onMarkVerses(refs, refBook, "Mark verse");
   };
   const markTargetCount = open
-    ? collectMarkTargets([...open.cards, ...(open.shelf || [])]).refs.length
+    ? collectMarkTargets([...visibleColumnCards, ...visibleShelf]).refs.length
     : 0;
 
   // Theme chips for one scripture card: the colors marked on its verses, each
@@ -433,7 +1113,7 @@ export default function StudyTablesDesktop({
   };
   const createSessionAndPick = () => {
     const name = newSessionName.trim() || "Session";
-    pickBook(createSession(name));
+    pickBook(createSession(name, false));
   };
   // The example: a finished table that uses every card kind, so a new user can
   // see what a built lesson looks like — and Present it immediately. It's a
@@ -516,10 +1196,16 @@ export default function StudyTablesDesktop({
   // marks home.
   const importStudy = (meta: StudyMeta) => {
     setCreating(null);
+    // The table remembers WHICH study it came from: that link is what lets
+    // "Organize as outline" rebuild the study's outline on demand, what the
+    // coverage meter counts against, and what lets later marks in the study's
+    // scope arrive in the tray. A table started from scratch has no study and
+    // simply never shows those affordances.
     const id = createTable(
       meta.name?.trim() || "Untitled",
       undefined,
-      meta.bookId
+      meta.bookId,
+      meta.id
     );
     // Build the shelf theme-by-theme, in the study's own order, tagging every
     // card with its theme so Selected mirrors the study's structure exactly.
@@ -561,9 +1247,9 @@ export default function StudyTablesDesktop({
     });
     if (cards.length) updateTable(id, { shelf: cards });
     setOpenId(id);
+    // The imported groups land in the always-docked right tray — no drawer
+    // needed (Kepu, Jul 23: the dock's Selected tab is gone on desktop).
     setPendingIndex(0);
-    setPanelTab("shelf");
-    setPanelOpen(true);
   };
 
   // ---- "From a study": the study list + per-study theme grouping ----
@@ -678,6 +1364,30 @@ export default function StudyTablesDesktop({
     lineHeight: 0,
     flex: "0 0 auto",
   };
+  // Header layout E (Kepu, Jul 29): every action pill shares ONE scale, and
+  // the action row's groups are atomic — they wrap as whole units, never
+  // mid-group. Present is the row's only filled pill.
+  const headerGroup: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    flex: "0 0 auto",
+  };
+  const headerPill: React.CSSProperties = {
+    fontFamily: SANS,
+    fontSize: 12.5,
+    fontWeight: 650,
+    color: "var(--text)",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: 999,
+    padding: "7px 14px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    flex: "0 0 auto",
+  };
 
   function Ico({ d, size = 15 }: { d: string; size?: number }) {
     return (
@@ -701,20 +1411,51 @@ export default function StudyTablesDesktop({
 
   // ---------------- EDITOR ----------------
   if (open) {
-    const sections = open.cards.filter((c) => c.kind === "heading");
+    const sections = columnCards.filter((c) => c.kind === "heading");
     const hasRail = sections.length > 0;
-    const editorMax = 780 + (hasRail ? 200 : 0) + (panelOpen ? 386 : 0);
+    // The side tray is a fixed overlay at the viewport's right edge — the
+    // header and body must clear its footprint or buttons hide beneath it.
+    const trayDocked = visibleShelf.length > 0;
+    // The Scripture dock is a fixed left panel — while it's open the editor
+    // shifts right of it instead of centering underneath.
+    const dockInset = dock ? 452 : 0;
+    const editorMax =
+      780 + (hasRail && !dock ? 200 : 0) + (trayDocked ? 288 : 0);
     return (
-      <div style={{ maxWidth: editorMax, margin: "0 auto", padding: "16px 16px 120px" }}>
-        {/* editor top bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+      <div
+        style={{
+          maxWidth: editorMax,
+          margin: dockInset
+            ? "0 16px 0 " + (dockInset + 16) + "px"
+            : "0 auto",
+          padding: "16px 16px 120px",
+        }}
+      >
+        {/* Editor top bar — layout E (Kepu, Jul 29): the name row carries the
+            purpose pills (purpose is identity, not an action), status sits at
+            its right end, and the actions live below in grouped clusters. The
+            wrapper keeps both rows clear of the docked tray. */}
+        <div style={{ paddingRight: trayDocked ? 288 : 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginBottom: 6,
+          }}
+        >
           <button
             onClick={() => {
               setExample(null);
               setOpenId(null);
+              if (cameFromShell) {
+                setCameFromShell(false);
+                onClose();
+              }
             }}
             style={iconBtn}
-            title="Back to your tables"
+            title={cameFromShell ? "Back to reading" : "Back to your tables"}
           >
             <Ico d="M15 6l-6 6 6 6" />
           </button>
@@ -724,7 +1465,8 @@ export default function StudyTablesDesktop({
             onChange={(e) => renameTable(open.id, e.target.value)}
             style={{
               flex: 1,
-              minWidth: 180,
+              minWidth: 150,
+              maxWidth: 320,
               height: 40,
               padding: "0 12px",
               borderRadius: 10,
@@ -737,6 +1479,32 @@ export default function StudyTablesDesktop({
               outline: "none",
             }}
           />
+          {PURPOSES.map(({ p, label }) => {
+            const on = open.purpose === p;
+            return (
+              <button
+                key={p}
+                onClick={() =>
+                  updateTable(open.id, { purpose: on ? undefined : p })
+                }
+                title="What this table is for"
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  color: on ? accent : "var(--muted)",
+                  background: on ? softAccent : "transparent",
+                  border: "1px solid " + (on ? accent : "var(--border)"),
+                  borderRadius: 999,
+                  padding: "5px 13px",
+                  flex: "0 0 auto",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
           <span
             title="Every change saves automatically"
             style={{
@@ -748,6 +1516,7 @@ export default function StudyTablesDesktop({
               fontWeight: 600,
               color: saveFlash ? accent : "var(--muted)",
               flex: "0 0 auto",
+              marginLeft: "auto",
               transition: "color .2s ease",
             }}
           >
@@ -765,6 +1534,30 @@ export default function StudyTablesDesktop({
             </svg>
             {saveFlash ? "Saved" : "Autosaves"}
           </span>
+          {coverage && (
+            <button
+              onClick={() => setCovOpen((o) => !o)}
+              title="Verses in this study not yet placed in the column"
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                fontWeight: 700,
+                borderRadius: 999,
+                padding: "5px 11px",
+                cursor: "pointer",
+                flex: "0 0 auto",
+                color:
+                  coverage.placed >= coverage.total ? "#3d7a26" : "#b06a2f",
+                background:
+                  coverage.placed >= coverage.total ? "#edf7e6" : "#faf0e4",
+                border:
+                  "1px solid " +
+                  (coverage.placed >= coverage.total ? "#c4e0b2" : "#ecd7bd"),
+              }}
+            >
+              {coverage.placed} of {coverage.total} placed
+            </button>
+          )}
           {example && open.id === example.id && (
             <span
               style={{
@@ -783,155 +1576,655 @@ export default function StudyTablesDesktop({
               Example · not saved
             </span>
           )}
-          {onOpenReader && (
+        </div>
+        {/* Actions row: primary · view · build · housekeeping (far right) —
+            each group an atomic cluster, one shared pill scale. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            rowGap: 8,
+            columnGap: 18,
+            paddingLeft: 42,
+            margin: "8px 0 4px",
+          }}
+        >
+          <span style={headerGroup}>
             <button
-              onClick={() => {
-                // Open at the table's own scripture — the first scripture
-                // card (column, then shelf) — instead of the reader's
-                // Genesis 1 default (SCR-16).
-                const sc = [...open.cards, ...(open.shelf || [])].find(
-                  (cd) => cd.kind === "scripture" && (cd.refs || []).length
-                );
-                onOpenReader(
-                  open.id,
-                  open.bookId || "master",
-                  sc ? (sc.refs || [])[0] : undefined
-                );
-              }}
-              title="Open a reading panel beside the table — browse, mark, and send verses"
+              onClick={() =>
+                visibleColumnCards.length > 0 && setPresenting(true)
+              }
+              disabled={visibleColumnCards.length === 0}
+              title={
+                visibleColumnCards.length === 0
+                  ? "Add cards first — the column becomes the lesson"
+                  : "Present this table, beat by beat"
+              }
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontFamily: SANS,
-                fontSize: 12.5,
-                fontWeight: 650,
+                ...headerPill,
                 color: "#fff",
                 background: accent,
-                border: 0,
+                border: "1px solid " + accent,
+                opacity: visibleColumnCards.length === 0 ? 0.4 : 1,
+                cursor:
+                  visibleColumnCards.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              <Ico d="M8 5v14l11-7z" size={13} /> Present
+            </button>
+          </span>
+          <span style={headerGroup}>
+            <div
+              style={{
+                display: "inline-flex",
+                border: "1px solid var(--border)",
                 borderRadius: 999,
-                padding: "7px 14px",
-                cursor: "pointer",
+                overflow: "hidden",
                 flex: "0 0 auto",
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
-                <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
-              </svg>
-              Reader
-            </button>
+              {(["focused", "full"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => flipVerseView(v)}
+                  title={
+                    v === "focused"
+                      ? "Only the marked fragments of each verse"
+                      : "The whole verse, marks inline"
+                  }
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: verseView === v ? 700 : 400,
+                    padding: "7px 13px",
+                    border: 0,
+                    cursor: "pointer",
+                    background:
+                      verseView === v ? "var(--text)" : "transparent",
+                    color: verseView === v ? "var(--bg)" : "var(--muted)",
+                  }}
+                >
+                  {v === "focused" ? "Focused" : "Full"}
+                </button>
+              ))}
+            </div>
+          </span>
+          {(addMarksToBook || onMarkVerses) && (
+            <span style={headerGroup}>
+              {addMarksToBook && (
+                <button
+                  onClick={() => {
+                    // Open at the table's own scripture — the first scripture
+                    // card (column, then shelf) — instead of the reader's
+                    // Genesis 1 default (SCR-16). A chapter table with no cards
+                    // yet opens at its study's chapter.
+                    const sc = [...visibleColumnCards, ...visibleShelf].find(
+                      (cd) => cd.kind === "scripture" && (cd.refs || []).length
+                    );
+                    let at = sc ? (sc.refs || [])[0] : undefined;
+                    if (!at && recStudy) {
+                      const scope =
+                        (recStudy.memberScopes && recStudy.memberScopes[0]) ||
+                        recStudy.scopeRef;
+                      at = firstVerseRefOfScope(scope);
+                    }
+                    setReadBookId(open.bookId || "master");
+                    if (at) navigateReadTo(at);
+                    setDock({ tab: "read" });
+                  }}
+                  title="Read, mark, search, and pull scripture into this table"
+                  style={headerPill}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H11v15H4.5A1.5 1.5 0 0 1 3 17.5z" />
+                    <path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H13v15h6.5a1.5 1.5 0 0 0 1.5-1.5z" />
+                  </svg>
+                  Reading panel
+                </button>
+              )}
+              {onMarkVerses && (
+                <button
+                  onClick={markAllVerses}
+                  disabled={markTargetCount === 0}
+                  title={
+                    markTargetCount === 0
+                      ? "Add scripture cards first"
+                      : "Mark all this table’s verses in one panel"
+                  }
+                  style={{
+                    ...headerPill,
+                    color:
+                      markTargetCount === 0 ? "var(--muted)" : "var(--text)",
+                    opacity: markTargetCount === 0 ? 0.5 : 1,
+                    cursor: markTargetCount === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <Ico
+                    d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+                    size={13}
+                  />{" "}
+                  Mark verses
+                </button>
+              )}
+            </span>
           )}
-          {onMarkVerses && (
+          <span style={{ ...headerGroup, marginLeft: "auto" }}>
             <button
-              onClick={markAllVerses}
-              disabled={markTargetCount === 0}
+              onClick={() => canOrganize && setOrganizeConfirm(true)}
               title={
-                markTargetCount === 0
-                  ? "Add scripture cards first"
-                  : "Mark all this table’s verses in one panel"
+                canOrganize
+                  ? "Rebuild the column as the compiled outline"
+                  : "A live table already is the outline"
               }
               style={{
-                fontFamily: SANS,
-                fontSize: 13,
-                fontWeight: 650,
-                color: markTargetCount === 0 ? "var(--muted)" : accent,
-                background: "transparent",
-                border:
-                  "1px solid " +
-                  (markTargetCount === 0 ? "var(--border)" : accent),
-                borderRadius: 999,
-                padding: "9px 15px",
-                opacity: markTargetCount === 0 ? 0.5 : 1,
-                cursor: markTargetCount === 0 ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
+                ...headerPill,
+                opacity: canOrganize ? 1 : 0.4,
+                cursor: canOrganize ? "pointer" : "not-allowed",
               }}
             >
-              <Ico
-                d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
-                size={13}
-              />{" "}
-              Mark verses
+              Organize as outline
             </button>
-          )}
-          <button
-            onClick={() => open.cards.length > 0 && setPresenting(true)}
-            disabled={open.cards.length === 0}
-            title={
-              open.cards.length === 0
-                ? "Add cards first — the column becomes the lesson"
-                : "Present this table, beat by beat"
-            }
-            style={{
-              fontFamily: SANS,
-              fontSize: 13,
-              fontWeight: 650,
-              color: "#fff",
-              background: accent,
-              border: 0,
-              borderRadius: 999,
-              padding: "9px 16px",
-              opacity: open.cards.length === 0 ? 0.4 : 1,
-              cursor: open.cards.length === 0 ? "not-allowed" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-            }}
-          >
-            <Ico d="M8 5v14l11-7z" size={13} /> Present
-          </button>
-          <button
-            onClick={() => setConfirmId(open.id)}
-            style={iconBtn}
-            title="Delete this table"
-          >
-            <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
-          </button>
+            <button
+              onClick={() =>
+                visibleColumnCards.length > 0 && setClearConfirm(true)
+              }
+              title="Move every card to the tray"
+              style={{
+                ...headerPill,
+                color: "#b3452f",
+                opacity: visibleColumnCards.length > 0 ? 1 : 0.4,
+                cursor:
+                  visibleColumnCards.length > 0 ? "pointer" : "not-allowed",
+              }}
+            >
+              Clear to tray
+            </button>
+            <button
+              onClick={() => setConfirmId(open.id)}
+              style={iconBtn}
+              title="Delete this table"
+            >
+              <Ico d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6" />
+            </button>
+          </span>
+        </div>
         </div>
 
-        {/* purpose */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "10px 0 22px", paddingLeft: 42 }}>
-          <span
+        {/* Coverage panel: the unplaced verses, grouped by theme, each marked
+            whether it's waiting in the tray. */}
+        {covOpen && coverage && (
+          <div
             style={{
+              margin: "8px 0 0 42px",
+              maxWidth: 560,
+              background: "var(--panel)",
+              border: "1px solid #ecd7bd",
+              borderRadius: 12,
+              padding: "10px 14px",
               fontFamily: SANS,
-              fontSize: 10.5,
-              fontWeight: 700,
-              letterSpacing: ".13em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
+              fontSize: 12,
             }}
           >
-            Purpose
-          </span>
-          {PURPOSES.map(({ p, label }) => {
-            const on = open.purpose === p;
-            return (
-              <button
-                key={p}
-                onClick={() => updateTable(open.id, { purpose: on ? undefined : p })}
+            <div
+              style={{
+                fontWeight: 700,
+                color: unplacedRefs.length ? "#b06a2f" : "#3d7a26",
+                marginBottom: unplacedRefs.length ? 6 : 0,
+              }}
+            >
+              {unplacedRefs.length
+                ? "Not yet placed — " +
+                  unplacedRefs.length +
+                  (unplacedRefs.length === 1 ? " verse" : " verses")
+                : "Everything is placed"}
+            </div>
+            {unplacedRefs.map((r) => {
+              const t = refTheme(r);
+              return (
+                <div
+                  key={r}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "3px 0",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      flex: "0 0 auto",
+                      background: t ? COLOR_MAP[t.color] : "var(--border)",
+                    }}
+                  />
+                  <span style={{ fontWeight: 700, color: accent }}>{r}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {shelfRefSet.has(r) ? "in tray" : "not in tray"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Clear-to-tray confirm (SCR-56 v2, approved): nothing is deleted. */}
+        {clearConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              zIndex: 90,
+              display: "grid",
+              placeItems: "center",
+            }}
+            onClick={() => setClearConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: 14,
+                padding: "18px 20px",
+                maxWidth: 420,
+                margin: 16,
+                fontFamily: SANS,
+                boxShadow: "0 18px 50px rgba(0,0,0,.3)",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+                Clear this table to the tray?
+              </div>
+              <div
                 style={{
-                  fontFamily: SANS,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  color: on ? accent : "var(--muted)",
-                  background: on ? softAccent : "transparent",
-                  border: "1px solid " + (on ? accent : "var(--border)"),
-                  borderRadius: 999,
-                  padding: "5px 13px",
+                  fontSize: 12.5,
+                  color: "var(--muted)",
+                  lineHeight: 1.55,
+                  marginBottom: 14,
                 }}
               >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+                Every card moves to the tray — verses and anything you've
+                written. Theme headings are removed. You'll rebuild the column
+                in exactly the order you want; nothing is deleted.
+              </div>
+              <div
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  onClick={() => setClearConfirm(false)}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={clearToTray}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: 0,
+                    background: "#b3452f",
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear to tray
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* three-zone body: outline rail (appears once you add sections) + column */}
+        {/* Organize-as-outline confirm (Kepu, Jul 22): nothing is deleted. */}
+        {organizeConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              zIndex: 90,
+              display: "grid",
+              placeItems: "center",
+            }}
+            onClick={() => setOrganizeConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: 14,
+                padding: "18px 20px",
+                maxWidth: 420,
+                margin: 16,
+                fontFamily: SANS,
+                boxShadow: "0 18px 50px rgba(0,0,0,.3)",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+                Organize this table as the outline?
+              </div>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--muted)",
+                  lineHeight: 1.55,
+                  marginBottom: 14,
+                }}
+              >
+                The column is rebuilt as the study compiles today — theme
+                headings with their verses in scripture order. Everything
+                you've written moves to the tray to be re-placed where you
+                want; verses waiting in the tray are placed into the outline.
+                Nothing is deleted.
+              </div>
+              <div
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  onClick={() => setOrganizeConfirm(false)}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={organizeAsOutline}
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: 0,
+                    background: accent,
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Organize as outline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {/* Purpose moved onto the name row (layout E) — the old standalone
+            purpose row is gone; this gap keeps the column's breathing room. */}
+        <div style={{ height: 18 }} />
+
+        {/* The Scripture dock (Kepu, Jul 23): ONE fixed-left surface — Read
+            (the reader: browse, mark, define, grab) | Search (the picker). */}
+        {dock && (
+          <div
+            style={{
+              position: "fixed",
+              top: headerOffset,
+              left: 0,
+              bottom: 0,
+              width: "min(440px, 94vw)",
+              zIndex: 60,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+              borderRight: "1px solid var(--border)",
+              boxShadow: "18px 0 40px -28px rgba(0,0,0,.35)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 14px",
+                borderBottom: "1px solid var(--border)",
+                flex: "0 0 auto",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      fontFamily: SANS,
+                    }}
+                  >
+                    Reading panel
+                  </span>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      gap: 3,
+                      padding: 2,
+                      background: "var(--soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 999,
+                    }}
+                  >
+                      {(["read", "search"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setDock({ tab: t })}
+                          style={{
+                            fontFamily: SANS,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            border: 0,
+                            borderRadius: 999,
+                            padding: "3px 11px",
+                            cursor: "pointer",
+                            background:
+                              dockTab === t ? accent : "transparent",
+                            color: dockTab === t ? "#fff" : "var(--muted)",
+                          }}
+                        >
+                          {t === "read" ? "Read" : "Search"}
+                        </button>
+                      ))}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={closePanel}
+                aria-label="Close the reading panel"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  display: "grid",
+                  placeItems: "center",
+                  lineHeight: 0,
+                  flex: "0 0 auto",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {dockTab === "read" &&
+              addMarksToBook &&
+              deleteMarkInBook &&
+              onChangeTool &&
+              onChangeColor &&
+              selectedTool &&
+              selectedColor && (
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                  <VerseViewer
+                    selectedVolume={readLoc.v}
+                    selectedBook={readLoc.b}
+                    selectedChapter={readLoc.c}
+                    onChange={(v, b, c) => setReadLoc({ v, b, c })}
+                    selectedTool={selectedTool}
+                    selectedColor={selectedColor}
+                    onChangeTool={onChangeTool}
+                    onChangeColor={onChangeColor}
+                    onMark={(reference, verseText, markedText, startIndex, endIndex, style, color) =>
+                      addMarksToBook(readBookId, [
+                        { reference, verseText, markedText, startIndex, endIndex, style, color },
+                      ])
+                    }
+                    onMarkMany={(items) => addMarksToBook(readBookId, items)}
+                    onEraseMark={(id) => deleteMarkInBook(readBookId, id)}
+                    onDefine={onDefine}
+                    tags={wordTags}
+                    onTagTap={onTagTap}
+                    marks={getBook(readBookId).marks}
+                    toolbarPos={dockToolbarPos}
+                    onToolbarPos={setDockToolbarPos}
+                    toolbarOrient={dockToolbarOrient}
+                    onToolbarOrient={setDockToolbarOrient}
+                    panelMode
+                    fontScale={0.86}
+                    chromeBg="var(--panel)"
+                    compactChrome
+                    dragVerses
+                    onGrabDragState={(refs) =>
+                      setExternalDrag(
+                        refs ? { refs, bookId: readBookId } : null
+                      )
+                    }
+                    jumpTarget={readJump}
+                    onJumpHandled={() => setReadJump(null)}
+                    onSendVerses={sendVersesToShelf}
+                    refStatusFor={refStatusFor}
+                    onStageVerse={(r) => sendVersesToShelf([r])}
+                    chromeExtra={
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          minWidth: 0,
+                          position: "relative",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--muted)",
+                            flex: "0 0 auto",
+                            fontFamily: SANS,
+                          }}
+                        >
+                          Marks go to
+                        </span>
+                        <select
+                          value={readBookId}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__new") {
+                              const name = window.prompt("Name the new session:");
+                              if (name && name.trim() && createSession)
+                                setReadBookId(createSession(name.trim(), false));
+                              return;
+                            }
+                            setReadBookId(v);
+                          }}
+                          style={{
+                            fontFamily: "inherit",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--text)",
+                            background: "var(--soft)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 7,
+                            padding: "3px 5px",
+                            maxWidth: 150,
+                            minWidth: 0,
+                          }}
+                        >
+                          {books.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.isMaster ? "Master Book" : b.name || "Session"}
+                            </option>
+                          ))}
+                          <option value="__new">＋ New session…</option>
+                        </select>
+                      </span>
+                    }
+                  />
+                </div>
+              )}
+            {dockTab === "search" && (
+              <VersePicker
+                embedded
+                onAdd={addVerses}
+                renderVerse={renderVerse}
+                allMarks={allMarks}
+                books={books}
+                shelf={open.shelf || []}
+                onShelve={shelve}
+                onUnshelve={unshelve}
+                onShelfToColumn={shelfToColumn}
+                onShelfAllToColumn={shelfAllToColumn}
+                onClose={closePanel}
+                accent={accent}
+                headerOffset={headerOffset}
+                defaultBookId={open.bookId}
+                compact
+                verseTextFor={(r) => {
+                  const rec = getVerse(r);
+                  return rec ? rec.text : "";
+                }}
+                onVerseDragStart={(ref, bookId) =>
+                  setExternalDrag({ refs: [ref], bookId })
+                }
+                onVerseDragEnd={() => setExternalDrag(null)}
+                refStatusFor={refStatusFor}
+                themeLabelFor={(ref, color, bookId) => {
+                  const bk = getBook(bookId || open.bookId || "master");
+                  const ix = ref.indexOf(":");
+                  const cs = ix < 0 ? ref : ref.slice(0, ix);
+                  const scope = chapterGroups[cs]
+                    ? "group:" + chapterGroups[cs]
+                    : cs;
+                  const scoped = bk.scopedLabels?.[scope]?.[color];
+                  return ((scoped || "") as string).trim();
+                }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* three-zone body: outline rail (hidden while the dock is open) +
+            column + the tray's reserved right column. */}
         <div style={{ display: "flex", gap: 26, alignItems: "flex-start" }}>
-          {hasRail && (
+          {hasRail && !dock && (
             <div
               style={{
                 width: 210,
@@ -950,44 +2243,42 @@ export default function StudyTablesDesktop({
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <StudyTableColumn
-              cards={open.cards}
-              onChange={(cards) => updateTable(open.id, { cards })}
+              cards={visibleColumnCards}
+              onChange={commitCards}
               accent={accent}
               renderVerse={renderVerse}
               onPickScripture={openPanelAt}
               onMarkCard={onMarkVerses ? markCardVerses : undefined}
               themesFor={cardThemes}
+              shelf={visibleShelf}
+              onPlaceFromShelf={placeFromShelf}
+              onDeleteFromShelf={
+                topicStudy && onRemoveVersesFromStudy
+                  ? deleteFromShelf
+                  : undefined
+              }
+              verseTextFor={(r) => {
+                const rec = getVerse(r);
+                return rec ? rec.text : "";
+              }}
+              outlineMode={verseView === "focused"}
+              verseView={verseView}
+              renderVerseFocused={renderVerseFocused}
+              onRenameTheme={setThemeLabel ? renameTheme : undefined}
+              externalDragRef={externalInsert ? externalInsert.refs[0] : null}
+              onExternalDrop={dropFromPicker}
+              traySide
+              trayTop={headerOffset + 14}
             />
           </div>
-          {panelOpen && (
-            <VersePicker
-              onAdd={addVerses}
-              renderVerse={renderVerse}
-              allMarks={allMarks}
-              books={books}
-              shelf={open.shelf || []}
-              onShelve={shelve}
-              onUnshelve={unshelve}
-              onShelfToColumn={shelfToColumn}
-              onShelfAllToColumn={shelfAllToColumn}
-              onClose={closePanel}
-              accent={accent}
-              headerOffset={headerOffset}
-              initialTab={panelTab}
-              defaultBookId={open.bookId}
-              themeLabelFor={(ref, color, bookId) => {
-                const bk = getBook(bookId || open.bookId || "master");
-                const ix = ref.indexOf(":");
-                const cs = ix < 0 ? ref : ref.slice(0, ix);
-                const scope = chapterGroups[cs]
-                  ? "group:" + chapterGroups[cs]
-                  : cs;
-                const scoped = bk.scopedLabels?.[scope]?.[color];
-                return ((scoped || "") as string).trim();
-              }}
-            />
+          {/* Reserve the right column for the fixed tray panel so it never
+              overlaps the cards it places (Kepu, Jul 22). With the reader on
+              the left, the tray keeps this slot even while picking. */}
+          {visibleShelf.length > 0 && (
+            <div style={{ width: 288, flex: "0 0 auto" }} />
           )}
         </div>
+
 
         {confirmId === open.id && (
           <ConfirmDelete
@@ -1004,7 +2295,7 @@ export default function StudyTablesDesktop({
 
         {presenting && (
           <StudyTablePresent
-            table={open}
+            table={{ ...open, cards: visibleColumnCards }}
             renderVerse={renderVerse}
             themesFor={cardThemes}
             accent={accent}
@@ -1019,7 +2310,7 @@ export default function StudyTablesDesktop({
                   string,
                   { color: number; label: string }[]
                 > = {};
-                [...open.cards, ...(open.shelf || [])].forEach((c) => {
+                [...visibleColumnCards, ...visibleShelf].forEach((c) => {
                   if (c.kind !== "scripture" || !c.refs || !c.refs.length)
                     return;
                   const bid = c.bookId || open.bookId || "master";
@@ -1037,7 +2328,11 @@ export default function StudyTablesDesktop({
                 });
                 const code = newRoomCode();
                 await createRoom(code, {
-                  tableJson: JSON.stringify(redactTableForRoom(open)),
+                  tableJson: JSON.stringify(
+                    // Presenting a Compiled · live table performs what's on
+                    // screen — the generated arrangement — without promoting.
+                    redactTableForRoom({ ...open, cards: visibleColumnCards })
+                  ),
                   marksJson: JSON.stringify(marks),
                   themesJson: JSON.stringify(themes),
                 });
@@ -1318,55 +2613,56 @@ export default function StudyTablesDesktop({
                 </div>
                 <div
                   style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
                     borderTop: "1px solid var(--border)",
                     paddingTop: 12,
                   }}
                 >
-                  <input
-                    value={newSessionName}
-                    placeholder="Or name a new session…"
-                    onChange={(e) => setNewSessionName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newSessionName.trim()) {
-                        e.preventDefault();
-                        createSessionAndPick();
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      border: "1px solid var(--border)",
-                      borderRadius: 10,
-                      outline: 0,
-                      background: "var(--soft)",
-                      fontFamily: SANS,
-                      fontSize: 13.5,
-                      color: "var(--text)",
-                      padding: "10px 12px",
-                    }}
-                  />
-                  <button
-                    onClick={createSessionAndPick}
-                    disabled={!newSessionName.trim()}
-                    style={{
-                      fontFamily: SANS,
-                      fontSize: 13,
-                      fontWeight: 650,
-                      color: "#fff",
-                      background: accent,
-                      border: 0,
-                      borderRadius: 10,
-                      padding: "10px 16px",
-                      opacity: newSessionName.trim() ? 1 : 0.45,
-                      cursor: newSessionName.trim() ? "pointer" : "not-allowed",
-                      flex: "0 0 auto",
-                    }}
-                  >
-                    Create
-                  </button>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      value={newSessionName}
+                      placeholder="Or name a new session…"
+                      onChange={(e) => setNewSessionName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newSessionName.trim()) {
+                          e.preventDefault();
+                          createSessionAndPick();
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        outline: 0,
+                        background: "var(--soft)",
+                        fontFamily: SANS,
+                        fontSize: 13.5,
+                        color: "var(--text)",
+                        padding: "10px 12px",
+                      }}
+                    />
+                    <button
+                      onClick={createSessionAndPick}
+                      disabled={!newSessionName.trim()}
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 13,
+                        fontWeight: 650,
+                        color: "#fff",
+                        background: accent,
+                        border: 0,
+                        borderRadius: 10,
+                        padding: "10px 16px",
+                        opacity: newSessionName.trim() ? 1 : 0.45,
+                        cursor: newSessionName.trim()
+                          ? "pointer"
+                          : "not-allowed",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      Create
+                    </button>
+                  </div>
                 </div>
                 <div
                   style={{
@@ -1656,7 +2952,14 @@ function OutlineRail({
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {sections.map((s) => {
-          const label = (s.text || "").trim() || "Untitled section";
+          const label = richToPlain(s.text || "") || "Untitled section";
+          // A compiled theme heading carries its pen in the id — the rail
+          // shows the same color dot the section header wears (Kepu, Jul 20).
+          const n =
+            s.id.indexOf("compiled_h") === 0
+              ? Number(s.id.slice("compiled_h".length))
+              : NaN;
+          const dot = n >= 1 && n <= 10 ? COLOR_MAP[n as MarkColor] : null;
           return (
             <button
               key={s.id}
@@ -1673,11 +2976,10 @@ function OutlineRail({
                 fontSize: 13,
                 lineHeight: 1.35,
                 color: "var(--text)",
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
                 width: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = hexToRgba(accent, 0.09);
@@ -1688,7 +2990,26 @@ function OutlineRail({
                 e.currentTarget.style.color = "var(--text)";
               }}
             >
-              {label}
+              {dot && (
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: dot,
+                    flex: "0 0 auto",
+                  }}
+                />
+              )}
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {label}
+              </span>
             </button>
           );
         })}
