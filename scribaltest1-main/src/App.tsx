@@ -4807,11 +4807,9 @@ export default function App() {
     });
   };
 
-  const handlePrintLive = () => {
-    if (effectiveCompileTabs.length === 0) {
-      alert("Nothing to print yet.");
-      return;
-    }
+  // What this compilation is called — a named study if there is one, else the
+  // chapter(s). Print and share both use it, so they can't drift apart.
+  const compileLabel = (() => {
     const first = compileStudy
       ? compileStudy.name
       : effectiveCompileTabs[0]
@@ -4821,10 +4819,18 @@ export default function App() {
       !compileStudy && effectiveCompileTabs.length > 1
         ? " +" + (effectiveCompileTabs.length - 1)
         : "";
+    return first + extra;
+  })();
+
+  const handlePrintLive = () => {
+    if (effectiveCompileTabs.length === 0) {
+      alert("Nothing to print yet.");
+      return;
+    }
     loadWebster();
     setPrintData({
       view: compileView,
-      title: VIEW_NAMES[compileView] + " — " + first + extra,
+      title: VIEW_NAMES[compileView] + " — " + compileLabel,
       compileTabs: effectiveCompileTabs,
       marks: effectiveMarks,
       colorLabels: effectiveScopedLabels,
@@ -8194,6 +8200,7 @@ export default function App() {
           compileTabs={effectiveCompileTabs}
           marks={effectiveMarks}
           colorLabels={effectiveScopedLabels}
+          studyName={compileLabel}
           notes={notes}
           dark={dark}
           C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}

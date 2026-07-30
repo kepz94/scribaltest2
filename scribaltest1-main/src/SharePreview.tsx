@@ -4,6 +4,7 @@ import {
   renderCompilationCard,
   renderVersesCard,
   versesCardHeight,
+  versesCardMetrics,
   canvasURL,
   shareCanvas,
   CARD_TARGET_H,
@@ -48,6 +49,20 @@ export function packPages(
   return pages;
 }
 
+// One prose size for the whole document: the smallest any single page needed.
+// Left to itself each card sizes independently, which reads as sloppy the
+// moment you flip between pages.
+export function pdfProseSize(
+  pages: VersesCardEntry[][],
+  measureSize: (vs: VersesCardEntry[]) => number
+): number | undefined {
+  if (pages.length === 0) return undefined;
+  return pages.reduce(
+    (min, page) => Math.min(min, measureSize(page)),
+    Infinity
+  );
+}
+
 interface CC {
   bg: string;
   panel: string;
@@ -88,6 +103,9 @@ interface Props {
   // Show a "Markings" on/off chip (reader-share flow): off strips the marks
   // so the card carries clean verse text.
   marksToggle?: boolean;
+  // The study's name, printed under the masthead on every card so a multi-page
+  // share reads as one document.
+  title?: string;
   onClose: () => void;
   onFlash: (m: string) => void;
 }
@@ -101,6 +119,7 @@ export default function SharePreview({
   verses,
   syntheses,
   marksToggle,
+  title,
   onClose,
   onFlash,
 }: Props) {
@@ -137,6 +156,19 @@ export default function SharePreview({
   const pdfMode = pages.length > 1;
   const coverPage = kind === "study" && pdfMode && !!comp;
   const pageCount = pages.length + (coverPage ? 1 : 0);
+  // Every page of a PDF is set at the same prose size — the smallest any single
+  // page needed. Left to itself each card sizes independently, which reads as
+  // sloppy once you flip between them.
+  const pdfSize = useMemo(
+    () =>
+      pdfMode
+        ? pdfProseSize(
+            pages,
+            (vs) => versesCardMetrics({ verses: vs, dark: cardDark, title }).size
+          )
+        : undefined,
+    [pdfMode, pages, cardDark, title]
+  );
 
   const buildCover = (): HTMLCanvasElement | null => {
     if (!comp) return null;
@@ -173,14 +205,19 @@ export default function SharePreview({
             showNotes,
             showSynthesis,
             syntheses,
+            title,
+            sizeOverride: pdfSize,
           });
     }
     if (kind === "verses" && verses) {
       return renderVersesCard({
         verses: pages[0] || [],
         dark: cardDark,
+        title,
+        sizeOverride: pdfSize,
         showNotes,
-        showSynthesis,
+        // Page 1 of a multi-page share; the synthesis rides on the last page.
+        showSynthesis: showSynthesis && pages.length === 1,
         syntheses,
       });
     }
@@ -216,17 +253,21 @@ export default function SharePreview({
       const canvases: HTMLCanvasElement[] = [];
       const cover = coverPage ? buildCover() : null;
       if (cover) canvases.push(cover);
-      for (const page of pages) {
+      for (let i = 0; i < pages.length; i++) {
         canvases.push(
           renderVersesCard({
-            verses: page,
+            verses: pages[i],
             dark: cardDark,
             showNotes,
-            showSynthesis: false,
+            // The synthesis closes the study, so it belongs on the last page —
+            // renderVersesCard already draws it after the final verse.
+            showSynthesis: showSynthesis && i === pages.length - 1,
+            syntheses,
+            title,
+            sizeOverride: pdfSize,
           })
         );
-        if (pages.length > 4)
-          await new Promise((r) => setTimeout(r, 0));
+        if (pages.length > 4) await new Promise((r) => setTimeout(r, 0));
       }
       const blob = canvasesToPdf(canvases);
       const r = blob

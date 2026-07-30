@@ -278,6 +278,7 @@ export default function MobileCompile({
   const [studyPreview, setStudyPreview] = useState<{
     verses: VersesCardEntry[];
     comp: StudySummary;
+    syntheses: VersesSynthesis[];
   } | null>(null);
   const VI = verseIndex();
   const [compPreview, setCompPreview] = useState<{
@@ -509,9 +510,23 @@ export default function MobileCompile({
   const startShareStudy = () => {
     if (shareableVerses.length === 0) return;
     setSelectMode(false);
+    // Every theme's synthesis, not just the picked verses' — this is the whole
+    // study, so the writing that closes it belongs with it.
+    const seen = new Set<number>();
+    const synths: VersesSynthesis[] = [];
+    shareableVerses.forEach((sv) => {
+      if (seen.has(sv.color)) return;
+      seen.add(sv.color);
+      const text = (notes[synthKey(sv.color)] || "").trim();
+      if (text) synths.push({ theme: sv.theme, color: sv.color, text });
+    });
+    // The study-wide synthesis (the one the outline writes) leads.
+    const overall = readSynth().trim();
+    if (overall) synths.unshift({ theme: "Synthesis", color: 6, text: overall });
     setStudyPreview({
       verses: entriesFor(shareableVerses),
       comp: studySummary(),
+      syntheses: synths,
     });
   };
 
@@ -2058,6 +2073,7 @@ export default function MobileCompile({
           kind="verses"
           verses={versesPreview}
           syntheses={versesSyntheses}
+          title={title}
           onClose={() => setVersesPreview(null)}
           onFlash={onFlash}
         />
@@ -2070,6 +2086,8 @@ export default function MobileCompile({
           kind="study"
           verses={studyPreview.verses}
           comp={studyPreview.comp}
+          syntheses={studyPreview.syntheses}
+          title={title}
           onClose={() => setStudyPreview(null)}
           onFlash={onFlash}
         />

@@ -150,11 +150,17 @@ function paintBrand(
   ctx.restore();
 }
 
-// Top nameplate so the card reads "Scribal" the instant it is seen.
+// How much taller the header is once a study name rides under the rule.
+const TITLE_BAND = 38;
+
+// Top nameplate so the card reads "Scribal" the instant it is seen. `title`
+// names the study beneath the rule — a page of a multi-page study has to say
+// which study it belongs to, or the pages don't read as one document.
 function paintMasthead(
   ctx: CanvasRenderingContext2D,
   p: Palette,
-  accent: string
+  accent: string,
+  title?: string
 ) {
   const cx = W / 2;
   ctx.save();
@@ -177,7 +183,29 @@ function paintMasthead(
   ctx.beginPath();
   ctx.arc(cx, ry, 4.5, 0, Math.PI * 2);
   ctx.fill();
+  if (title && title.trim()) {
+    ctx.fillStyle = p.muted;
+    ctx.font = "600 22px " + SANS;
+    ctx.textAlign = "center";
+    drawTracked(ctx, clampToWidth(ctx, title.trim().toUpperCase(), W - 260, 3), cx, ry + TITLE_BAND, 3);
+  }
   ctx.restore();
+}
+
+// Tracked text has no measureText, so trim to width by character and ellipsize.
+function clampToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+  tracking: number
+): string {
+  const widthOf = (s: string) =>
+    Array.from(s).reduce((a, ch) => a + ctx.measureText(ch).width + tracking, 0) -
+    tracking;
+  if (widthOf(text) <= maxW) return text;
+  let out = text;
+  while (out.length > 1 && widthOf(out + "…") > maxW) out = out.slice(0, -1);
+  return out.replace(/\s+$/, "") + "…";
 }
 
 function drawTracked(
@@ -347,28 +375,42 @@ export interface VersesCardOpts {
   showNotes?: boolean;
   showSynthesis?: boolean;
   syntheses?: VersesSynthesis[];
+  // The study this card belongs to, printed under the masthead. Set on every
+  // page of a multi-page share so the pages read as one document.
+  title?: string;
+  // Force the prose size instead of letting the card pick its own. A PDF sets
+  // one size for every page — type that changes page to page reads as sloppy.
+  sizeOverride?: number;
 }
 
 export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   return buildVersesCard(o, false) as HTMLCanvasElement;
 }
 
-// The same layout pass, stopped before it draws: what height would these verses
-// make? The packer asks this before committing a verse to a page, so the fit
-// rule and the renderer can never disagree about what fits.
+// The same layout pass, stopped before it draws. The packer asks for the height
+// before committing a verse to a page, so the fit rule and the renderer can
+// never disagree about what fits; a PDF asks for the size so every page can be
+// held to the smallest one any page needed.
+export function versesCardMetrics(o: VersesCardOpts): {
+  height: number;
+  size: number;
+} {
+  return buildVersesCard(o, true) as { height: number; size: number };
+}
 export function versesCardHeight(o: VersesCardOpts): number {
-  return buildVersesCard(o, true) as number;
+  return versesCardMetrics(o).height;
 }
 
 function buildVersesCard(
   o: VersesCardOpts,
   measureOnly: boolean
-): HTMLCanvasElement | number {
+): HTMLCanvasElement | { height: number; size: number } {
   const p = o.dark ? darkCard : lightCard;
   const { canvas, ctx } = newCanvas();
-  if (!ctx) return measureOnly ? CARD_MIN_H : canvas;
+  if (!ctx) return measureOnly ? { height: CARD_MIN_H, size: 40 } : canvas;
 
   const verses = o.verses.slice(0, MAX_PER_CARD);
+  const cardTitle = (o.title || "").trim();
   const showNotes = !!o.showNotes;
   const syntheses =
     o.showSynthesis && o.syntheses
@@ -380,7 +422,7 @@ function buildVersesCard(
   const barW = 6;
   const contentX = padX + 22; // text begins to the right of the accent bar
   const maxW = W - contentX - padX;
-  const top = 172;
+  const top = cardTitle ? 172 + TITLE_BAND : 172;
   const FOOTER_SPACE = 168; // room beneath the content for the brand footer
   const MIN_H = CARD_MIN_H;
   const MAX_H = CARD_MAX_H;
@@ -573,17 +615,22 @@ function buildVersesCard(
   const minSize = 22;
   const minContent = MIN_H - top - FOOTER_SPACE;
   const maxContent = MAX_H - top - FOOTER_SPACE;
-  let size = baseByCount[verses.length] || 40;
+  let size = o.sizeOverride || baseByCount[verses.length] || 40;
   let lay = measure(size);
-  // Grow a light card's text so it fills a standard-height card.
-  while (size < maxSize && measure(size + 2).total <= minContent) {
-    size += 2;
-    lay = measure(size);
-  }
-  // Shrink a very heavy card so it never exceeds the maximum height.
-  while (size > minSize && lay.total > maxContent) {
-    size -= 2;
-    lay = measure(size);
+  // A forced size is the whole point of the override — a PDF holds every page
+  // to one size, so neither fitting loop may move it. The canvas still grows to
+  // whatever that size needs, so nothing clips.
+  if (!o.sizeOverride) {
+    // Grow a light card's text so it fills a standard-height card.
+    while (size < maxSize && measure(size + 2).total <= minContent) {
+      size += 2;
+      lay = measure(size);
+    }
+    // Shrink a very heavy card so it never exceeds the maximum height.
+    while (size > minSize && lay.total > maxContent) {
+      size -= 2;
+      lay = measure(size);
+    }
   }
 
   // Grow the canvas to fit the content (clamped) rather than cramming the
@@ -591,10 +638,15 @@ function buildVersesCard(
   const cardH = Math.round(
     Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
   );
-  if (measureOnly) return cardH;
+  if (measureOnly) return { height: cardH, size };
   canvas.height = cardH;
   paintBackground(ctx, p, cardH);
-  paintMasthead(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
+  paintMasthead(
+    ctx,
+    p,
+    penHex(verses[0] ? verses[0].color : 7, o.dark),
+    cardTitle
+  );
 
   // Top-align; center only when content is shorter than the card (light cards).
   const contentBudget = cardH - top - FOOTER_SPACE;
@@ -919,6 +971,21 @@ function paintCompilationCard(
     ctx.fillText(ln, padX, y);
     y += 6;
   });
+
+  // The study's own name, under the scope. Skipped when it is empty or just
+  // restates the scope (a compile with no named study would print it twice).
+  const label = (o.studyLabel || "").trim();
+  if (label && label.toLowerCase() !== o.scopeTitle.trim().toLowerCase()) {
+    y += 46;
+    ctx.fillStyle = p.muted;
+    ctx.font = "italic 34px " + SERIF;
+    ctx.textAlign = "left";
+    const lLines = wrap(ctx, label, maxW);
+    let l = lLines[0] || "";
+    if (lLines.length > 1) l = l.replace(/\s+\S*$/, "") + "…";
+    ctx.fillText(l, padX, y);
+    y += 18; // the name and the counts are separate facts — don't crowd them
+  }
 
   y += 30;
   ctx.fillStyle = p.muted;

@@ -2,7 +2,7 @@
 // looks like once it outgrows one. Heights are injected rather than measured —
 // jsdom has no canvas, so the real renderer could only ever report the minimum.
 
-import { packPages } from "./SharePreview";
+import { packPages, pdfProseSize } from "./SharePreview";
 import { CARD_TARGET_H, MAX_PER_CARD, VersesCardEntry } from "./shareCard";
 import { buildStudySummary } from "./studySummary";
 import { Mark, MarkColor, MarkStyle } from "./types";
@@ -70,6 +70,26 @@ describe("packPages", () => {
     pages.forEach((p) => {
       if (p.length > 1) expect(perVerse(600)(p)).toBeLessThanOrEqual(CARD_TARGET_H);
     });
+  });
+});
+
+describe("pdfProseSize", () => {
+  const list = (n: number) => Array.from({ length: n }, (_, i) => verse(i + 1));
+
+  it("holds the whole document to the smallest size any page needed", () => {
+    // Page sizes 44, 32, 40 -> every page must be set at 32.
+    const sizes = [44, 32, 40];
+    const pages = [list(2), list(3), list(1)];
+    const size = pdfProseSize(pages, (p) => sizes[pages.indexOf(p)]);
+    expect(size).toBe(32);
+  });
+
+  it("is undefined when there are no pages", () => {
+    expect(pdfProseSize([], () => 40)).toBeUndefined();
+  });
+
+  it("returns the single page's own size when there is only one", () => {
+    expect(pdfProseSize([list(3)], () => 38)).toBe(38);
   });
 });
 

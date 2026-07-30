@@ -34,6 +34,8 @@ interface Props {
   compileTabs: Tab[];
   marks: Mark[];
   colorLabels: Record<number, string>;
+  // What this compilation is called — a named study, else the chapter(s).
+  studyName: string;
   notes: Record<string, string>;
   dark: boolean;
   C: CC;
@@ -48,6 +50,7 @@ export default function ShareVerses({
   compileTabs,
   marks,
   colorLabels,
+  studyName,
   notes,
   dark,
   C,
@@ -151,12 +154,6 @@ export default function ShareVerses({
   });
   const synthKey = "synthesis|" + chapterNames.join("+");
   const synthText = flattenRich(notes[synthKey] || "");
-  // What the summary card calls this study. The scope title comes from the
-  // marks themselves; this is the label under it.
-  const compileTitle =
-    chapterNames.length <= 2
-      ? chapterNames.join(" + ")
-      : chapterNames[0] + " + " + (chapterNames.length - 1) + " more";
 
   // all = every marked verse in the compilation (the whole-study share);
   // otherwise just what the user picked.
@@ -212,7 +209,7 @@ export default function ShareVerses({
                 marks: relevant,
                 colorLabels,
                 orderOf: (r) => orderOf.get(r) || 0,
-                title: compileTitle,
+                title: studyName,
                 synthesis: synthText,
               })
             : undefined
@@ -220,6 +217,7 @@ export default function ShareVerses({
         syntheses={
           synthText ? [{ theme: "Synthesis", color: 6, text: synthText }] : []
         }
+        title={studyName}
         marksToggle
         onClose={() => setPreviewing(null)}
         onFlash={onFlash}
