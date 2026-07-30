@@ -9,6 +9,7 @@ import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
 import SharePreview from "./SharePreview";
 import type { VersesCardEntry, VersesSynthesis } from "./shareCard";
+import { buildStudySummary, StudySummary } from "./studySummary";
 
 interface Palette {
   bg: string;
@@ -273,6 +274,11 @@ export default function MobileCompile({
     null
   );
   const [versesSyntheses, setVersesSyntheses] = useState<VersesSynthesis[]>([]);
+  // The whole study: its summary card as a cover, then every marked verse.
+  const [studyPreview, setStudyPreview] = useState<{
+    verses: VersesCardEntry[];
+    comp: StudySummary;
+  } | null>(null);
   const VI = verseIndex();
   const [compPreview, setCompPreview] = useState<{
     scopeTitle: string;
@@ -390,97 +396,16 @@ export default function MobileCompile({
     return groupMinOrder(a) - groupMinOrder(b);
   });
 
-  const shareStudy = () => {
-    const themes = activeColors
-      .map((c) => ({
-        name: (colorLabels[c] || "Color " + c).trim(),
-        color: c,
-        synthesis: "",
-        count: (byColor[c] || []).length,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .map((t, i) => (i === 0 ? { ...t, synthesis: readSynth().trim() } : t));
-
-    // Scripture scope — what was actually studied.
-    const byBook = new Map<
-      string,
-      { min: number; max: number; chaps: Set<number>; order: number }
-    >();
-    liveMarks.forEach((m) => {
-      const mm = m.reference.match(/^(.*?)\s+(\d+):/);
-      if (!mm) return;
-      const book = mm[1];
-      const chap = parseInt(mm[2], 10);
-      const ord = orderOf(m.reference);
-      const cur = byBook.get(book);
-      if (!cur)
-        byBook.set(book, { min: chap, max: chap, chaps: new Set([chap]), order: ord });
-      else {
-        cur.min = Math.min(cur.min, chap);
-        cur.max = Math.max(cur.max, chap);
-        cur.chaps.add(chap);
-        cur.order = Math.min(cur.order, ord);
-      }
-    });
-    const bookEntries = Array.from(byBook.entries()).sort(
-      (a, b) => a[1].order - b[1].order
-    );
-    const passages = bookEntries.reduce((s, [, v]) => s + v.chaps.size, 0);
-    let scopeTitle = "Scripture Study";
-    if (bookEntries.length === 1) {
-      const [name, v] = bookEntries[0];
-      scopeTitle =
-        v.min === v.max ? name + " " + v.min : name + " " + v.min + "–" + v.max;
-    } else if (bookEntries.length >= 2 && bookEntries.length <= 3) {
-      scopeTitle = bookEntries.map(([n]) => n).join(" · ");
-    } else if (bookEntries.length > 3) {
-      scopeTitle = bookEntries[0][0] + " – " + bookEntries[bookEntries.length - 1][0];
-    }
-
-    // Candidate verses (for the featured-verse picker), in scripture order.
-    const candidates = liveMarks
-      .filter((m) => m.markedText.trim())
-      .slice()
-      .sort((a, b) => orderOf(a.reference) - orderOf(b.reference))
-      .map((m) => ({
-        text: m.markedText,
-        reference: m.reference,
-        style: m.style,
-        color: m.color,
-      }));
-
-    // Default featured = the most-emphasized mark.
-    let defaultFeatured = 0;
-    let bestScore = -1;
-    const ordered = liveMarks
-      .filter((m) => m.markedText.trim())
-      .slice()
-      .sort((a, b) => orderOf(a.reference) - orderOf(b.reference));
-    ordered.forEach((m, i) => {
-      const sc = STYLE_POINTS[m.style] || 0;
-      if (sc > bestScore) {
-        bestScore = sc;
-        defaultFeatured = i;
-      }
+  const studySummary = () =>
+    buildStudySummary({
+      marks: liveMarks,
+      colorLabels,
+      orderOf,
+      title,
+      synthesis: readSynth(),
     });
 
-    const dateStr = new Date().toLocaleDateString(undefined, {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-
-    setCompPreview({
-      scopeTitle,
-      studyLabel: title,
-      dateStr,
-      totalMarks: liveMarks.length,
-      passages,
-      themes,
-      candidates,
-      defaultFeatured,
-    });
-  };
+  const shareStudy = () => setCompPreview(studySummary());
 
   const pointsFor = (list: Mark[]) =>
     list.reduce((s, m) => s + (STYLE_POINTS[m.style] || 0), 0);
@@ -558,38 +483,44 @@ export default function MobileCompile({
       });
     });
   });
-  const togglePick = (key: string) => {
-    if (picked.includes(key)) {
-      setPicked((prev) => prev.filter((k) => k !== key));
-      return;
-    }
-    if (picked.length >= 4) {
-      onFlash("You can share up to 4 verses");
-      return;
-    }
-    setPicked((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  // No cap: a selection bigger than one card becomes a multi-page PDF.
+  const togglePick = (key: string) =>
+    setPicked((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  const entriesFor = (chosen: ShareableVerse[]): VersesCardEntry[] =>
+    chosen.map((sv) => {
+      const info = VI.get(sv.reference);
+      return {
+        reference: sv.reference,
+        theme: sv.theme,
+        color: sv.color,
+        phrases: sv.phrases,
+        note: readVerseNote(sv.color, sv.reference).trim() || undefined,
+        view,
+        fullText: info ? info.text : undefined,
+        verseNumber: info ? info.verse : undefined,
+        marks: sv.marks,
+      };
+    });
+
+  // The whole study, in the order the outline shows it — cover card first, then
+  // every marked verse. Nothing is picked; the study is the selection.
+  const startShareStudy = () => {
+    if (shareableVerses.length === 0) return;
+    setSelectMode(false);
+    setStudyPreview({
+      verses: entriesFor(shareableVerses),
+      comp: studySummary(),
+    });
   };
+
   const startShareVerses = () => {
     const chosen = picked
       .map((k) => shareableVerses.find((sv) => sv.key === k))
       .filter((x): x is ShareableVerse => !!x);
     if (chosen.length === 0) return;
-    setVersesPreview(
-      chosen.map((sv) => {
-        const info = VI.get(sv.reference);
-        return {
-          reference: sv.reference,
-          theme: sv.theme,
-          color: sv.color,
-          phrases: sv.phrases,
-          note: readVerseNote(sv.color, sv.reference).trim() || undefined,
-          view,
-          fullText: info ? info.text : undefined,
-          verseNumber: info ? info.verse : undefined,
-          marks: sv.marks,
-        };
-      })
-    );
+    setVersesPreview(entriesFor(chosen));
     // One synthesis per distinct theme among the chosen verses (if written).
     const seen = new Set<number>();
     const synths: VersesSynthesis[] = [];
@@ -2081,6 +2012,23 @@ export default function MobileCompile({
             {picked.length ? "Share " + picked.length : "Share"}
           </button>
           <button
+            onClick={startShareStudy}
+            style={{
+              background: "transparent",
+              color: C.text,
+              border: "1px solid " + C.border,
+              borderRadius: "999px",
+              padding: "13px 12px",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Whole study
+          </button>
+          <button
             onClick={() => {
               setSelectMode(false);
               shareStudy();
@@ -2090,14 +2038,15 @@ export default function MobileCompile({
               color: C.muted,
               border: "1px solid " + C.border,
               borderRadius: "999px",
-              padding: "13px 14px",
+              padding: "13px 12px",
               fontSize: "12.5px",
               fontWeight: 600,
               cursor: "pointer",
               fontFamily: "inherit",
+              whiteSpace: "nowrap",
             }}
           >
-            Study summary
+            Summary
           </button>
         </div>
       )}
@@ -2110,6 +2059,18 @@ export default function MobileCompile({
           verses={versesPreview}
           syntheses={versesSyntheses}
           onClose={() => setVersesPreview(null)}
+          onFlash={onFlash}
+        />
+      )}
+
+      {studyPreview && (
+        <SharePreview
+          C={C}
+          appDark={dark}
+          kind="study"
+          verses={studyPreview.verses}
+          comp={studyPreview.comp}
+          onClose={() => setStudyPreview(null)}
           onFlash={onFlash}
         />
       )}

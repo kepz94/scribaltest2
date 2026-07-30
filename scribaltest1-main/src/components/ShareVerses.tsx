@@ -3,8 +3,23 @@ import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import { Mark, MarkColor, COLORS, COLOR_MAP, Tab } from "../types";
 import SharePreview from "../SharePreview";
 import { VersesCardEntry } from "../shareCard";
+import { buildStudySummary } from "../studySummary";
 
 const vols = volumesProxy;
+
+// The dialog's outline button — used by Cancel, the view toggle, and the
+// whole-study share so they read as one row of controls.
+const pill = (C: CC, off: boolean): CSSProperties => ({
+  background: "transparent",
+  border: "1px solid " + C.border,
+  color: off ? C.muted : C.text,
+  borderRadius: "999px",
+  padding: "9px 14px",
+  fontSize: "13px",
+  cursor: off ? "default" : "pointer",
+  fontFamily: "inherit",
+  flexShrink: 0,
+});
 
 interface CC {
   bg: string;
@@ -41,10 +56,19 @@ export default function ShareVerses({
 }: Props) {
   const [picked, setPicked] = useState<string[]>([]);
   const [open, setOpen] = useState<number[]>([]);
-  const [previewing, setPreviewing] = useState(false);
+  const [previewing, setPreviewing] = useState<null | "verses" | "study">(null);
+  // Focused shows the marked phrases alone; Full redraws the whole verse with
+  // the marks layered on, exactly as the reading view has them. Mirrors mobile.
+  const [view, setView] = useState<"focused" | "full">("full");
 
   // The verses of the compiled chapters, in reading order (same as Outline).
-  type Row = { reference: string; chapterRef: string; order: number };
+  type Row = {
+    reference: string;
+    chapterRef: string;
+    order: number;
+    text: string;
+    verse: number;
+  };
   const allRows: Row[] = [];
   compileTabs.forEach((t, ti) => {
     const book = vols[t.volume].books[t.book];
@@ -55,11 +79,17 @@ export default function ShareVerses({
         reference: v.reference,
         chapterRef,
         order: ti * 100000 + i,
+        text: v.text,
+        verse: v.verse,
       });
     });
   });
   const orderOf = new Map(allRows.map((r) => [r.reference, r.order]));
   const chapterRefOf = new Map(allRows.map((r) => [r.reference, r.chapterRef]));
+  // Full-verse rendering needs the verse itself, not just the marked snippet.
+  const verseInfo = new Map(
+    allRows.map((r) => [r.reference, { text: r.text, verse: r.verse }])
+  );
   const selectedRefs = new Set(allRows.map((r) => r.reference));
   const relevant = marks.filter((m) => selectedRefs.has(m.reference));
 
@@ -70,13 +100,23 @@ export default function ShareVerses({
       const refs = Array.from(
         new Set(colorMarks.map((m) => m.reference))
       ).sort((a, b) => (orderOf.get(a) || 0) - (orderOf.get(b) || 0));
-      const verses = refs.map((reference) => ({
-        reference,
-        phrases: colorMarks
+      const verses = refs.map((reference) => {
+        const vm = colorMarks
           .filter((m) => m.reference === reference)
-          .sort((a, b) => a.startIndex - b.startIndex)
-          .map((m) => ({ text: m.markedText, style: m.style as string })),
-      }));
+          .sort((a, b) => a.startIndex - b.startIndex);
+        return {
+          reference,
+          phrases: vm.map((m) => ({ text: m.markedText, style: m.style as string })),
+          // Carried through to the card so Full view can draw each mark in
+          // place instead of quoting the phrase out of the verse.
+          marks: vm.map((m) => ({
+            startIndex: m.startIndex,
+            endIndex: m.endIndex,
+            style: m.style as string,
+            color: m.color as number,
+          })),
+        };
+      });
       return {
         color,
         name: (colorLabels[color] || "Color " + color).trim(),
@@ -86,17 +126,10 @@ export default function ShareVerses({
   );
 
   const keyFor = (color: number, reference: string) => color + "|" + reference;
-  const togglePick = (key: string) => {
-    if (picked.includes(key)) {
-      setPicked((p) => p.filter((k) => k !== key));
-      return;
-    }
-    if (picked.length >= 4) {
-      onFlash("You can share up to 4 verses");
-      return;
-    }
-    setPicked((p) => [...p, key]);
-  };
+  // No cap: a selection bigger than one card simply becomes a multi-page PDF,
+  // the same way the mobile reader's send-to-share does.
+  const togglePick = (key: string) =>
+    setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
   const toggleOpen = (c: number) =>
     setOpen((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
 
@@ -112,21 +145,26 @@ export default function ShareVerses({
       .trim();
   };
   // The study's synthesis — the exact key Outline saves it under.
-  const synthKey =
-    "synthesis|" +
-    compileTabs
-      .map((t) => {
-        const book = vols[t.volume].books[t.book];
-        return book.book + " " + book.chapters[t.chapter].chapter;
-      })
-      .join("+");
+  const chapterNames = compileTabs.map((t) => {
+    const book = vols[t.volume].books[t.book];
+    return book.book + " " + book.chapters[t.chapter].chapter;
+  });
+  const synthKey = "synthesis|" + chapterNames.join("+");
   const synthText = flattenRich(notes[synthKey] || "");
+  // What the summary card calls this study. The scope title comes from the
+  // marks themselves; this is the label under it.
+  const compileTitle =
+    chapterNames.length <= 2
+      ? chapterNames.join(" + ")
+      : chapterNames[0] + " + " + (chapterNames.length - 1) + " more";
 
-  const buildEntries = (): VersesCardEntry[] => {
+  // all = every marked verse in the compilation (the whole-study share);
+  // otherwise just what the user picked.
+  const buildEntries = (all?: boolean): VersesCardEntry[] => {
     const entries: VersesCardEntry[] = [];
     groups.forEach((g) => {
       g.verses.forEach((v) => {
-        if (!picked.includes(keyFor(g.color, v.reference))) return;
+        if (!all && !picked.includes(keyFor(g.color, v.reference))) return;
         const chRef = chapterRefOf.get(v.reference) || "";
         const noteKey = "note|" + chRef + "|c" + g.color + "|" + v.reference;
         const rawNote = notes[noteKey] || "";
@@ -139,29 +177,51 @@ export default function ShareVerses({
             })()
           : rawNote
         ).trim();
+        const info = verseInfo.get(v.reference);
         entries.push({
           reference: v.reference,
           theme: g.name,
           color: g.color,
           phrases: v.phrases,
           note: note || undefined,
+          view,
+          fullText: info ? info.text : undefined,
+          verseNumber: info ? info.verse : undefined,
+          marks: v.marks,
         });
       });
     });
     return entries;
   };
 
+  // Live page count so the header can say what the share will actually be.
+  const pickedCount = picked.length;
+  const allCount = groups.reduce((s, g) => s + g.verses.length, 0);
+
   if (previewing) {
+    const whole = previewing === "study";
     return (
       <SharePreview
         C={C}
         appDark={dark}
-        kind="verses"
-        verses={buildEntries()}
+        kind={whole ? "study" : "verses"}
+        verses={buildEntries(whole)}
+        comp={
+          whole
+            ? buildStudySummary({
+                marks: relevant,
+                colorLabels,
+                orderOf: (r) => orderOf.get(r) || 0,
+                title: compileTitle,
+                synthesis: synthText,
+              })
+            : undefined
+        }
         syntheses={
           synthText ? [{ theme: "Synthesis", color: 6, text: synthText }] : []
         }
-        onClose={() => setPreviewing(false)}
+        marksToggle
+        onClose={() => setPreviewing(null)}
         onFlash={onFlash}
       />
     );
@@ -213,55 +273,70 @@ export default function ShareVerses({
         <div
           style={{
             display: "flex",
-            alignItems: "center",
+            flexDirection: "column",
             gap: "12px",
             padding: "16px 18px",
             borderBottom: "1px solid " + C.border,
           }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "16px", fontWeight: 700 }}>
-              Choose verses to share
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                Choose verses to share
+              </div>
+              <div style={{ fontSize: "12px", color: C.muted }}>
+                {/* No cap any more — a big pick becomes a PDF. Say which it
+                    will be, so "Create image" never surprises (SCR-16). */}
+                {pickedCount === 0
+                  ? allCount +
+                    (allCount === 1 ? " marked verse" : " marked verses") +
+                    " in this study"
+                  : pickedCount +
+                    " picked · shares as " +
+                    (pickedCount > 4 ? "a PDF" : "one card")}
+              </div>
             </div>
-            <div style={{ fontSize: "12px", color: C.muted }}>
-              {/* "4" is the verse cap for one card — say so, or it reads as a
-                  wrong group count (SCR-16). */}
-              Pick up to 4 verses · {picked.length} picked
-            </div>
+            <button
+              onClick={() => setView((v) => (v === "full" ? "focused" : "full"))}
+              title="Full shows the whole verse with your marks on it; Focused shows the marked phrases alone"
+              style={pill(C, false)}
+            >
+              {view === "full" ? "Full verses" : "Focused"}
+            </button>
+            <button onClick={onClose} aria-label="Cancel" style={pill(C, false)}>
+              Cancel
+            </button>
           </div>
-          <button
-            onClick={() => picked.length > 0 && setPreviewing(true)}
-            disabled={picked.length === 0}
-            style={{
-              background: picked.length ? C.text : C.soft,
-              color: picked.length ? C.bg : C.muted,
-              border: "none",
-              borderRadius: "999px",
-              padding: "9px 18px",
-              fontSize: "13.5px",
-              fontWeight: 700,
-              cursor: picked.length ? "pointer" : "default",
-              fontFamily: "inherit",
-            }}
-          >
-            Create image →
-          </button>
-          <button
-            onClick={onClose}
-            aria-label="Cancel"
-            style={{
-              background: "transparent",
-              border: "1px solid " + C.border,
-              color: C.text,
-              borderRadius: "999px",
-              padding: "9px 14px",
-              fontSize: "13px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            Cancel
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={() => picked.length > 0 && setPreviewing("verses")}
+              disabled={picked.length === 0}
+              style={{
+                background: picked.length ? C.text : C.soft,
+                color: picked.length ? C.bg : C.muted,
+                border: "none",
+                borderRadius: "999px",
+                padding: "9px 18px",
+                fontSize: "13.5px",
+                fontWeight: 700,
+                cursor: picked.length ? "pointer" : "default",
+                fontFamily: "inherit",
+              }}
+            >
+              Create image →
+            </button>
+            <button
+              onClick={() => allCount > 0 && setPreviewing("study")}
+              disabled={allCount === 0}
+              title="The summary card, then every marked verse"
+              style={{
+                ...pill(C, allCount === 0),
+                fontWeight: 600,
+              }}
+            >
+              Share whole study →
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
@@ -362,7 +437,6 @@ export default function ShareVerses({
                     {g.verses.map((v) => {
                       const key = keyFor(g.color, v.reference);
                       const on = picked.includes(key);
-                      const atCap = !on && picked.length >= 4;
                       const preview = v.phrases[0] ? v.phrases[0].text : "";
                       return (
                         <button
@@ -384,7 +458,6 @@ export default function ShareVerses({
                             cursor: "pointer",
                             color: C.text,
                             fontFamily: "inherit",
-                            opacity: atCap ? 0.45 : 1,
                           }}
                         >
                           <span

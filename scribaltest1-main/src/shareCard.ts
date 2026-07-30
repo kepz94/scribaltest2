@@ -6,6 +6,17 @@ export type ShareResult = "shared" | "downloaded" | "cancelled" | "failed";
 
 const W = 1080;
 const H = 1350;
+
+// How much a single card may carry. A card grows to fit its verses, so the
+// real limit is height, not count: past CARD_TARGET_H the card stops being a
+// card and becomes a scroll (five full verses measure ~2450px — a 1:2.3 sliver
+// that any feed scales down to nothing). H is the design height (4:5 portrait);
+// the target allows one verse of tolerance past it. MAX_PER_CARD is the
+// backstop for short focused snippets, which would otherwise pile up.
+export const MAX_PER_CARD = 6;
+export const CARD_TARGET_H = 1500;
+const CARD_MIN_H = 1080; // a light card is never shorter than this
+const CARD_MAX_H = 2600; // a heavy card is never taller than this
 const SERIF = '"Times New Roman", Georgia, "Hoefler Text", serif';
 const SANS = '-apple-system, "Segoe UI", Roboto, system-ui, sans-serif';
 
@@ -339,11 +350,25 @@ export interface VersesCardOpts {
 }
 
 export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
+  return buildVersesCard(o, false) as HTMLCanvasElement;
+}
+
+// The same layout pass, stopped before it draws: what height would these verses
+// make? The packer asks this before committing a verse to a page, so the fit
+// rule and the renderer can never disagree about what fits.
+export function versesCardHeight(o: VersesCardOpts): number {
+  return buildVersesCard(o, true) as number;
+}
+
+function buildVersesCard(
+  o: VersesCardOpts,
+  measureOnly: boolean
+): HTMLCanvasElement | number {
   const p = o.dark ? darkCard : lightCard;
   const { canvas, ctx } = newCanvas();
-  if (!ctx) return canvas;
+  if (!ctx) return measureOnly ? CARD_MIN_H : canvas;
 
-  const verses = o.verses.slice(0, 5);
+  const verses = o.verses.slice(0, MAX_PER_CARD);
   const showNotes = !!o.showNotes;
   const syntheses =
     o.showSynthesis && o.syntheses
@@ -357,8 +382,8 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const maxW = W - contentX - padX;
   const top = 172;
   const FOOTER_SPACE = 168; // room beneath the content for the brand footer
-  const MIN_H = 1080; // a light card is never shorter than this
-  const MAX_H = 2600; // a heavy card is never taller than this
+  const MIN_H = CARD_MIN_H;
+  const MAX_H = CARD_MAX_H;
 
   const refSize = 27;
   const themeSize = 21;
@@ -542,6 +567,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
     3: 42,
     4: 40,
     5: 38,
+    6: 36,
   };
   const maxSize = 64;
   const minSize = 22;
@@ -565,6 +591,7 @@ export function renderVersesCard(o: VersesCardOpts): HTMLCanvasElement {
   const cardH = Math.round(
     Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
   );
+  if (measureOnly) return cardH;
   canvas.height = cardH;
   paintBackground(ctx, p, cardH);
   paintMasthead(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark));
@@ -834,13 +861,32 @@ export interface CompCardOpts {
   dark: boolean;
 }
 
+const COMP_FOOTER_SPACE = 190; // room beneath the content for the brand footer
+
 export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
+  // Two passes: the first finds where the content actually ends, the second
+  // redraws it on a canvas trimmed to that height — a three-theme study used to
+  // ship with the bottom third of the card empty. The theme count from pass one
+  // carries into pass two, so trimming can never drop a theme it had room for.
+  const first = paintCompilationCard(o, H, -1);
+  const cardH = Math.round(
+    Math.max(CARD_MIN_H, Math.min(H, first.contentEnd + COMP_FOOTER_SPACE))
+  );
+  if (cardH >= H) return first.canvas;
+  return paintCompilationCard(o, cardH, first.drawn).canvas;
+}
+
+function paintCompilationCard(
+  o: CompCardOpts,
+  cardH: number,
+  themeLimit: number
+): { canvas: HTMLCanvasElement; contentEnd: number; drawn: number } {
   const p = o.dark ? darkCard : lightCard;
   const accent = o.themes.length ? penHex(o.themes[0].color, o.dark) : "#8b5cf6";
-  const { canvas, ctx } = newCanvas();
-  if (!ctx) return canvas;
+  const { canvas, ctx } = newCanvas(cardH);
+  if (!ctx) return { canvas, contentEnd: cardH, drawn: 0 };
 
-  paintBackground(ctx, p);
+  paintBackground(ctx, p, cardH);
   const padX = 110;
   const maxW = W - padX * 2;
   let y = 150;
@@ -977,10 +1023,12 @@ export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
   }
 
   ctx.textAlign = "left";
-  const footerTop = H - 190;
+  const footerTop = cardH - COMP_FOOTER_SPACE;
   let drawn = 0;
   for (const th of o.themes) {
-    if (y > footerTop - 70) break;
+    // Pass two draws exactly what pass one had room for; only pass one
+    // (themeLimit -1) decides how many themes fit.
+    if (themeLimit >= 0 ? drawn >= themeLimit : y > footerTop - 70) break;
     ctx.fillStyle = penHex(th.color, o.dark);
     ctx.beginPath();
     ctx.arc(padX + 11, y - 11, 12, 0, Math.PI * 2);
@@ -1010,10 +1058,11 @@ export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
     ctx.fillStyle = p.muted;
     ctx.font = "400 27px " + SANS;
     ctx.fillText("+ " + (o.themes.length - drawn) + " more themes", padX + 40, y);
+    y += 20;
   }
 
-  paintBrand(ctx, p, accent);
-  return canvas;
+  paintBrand(ctx, p, accent, cardH);
+  return { canvas, contentEnd: y, drawn };
 }
 
 // ---------- Preview + share helpers ----------

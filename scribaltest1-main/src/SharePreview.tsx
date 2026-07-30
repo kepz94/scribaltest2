@@ -1,19 +1,52 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   renderVerseCard,
   renderCompilationCard,
   renderVersesCard,
+  versesCardHeight,
   canvasURL,
   shareCanvas,
+  CARD_TARGET_H,
+  MAX_PER_CARD,
   CompTheme,
   VersesCardEntry,
   VersesSynthesis,
 } from "./shareCard";
 import { canvasesToPdf, sharePdf } from "./sharePdf";
 
-// One image card holds up to this many verses; a bigger selection becomes a
-// multi-page PDF whose pages are the same rendered cards.
-const CARD_MAX = 5;
+// Past this many pages the PDF is big enough to say so before it is built.
+const BIG_PDF_PAGES = 30;
+
+// How many verses fit on one card is a question of height, not count: a card
+// grows to fit its verses, and past CARD_TARGET_H it stops having shareable
+// proportions. So ask the renderer to measure each candidate before committing
+// it to a page. Packing runs BACKWARDS so any short page lands first rather
+// than leaving a single orphaned verse on the last one.
+export function packPages(
+  verses: VersesCardEntry[],
+  dark: boolean,
+  // Injectable so tests can pack against known heights — jsdom has no canvas,
+  // where the real renderer can only ever report the minimum.
+  measure: (vs: VersesCardEntry[]) => number = (vs) =>
+    versesCardHeight({ verses: vs, dark })
+): VersesCardEntry[][] {
+  const pages: VersesCardEntry[][] = [];
+  let page: VersesCardEntry[] = [];
+  for (let i = verses.length - 1; i >= 0; i--) {
+    const trial = [verses[i], ...page];
+    const fits = trial.length <= MAX_PER_CARD && measure(trial) <= CARD_TARGET_H;
+    // A single verse always gets its own page even when it overflows on its
+    // own — there is nothing left to split.
+    if (!fits && page.length > 0) {
+      pages.unshift(page);
+      page = [verses[i]];
+    } else {
+      page = trial;
+    }
+  }
+  if (page.length) pages.unshift(page);
+  return pages;
+}
 
 interface CC {
   bg: string;
@@ -45,7 +78,9 @@ interface CompData {
 interface Props {
   C: CC;
   appDark: boolean;
-  kind: "verse" | "compilation" | "verses";
+  // "study" is the whole thing: the summary card as a cover, then every marked
+  // verse behind it. It needs both comp and verses.
+  kind: "verse" | "compilation" | "verses" | "study";
   verse?: VerseData;
   comp?: CompData;
   verses?: VersesCardEntry[];
@@ -81,27 +116,68 @@ export default function SharePreview({
   const hasSynth = !!syntheses && syntheses.some((s) => s.text.trim());
 
   // The verses as the card should draw them (markings stripped when toggled off).
-  const effVerses = (): VersesCardEntry[] =>
-    (verses || []).map((v) =>
-      marksToggle && !showMarks ? { ...v, marks: [] } : v
-    );
-  // More verses than one card holds → a multi-page PDF of card-pages.
-  const pdfMode = kind === "verses" && !!verses && verses.length > CARD_MAX;
-  const pdfPages = (): VersesCardEntry[][] => {
-    const vs = effVerses();
-    const pages: VersesCardEntry[][] = [];
-    for (let i = 0; i < vs.length; i += CARD_MAX)
-      pages.push(vs.slice(i, i + CARD_MAX));
-    return pages;
+  const effVerses = useMemo(
+    (): VersesCardEntry[] =>
+      (verses || []).map((v) =>
+        marksToggle && !showMarks ? { ...v, marks: [] } : v
+      ),
+    [verses, marksToggle, showMarks]
+  );
+  // Measuring every candidate card is the expensive part, so pack once per
+  // change rather than on each render.
+  const pages = useMemo(
+    () =>
+      kind === "verses" || kind === "study"
+        ? packPages(effVerses, cardDark)
+        : [],
+    [kind, effVerses, cardDark]
+  );
+  // More than one card's worth → a multi-page PDF of card-pages. A whole study
+  // that outgrows one card gets the summary card as its cover page too.
+  const pdfMode = pages.length > 1;
+  const coverPage = kind === "study" && pdfMode && !!comp;
+  const pageCount = pages.length + (coverPage ? 1 : 0);
+
+  const buildCover = (): HTMLCanvasElement | null => {
+    if (!comp) return null;
+    const hero =
+      comp.candidates.length > 0
+        ? comp.candidates[
+            Math.max(0, Math.min(featured, comp.candidates.length - 1))
+          ]
+        : null;
+    return renderCompilationCard({
+      scopeTitle: comp.scopeTitle,
+      studyLabel: comp.studyLabel,
+      dateStr: comp.dateStr,
+      totalMarks: comp.totalMarks,
+      passages: comp.passages,
+      hero,
+      themes: comp.themes,
+      dark: cardDark,
+    });
   };
 
   const build = (): HTMLCanvasElement | null => {
     if (kind === "verse" && verse) {
       return renderVerseCard({ ...verse, dark: cardDark });
     }
+    if (kind === "study" && verses) {
+      // The preview shows what ships first: the cover if there is one,
+      // otherwise the single card this study fits on.
+      return coverPage
+        ? buildCover()
+        : renderVersesCard({
+            verses: pages[0] || [],
+            dark: cardDark,
+            showNotes,
+            showSynthesis,
+            syntheses,
+          });
+    }
     if (kind === "verses" && verses) {
       return renderVersesCard({
-        verses: pdfMode ? pdfPages()[0] : effVerses(),
+        verses: pages[0] || [],
         dark: cardDark,
         showNotes,
         showSynthesis,
@@ -109,22 +185,7 @@ export default function SharePreview({
       });
     }
     if (kind === "compilation" && comp) {
-      const hero =
-        comp.candidates.length > 0
-          ? comp.candidates[
-              Math.max(0, Math.min(featured, comp.candidates.length - 1))
-            ]
-          : null;
-      return renderCompilationCard({
-        scopeTitle: comp.scopeTitle,
-        studyLabel: comp.studyLabel,
-        dateStr: comp.dateStr,
-        totalMarks: comp.totalMarks,
-        passages: comp.passages,
-        hero,
-        themes: comp.themes,
-        dark: cardDark,
-      });
+      return buildCover();
     }
     return null;
   };
@@ -133,7 +194,7 @@ export default function SharePreview({
     const c = build();
     if (c) setUrl(canvasURL(c));
     // eslint: re-render preview when inputs change
-  }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks]);
+  }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks, pages, verses, syntheses]);
 
   const doShare = async () => {
     setBusy(true);
@@ -150,17 +211,30 @@ export default function SharePreview({
 
     if (pdfMode) {
       // Each page is the same rendered card; the whole set ships as one PDF.
-      const canvases = pdfPages().map((page) =>
-        renderVersesCard({
-          verses: page,
-          dark: cardDark,
-          showNotes,
-          showSynthesis: false,
-        })
-      );
+      // Yield between pages so a long study doesn't freeze the phone while it
+      // rasterizes — nothing is ever dropped to keep the count down.
+      const canvases: HTMLCanvasElement[] = [];
+      const cover = coverPage ? buildCover() : null;
+      if (cover) canvases.push(cover);
+      for (const page of pages) {
+        canvases.push(
+          renderVersesCard({
+            verses: page,
+            dark: cardDark,
+            showNotes,
+            showSynthesis: false,
+          })
+        );
+        if (pages.length > 4)
+          await new Promise((r) => setTimeout(r, 0));
+      }
       const blob = canvasesToPdf(canvases);
       const r = blob
-        ? await sharePdf(blob, "scribal-verses.pdf", caption)
+        ? await sharePdf(
+            blob,
+            kind === "study" ? "scribal-study.pdf" : "scribal-verses.pdf",
+            caption
+          )
         : "failed";
       setBusy(false);
       if (r === "downloaded") {
@@ -279,7 +353,7 @@ export default function SharePreview({
             boxShadow: "0 -2px 20px rgba(0,0,0,0.2)",
           }}
         >
-          {kind === "compilation" && candCount > 0 && (
+          {(kind === "compilation" || coverPage) && candCount > 0 && (
             <>
               <div
                 style={{
@@ -335,7 +409,7 @@ export default function SharePreview({
             </>
           )}
 
-          {kind === "verses" && (hasNotes || hasSynth) && (
+          {(kind === "verses" || kind === "study") && (hasNotes || hasSynth) && (
             <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
               {hasNotes && (
                 <button
@@ -356,7 +430,7 @@ export default function SharePreview({
             </div>
           )}
 
-          {kind === "verses" && marksToggle && (
+          {(kind === "verses" || kind === "study") && marksToggle && (
             <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
               <button
                 onClick={() => setShowMarks((s) => !s)}
@@ -378,9 +452,13 @@ export default function SharePreview({
                 marginBottom: "10px",
               }}
             >
-              {verses.length} verses \u00b7 shares as a PDF (
-              {Math.ceil(verses.length / CARD_MAX)} pages) \u2014 preview shows page
-              1
+              {verses.length} verses {"\u00b7"} shares as a PDF ({pageCount} pages)
+              {" \u2014 preview shows page 1"}
+              {pageCount > BIG_PDF_PAGES && (
+                <div style={{ marginTop: "4px" }}>
+                  That{"\u2019"}s a large file {"\u2014"} it may take a moment to build.
+                </div>
+              )}
             </div>
           )}
 
@@ -411,7 +489,13 @@ export default function SharePreview({
               marginBottom: "8px",
             }}
           >
-            {busy ? "Sharing…" : "Share"}
+            {busy
+              ? pdfMode
+                ? "Building PDF…"
+                : "Sharing…"
+              : pdfMode
+              ? "Create PDF (" + pageCount + " pages)"
+              : "Share"}
           </button>
           <button
             onClick={onClose}

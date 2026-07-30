@@ -26,7 +26,7 @@ import CompileBook, {
 } from "./components/CompileBook";
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
-import SharePreview from "./SharePreview";
+import SharePreview, { packPages } from "./SharePreview";
 import type { VersesCardEntry } from "./shareCard";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
@@ -2539,6 +2539,41 @@ export default function MobileApp() {
     return fm ? (fm.label as string).trim() : "";
   };
   const effLabel = (m: Mark) => chapterColorName(scopeOf(m.reference), m.color);
+
+  // The verses the send sheet is about to share, as share-card entries. Built
+  // here rather than in the button so the button's own label can ask the packer
+  // how many cards this actually makes instead of guessing from a count.
+  const sendShareEntries = useMemo((): VersesCardEntry[] => {
+    if (!sendRefs) return [];
+    const VI = verseByRef();
+    const bookMarks = getBook(activeBookId).marks;
+    return sendRefs.map((ref) => {
+      const info = VI.get(ref);
+      const vMarks = bookMarks.filter((m) => m.reference === ref);
+      const first = vMarks[0];
+      return {
+        reference: ref,
+        theme: first ? chapterColorName(scopeOf(ref), first.color) : "",
+        color: first ? first.color : 7,
+        phrases: vMarks.map((m) => ({ text: m.markedText, style: m.style })),
+        view: "full" as const,
+        fullText: info ? info.text : "",
+        verseNumber: info ? info.verse : undefined,
+        marks: vMarks.map((m) => ({
+          startIndex: m.startIndex,
+          endIndex: m.endIndex,
+          style: m.style,
+          color: m.color,
+        })),
+      };
+    });
+    // Deps are the inputs the entries are actually built from; the helpers
+    // (chapterColorName / scopeOf / getBook) all read from these.
+  }, [sendRefs, activeBookId, marks, scopedLabels]);
+  const sendSharePages = useMemo(
+    () => (sendShareEntries.length ? packPages(sendShareEntries, dark).length : 0),
+    [sendShareEntries, dark]
+  );
   // The current chapter's palette as a color→name map (for compile / verse views).
   const scopeLabels = (() => {
     const out: Record<number, string> = {};
@@ -8345,36 +8380,7 @@ export default function MobileApp() {
                 </button>
                 <button
                   onClick={() => {
-                    const refs = sendRefs;
-                    const VI = verseByRef();
-                    const bookMarks = getBook(activeBookId).marks;
-                    const entries: VersesCardEntry[] = refs.map((ref) => {
-                      const info = VI.get(ref);
-                      const vMarks = bookMarks.filter(
-                        (m) => m.reference === ref
-                      );
-                      const first = vMarks[0];
-                      return {
-                        reference: ref,
-                        theme: first
-                          ? chapterColorName(scopeOf(ref), first.color)
-                          : "",
-                        color: first ? first.color : 7,
-                        phrases: vMarks.map((m) => ({
-                          text: m.markedText,
-                          style: m.style,
-                        })),
-                        view: "full" as const,
-                        fullText: info ? info.text : "",
-                        verseNumber: info ? info.verse : undefined,
-                        marks: vMarks.map((m) => ({
-                          startIndex: m.startIndex,
-                          endIndex: m.endIndex,
-                          style: m.style,
-                          color: m.color,
-                        })),
-                      };
-                    });
+                    const entries = sendShareEntries;
                     setSendRefs(null);
                     setSendPicking(false);
                     setShareVerses(entries);
@@ -8394,8 +8400,8 @@ export default function MobileApp() {
                   }}
                 >
                   Share
-                  {sendRefs.length > 5
-                    ? " as a PDF"
+                  {sendSharePages > 1
+                    ? " as a PDF (" + sendSharePages + " pages)"
                     : sendRefs.length === 1
                     ? " as an image"
                     : " as an image card"}
