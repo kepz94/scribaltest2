@@ -9,6 +9,12 @@ const EMPTY_SCOPED_LABELS: Record<string, Record<number, string>> = {};
 interface StudyBook {
   id: string;
   name: string;
+  // SCR-93 book lock: a locked book cannot be deleted by ANY caller — the
+  // reducer refuses. ABSENCE MEANS LOCKED (locked is the default for new
+  // books and for every pre-update book), and only an explicit false is
+  // unlocked. Unlock lives in the Vault and auto-re-locks, so false is
+  // always short-lived.
+  locked?: boolean;
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
@@ -116,6 +122,7 @@ type Action =
   | { type: "createSession"; id: string; name: string; ephemeral?: boolean }
   | { type: "rename"; id: string; name: string }
   | { type: "deleteBook"; id: string }
+  | { type: "setBookLocked"; id: string; locked: boolean }
   | { type: "setLabel"; color: MarkColor; label: string }
   | { type: "setScopedLabel"; scope: string; color: MarkColor; label: string }
   | {
@@ -147,6 +154,25 @@ type Action =
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
+  | {
+      // SCR-94 copy phase: marks + per-verse notes + the scope entries
+      // (scopedLabels/scopedRoles) for whole chapters, non-destructively.
+      type: "copyChapters";
+      sourceId: string;
+      targetId: string;
+      refs: string[];
+      scopes: string[];
+    }
+  | {
+      // SCR-94 clear phase — dispatched only after the copy is VERIFIED in
+      // the target (the SCR-53 bar: copy → verify → clear, never one
+      // destructive move). keepScopeEntries leaves theme names in place.
+      type: "clearChapters";
+      bookId: string;
+      refs: string[];
+      scopes: string[];
+      keepScopeEntries: boolean;
+    }
   | {
       type: "moveStudyMarks";
       sourceId: string;
@@ -669,6 +695,98 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "copyChapters": {
+      const source = state.books[action.sourceId];
+      const target = state.books[action.targetId];
+      if (!source || !target || action.sourceId === action.targetId)
+        return state;
+      const refSet = new Set(action.refs);
+      const haveIds = new Set(target.marks.map((m) => m.id));
+      const addMarks = source.marks.filter(
+        (m) => refSet.has(m.reference) && !haveIds.has(m.id)
+      );
+      // Color meanings: keep the target's named labels, fill blanks from the
+      // source (same rule as absorb/moveStudyMarks).
+      const mergedLabels: Record<number, string> = { ...source.colorLabels };
+      Object.keys(target.colorLabels).forEach((k) => {
+        const kn = Number(k);
+        if ((target.colorLabels[kn] || "").trim() !== "")
+          mergedLabels[kn] = target.colorLabels[kn];
+      });
+      // Per-verse notes for the chapters' refs: keep target's, fill missing.
+      const mergedNotes: Record<string, string> = { ...target.notes };
+      Object.keys(source.notes).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (ref && refSet.has(ref) && !(k in mergedNotes))
+          mergedNotes[k] = source.notes[k];
+      });
+      // Scope entries (theme names + relational roles): the target adopts the
+      // source's entry for each transferred scope it doesn't already have.
+      const tgtSL = { ...(target.scopedLabels || {}) };
+      const tgtSR = { ...(target.scopedRoles || {}) };
+      const srcSL = source.scopedLabels || {};
+      const srcSR = source.scopedRoles || {};
+      action.scopes.forEach((s) => {
+        if (s in srcSL && !(s in tgtSL)) tgtSL[s] = srcSL[s];
+        if (s in srcSR && !(s in tgtSR)) tgtSR[s] = srcSR[s];
+      });
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.targetId]: {
+            ...target,
+            marks: [...target.marks, ...addMarks],
+            colorLabels: mergedLabels,
+            notes: mergedNotes,
+            scopedLabels: tgtSL,
+            scopedRoles: tgtSR,
+          },
+        },
+      };
+    }
+
+    case "clearChapters": {
+      const bk = state.books[action.bookId];
+      if (!bk) return state;
+      const refSet = new Set(action.refs);
+      const newMarks = bk.marks.filter((m) => !refSet.has(m.reference));
+      const newNotes: Record<string, string> = {};
+      Object.keys(bk.notes).forEach((k) => {
+        const ref = k.split("|").pop();
+        if (!(ref && refSet.has(ref))) newNotes[k] = bk.notes[k];
+      });
+      let sl = bk.scopedLabels || {};
+      let sr = bk.scopedRoles || {};
+      if (!action.keepScopeEntries) {
+        sl = { ...sl };
+        sr = { ...sr };
+        action.scopes.forEach((s) => {
+          delete sl[s];
+          delete sr[s];
+        });
+      }
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.bookId]: {
+            ...bk,
+            marks: newMarks,
+            // Tombstone the cleared marks so the removal syncs instead of an
+            // old copy resurrecting them on the next pull.
+            tombstones: diffTombstones(bk.marks, newMarks, bk.tombstones),
+            notes: newNotes,
+            scopedLabels: sl,
+            scopedRoles: sr,
+          },
+        },
+        // Undo history is per active book; a cross-book transfer invalidates it.
+        past: [],
+        future: [],
+      };
+    }
+
     case "absorb": {
       const target = state.books[action.targetId];
       const source = state.books[action.sourceId];
@@ -812,8 +930,30 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "setBookLocked": {
+      const bk = state.books[action.id];
+      // Master is permanently locked — the Vault control renders disabled
+      // for it, and the reducer refuses just in case.
+      if (!bk || action.id === "master") return state;
+      if ((bk.locked === false) === (action.locked === false)) return state;
+      return {
+        ...state,
+        books: {
+          ...state.books,
+          [action.id]: { ...bk, locked: action.locked !== false },
+        },
+      };
+    }
+
     case "deleteBook": {
-      if (action.id === "master" || !state.books[action.id]) return state;
+      const bkDel = state.books[action.id];
+      // SCR-93: a locked book (locked !== false — absence means locked) can
+      // never be deleted, no matter which surface asks. The only path is
+      // Vault → unlock → delete. Ephemeral walkthrough books are exempt:
+      // they never persist or sync, never appear in the Vault, and the tour
+      // must be able to clean its demo book up.
+      if (action.id === "master" || !bkDel) return state;
+      if (bkDel.locked !== false && !bkDel.ephemeral) return state;
       const books = { ...state.books };
       delete books[action.id];
       const order = state.order.filter((x) => x !== action.id);
@@ -901,6 +1041,9 @@ function reducer(state: State, action: Action): State {
           books[id] = {
             id,
             name: rb.name || (id === "master" ? "Master Book" : "Session"),
+            // SCR-93: adopt the remote lock state; anything but an explicit
+            // false lands locked (the default).
+            locked: rb.locked === false ? false : true,
             marks: cleanMarks,
             colorLabels: rColorLabels,
             notes: rb.notes && typeof rb.notes === "object" ? rb.notes : {},
@@ -1018,16 +1161,22 @@ function reducer(state: State, action: Action): State {
             scopedRoles[s] = r;
           }
         });
+        // SCR-93: locked wins on merge — the book stays unlocked only when
+        // BOTH copies are explicitly unlocked. Unlock is ephemeral (Vault
+        // auto-re-locks), so a remote copy re-locking mid-unlock is safe.
+        const lockChanged = local.locked === false && rb.locked !== false;
         if (
           marksChanged ||
           labelsChanged ||
           notesChanged ||
           tombChanged ||
           scopedChanged ||
-          rolesChanged
+          rolesChanged ||
+          lockChanged
         ) {
           books[id] = {
             ...local,
+            locked: lockChanged ? true : local.locked,
             marks: finalMarks,
             colorLabels: labels,
             notes,
@@ -1418,6 +1567,28 @@ export function useMarks() {
     []
   );
 
+  // SCR-94: the two halves of a verified chapter transfer.
+  const copyChapters = useCallback(
+    (sourceId: string, targetId: string, refs: string[], scopes: string[]) =>
+      dispatch({ type: "copyChapters", sourceId, targetId, refs, scopes }),
+    []
+  );
+  const clearChapters = useCallback(
+    (
+      bookId: string,
+      refs: string[],
+      scopes: string[],
+      keepScopeEntries: boolean
+    ) =>
+      dispatch({
+        type: "clearChapters",
+        bookId,
+        refs,
+        scopes,
+        keepScopeEntries,
+      }),
+    []
+  );
   const absorb = useCallback(
     (targetId: string, sourceId: string, refs: string[]) =>
       dispatch({ type: "absorb", targetId, sourceId, refs }),
@@ -1449,6 +1620,13 @@ export function useMarks() {
   );
   const renameBook = useCallback(
     (id: string, name: string) => dispatch({ type: "rename", id, name }),
+    []
+  );
+  // SCR-93: flip a book's lock. Only the Vault surfaces this; the reducer
+  // refuses it for master either way.
+  const setBookLocked = useCallback(
+    (id: string, locked: boolean) =>
+      dispatch({ type: "setBookLocked", id, locked }),
     []
   );
   const deleteBook = useCallback(
@@ -1548,6 +1726,8 @@ export function useMarks() {
       id,
       name: state.books[id].name,
       isMaster: id === "master",
+      // SCR-93: resolved lock state (absence means locked).
+      locked: state.books[id].locked !== false,
       markCount: state.books[id].marks.length,
       createdAt: state.books[id].createdAt,
       lastStudiedAt: state.books[id].lastStudiedAt,
@@ -1588,10 +1768,13 @@ export function useMarks() {
     setActiveBook,
     createSession,
     renameBook,
+    setBookLocked,
     deleteBook,
     getBook,
     ensureBook,
     absorb,
+    copyChapters,
+    clearChapters,
     moveStudyMarks,
     importStudy,
     freezeChapter,

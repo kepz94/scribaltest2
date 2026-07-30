@@ -987,9 +987,12 @@ export default function App() {
     setActiveBook,
     createSession,
     renameBook,
+    setBookLocked,
     deleteBook,
     getBook,
     absorb,
+    copyChapters,
+    clearChapters,
     moveStudyMarks,
     mergeRemoteBooks,
   } = useMarks();
@@ -1911,6 +1914,16 @@ export default function App() {
     localStorage.setItem("scribal_toolbar_orient", toolbarOrient);
   }, [toolbarOrient]);
 
+  // Toolbar size (the Aa dropdown's "Toolbar size" stepper): 0.6–1.2, 1 = the
+  // designed size. Device-local, like the reading-comfort settings. (SCR-90)
+  const [toolbarScale, setToolbarScale] = useState<number>(() => {
+    const s = parseFloat(localStorage.getItem("scribal_toolbar_scale") || "");
+    return Number.isFinite(s) ? Math.min(1.2, Math.max(0.6, s)) : 1;
+  });
+  useEffect(() => {
+    localStorage.setItem("scribal_toolbar_scale", toolbarScale.toFixed(2));
+  }, [toolbarScale]);
+
   const [backupOpen, setBackupOpen] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
   const [diag, setDiag] = useState("");
@@ -1982,6 +1995,30 @@ export default function App() {
       setMoveStudyNewName("");
     }
   }, [moveTarget]);
+
+  // ---- SCR-94: chapter-level mark transfer between books ----
+  // The Vault's "Transfer" opens this dialog for a source book; chapters are
+  // picked by their marks' scopes, independent of any study record.
+  const [transferBook, setTransferBook] = useState<string | null>(null);
+  const [transferSel, setTransferSel] = useState<string[]>([]);
+  const [transferDest, setTransferDest] = useState<string>("__new__");
+  const [transferNewName, setTransferNewName] = useState("");
+  // Entangled selection (chapter belongs to a study / link group):
+  // "all" = move everything the study/group covers; "copy" = copy just the
+  // selected chapters into a NEW session, source keeps its copy (Kepu's two
+  // options — the app never picks silently).
+  const [transferMode, setTransferMode] = useState<"all" | "copy">("all");
+  // Copy → VERIFY → clear (the SCR-53 bar): after the copy dispatch, this
+  // holds what must be verified in the target before the source is cleared.
+  const [transferPending, setTransferPending] = useState<null | {
+    sourceId: string;
+    targetId: string;
+    refs: string[];
+    scopes: string[];
+    chapters: string[];
+    expectIds: string[];
+    clear: boolean;
+  }>(null);
 
   // ScriptureNotes importer
   const [snImportOpen, setSnImportOpen] = useState(false);
@@ -2390,6 +2427,26 @@ export default function App() {
       if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
       return next;
     });
+  };
+
+  // Which tab's pill-tag book menu is open — the pill's book-name tag doubles
+  // as the panel's book switcher (SCR-89).
+  const [tagMenuTabId, setTagMenuTabId] = useState<string | null>(null);
+  // Re-point a chapter tab at another book, keeping its row position (same
+  // mechanics as updateActiveTab, but changing the book instead of the
+  // chapter). Study tabs and loose "Mark these" tabs keep their book.
+  const switchTabBook = (t: Tab, bookId: string) => {
+    if (t.studyId || t.looseRefs || bookId === t.bookId) return;
+    const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
+    setTabs((prev) => {
+      // That book+chapter already open in another tab → just switch to it.
+      if (prev.some((x) => x.id === newId && x.id !== t.id))
+        return prev.filter((x) => x.id !== t.id);
+      return prev.map((x) =>
+        x.id === t.id ? { ...x, id: newId, bookId } : x
+      );
+    });
+    setActiveTabId(newId);
   };
 
   const updateActiveTab = (volume: number, book: number, chapter: number) => {
@@ -4985,14 +5042,171 @@ export default function App() {
       setEditDraft("");
     }
   };
-  const handleDeleteBook = (b: { id: string; name: string }) => {
-    askConfirm({
-      title: "Delete this session?",
-      body:
-        'Delete "' + b.name + "\" and all of its markings? This can't be undone.",
-      onConfirm: () => deleteBook(b.id),
+  // SCR-93: deleting a book happens ONLY in the Vault (unlock → delete).
+  // The old book-menu delete entry is gone; unlock is ephemeral — leaving
+  // the Vault re-locks every book, so a lock can never be left open.
+  useEffect(() => {
+    if (mode === "vault") return;
+    books.forEach((b) => {
+      if (!b.isMaster && !b.locked) setBookLocked(b.id, true);
     });
+  }, [mode, books, setBookLocked]);
+
+  // ---- SCR-94: chapter-level mark transfer ----
+  // Everything a selection drags in when "move everything" is chosen: the
+  // full membership of any link group touched, plus every scope of any
+  // source-book study that covers a selected chapter.
+  const transferEntangled = (sel: string[]): string[] => {
+    if (!transferBook) return sel;
+    const out = new Set(sel);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      Array.from(out).forEach((ch) => {
+        const gid = chapterGroups[ch];
+        if (gid)
+          Object.keys(chapterGroups).forEach((c) => {
+            if (chapterGroups[c] === gid && !out.has(c)) {
+              out.add(c);
+              grew = true;
+            }
+          });
+        recordedStudies.forEach((s) => {
+          if (s.bookId !== transferBook || isStudyDeleted(s)) return;
+          const scopes =
+            s.type === "linked"
+              ? s.memberScopes && s.memberScopes.length
+                ? s.memberScopes
+                : Object.keys(chapterGroups).filter(
+                    (c) => chapterGroups[c] === s.scopeRef
+                  )
+              : [s.scopeRef];
+          if (scopes.includes(ch))
+            scopes.forEach((c) => {
+              if (!out.has(c)) {
+                out.add(c);
+                grew = true;
+              }
+            });
+        });
+      });
+    }
+    return Array.from(out);
   };
+
+  // Names of the studies / link groups the selection touches. Kepu's choice
+  // (move everything vs copy-to-new-session) appears whenever a study is
+  // involved AT ALL — including one that exactly matches the selection.
+  const transferInvolved = (sel: string[]): string[] => {
+    if (!transferBook) return [];
+    const names: string[] = [];
+    sel.forEach((ch) => {
+      if (chapterGroups[ch]) names.push("the linked group around " + ch);
+    });
+    recordedStudies.forEach((s) => {
+      if (s.bookId !== transferBook || isStudyDeleted(s)) return;
+      const scopes =
+        s.type === "linked"
+          ? s.memberScopes && s.memberScopes.length
+            ? s.memberScopes
+            : Object.keys(chapterGroups).filter(
+                (c) => chapterGroups[c] === s.scopeRef
+              )
+          : [s.scopeRef];
+      if (sel.some((c) => scopes.includes(c))) names.push("“" + s.name + "”");
+    });
+    return Array.from(new Set(names));
+  };
+
+  const runTransfer = () => {
+    if (!transferBook || transferSel.length === 0) return;
+    const src = getBook(transferBook);
+    const entangledAll = transferEntangled(transferSel);
+    const entangled = transferInvolved(transferSel).length > 0;
+    const isCopy = entangled && transferMode === "copy";
+    // "Move everything" carries the whole study/group; the copy option keeps
+    // the source whole and takes ONLY the selected chapters.
+    const chapters = entangled && !isCopy ? entangledAll : transferSel;
+    const chSet = new Set(chapters);
+    const inScope = src.marks.filter((m) => chSet.has(scopeOfRef(m.reference)));
+    const refs = Array.from(new Set(inScope.map((m) => m.reference)));
+    const expectIds = inScope.map((m) => m.id);
+    const scopes = Array.from(new Set(chapters.map((c) => resolveScope(c))));
+
+    // Destination. A copy ALWAYS lands in a new session (Kepu's option b),
+    // and a collision — the destination already marked in these chapters —
+    // FORCES a new session too (linkGatheredToChapter's rule: never block,
+    // never silently merge).
+    const newSession = () =>
+      createSession(
+        transferNewName.trim() || "Session · " + fmtShortDate(Date.now())
+      );
+    let targetId: string;
+    if (transferDest === "__new__" || isCopy) {
+      targetId = newSession();
+    } else {
+      const collide = getBook(transferDest).marks.some((m) =>
+        chSet.has(scopeOfRef(m.reference))
+      );
+      targetId = collide ? newSession() : transferDest;
+    }
+    copyChapters(transferBook, targetId, refs, scopes);
+    setTransferPending({
+      sourceId: transferBook,
+      targetId,
+      refs,
+      scopes,
+      chapters,
+      expectIds,
+      clear: !isCopy,
+    });
+    setTransferBook(null);
+    setTransferSel([]);
+    setTransferNewName("");
+  };
+
+  // VERIFY, then clear (SCR-53 bar): the source loses its copy only after
+  // every copied mark id is confirmed present in the target. Until then the
+  // copy is harmless and the source is untouched.
+  useEffect(() => {
+    if (!transferPending) return;
+    const t = transferPending;
+    const tgt = getBook(t.targetId);
+    const ids = new Set(tgt.marks.map((m) => m.id));
+    if (!t.expectIds.every((id) => ids.has(id))) return; // not settled yet
+    if (t.clear) {
+      clearChapters(t.sourceId, t.refs, t.scopes, false);
+      // Studies wholly covered by the moved chapters follow their marks, so
+      // no study row is left pointing at an emptied scope.
+      setRecordedStudies((prev) =>
+        prev.map((s) => {
+          if (s.bookId !== t.sourceId || isStudyDeleted(s)) return s;
+          const scopes =
+            s.type === "linked"
+              ? s.memberScopes && s.memberScopes.length
+                ? s.memberScopes
+                : Object.keys(chapterGroups).filter(
+                    (c) => chapterGroups[c] === s.scopeRef
+                  )
+              : [s.scopeRef];
+          return scopes.length && scopes.every((c) => t.chapters.includes(c))
+            ? { ...s, bookId: t.targetId }
+            : s;
+        })
+      );
+    }
+    setShareMsg(
+      (t.clear ? "Moved " : "Copied ") +
+        t.chapters.length +
+        (t.chapters.length === 1 ? " chapter" : " chapters") +
+        " to “" +
+        (getBook(t.targetId).name || "book") +
+        "”"
+    );
+    setTimeout(() => setShareMsg(null), 2600);
+    setTransferPending(null);
+    // eslint-disable-next-line
+  }, [transferPending, books]);
 
   // ---- header control helpers ----
   const vDivider = (
@@ -8194,6 +8408,7 @@ export default function App() {
                   onTagTap={openTagRef}
                   marks={getBook(st.bookId).marks}
                   showToolbar={true}
+                  toolbarScale={toolbarScale}
                   toolbarPos={toolbarPos}
                   onToolbarPos={setToolbarPos}
                   toolbarOrient={toolbarOrient}
@@ -9151,6 +9366,284 @@ export default function App() {
         </div>
       )}
 
+      {/* SCR-94: chapter-level mark transfer — the Vault's "Transfer" */}
+      {transferBook &&
+        (() => {
+          const src = getBook(transferBook);
+          const counts = new Map<string, number>();
+          src.marks.forEach((m) => {
+            const ch = scopeOfRef(m.reference);
+            counts.set(ch, (counts.get(ch) || 0) + 1);
+          });
+          const chapterList = Array.from(counts.keys()).sort((a, b) => {
+            const la = refLoc.get(a + ":1");
+            const lb = refLoc.get(b + ":1");
+            if (la && lb)
+              return (
+                la.volume - lb.volume ||
+                la.book - lb.book ||
+                la.chapter - lb.chapter
+              );
+            return a.localeCompare(b);
+          });
+          const entangledAll = transferEntangled(transferSel);
+          const extras = entangledAll.filter(
+            (c) => !transferSel.includes(c)
+          );
+          const involved = transferInvolved(transferSel);
+          const entangled = involved.length > 0;
+          const isCopy = entangled && transferMode === "copy";
+          const destBooks = books.filter((b) => b.id !== transferBook);
+          const effSet = new Set(
+            entangled && !isCopy ? entangledAll : transferSel
+          );
+          const collide =
+            !isCopy &&
+            transferDest !== "__new__" &&
+            destBooks.some((b) => b.id === transferDest) &&
+            getBook(transferDest).marks.some((m) =>
+              effSet.has(scopeOfRef(m.reference))
+            );
+          const needsName =
+            transferDest === "__new__" || isCopy || collide;
+          const toggleCh = (ch: string) =>
+            setTransferSel((p) =>
+              p.includes(ch) ? p.filter((x) => x !== ch) : [...p, ch]
+            );
+          const label: React.CSSProperties = {
+            fontSize: "11px",
+            textTransform: "uppercase",
+            letterSpacing: ".08em",
+            color: "var(--muted)",
+            margin: "14px 0 7px",
+          };
+          return (
+            <div
+              className="scribal-fade"
+              onClick={() => setTransferBook(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 390,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+              }}
+            >
+              <div
+                className="scribal-rise"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "440px",
+                  maxHeight: "calc(100vh - 80px)",
+                  overflowY: "auto",
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "14px",
+                  padding: "18px 20px",
+                }}
+              >
+                <div style={{ fontSize: "17px", fontWeight: 700, color: "var(--text)" }}>
+                  Transfer chapters
+                </div>
+                <div style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: 3 }}>
+                  Move this book’s markings — marks, notes, and theme names —
+                  chapter by chapter. From “{src.name}”.
+                </div>
+
+                <div style={label}>Chapters with marks</div>
+                {chapterList.length === 0 && (
+                  <div style={{ fontSize: "13px", color: "var(--muted)" }}>
+                    This book has no marked chapters.
+                  </div>
+                )}
+                {chapterList.map((ch) => (
+                  <label
+                    key={ch}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      padding: "6px 2px",
+                      fontSize: "13.5px",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={transferSel.includes(ch)}
+                      onChange={() => toggleCh(ch)}
+                    />
+                    <span style={{ flex: 1 }}>{ch}</span>
+                    <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                      {counts.get(ch)}{" "}
+                      {counts.get(ch) === 1 ? "mark" : "marks"}
+                    </span>
+                  </label>
+                ))}
+
+                {entangled && (
+                  <>
+                    <div style={label}>
+                      Part of a study or linked group
+                    </div>
+                    <div style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5, marginBottom: 8 }}>
+                      Your selection is part of {involved.join(" and ")}
+                      {extras.length
+                        ? " — moving everything also brings " +
+                          extras.join(", ")
+                        : ""}
+                      . Choose how to keep things whole:
+                    </div>
+                    {(
+                      [
+                        {
+                          v: "all" as const,
+                          t: "Move everything",
+                          d: "The whole study / linked group moves together.",
+                        },
+                        {
+                          v: "copy" as const,
+                          t: "Copy just my selection to a new session",
+                          d: "The source keeps its copy, so the study stays complete.",
+                        },
+                      ]
+                    ).map((o) => (
+                      <label
+                        key={o.v}
+                        style={{
+                          display: "flex",
+                          gap: 9,
+                          padding: "6px 2px",
+                          fontSize: "13px",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="transferMode"
+                          checked={transferMode === o.v}
+                          onChange={() => setTransferMode(o.v)}
+                        />
+                        <span>
+                          <span style={{ fontWeight: 600 }}>{o.t}</span>
+                          <span style={{ display: "block", fontSize: "11.5px", color: "var(--muted)" }}>
+                            {o.d}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </>
+                )}
+
+                <div style={label}>Destination</div>
+                {isCopy ? (
+                  <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                    A copy always lands in a new session.
+                  </div>
+                ) : (
+                  <select
+                    value={
+                      destBooks.some((b) => b.id === transferDest)
+                        ? transferDest
+                        : "__new__"
+                    }
+                    onChange={(e) => setTransferDest(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 10px",
+                      borderRadius: "9px",
+                      border: "1px solid var(--border)",
+                      background: "var(--soft)",
+                      color: "var(--text)",
+                      fontSize: "13.5px",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <option value="__new__">New session…</option>
+                    {destBooks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {collide && (
+                  <div style={{ fontSize: "12px", color: "var(--pen2)", marginTop: 7, lineHeight: 1.5 }}>
+                    That book already has marks in{" "}
+                    {chapterList.filter((c) => effSet.has(c)).join(", ")} — the
+                    transfer will go to a new session instead, so nothing
+                    merges silently.
+                  </div>
+                )}
+                {needsName && (
+                  <input
+                    value={transferNewName}
+                    onChange={(e) => setTransferNewName(e.target.value)}
+                    placeholder="New session name…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      marginTop: 8,
+                      padding: "9px 10px",
+                      borderRadius: "9px",
+                      border: "1px solid var(--border)",
+                      background: "var(--soft)",
+                      color: "var(--text)",
+                      fontSize: "13.5px",
+                      fontFamily: "inherit",
+                      outline: "none",
+                    }}
+                  />
+                )}
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+                  <button
+                    onClick={() => setTransferBook(null)}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text)",
+                      borderRadius: "9px",
+                      padding: "8px 15px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={runTransfer}
+                    disabled={transferSel.length === 0}
+                    style={{
+                      border: "none",
+                      background: ICON_ACCENT,
+                      color: "#fff",
+                      borderRadius: "9px",
+                      padding: "8px 16px",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: transferSel.length ? "pointer" : "default",
+                      opacity: transferSel.length ? 1 : 0.5,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {isCopy ? "Copy" : "Transfer"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {moveTarget && (
         <div
           className="scribal-fade"
@@ -9672,22 +10165,9 @@ export default function App() {
                             ✎
                           </button>
                         )}
-                        {!b.isMaster && !editing && (
-                          <button
-                            onClick={() => handleDeleteBook(b)}
-                            title="Delete session"
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              color: "var(--muted)",
-                              cursor: "pointer",
-                              fontSize: "12px",
-                              padding: "2px",
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
+                        {/* SCR-93: the delete entry is gone from this menu —
+                            deleting a book now lives only in the Vault
+                            (unlock → delete). */}
                       </div>
                     );
                   })}
@@ -10466,6 +10946,77 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* SCR-90: toolbar size — same stepper row as the reading
+                        controls; scales the floating marking toolbar. */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                        }}
+                      >
+                        Toolbar size
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            setToolbarScale((s) =>
+                              Math.max(0.6, +(s - 0.1).toFixed(2))
+                            )
+                          }
+                          disabled={toolbarScale <= 0.6}
+                          style={{
+                            ...readingStepBtn,
+                            fontSize: "16px",
+                            opacity: toolbarScale <= 0.6 ? 0.4 : 1,
+                            cursor: toolbarScale <= 0.6 ? "default" : "pointer",
+                          }}
+                        >
+                          −
+                        </button>
+                        <span
+                          style={{
+                            minWidth: "44px",
+                            textAlign: "center",
+                            fontSize: "12px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {Math.round(toolbarScale * 100)}%
+                        </span>
+                        <button
+                          onClick={() =>
+                            setToolbarScale((s) =>
+                              Math.min(1.2, +(s + 0.1).toFixed(2))
+                            )
+                          }
+                          disabled={toolbarScale >= 1.2}
+                          style={{
+                            ...readingStepBtn,
+                            fontSize: "16px",
+                            opacity: toolbarScale >= 1.2 ? 0.4 : 1,
+                            cursor: toolbarScale >= 1.2 ? "default" : "pointer",
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
                     {/* A labeled switch, like the other Aa rows — the old
                         full-width dark bar read as a primary CTA (SCR-21). */}
                     <div
@@ -10808,6 +11359,7 @@ export default function App() {
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "3px",
+                  position: "relative",
                   order: rowIndexOf(t.id),
                   cursor: orderedRowIds.length > 1 ? "grab" : "default",
                   opacity: draggingTab === t.id ? 0.4 : 1,
@@ -10816,7 +11368,21 @@ export default function App() {
                 }}
               >
                 <span
-                  title={tabBookLabel}
+                  title={
+                    t.studyId || t.looseRefs
+                      ? tabBookLabel
+                      : "Switch which book this panel reads and marks in"
+                  }
+                  onClick={
+                    t.studyId || t.looseRefs
+                      ? undefined
+                      : (e) => {
+                          e.stopPropagation();
+                          setTagMenuTabId((cur) =>
+                            cur === t.id ? null : t.id
+                          );
+                        }
+                  }
                   style={{
                     fontSize: "11px",
                     lineHeight: 1,
@@ -10826,10 +11392,85 @@ export default function App() {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    cursor: t.studyId || t.looseRefs ? "default" : "pointer",
                   }}
                 >
                   {tabBookLabel}
                 </span>
+                {/* SCR-89: the tag's book menu — pick a book to re-point this
+                    panel at it (chapter tabs only). */}
+                {tagMenuTabId === t.id && !t.studyId && !t.looseRefs && (
+                  <>
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTagMenuTabId(null);
+                      }}
+                      style={{ position: "fixed", inset: 0, zIndex: 44 }}
+                    />
+                    <div
+                      className="scribal-pop"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        position: "absolute",
+                        top: "16px",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: "240px",
+                        backgroundColor: "var(--panel)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+                        padding: "6px",
+                        zIndex: 45,
+                        textAlign: "left",
+                      }}
+                    >
+                      {[...books]
+                        .sort(
+                          (a, b) => (a.isMaster ? 0 : 1) - (b.isMaster ? 0 : 1)
+                        )
+                        .map((b) => (
+                          <div
+                            key={b.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagMenuTabId(null);
+                              switchTabBook(t, b.id);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "7px",
+                              padding: "8px 9px",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              fontSize: "12.5px",
+                              fontWeight: b.id === t.bookId ? 700 : 500,
+                              fontFamily: "system-ui, sans-serif",
+                              color: "var(--text)",
+                              background:
+                                b.id === t.bookId
+                                  ? "var(--soft)"
+                                  : "transparent",
+                            }}
+                          >
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {b.isMaster ? "Master" : b.name}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                )}
                 <div
                   onClick={() => {
                     setActiveTabId(t.id);
@@ -11557,6 +12198,10 @@ export default function App() {
                     onTagTap={openTagRef}
                     marks={getBook(t.bookId).marks}
                     showToolbar={isActive}
+                    toolbarBelowHeader={
+                      bookMenuOpen || backupOpen || readingOpen || colorOpen
+                    }
+                    toolbarScale={toolbarScale}
                     toolbarPos={toolbarPos}
                     onToolbarPos={setToolbarPos}
                     toolbarOrient={toolbarOrient}
@@ -12217,6 +12862,7 @@ export default function App() {
               onTagTap={openTagRef}
               marks={getBook(tableReader.bookId).marks}
               showToolbar
+              toolbarScale={toolbarScale}
               panelMode
               toolbarPos={toolbarPos}
               onToolbarPos={setToolbarPos}
@@ -12496,6 +13142,7 @@ export default function App() {
                   onMarkMany={routeMany}
                   marks={unionMarks}
                   showToolbar
+                  toolbarScale={toolbarScale}
                   toolbarPos={toolbarPos}
                   onToolbarPos={setToolbarPos}
                   toolbarOrient={toolbarOrient}
@@ -13036,6 +13683,7 @@ export default function App() {
               name: b.name,
               isMaster: !!b.isMaster,
               active: b.id === activeBookId,
+              locked: b.locked,
               rows: all.filter((r) => r.bookId === b.id),
             }));
           return (
@@ -13062,6 +13710,14 @@ export default function App() {
                   },
                 })
               }
+              onSetLocked={(id, locked) => setBookLocked(id, locked)}
+              onTransfer={(id) => {
+                setTransferBook(id);
+                setTransferSel([]);
+                setTransferDest("__new__");
+                setTransferMode("all");
+                setTransferNewName("");
+              }}
               onClose={() => setMode("read")}
             />
           );

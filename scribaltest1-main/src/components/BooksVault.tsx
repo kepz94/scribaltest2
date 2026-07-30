@@ -8,6 +8,9 @@ export type VaultBook = {
   name: string;
   isMaster: boolean;
   active: boolean;
+  // SCR-93: resolved lock state. Locked books cannot be deleted; the Vault
+  // is the only surface that unlocks (and unlock auto-re-locks on leaving).
+  locked: boolean;
   rows: StudyRow[];
 };
 
@@ -17,6 +20,10 @@ interface Props {
   onNewSession: () => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  // SCR-93: flip a book's lock (refused for master at the reducer).
+  onSetLocked: (id: string, locked: boolean) => void;
+  // SCR-94: open the chapter-transfer dialog for this book.
+  onTransfer: (id: string) => void;
   onClose: () => void;
 }
 
@@ -36,6 +43,8 @@ export default function BooksVault({
   onNewSession,
   onRename,
   onDelete,
+  onSetLocked,
+  onTransfer,
   onClose,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(
@@ -251,22 +260,51 @@ export default function BooksVault({
                   ) : (
                     <div style={{ display: "flex", gap: "6px" }}>
                       {!b.active && pill("Switch to", () => onSetActive(b.id), true)}
+                      {/* SCR-94: chapter-level mark transfer — any book can
+                          be a source, master included. */}
+                      {pill("Transfer", () => onTransfer(b.id))}
                       {!b.isMaster &&
                         pill("Rename", () => {
                           setDraft(b.name);
                           setEditingId(b.id);
                         })}
-                      {!b.isMaster &&
-                        pill("Delete", () => {
-                          if (
-                            window.confirm(
-                              'Delete "' +
-                                b.name +
-                                '"? Its marks and studies will be removed. This cannot be undone.'
+                      {/* SCR-93: the lock. Master shows it disabled (it is
+                          permanently locked); session books toggle here and
+                          NOWHERE else. Delete only exists while unlocked,
+                          so deleting is always: unlock, then delete. */}
+                      {b.isMaster ? (
+                        <span
+                          title="The master book is permanently locked"
+                          style={{
+                            border: "1px solid var(--border)",
+                            color: "var(--muted)",
+                            opacity: 0.55,
+                            borderRadius: "999px",
+                            padding: "4px 10px",
+                            fontSize: "11.5px",
+                            whiteSpace: "nowrap",
+                            userSelect: "none",
+                          }}
+                        >
+                          🔒 Locked
+                        </span>
+                      ) : b.locked ? (
+                        pill("🔒 Unlock", () => onSetLocked(b.id, false))
+                      ) : (
+                        <>
+                          {pill("🔓 Lock", () => onSetLocked(b.id, true), true)}
+                          {pill("Delete", () => {
+                            if (
+                              window.confirm(
+                                'Delete "' +
+                                  b.name +
+                                  '"? Its marks and studies will be removed. This cannot be undone.'
+                              )
                             )
-                          )
-                            onDelete(b.id);
-                        })}
+                              onDelete(b.id);
+                          })}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

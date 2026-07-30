@@ -71,6 +71,17 @@ interface VerseViewerProps {
   ) => void;
   marks: Mark[];
   showToolbar?: boolean;
+  // SCR-91: the app's sticky header (z 40) is a stacking context, so its menus
+  // can never paint above their own layer. While a header menu is open the
+  // parent sets this and the floating toolbar dips below 40 (menus win any
+  // overlap); the menu's backdrop then also covers the toolbar, so a click
+  // there closes the menu first. Only the root reading panel passes it — the
+  // overlay surfaces (mark panel, mark-added-verses) are their own stacking
+  // contexts that cover the header entirely.
+  toolbarBelowHeader?: boolean;
+  // SCR-90: 1 = the designed size; the Aa dropdown's "Toolbar size" scales the
+  // whole floating toolbar uniformly (transform, no layout math changes).
+  toolbarScale?: number;
   toolbarPos: { x: number; y: number };
   onToolbarPos: (
     v:
@@ -177,6 +188,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     onMarkMany,
     marks,
     showToolbar = true,
+    toolbarBelowHeader = false,
+    toolbarScale = 1,
     panelMode = false,
     fontScale = 1,
     lineScale = 1.85,
@@ -525,7 +538,8 @@ export default function VerseViewer(props: VerseViewerProps) {
     };
   }, [dragging]);
 
-  // Keep the toolbar on-screen when the window is resized.
+  // Keep the toolbar on-screen when the window is resized (or the SCR-90
+  // scale changes — a smaller/larger footprint can leave it off-screen).
   useEffect(() => {
     const onResize = () => {
       const el = toolbarRef.current;
@@ -533,9 +547,10 @@ export default function VerseViewer(props: VerseViewerProps) {
       const h = el ? el.offsetHeight : 56;
       setPos((p) => ({ x: clampX(p.x, w), y: clampY(p.y, h) }));
     };
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [toolbarScale]);
 
   const startDrag = (e: React.MouseEvent) => {
     dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
@@ -965,7 +980,10 @@ export default function VerseViewer(props: VerseViewerProps) {
           position: "fixed",
           left: pos.x,
           top: pos.y,
-          zIndex: 50,
+          // SCR-91: dip below the sticky header (z 40) while one of its menus
+          // is open — still above the reading content and in-viewer layers
+          // (20/30), so only the header layer wins.
+          zIndex: toolbarBelowHeader ? 35 : 50,
           display: "flex",
           flexDirection: isV ? "column" : "row",
           alignItems: "center",
@@ -979,6 +997,12 @@ export default function VerseViewer(props: VerseViewerProps) {
             : "0 6px 22px rgba(0,0,0,0.14)",
           userSelect: "none",
           transition: "box-shadow 0.15s",
+          // SCR-90: uniform scale from the Aa dropdown's "Toolbar size" —
+          // buttons, swatches, badges all scale together; 1 renders exactly
+          // as before.
+          transform:
+            toolbarScale === 1 ? undefined : "scale(" + toolbarScale + ")",
+          transformOrigin: "top left",
         }}
       >
         <div
