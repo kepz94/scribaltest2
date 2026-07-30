@@ -9,6 +9,8 @@ import {
   QuestionType,
   newCardId,
 } from "../hooks/useStudyTables";
+import { setVerseDragImage, setCardDragImage } from "../dragGhost";
+import { RichCardText, richToPlain } from "./RichNoteField";
 
 // The COLUMN surface of a Study Table: an ordered stack of cards you build by
 // hand. The order is the lesson. This component only renders + edits the column
@@ -27,7 +29,11 @@ interface StudyTableColumnProps {
   accent?: string;
   // Render one verse (its text + the marks from a chosen book) for a scripture
   // card. Supplied by the parent, which owns the marks; absent in previews.
-  renderVerse?: (reference: string, bookId?: string) => React.ReactNode;
+  renderVerse?: (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ) => React.ReactNode;
   // Picking "Scripture" from the chooser opens the verse panel at this insert
   // index instead of dropping an empty card. Absent → falls back to an empty card.
   onPickScripture?: (index: number) => void;
@@ -40,6 +46,52 @@ interface StudyTableColumnProps {
     refs: string[],
     bookId?: string
   ) => { color: number; label: string }[];
+  // One quiet line pinned to the bottom of the add-a-card chooser. The parent
+  // passes it only while the table is still Compiled · live (SCR-56): the deal
+  // line stating that this act makes the table yours.
+  chooserFootnote?: string;
+  // ---- The tray (SCR-57): cards waiting at the bottom of the column ----
+  // Waiting entries (verse arrivals, staged verses, cleared cards). When
+  // present, the tray pill renders after the column; it never auto-places.
+  shelf?: TableCard[];
+  // Place a waiting card. With an index (grab-drag to a drop line) it lands
+  // exactly there; without one (the Place button) the parent chooses — end of
+  // the card's theme section, else the end of the column.
+  onPlaceFromShelf?: (cardId: string, index?: number) => void;
+  // Delete a waiting VERSE from the study itself — topic tables only (Kepu's
+  // ruling); absent on chapter tables, where verses leave by unmarking. The
+  // tray confirms before calling this.
+  onDeleteFromShelf?: (cardId: string) => void;
+  // Verse text for tray row previews.
+  verseTextFor?: (reference: string) => string;
+  // ---- Outline mode (SCR-58 inverse): the desktop table wears Outline's UI.
+  // Dense rows at rest — theme headers, ref + verse text, accent lines —
+  // with edit-in-place on demand. Mobile never passes this.
+  outlineMode?: boolean;
+  // Compiled · live? Routes a compiled heading's rename to the theme label
+  // (via onRenameTheme) instead of the card text — renaming never promotes.
+  live?: boolean;
+  // Focused = only the marked fragments of each verse; full = whole verse.
+  verseView?: "full" | "focused";
+  renderVerseFocused?: (
+    reference: string,
+    bookId?: string,
+    themeColor?: MarkColor
+  ) => React.ReactNode;
+  onRenameTheme?: (color: MarkColor, name: string) => void;
+  // A verse drag from the in-table reader (VersePicker) in flight: the ref
+  // being dragged, or null. The column shows its drop lines and, on drop,
+  // calls onExternalDrop with the landing index — the caller inserts the
+  // scripture card there (Kepu, Jul 22: grab a verse, drag it straight in).
+  externalDragRef?: string | null;
+  onExternalDrop?: (index: number) => void;
+  // Tray dock (Kepu, Jul 22): true = the tray is a fixed right-side panel,
+  // always open while cards wait (desktop; the verse picker takes precedence —
+  // the caller passes false while it's open, falling back to the bottom pill).
+  // Absent/false = the sticky bottom pill (mobile, and the fallback).
+  traySide?: boolean;
+  // Top offset for the side panel (below the app's sticky header).
+  trayTop?: number;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -103,18 +155,17 @@ function Icon({ d, size = 16 }: { d: string; size?: number }) {
   );
 }
 
-// Textarea that grows to fit its content.
-function AutoTextarea({
+// One grid cell (SCR-73): a plain-text textarea that grows with its wrapped
+// content, so the grid never scrolls sideways and never clips a cell.
+function GridCell({
   value,
   onChange,
   placeholder,
-  autoFocus,
   style,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  autoFocus?: boolean;
   style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -122,32 +173,17 @@ function AutoTextarea({
     const el = ref.current;
     if (el) {
       el.style.height = "auto";
-      el.style.height = Math.max(el.scrollHeight, 22) + "px";
+      el.style.height = Math.max(el.scrollHeight, 34) + "px";
     }
   }, [value]);
   return (
     <textarea
       ref={ref}
       value={value}
-      autoFocus={autoFocus}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
       rows={1}
-      style={{
-        width: "100%",
-        border: 0,
-        outline: 0,
-        background: "transparent",
-        resize: "none",
-        overflow: "hidden",
-        display: "block",
-        color: "var(--text)",
-        fontFamily: SERIF,
-        fontSize: "16px",
-        lineHeight: 1.6,
-        padding: 0,
-        ...style,
-      }}
+      style={style}
     />
   );
 }
@@ -572,7 +608,48 @@ export default function StudyTableColumn({
   onPickScripture,
   onMarkCard,
   themesFor,
+  chooserFootnote,
+  shelf,
+  onPlaceFromShelf,
+  onDeleteFromShelf,
+  verseTextFor,
+  outlineMode,
+  externalDragRef,
+  onExternalDrop,
+  traySide,
+  trayTop,
+  live,
+  verseView = "full",
+  renderVerseFocused,
+  onRenameTheme,
 }: StudyTableColumnProps) {
+  // Outline mode: which card is expanded to its full editor, which row is
+  // hovered (tools), which is drag-reordering, which ✕ is armed.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [hoverRowId, setHoverRowId] = useState<string | null>(null);
+  const [rowDragId, setRowDragId] = useState<string | null>(null);
+  const [outlineConfirmId, setOutlineConfirmId] = useState<string | null>(
+    null
+  );
+  // Tray state: pill vs expanded, the delete being confirmed, and the
+  // grab-drag in flight (trayOverIndex = where the drop line sits).
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [trayConfirmId, setTrayConfirmId] = useState<string | null>(null);
+  const [trayDragId, setTrayDragId] = useState<string | null>(null);
+  const [trayOverIndex, setTrayOverIndex] = useState<number | null>(null);
+  // Any drag the column can receive: a tray card, a row reorder, or a verse
+  // from the in-table reader. One gate for drop lines / aprons, one executor
+  // for the drop itself.
+  const extDrag = !!(externalDragRef && onExternalDrop);
+  const dragInFlight = !!trayDragId || !!rowDragId || extDrag;
+  const performDrop = (at: number) => {
+    if (trayDragId && onPlaceFromShelf) onPlaceFromShelf(trayDragId, at);
+    else if (rowDragId) moveTo(rowDragId, at);
+    else if (extDrag) onExternalDrop!(at);
+    setTrayDragId(null);
+    setRowDragId(null);
+    setTrayOverIndex(null);
+  };
   // Which "+" gap has its type-chooser open (insert index), or null.
   const [openAt, setOpenAt] = useState<number | null>(null);
   // Newly inserted card to autofocus once.
@@ -586,7 +663,9 @@ export default function StudyTableColumn({
   const [dragId, setDragId] = useState<string | null>(null);
   // Button-driven merge (works everywhere, incl. touch): tap Merge on a card
   // to arm the mode, tap more scripture cards to add them, then hit "Merge
-  // cards" in the floating bar. Verses always combine in scripture order.
+  // cards" in the floating bar. Verses combine in COLUMN PLACEMENT order —
+  // the order is the lesson (Kepu, SCR-76); the opened card's chip arrows and
+  // Scripture-order sort rearrange them afterwards.
   const [mergeSel, setMergeSel] = useState<string[]>([]);
   const toggleMergeSel = (id: string) =>
     setMergeSel((p) =>
@@ -606,10 +685,11 @@ export default function StudyTableColumn({
     );
     if (chosen.length < 2) return;
     // The topmost selected card (column order) receives everyone's verses,
-    // ALWAYS re-sorted into scripture order.
+    // kept in the order the cards sat in the column (SCR-76: placement order,
+    // not scripture order — resort within the card afterwards if wanted).
     const target = chosen[0];
-    const merged = sortRefs(
-      Array.from(new Set(chosen.flatMap((c) => c.refs || [])))
+    const merged = Array.from(
+      new Set(chosen.flatMap((c) => c.refs || []))
     );
     const dropIds = new Set(chosen.slice(1).map((c) => c.id));
     onChange(
@@ -646,6 +726,16 @@ export default function StudyTableColumn({
   const patch = (id: string, p: Partial<TableCard>) =>
     onChange(cards.map((c) => (c.id === id ? { ...c, ...p } : c)));
   const remove = (id: string) => onChange(cards.filter((c) => c.id !== id));
+  // Move a card to an absolute index (outline-mode grab-drag reorder).
+  const moveTo = (id: string, index: number) => {
+    const from = cards.findIndex((c) => c.id === id);
+    if (from === -1) return;
+    const next = cards.slice();
+    const [c] = next.splice(from, 1);
+    const to = Math.max(0, Math.min(from < index ? index - 1 : index, next.length));
+    next.splice(to, 0, c);
+    onChange(next);
+  };
   const move = (id: string, dir: -1 | 1) => {
     const i = cards.findIndex((c) => c.id === id);
     const j = i + dir;
@@ -658,9 +748,19 @@ export default function StudyTableColumn({
     const card: TableCard = { id: newCardId(), kind };
     if (kind === "scripture") card.refs = [];
     if (kind === "clip") card.url = "";
+    // Grid (SCR-73): starts as 2 columns × 1 body row; the editor's column
+    // chips (1–3) and add-row control take it from there.
+    if (kind === "grid") {
+      card.gridHead = ["", ""];
+      card.gridRows = [["", ""]];
+    }
     onChange([...cards.slice(0, index), card, ...cards.slice(index)]);
     setOpenAt(null);
     setFocusId(card.id);
+    // In the dense (outline) rendering a fresh card must EXPAND to its
+    // editor — otherwise the insert lands as a collapsed one-line row and
+    // the user has to find and tap it again.
+    if (outlineMode) setEditingId(card.id);
   };
   // Choosing a type from the chooser. Scripture opens the verse panel (so verses
   // come in already carrying their marks) instead of dropping an empty card.
@@ -676,7 +776,13 @@ export default function StudyTableColumn({
   // ---------- shared bits ----------
   const cardBox: React.CSSProperties = {
     background: "var(--panel)",
-    border: "1px solid var(--border)",
+    // Longhand on purpose: scripture/grid cards override borderLeft with their
+    // accent bar, and React warns when a shorthand and a longhand for the same
+    // edge trade places across rerenders (the Focused/Full density flip).
+    borderTop: "1px solid var(--border)",
+    borderRight: "1px solid var(--border)",
+    borderBottom: "1px solid var(--border)",
+    borderLeft: "1px solid var(--border)",
     borderRadius: 13,
     padding: "14px 16px",
     boxShadow: "0 1px 2px rgba(60,50,30,.04), 0 8px 20px -14px rgba(60,50,30,.16)",
@@ -827,45 +933,72 @@ export default function StudyTableColumn({
   }
 
   // ---------- per-kind editors ----------
+  // Text-bearing kinds get ONE Done: the editor's, which saves AND collapses
+  // the card (Kepu, Jul 28 — never two Done buttons on one box). The outer
+  // collapse Done renders only for multi-part kinds (scripture, clip, grid).
+  const SINGLE_DONE_KINDS: CardKind[] = [
+    "heading",
+    "text",
+    "question",
+    "quote",
+    "note",
+  ];
+  const collapseCard = (id: string) =>
+    setEditingId((p) => (p === id ? null : p));
+
   const renderCard = (card: TableCard, index: number) => {
-    const focus = card.id === focusId;
+    // Open the rich editor immediately for a freshly inserted card AND for a
+    // card expanded from its dense row — a dense tap means "edit this", same
+    // as when the dense line opened a bare textarea.
+    const focus = card.id === focusId || (!!outlineMode && editingId === card.id);
+    const doneCollapse = outlineMode
+      ? () => collapseCard(card.id)
+      : undefined;
 
     if (card.kind === "heading") {
       return (
-        <input
-          value={card.text || ""}
-          autoFocus={focus}
-          placeholder="Name this section…"
-          onChange={(e) => patch(card.id, { text: e.target.value })}
+        <div
           style={{
-            display: "block",
-            width: "100%",
-            boxSizing: "border-box",
-            fontFamily: SANS,
-            fontSize: 15,
-            fontWeight: 700,
-            letterSpacing: ".12em",
-            textTransform: "uppercase",
-            color: "var(--text)",
-            background: "transparent",
-            border: 0,
             borderBottom: "1.5px dashed var(--border)",
-            outline: 0,
             padding: "6px 2px",
           }}
-        />
+        >
+          <RichCardText
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="Name this section…"
+            onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
+            accent={accent}
+            style={{
+              fontFamily: SANS,
+              fontSize: COARSE ? 16 : 15,
+              fontWeight: 700,
+              letterSpacing: ".12em",
+              textTransform: "uppercase",
+              color: "var(--text)",
+            }}
+          />
+        </div>
       );
     }
 
     if (card.kind === "text") {
       return (
         <div style={{ borderLeft: "2px solid " + softAccentBorder, paddingLeft: 15 }}>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="Write your thought…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontSize: 15.5, color: "var(--text)" }}
+            onDone={doneCollapse}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: COARSE ? 16 : 15.5,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
             <span style={{ ...kicker, margin: 0 }}>optional</span>
@@ -892,11 +1025,19 @@ export default function StudyTableColumn({
             padding: "13px 15px",
           }}
         >
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="Ask something…"
             onChange={(v) => patch(card.id, { text: v })}
+            onDone={doneCollapse}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: 16,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 11, alignItems: "center" }}>
             <span style={{ ...kicker, margin: 0 }}>type</span>
@@ -917,12 +1058,20 @@ export default function StudyTableColumn({
     if (card.kind === "quote") {
       return (
         <div style={{ borderLeft: "2px solid var(--pen3)", paddingLeft: 15 }}>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="The quote…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontStyle: "italic", fontSize: 15.5, color: "var(--text)" }}
+            onDone={doneCollapse}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontStyle: "italic",
+              fontSize: COARSE ? 16 : 15.5,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
           <input
             value={card.attribution || ""}
@@ -943,6 +1092,174 @@ export default function StudyTableColumn({
       );
     }
 
+    if (card.kind === "grid") {
+      // SCR-73: header row + up to 4 body rows, up to 3 columns, plain-text
+      // wrapped cells (never sideways scroll). The description OUTSIDE the
+      // grid is rich text like every other card text.
+      const head = card.gridHead && card.gridHead.length ? card.gridHead : ["", ""];
+      const cols = Math.max(1, Math.min(3, head.length));
+      const rows = (card.gridRows || []).map((r) => {
+        const c = r.slice(0, cols);
+        while (c.length < cols) c.push("");
+        return c;
+      });
+      const setCols = (n: number) => {
+        if (n === cols) return;
+        if (n < cols) {
+          const dropped =
+            head.slice(n).some((x) => (x || "").trim()) ||
+            rows.some((r) => r.slice(n).some((x) => (x || "").trim()));
+          if (
+            dropped &&
+            !window.confirm(
+              "Dropping to " +
+                n +
+                (n === 1 ? " column" : " columns") +
+                " deletes the text in the removed column" +
+                (cols - n > 1 ? "s" : "") +
+                ". Continue?"
+            )
+          )
+            return;
+        }
+        const resize = (r: string[]) => {
+          const c = r.slice(0, n);
+          while (c.length < n) c.push("");
+          return c;
+        };
+        patch(card.id, {
+          gridHead: resize(head),
+          gridRows: rows.map(resize),
+        });
+      };
+      const setCell = (row: number, col: number, v: string) => {
+        if (row < 0) {
+          const h = head.slice();
+          h[col] = v;
+          patch(card.id, { gridHead: h });
+        } else {
+          const rs = rows.map((r) => r.slice());
+          rs[row][col] = v;
+          patch(card.id, { gridRows: rs });
+        }
+      };
+      const cellBox: React.CSSProperties = {
+        width: "100%",
+        boxSizing: "border-box",
+        border: "1px solid var(--border)",
+        background: "var(--panel)",
+        color: "var(--text)",
+        fontFamily: SANS,
+        fontSize: COARSE ? 16 : 13,
+        lineHeight: 1.45,
+        padding: "7px 8px",
+        resize: "none",
+        outline: "none",
+        overflow: "hidden",
+        display: "block",
+        borderRadius: 0,
+      };
+      return (
+        <div style={{ ...cardBox, borderLeft: "3px solid var(--pen5)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ ...kicker, margin: 0, flex: 1 }}>
+              <Icon d={ICON.grid} size={12} /> Grid
+            </div>
+            <span style={{ ...kicker, margin: 0 }}>columns</span>
+            {[1, 2, 3].map((n) => (
+              <Chip
+                key={n}
+                on={cols === n}
+                label={String(n)}
+                onClick={() => setCols(n)}
+              />
+            ))}
+          </div>
+          <RichCardText
+            value={card.text || ""}
+            autoFocus={focus}
+            placeholder="What does this table hold?…"
+            onChange={(v) => patch(card.id, { text: v })}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontSize: COARSE ? 16 : 14.5,
+              lineHeight: 1.55,
+              color: "var(--muted)",
+            }}
+          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(" + cols + ", 1fr)",
+              gap: 0,
+              marginTop: 10,
+              border: "1px solid var(--border)",
+              borderRadius: 9,
+              overflow: "hidden",
+            }}
+          >
+            {head.map((h, ci) => (
+              <GridCell
+                key={"h" + ci}
+                value={h}
+                placeholder={"Header " + (ci + 1)}
+                onChange={(v) => setCell(-1, ci, v)}
+                style={{
+                  ...cellBox,
+                  fontWeight: 700,
+                  background: "var(--soft)",
+                }}
+              />
+            ))}
+            {rows.map((r, ri) =>
+              r.map((cell, ci) => (
+                <GridCell
+                  key={ri + "." + ci}
+                  value={cell}
+                  placeholder=""
+                  onChange={(v) => setCell(ri, ci, v)}
+                  style={cellBox}
+                />
+              ))
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 7, marginTop: 9, alignItems: "center" }}>
+            {rows.length < 4 ? (
+              <Chip
+                on={false}
+                label="+ row"
+                onClick={() =>
+                  patch(card.id, {
+                    gridRows: [...rows, Array.from({ length: cols }, () => "")],
+                  })
+                }
+              />
+            ) : (
+              <span style={{ ...kicker, margin: 0 }}>4 rows is the ceiling</span>
+            )}
+            {rows.length > 1 && (
+              <Chip
+                on={false}
+                label="− row"
+                onClick={() => {
+                  const last = rows[rows.length - 1];
+                  if (
+                    last.some((x) => (x || "").trim()) &&
+                    !window.confirm(
+                      "Remove the last row? Its text will be deleted."
+                    )
+                  )
+                    return;
+                  patch(card.id, { gridRows: rows.slice(0, -1) });
+                }}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
     if (card.kind === "note") {
       return (
         <div
@@ -957,12 +1274,20 @@ export default function StudyTableColumn({
           <div style={{ ...kicker, color: "var(--muted)" }}>
             <Icon d={ICON.note} size={12} /> Note to self · only you see this
           </div>
-          <AutoTextarea
+          <RichCardText
             value={card.text || ""}
             autoFocus={focus}
             placeholder="A private note — pause here, tell the story…"
             onChange={(v) => patch(card.id, { text: v })}
-            style={{ fontStyle: "italic", fontSize: 15, color: "var(--text)" }}
+            onDone={doneCollapse}
+            accent={accent}
+            style={{
+              fontFamily: SERIF,
+              fontStyle: "italic",
+              fontSize: COARSE ? 16 : 15,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
           />
         </div>
       );
@@ -970,6 +1295,10 @@ export default function StudyTableColumn({
 
     if (card.kind === "scripture") {
       const refs = card.refs || [];
+      // Passage only counts while the verses truly run unbroken (same chapter,
+      // sequential) — a stale flag on a since-merged card must not collapse
+      // the per-verse labels.
+      const asPassage = !!card.passage && isConsecutive(refs);
       return (
         <div style={{ ...cardBox, borderLeft: "3px solid " + accent }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -1014,6 +1343,72 @@ export default function StudyTableColumn({
                   : mergeSel.length
                   ? "Select"
                   : "Merge"}
+              </button>
+            )}
+            {refs.length > 1 && (
+              <button
+                onClick={() => {
+                  const sorted = sortRefs([...refs]);
+                  patch(card.id, {
+                    refs: sorted,
+                    passage: !!card.passage && isConsecutive(sorted),
+                  });
+                }}
+                title="Re-sort this card's verses into scripture order (merge keeps them in placement order)"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: COARSE ? 12.5 : 11.5,
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: COARSE ? "6px 13px" : "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon d="M3 6h13M3 12h9M3 18h5 M17 8v10 M14 15l3 3 3-3" size={11} />
+                Sort
+              </button>
+            )}
+            {refs.length > 1 && (
+              <button
+                onClick={() => {
+                  // One tap undoes a merge: one card per verse, in the card's
+                  // current order, standing where the merged card stood. The
+                  // first split keeps this card's id so nothing else re-keys.
+                  const split: TableCard[] = refs.map((r, k) => ({
+                    id: k === 0 ? card.id : newCardId(),
+                    kind: "scripture",
+                    refs: [r],
+                    bookId: card.bookId,
+                  }));
+                  onChange(
+                    cards.flatMap((c) => (c.id === card.id ? split : [c]))
+                  );
+                  setEditingId(null);
+                }}
+                title="Split this card back into one card per verse, in this order"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontFamily: SANS,
+                  fontSize: COARSE ? 12.5 : 11.5,
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: COARSE ? "6px 13px" : "3px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon d="M8 7h8M8 12h8M8 17h8 M4 5v14 M20 5v14" size={11} />
+                Unmerge
               </button>
             )}
             {onMarkCard && refs.length > 0 && (
@@ -1167,7 +1562,10 @@ export default function StudyTableColumn({
                 </div>
               );
             })()}
-          {refs.length > 1 && (
+          {/* Offered only when the verses actually form one unbroken passage —
+              on a cross-chapter merge "one passage" is meaningless and only
+              strips the per-verse labels. */}
+          {refs.length > 1 && isConsecutive(refs) && (
             <label
               style={{
                 display: "inline-flex",
@@ -1200,8 +1598,28 @@ export default function StudyTableColumn({
                 color: "var(--text)",
               }}
             >
-              {refs.map((r) => (
-                <Fragment key={r}>{renderVerse(r, card.bookId)}</Fragment>
+              {refs.map((r, vi) => (
+                <Fragment key={r}>
+                  {/* SCR-79: a merged card labels every verse with its own
+                      reference — without this the verses read as one
+                      continuous text. Passage mode stays continuous on
+                      purpose (that is what "Show as one passage" means). */}
+                  {refs.length > 1 && !asPassage && (
+                    <div
+                      style={{
+                        fontFamily: SANS,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: accent,
+                        marginTop: vi > 0 ? 12 : 0,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {r}
+                    </div>
+                  )}
+                  {renderVerse(r, card.bookId)}
+                </Fragment>
               ))}
             </div>
           ) : refs.length === 0 && onPickScripture ? (
@@ -1464,6 +1882,263 @@ export default function StudyTableColumn({
     );
   }
 
+  // ---- Outline-mode dense rows (SCR-58 inverse) ----
+  const compiledHeadingColor = (card: TableCard): MarkColor | null => {
+    if (card.kind !== "heading" || card.id.indexOf("compiled_h") !== 0)
+      return null;
+    const n = Number(card.id.slice("compiled_h".length));
+    return n >= 1 && n <= 10 ? (n as MarkColor) : null;
+  };
+  // The pen governing a card's section: the nearest heading above it, when
+  // that heading is a compiled theme. Verses under it render ONLY that color
+  // (Kepu, Jul 20 — red only shows in red); under an authored heading (or no
+  // heading) a verse wears all its colors as before.
+  const sectionColorAt = (i: number): MarkColor | undefined => {
+    for (let j = i; j >= 0; j--) {
+      if (cards[j].kind === "heading")
+        return compiledHeadingColor(cards[j]) ?? undefined;
+    }
+    return undefined;
+  };
+  const denseLine = (
+    card: TableCard,
+    color: string,
+    tag: string,
+    body: string,
+    extra?: string
+  ) => (
+    <div
+      onClick={() => setEditingId(card.id)}
+      style={{
+        borderLeft: "3px solid " + color,
+        padding: "4px 10px",
+        margin: "5px 0 2px 4px",
+        fontFamily: SANS,
+        fontSize: 13,
+        color: "var(--text)",
+        lineHeight: 1.55,
+        cursor: "pointer",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: ".06em",
+          color: "var(--muted)",
+          textTransform: "uppercase",
+          marginRight: 7,
+        }}
+      >
+        {tag}
+      </span>
+      {/* Dense rows are deliberately tight plain-text lines — rich card text
+          shows its words here; formatting appears in the full rendering. */}
+      {richToPlain(body) || (
+        <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          tap to write…
+        </span>
+      )}
+      {extra ? <span style={{ color: "var(--muted)" }}> — {extra}</span> : null}
+    </div>
+  );
+  const denseRow = (card: TableCard, themeColor?: MarkColor) => {
+    if (card.kind === "heading") {
+      const hc = compiledHeadingColor(card);
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            padding: "16px 0 6px",
+            borderBottom:
+              "2.5px solid " + (hc != null ? COLOR_MAP[hc] : "var(--border)"),
+            marginBottom: 4,
+          }}
+        >
+          {hc != null && (
+            <span
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                background: COLOR_MAP[hc],
+                flex: "0 0 auto",
+              }}
+            />
+          )}
+          <input
+            value={richToPlain(card.text || "")}
+            placeholder="Name this theme…"
+            onChange={(e) =>
+              // While Compiled · live a compiled heading IS the theme — its
+              // rename edits the theme's label and never promotes. Once the
+              // table is yours (or the heading is user-made) it's card text.
+              live && hc != null && onRenameTheme
+                ? onRenameTheme(hc, e.target.value)
+                : patch(card.id, { text: e.target.value })
+            }
+            style={{
+              border: "none",
+              outline: "none",
+              fontSize: 16,
+              fontWeight: 700,
+              background: "transparent",
+              flex: 1,
+              color: "var(--text)",
+              fontFamily: SANS,
+            }}
+          />
+        </div>
+      );
+    }
+    if (card.kind === "scripture") {
+      const refs = card.refs || [];
+      return (
+        <div style={{ padding: "6px 0 2px 4px" }}>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: accent,
+              marginBottom: 1,
+            }}
+          >
+            {refs.join(", ")}
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: 15, lineHeight: 1.65 }}>
+            {refs.map((r) => (
+              <div key={r} data-vref={r}>
+                {verseView === "focused" && renderVerseFocused
+                  ? renderVerseFocused(r, card.bookId, themeColor)
+                  : renderVerse
+                  ? renderVerse(r, card.bookId, themeColor)
+                  : r}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (card.kind === "text")
+      return denseLine(
+        card,
+        "#f0a24b",
+        "Your words" + (card.role ? " · " + card.role : ""),
+        card.text || ""
+      );
+    if (card.kind === "question")
+      return denseLine(
+        card,
+        "#8b5cf6",
+        "Question" + (card.qtype ? " · " + card.qtype : ""),
+        card.text || ""
+      );
+    if (card.kind === "quote")
+      return denseLine(card, "var(--muted)", "Quote", card.text || "", card.attribution);
+    if (card.kind === "note")
+      return denseLine(card, "var(--border)", "Note · private", card.text || "");
+    if (card.kind === "grid")
+      return denseLine(
+        card,
+        "var(--pen5)",
+        "Grid",
+        card.text || "",
+        (card.gridHead || []).length +
+          " × " +
+          ((card.gridRows || []).length + 1)
+      );
+    // clip: title + slice; the full player lives in the expanded editor.
+    return denseLine(
+      card,
+      accent,
+      "Clip",
+      card.clipTitle || card.url || "",
+      card.startSec != null ? "from " + card.startSec + "s" : undefined
+    );
+  };
+  const toolBtn: React.CSSProperties = {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    border: "1px solid var(--border)",
+    background: "var(--panel)",
+    color: "var(--muted)",
+    fontSize: 12,
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    lineHeight: 0,
+  };
+  const rowTools = (card: TableCard, i: number) => (
+    // Anchored to the card's own bounded surface (SCR-72) — the tools sit
+    // just inside its border, never floating in the gutter between cards.
+    <div
+      style={{
+        position: "absolute",
+        right: 6,
+        top: card.kind === "heading" ? 14 : 5,
+        display: "flex",
+        gap: 4,
+        zIndex: 5,
+      }}
+    >
+      {card.kind === "scripture" && (
+        <button
+          onClick={() => toggleMergeSel(card.id)}
+          title={
+            mergeSel.includes(card.id)
+              ? "Remove from the merge"
+              : mergeSel.length
+              ? "Add this card to the merge"
+              : "Merge cards — tap here, then tap the other cards to combine"
+          }
+          style={
+            mergeSel.includes(card.id)
+              ? { ...toolBtn, background: accent, borderColor: accent, color: "#fff" }
+              : toolBtn
+          }
+        >
+          ⧉
+        </button>
+      )}
+      {card.kind === "scripture" && (
+        <button
+          onClick={() => setEditingId(card.id)}
+          title="Edit this card"
+          style={toolBtn}
+        >
+          ✎
+        </button>
+      )}
+      <button
+        onClick={() => {
+          if (outlineConfirmId === card.id) {
+            setOutlineConfirmId(null);
+            remove(card.id);
+          } else {
+            setOutlineConfirmId(card.id);
+          }
+        }}
+        title={
+          outlineConfirmId === card.id
+            ? "Tap again to remove" +
+              (card.kind === "scripture" ? " — the verse waits in the tray" : "")
+            : "Remove"
+        }
+        style={
+          outlineConfirmId === card.id
+            ? { ...toolBtn, background: "#b3452f", borderColor: "#b3452f", color: "#fff" }
+            : toolBtn
+        }
+      >
+        ✕
+      </button>
+    </div>
+  );
+
   function Chooser({ index }: { index: number }) {
     return (
       <div style={{ paddingLeft: 4, margin: "4px 0" }}>
@@ -1535,15 +2210,55 @@ export default function StudyTableColumn({
               </button>
             ))}
           </div>
+          {chooserFootnote && (
+            <div
+              style={{
+                fontFamily: SANS,
+                fontSize: 11,
+                color: "var(--muted)",
+                fontStyle: "italic",
+                lineHeight: 1.5,
+                padding: "8px 6px 2px",
+              }}
+            >
+              {chooserFootnote}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   // ---------- empty state ----------
-  if (cards.length === 0) {
+  // Only when the tray is empty too — with cards waiting (e.g. right after
+  // Clear to tray), the main render carries the tray and its drop target.
+  if (cards.length === 0 && !(shelf && shelf.length)) {
     return (
-      <div style={{ maxWidth: 660, margin: "0 auto" }}>
+      <div
+        style={{
+          maxWidth: 660,
+          margin: "0 auto",
+          // Droppable like the main column (SCR-75): this early return used
+          // to carry no drag handlers at all, so a blank table refused every
+          // drop — the reader drag only "worked" via the tray detour.
+          borderRadius: 13,
+          border: dragInFlight
+            ? "2px dashed var(--muted)"
+            : "2px dashed transparent",
+        }}
+        onDragOver={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
+          }
+        }}
+        onDrop={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            performDrop(0);
+          }
+        }}
+      >
         {openAt === 0 ? (
           <Chooser index={0} />
         ) : (
@@ -1585,19 +2300,59 @@ export default function StudyTableColumn({
 
   // ---------- the column ----------
   return (
-    <div style={{ maxWidth: 660, margin: "0 auto", position: "relative" }}>
+    <div
+      style={{
+        maxWidth: 660,
+        margin: "0 auto",
+        position: "relative",
+        // While a drag is in flight the column grows a drop apron below its
+        // last card, so "just below the column" is droppable too — without
+        // it, the root ends at its content and drops there are refused.
+        paddingBottom: dragInFlight ? "26vh" : undefined,
+      }}
+      // Catch-all drop target: a tray card or an outline row dropped anywhere
+      // in the column that no inner target claimed lands at the END. Without
+      // this, an empty column offered only the thin empty-message strip as a
+      // droppable area — the first drag from the tray read as "not allowed"
+      // everywhere else (Kepu's bug, Jul 22). Inner targets preventDefault
+      // first, so `defaultPrevented` marks them as having claimed the event.
+      onDragOver={(e) => {
+        if (e.defaultPrevented) return;
+        if ((e.target as HTMLElement).closest("[data-tray]")) return;
+        if (dragInFlight) {
+          e.preventDefault();
+          // Reader/search grabbers start their drag with effectAllowed
+          // "copy" (the verse is copied in; the source keeps it). Answering
+          // "move" made the browser refuse the drop outright — the drop line
+          // showed but releasing did nothing (SCR-75). Internal tray/reorder
+          // drags stay moves.
+          e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
+          setTrayOverIndex(cards.length);
+        }
+      }}
+      onDrop={(e) => {
+        if (e.defaultPrevented) return;
+        if ((e.target as HTMLElement).closest("[data-tray]")) return;
+        if (dragInFlight) {
+          e.preventDefault();
+          performDrop(cards.length);
+        }
+      }}
+    >
       {/* spine */}
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          bottom: 34,
-          left: 13,
-          width: 1,
-          background: "var(--border)",
-          zIndex: 0,
-        }}
-      />
+      {!outlineMode && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            bottom: 34,
+            left: 13,
+            width: 1,
+            background: "var(--border)",
+            zIndex: 0,
+          }}
+        />
+      )}
       {cards.map((card, i) => {
         const isSection = card.kind === "heading";
         return (
@@ -1607,15 +2362,25 @@ export default function StudyTableColumn({
               onMouseEnter={() => setHoverGap(i)}
               onMouseLeave={() => setHoverGap((g) => (g === i ? null : g))}
             >
+              {dragInFlight && trayOverIndex === i && (
+                <div
+                  style={{
+                    height: 3,
+                    borderRadius: 2,
+                    background: accent,
+                    margin: "5px 2px",
+                  }}
+                />
+              )}
               <AddBar index={i} show={hoverGap === i} />
               {openAt === i && <Chooser index={i} />}
             </div>
             <div
               data-card-id={card.id}
               data-card-kind={card.kind}
-              draggable={card.kind === "scripture"}
+              draggable={!outlineMode && card.kind === "scripture"}
               onDragStart={(e) => {
-                if (card.kind !== "scripture") return;
+                if (outlineMode || card.kind !== "scripture") return;
                 setDragId(card.id);
                 e.dataTransfer.effectAllowed = "move";
                 try {
@@ -1627,6 +2392,21 @@ export default function StudyTableColumn({
                 setMergeOverId(null);
               }}
               onDragOver={(e) => {
+                // A tray card, an outline row, or a reader verse in hand:
+                // show the drop line above or below this card by pointer
+                // half — exact placement.
+                if (dragInFlight) {
+                  e.preventDefault();
+                  // "copy" for reader/search verses, "move" for internal
+                  // drags — a dropEffect outside the source's effectAllowed
+                  // makes the browser refuse the drop (SCR-75).
+                  e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setTrayOverIndex(
+                    e.clientY < r.top + r.height / 2 ? i : i + 1
+                  );
+                  return;
+                }
                 if (
                   dragId &&
                   dragId !== card.id &&
@@ -1641,6 +2421,11 @@ export default function StudyTableColumn({
                 setMergeOverId((p) => (p === card.id ? null : p))
               }
               onDrop={(e) => {
+                if (dragInFlight) {
+                  e.preventDefault();
+                  performDrop(trayOverIndex ?? i);
+                  return;
+                }
                 if (
                   dragId &&
                   dragId !== card.id &&
@@ -1661,13 +2446,24 @@ export default function StudyTableColumn({
                     }
                   : undefined
               }
+              onMouseEnter={
+                outlineMode ? () => setHoverRowId(card.id) : undefined
+              }
+              onMouseLeave={
+                outlineMode
+                  ? () => {
+                      setHoverRowId((p) => (p === card.id ? null : p));
+                      setOutlineConfirmId((p) => (p === card.id ? null : p));
+                    }
+                  : undefined
+              }
               style={{
                 position: "relative",
                 display: "grid",
-                gridTemplateColumns: "28px 1fr",
+                gridTemplateColumns: outlineMode ? "30px 1fr" : "28px 1fr",
                 alignItems: "start",
-                marginTop: isSection ? 18 : 0,
-                marginBottom: isSection ? 6 : 0,
+                marginTop: !outlineMode && isSection ? 18 : 0,
+                marginBottom: !outlineMode && isSection ? 6 : 0,
                 cursor:
                   mergeSel.length && card.kind === "scripture"
                     ? "pointer"
@@ -1692,31 +2488,658 @@ export default function StudyTableColumn({
                 transition: "opacity .12s ease",
               }}
             >
-              <span
+              {!outlineMode && (
+                <span
+                  style={{
+                    gridColumn: 1,
+                    justifySelf: "center",
+                    marginTop: 16,
+                    zIndex: 1,
+                    width: isSection ? 11 : 9,
+                    height: isSection ? 11 : 9,
+                    borderRadius: "50%",
+                    background: "var(--panel)",
+                    border: "1.5px solid " + (isSection ? "var(--pen3)" : "var(--border)"),
+                  }}
+                />
+              )}
+              {outlineMode && (
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    setRowDragId(card.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    try {
+                      e.dataTransfer.setData("text/plain", card.id);
+                    } catch {}
+                    // The card itself follows the pointer — the reading
+                    // panel grabber's ghost (Kepu, Jul 22).
+                    if (card.kind === "scripture") {
+                      setVerseDragImage(
+                        e,
+                        (card.refs || []).map((r) => ({
+                          reference: r,
+                          text: verseTextFor ? verseTextFor(r) : "",
+                        }))
+                      );
+                    } else {
+                      const title =
+                        card.kind === "heading"
+                          ? richToPlain(card.text || "") || "Heading"
+                          : (TYPES.find((t) => t.kind === card.kind) || {
+                              name: "Card",
+                            }).name;
+                      setCardDragImage(
+                        e,
+                        title,
+                        card.kind === "heading"
+                          ? undefined
+                          : card.kind === "clip"
+                          ? card.clipTitle || card.url
+                          : richToPlain(card.text || ""),
+                        accent
+                      );
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setRowDragId(null);
+                    setTrayOverIndex(null);
+                  }}
+                  title="Drag to move"
+                  style={{
+                    gridColumn: 1,
+                    justifySelf: "start",
+                    alignSelf: "start",
+                    marginTop: card.kind === "heading" ? 12 : 0,
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    border: "1px solid var(--grabBorder)",
+                    background: "var(--grabBg)",
+                    color: "var(--grabFg)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontFamily: "system-ui, sans-serif",
+                    cursor: "grab",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    zIndex: 4,
+                  }}
+                >
+                  ⠿
+                </span>
+              )}
+              <div
                 style={{
-                  gridColumn: 1,
-                  justifySelf: "center",
-                  marginTop: 16,
-                  zIndex: 1,
-                  width: isSection ? 11 : 9,
-                  height: isSection ? 11 : 9,
-                  borderRadius: "50%",
-                  background: "var(--panel)",
-                  border: "1.5px solid " + (isSection ? "var(--pen3)" : "var(--border)"),
+                  gridColumn: 2,
+                  minWidth: 0,
+                  padding: outlineMode ? "3px 0" : "8px 0 8px 4px",
                 }}
-              />
-              <div style={{ gridColumn: 2, minWidth: 0, padding: "8px 0 8px 4px" }}>
-                {renderCard(card, i)}
-                <Controls id={card.id} />
+              >
+                {outlineMode ? (
+                  // SCR-72: every card sits in its own bounded surface so its
+                  // controls — hover tools, the Controls row, the delete
+                  // confirm — visibly belong to THIS card and no other. While
+                  // a delete is armed the border turns red, identifying the
+                  // card that's about to go.
+                  <div
+                    style={{
+                      position: "relative",
+                      background: "var(--panel)",
+                      border:
+                        "1px solid " +
+                        (outlineConfirmId === card.id || confirmId === card.id
+                          ? "#b3452f"
+                          : "var(--border)"),
+                      boxShadow:
+                        outlineConfirmId === card.id || confirmId === card.id
+                          ? "0 0 0 3px rgba(179,69,47,.14)"
+                          : "0 1px 2px rgba(60,50,30,.04)",
+                      borderRadius: 11,
+                      padding:
+                        editingId === card.id ? "8px 12px 12px" : "2px 10px 4px",
+                      transition: "border-color .12s ease, box-shadow .12s ease",
+                    }}
+                  >
+                    {editingId !== card.id ? (
+                      denseRow(card, sectionColorAt(i))
+                    ) : (
+                      <>
+                        {!SINGLE_DONE_KINDS.includes(card.kind) && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            margin: "2px 0 4px",
+                          }}
+                        >
+                          <button
+                            onClick={() => setEditingId(null)}
+                            style={{
+                              fontFamily: SANS,
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: "#fff",
+                              background: accent,
+                              border: 0,
+                              borderRadius: 999,
+                              padding: "4px 14px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                        )}
+                        {renderCard(card, i)}
+                        <Controls id={card.id} />
+                      </>
+                    )}
+                    {editingId !== card.id &&
+                      hoverRowId === card.id &&
+                      rowTools(card, i)}
+                  </div>
+                ) : (
+                  <>
+                    {renderCard(card, i)}
+                    <Controls id={card.id} />
+                  </>
+                )}
               </div>
             </div>
           </Fragment>
         );
       })}
-      <div style={{ paddingLeft: 32 }}>
+      <div
+        style={{ paddingLeft: 32 }}
+        onDragOver={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            // Same rule as the other drop zones: match the source's
+            // effectAllowed or the browser refuses the drop (SCR-75).
+            e.dataTransfer.dropEffect = extDrag ? "copy" : "move";
+            setTrayOverIndex(cards.length);
+          }
+        }}
+        onDrop={(e) => {
+          if (dragInFlight) {
+            e.preventDefault();
+            performDrop(cards.length);
+          }
+        }}
+      >
+        {cards.length === 0 && shelf && shelf.length > 0 && (
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 12.5,
+              color: "var(--muted)",
+              fontStyle: "italic",
+              textAlign: "center",
+              padding: "26px 10px 6px",
+              // The whole empty column is a drop zone (root catch-all) —
+              // this area just makes that visible and easy to hit.
+              minHeight: dragInFlight ? "38vh" : undefined,
+              border: dragInFlight ? "2px dashed " + accent : undefined,
+              borderRadius: dragInFlight ? 14 : undefined,
+              display: dragInFlight ? "grid" : undefined,
+              placeItems: dragInFlight ? "center" : undefined,
+            }}
+          >
+            {dragInFlight
+              ? "Drop anywhere to place your first card."
+              : "Your table is empty — drag cards from the tray, or Place them, in any order."}
+          </div>
+        )}
+        {dragInFlight && trayOverIndex === cards.length && (
+          <div
+            style={{
+              height: 3,
+              borderRadius: 2,
+              background: accent,
+              margin: "5px 2px",
+            }}
+          />
+        )}
         <AddBar index={cards.length} big />
         {openAt === cards.length && <Chooser index={cards.length} />}
       </div>
+
+      {/* ---- The tray (SCR-57): waiting cards, grouped by theme. Never
+           auto-places — Place drops at the end of the theme's section, the
+           grab handle drags to an exact spot. ---- */}
+      {shelf && shelf.length > 0 && (() => {
+        const sideDock = !!traySide && !!outlineMode;
+        return (
+        <div
+          data-tray
+          style={
+            sideDock
+              ? {
+                  // Right-side dock (Kepu, Jul 22): a fixed panel while cards
+                  // wait, so the tray never covers the column it places into.
+                  position: "fixed",
+                  right: 14,
+                  top: trayTop || 90,
+                  width: 274,
+                  maxHeight: "calc(100vh - " + ((trayTop || 90) + 24) + "px)",
+                  overflowY: "auto",
+                  zIndex: 30,
+                }
+              : {
+                  paddingLeft: 32,
+                  marginTop: 16,
+                  // Docked: while the column is longer than the screen, the
+                  // tray rides the bottom edge until its natural spot scrolls
+                  // into view.
+                  position: "sticky",
+                  bottom: 12,
+                  zIndex: 30,
+                }
+          }
+        >
+          {!sideDock && !trayOpen ? (
+            <button
+              onClick={() => setTrayOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: SANS,
+                fontSize: 13,
+                fontWeight: 600,
+                color: accent,
+                background: "var(--panel)",
+                border: "1.5px solid " + accent,
+                borderRadius: 999,
+                padding: "8px 16px",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px " + softAccent,
+              }}
+            >
+              <span
+                style={{
+                  background: accent,
+                  color: "#fff",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "1px 8px",
+                }}
+              >
+                {shelf.length}
+              </span>
+              waiting
+              <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>
+                tap to place
+              </span>
+            </button>
+          ) : (
+            <div
+              style={{
+                background: "var(--panel)",
+                border: "1.5px solid " + accent,
+                borderRadius: 13,
+                overflow: "hidden",
+                maxWidth: sideDock ? undefined : 560,
+                boxShadow: "0 4px 14px " + softAccent,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 13px",
+                  borderBottom: "1px solid var(--border)",
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                }}
+              >
+                <span
+                  style={{
+                    background: accent,
+                    color: "#fff",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "1px 8px",
+                  }}
+                >
+                  {shelf.length}
+                </span>
+                <span style={{ fontWeight: 600, color: accent }}>waiting</span>
+                {sideDock ? (
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      color: "var(--muted)",
+                      fontSize: 10.5,
+                    }}
+                  >
+                    drag or Place
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setTrayOpen(false)}
+                    style={{
+                      marginLeft: "auto",
+                      border: 0,
+                      background: "transparent",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      lineHeight: 0,
+                    }}
+                  >
+                    <Icon d="M18 6 6 18 M6 6l12 12" size={14} />
+                  </button>
+                )}
+              </div>
+              {(() => {
+                // Group by theme (shelfGroup); authored cards from a clear
+                // fall under "Your cards", unlabeled verses under "Set aside".
+                const groups = new Map<string, TableCard[]>();
+                shelf.forEach((c) => {
+                  const key =
+                    c.kind !== "scripture"
+                      ? "__yours"
+                      : c.shelfGroup || "__aside";
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(c);
+                });
+                const label = (k: string) =>
+                  k === "__yours"
+                    ? "Your cards"
+                    : k === "__aside"
+                    ? "Set aside"
+                    : k;
+                return Array.from(groups.entries()).map(([k, list]) => (
+                  <div key={k}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 13px 2px",
+                        fontFamily: SANS,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {list[0].shelfGroupColor != null && k !== "__yours" && (
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 3,
+                            background:
+                              COLOR_MAP[list[0].shelfGroupColor as MarkColor] ||
+                              "var(--border)",
+                          }}
+                        />
+                      )}
+                      {label(k)}
+                    </div>
+                    {list.map((c) => {
+                      const ref = (c.refs || [])[0] || "";
+                      const preview =
+                        c.kind === "scripture"
+                          ? (verseTextFor ? verseTextFor(ref) : "")
+                          : richToPlain(c.text || "");
+                      const rowLabel =
+                        c.kind === "scripture"
+                          ? (c.refs || []).join(", ")
+                          : c.kind === "text"
+                          ? "Your words"
+                          : c.kind.charAt(0).toUpperCase() + c.kind.slice(1);
+                      if (trayConfirmId === c.id) {
+                        return (
+                          <div
+                            key={c.id}
+                            style={{
+                              // SCR-72: the confirm keeps the row's bounded
+                              // tile, turned red — no doubt which entry the
+                              // remove acts on.
+                              margin: "6px 8px",
+                              padding: "8px 11px",
+                              border: "1px solid #b3452f",
+                              boxShadow: "0 0 0 3px rgba(179,69,47,.14)",
+                              borderRadius: 9,
+                              background: "var(--panel)",
+                              fontFamily: SANS,
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                              Remove {rowLabel} from this study?
+                            </div>
+                            <div
+                              style={{
+                                color: "var(--muted)",
+                                fontSize: 11.5,
+                                marginBottom: 8,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              The verse leaves this study and its table. Its
+                              marks stay in the book.
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                justifyContent: "flex-end",
+                              }}
+                            >
+                              <button
+                                onClick={() => setTrayConfirmId(null)}
+                                style={{
+                                  fontFamily: SANS,
+                                  fontSize: 11.5,
+                                  border: "1px solid var(--border)",
+                                  background: "var(--panel)",
+                                  color: "var(--text)",
+                                  borderRadius: 7,
+                                  padding: "5px 12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTrayConfirmId(null);
+                                  onDeleteFromShelf && onDeleteFromShelf(c.id);
+                                }}
+                                style={{
+                                  fontFamily: SANS,
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  border: 0,
+                                  background: "#b3452f",
+                                  color: "#fff",
+                                  borderRadius: 7,
+                                  padding: "5px 12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      const rowColor =
+                        c.kind === "scripture" && c.shelfGroupColor != null
+                          ? COLOR_MAP[c.shelfGroupColor as MarkColor]
+                          : undefined;
+                      return (
+                        <div
+                          key={c.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setTrayDragId(c.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            try {
+                              e.dataTransfer.setData("text/plain", c.id);
+                            } catch {}
+                            // The card follows the pointer, as everywhere.
+                            if (c.kind === "scripture") {
+                              setVerseDragImage(
+                                e,
+                                (c.refs || []).map((r) => ({
+                                  reference: r,
+                                  text: verseTextFor ? verseTextFor(r) : "",
+                                }))
+                              );
+                            } else {
+                              setCardDragImage(
+                                e,
+                                rowLabel,
+                                richToPlain(c.text || ""),
+                                accent
+                              );
+                            }
+                          }}
+                          onDragEnd={() => {
+                            setTrayDragId(null);
+                            setTrayOverIndex(null);
+                          }}
+                          title="Drag to an exact spot"
+                          style={{
+                            // SCR-72: each waiting entry is its own bounded
+                            // tile, so its Place/remove controls read as its
+                            // own — same rule as the column's cards.
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            margin: "6px 8px",
+                            padding: sideDock ? "8px 10px" : "6px 11px",
+                            border: "1px solid var(--border)",
+                            borderRadius: 9,
+                            background: "var(--panel)",
+                            fontFamily: SANS,
+                            fontSize: 12,
+                            cursor: "grab",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: 6,
+                              border: "1px solid var(--grabBorder)",
+                              background: "var(--grabBg)",
+                              color: "var(--grabFg)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              fontFamily: "system-ui, sans-serif",
+                              flex: "0 0 auto",
+                              cursor: "grab",
+                              userSelect: "none",
+                              WebkitUserSelect: "none",
+                            }}
+                          >
+                            ⠿
+                          </span>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                minWidth: 0,
+                              }}
+                            >
+                              {rowColor && (
+                                <span
+                                  style={{
+                                    width: 9,
+                                    height: 9,
+                                    borderRadius: 3,
+                                    background: rowColor,
+                                    flex: "0 0 auto",
+                                  }}
+                                />
+                              )}
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  color: accent,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {rowLabel}
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                display: "block",
+                                color: "var(--muted)",
+                                fontFamily: SERIF,
+                                fontSize: 11.5,
+                                lineHeight: 1.45,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {preview}
+                            </span>
+                          </span>
+                          <button
+                            onClick={() =>
+                              onPlaceFromShelf && onPlaceFromShelf(c.id)
+                            }
+                            style={{
+                              fontFamily: SANS,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: "#fff",
+                              background: accent,
+                              border: 0,
+                              borderRadius: 999,
+                              padding: "4px 12px",
+                              cursor: "pointer",
+                              flex: "0 0 auto",
+                            }}
+                          >
+                            Place
+                          </button>
+                          {onDeleteFromShelf && c.kind === "scripture" && (
+                            <button
+                              onClick={() => setTrayConfirmId(c.id)}
+                              title="Remove from this study"
+                              style={{
+                                border: 0,
+                                background: "transparent",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                                lineHeight: 0,
+                                flex: "0 0 auto",
+                              }}
+                            >
+                              <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+        </div>
+        );
+      })()}
 
       {/* Floating merge bar: shown while cards are selected for merging */}
       {mergeSel.length > 0 && !mergePrompt && (
@@ -1845,7 +3268,8 @@ export default function StudyTableColumn({
                   }}
                 >
                   {total === 1 ? "1 verse combines" : total + " verses combine"}{" "}
-                  onto one card, in scripture order. They'll present together.
+                  onto one card, in the order the cards sit in the column.
+                  They'll present together.
                 </div>
                 <div
                   style={{
