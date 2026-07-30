@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TableCard, StudyTable } from "../hooks/useStudyTables";
-import { passageLabel } from "../data/verseIndex";
+import { passageLabel, isConsecutive } from "../data/verseIndex";
 import { ClipPlayer, parseYouTubeId, fmtTime } from "./StudyTableColumn";
+import { richToHtml, richToPlain } from "./RichNoteField";
 
 // Present mode: the table performed as a NOTEPAD. A dimmed desk backdrop with
 // one centered paper pad — bound top edge, faint ruled lines — and every beat
@@ -107,6 +108,12 @@ function hasContent(c: TableCard): boolean {
   if (c.kind === "heading") return true;
   if (c.kind === "scripture") return (c.refs || []).length > 0;
   if (c.kind === "clip") return !!(c.url && parseYouTubeId(c.url));
+  if (c.kind === "grid")
+    return !!(
+      (c.text || "").trim() ||
+      (c.gridHead || []).some((x) => (x || "").trim()) ||
+      (c.gridRows || []).some((r) => r.some((x) => (x || "").trim()))
+    );
   return !!(c.text || "").trim();
 }
 
@@ -164,7 +171,7 @@ export default function StudyTablePresent({
       if (!hasContent(c)) return;
       if (c.kind === "heading") {
         n += 1;
-        section = (c.text || "").trim() || "Section " + n;
+        section = richToPlain(c.text || "") || "Section " + n;
         out.push({ kind: "section", title: section, n });
       } else {
         out.push({ kind: "card", card: c, section });
@@ -419,7 +426,10 @@ export default function StudyTablePresent({
 
     if (c.kind === "scripture") {
       const refs = c.refs || [];
-      const label = c.passage ? passageLabel(refs) : refs.join("  ·  ");
+      // Passage only counts while the verses truly run unbroken — a stale
+      // passage flag on a since-merged card must not collapse the rendering.
+      const asPassage = !!c.passage && isConsecutive(refs);
+      const label = asPassage ? passageLabel(refs) : refs.join("  ·  ");
       const themes = themesFor ? themesFor(refs, c.bookId) : [];
       return (
         <div>
@@ -478,8 +488,28 @@ export default function StudyTablePresent({
               color: P.text,
             }}
           >
-            {refs.map((r) => (
-              <div key={r}>{renderVerse(r, c.bookId)}</div>
+            {refs.map((r, vi) => (
+              <div
+                key={r}
+                style={{ marginTop: vi > 0 && !asPassage ? 20 : 0 }}
+              >
+                {/* SCR-79: merged verses present labeled and separated, same
+                    as the column view; a true passage reads continuously. */}
+                {refs.length > 1 && !asPassage && (
+                  <div
+                    style={{
+                      fontFamily: SANS,
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      color: accent,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {r}
+                  </div>
+                )}
+                {renderVerse(r, c.bookId)}
+              </div>
             ))}
           </div>
         </div>
@@ -495,16 +525,15 @@ export default function StudyTablePresent({
             </div>
           )}
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(20px, 3.4vw, 26px)",
               lineHeight: 1.6,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
-          >
-            {c.text}
-          </div>
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
         </div>
       );
     }
@@ -516,16 +545,15 @@ export default function StudyTablePresent({
             {c.qtype ? c.qtype + " · question" : "Question"}
           </div>
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(22px, 3.8vw, 29px)",
               lineHeight: 1.45,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
-          >
-            {c.text}
-          </div>
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
           <div
             aria-hidden
             style={{
@@ -546,12 +574,14 @@ export default function StudyTablePresent({
         <div style={{ padding: "14px 0" }}>
           <div
             style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 6,
               fontFamily: SERIF,
               fontSize: "clamp(20px, 3.4vw, 25px)",
               fontStyle: "italic",
               lineHeight: 1.62,
               color: P.text,
-              whiteSpace: "pre-wrap",
             }}
           >
             <span
@@ -559,16 +589,19 @@ export default function StudyTablePresent({
               style={{
                 fontStyle: "normal",
                 fontSize: "1.6em",
-                lineHeight: 0,
-                verticalAlign: "-0.28em",
+                lineHeight: 1,
                 color: accent,
                 opacity: 0.55,
-                marginRight: 6,
+                flexShrink: 0,
               }}
             >
               “
             </span>
-            {(c.text || "").trim()}
+            <div
+              className="scribal-rich-view"
+              style={{ flex: 1 }}
+              dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+            />
           </div>
           {c.attribution && (
             <div
@@ -594,16 +627,78 @@ export default function StudyTablePresent({
             Note to self · only you see this
           </div>
           <div
+            className="scribal-rich-view"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(18px, 3vw, 22px)",
               fontStyle: "italic",
               lineHeight: 1.65,
               color: P.muted,
-              whiteSpace: "pre-wrap",
+            }}
+            dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+          />
+        </div>
+      );
+    }
+
+    if (c.kind === "grid") {
+      // SCR-73: the WHOLE grid at once (Kepu's rule — no row-by-row reveal),
+      // description above it as rich HTML. Cells wrap; never sideways scroll.
+      const head = c.gridHead || [];
+      const cols = Math.max(1, Math.min(3, head.length || 1));
+      const rows = (c.gridRows || []).map((r) => {
+        const cells = r.slice(0, cols);
+        while (cells.length < cols) cells.push("");
+        return cells;
+      });
+      const cell: React.CSSProperties = {
+        border: "1px solid " + P.faint,
+        padding: "10px 12px",
+        fontFamily: SANS,
+        fontSize: "clamp(14px, 2vw, 17px)",
+        lineHeight: 1.5,
+        color: P.text,
+        overflowWrap: "anywhere",
+      };
+      return (
+        <div style={{ padding: "14px 0" }}>
+          <div style={{ ...kicker, marginBottom: 12 }}>Grid</div>
+          {(c.text || "").trim() && (
+            <div
+              className="scribal-rich-view"
+              style={{
+                fontFamily: SERIF,
+                fontSize: "clamp(16px, 2.4vw, 20px)",
+                lineHeight: 1.6,
+                color: P.muted,
+                marginBottom: 14,
+              }}
+              dangerouslySetInnerHTML={{ __html: richToHtml(c.text || "") }}
+            />
+          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(" + cols + ", 1fr)",
+              borderRadius: 10,
+              overflow: "hidden",
             }}
           >
-            {c.text}
+            {head.map((h, i) => (
+              <div
+                key={"h" + i}
+                style={{ ...cell, fontWeight: 800, background: "rgba(127,127,127,.12)" }}
+              >
+                {h}
+              </div>
+            ))}
+            {rows.map((r, ri) =>
+              r.map((x, ci) => (
+                <div key={ri + "." + ci} style={cell}>
+                  {x}
+                </div>
+              ))
+            )}
           </div>
         </div>
       );
