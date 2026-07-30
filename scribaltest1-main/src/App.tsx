@@ -11132,7 +11132,11 @@ export default function App() {
           reader, mark panels, and the mark-added-verses screen bring it back.
           The z-index steps just above whichever marking overlay is open while
           staying below the 380+ dialogs, matching where the toolbar painted
-          when each surface rendered its own. */}
+          when each surface rendered its own. SCR-88: the sticky header (z 40)
+          is a stacking context, so its menus can never paint above their own
+          layer — while one is open the toolbar dips below 40 (menus win any
+          overlap); the marking overlays (430/1250) cover the header, so they
+          keep priority. */}
       {!gateOpen &&
         (mode === "read" ||
           tableDockMarking ||
@@ -11150,7 +11154,15 @@ export default function App() {
             onOrient={setToolbarOrient}
             scale={toolbarScale}
             zIndex={
-              markVersesStudyId ? 1250 : markPanel ? 430 : tableDockMarking ? 70 : 60
+              markVersesStudyId
+                ? 1250
+                : markPanel
+                ? 430
+                : bookMenuOpen || backupOpen || readingOpen || colorOpen
+                ? 35
+                : tableDockMarking
+                ? 70
+                : 60
             }
           />
         )}
