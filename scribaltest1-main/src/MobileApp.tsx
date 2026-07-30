@@ -1249,10 +1249,13 @@ export default function MobileApp() {
     setNewTableFlow(null);
     setTablesHomeOpen(false);
     setStudiesOpen(false);
+    // Attach the study, exactly as desktop import does — the link is what
+    // lets the table rebuild the study's outline and receive later marks.
     const id = createStudyTable(
       meta.name.trim() || "Untitled",
       undefined,
-      meta.bookId
+      meta.bookId,
+      meta.id
     );
     const cards: TableCard[] = [];
     const covered = new Set<string>();

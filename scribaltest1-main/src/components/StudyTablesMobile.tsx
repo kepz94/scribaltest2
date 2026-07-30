@@ -175,6 +175,31 @@ export default function StudyTablesMobile({
     });
     setPendingIndex(idx + 1);
   };
+  // The column's own tray (the "N waiting" pill) places a card either at an
+  // exact drop index or, with none, at the end of the column. It shares the
+  // shelf with the picker's Selected drawer — same cards, two ways in.
+  const placeFromShelf = (cardId: string, index?: number) => {
+    const shelf = table.shelf || [];
+    const card = shelf.find((c) => c.id === cardId);
+    if (!card) return;
+    const at =
+      index !== undefined
+        ? Math.max(0, Math.min(index, table.cards.length))
+        : table.cards.length;
+    // Placement is what turns an arrival into an authored card — the
+    // tray-only fields go with it.
+    const placed = { ...card };
+    delete placed.shelfSource;
+    delete placed.arrivedAt;
+    updateTable(table.id, {
+      cards: [
+        ...table.cards.slice(0, at),
+        placed,
+        ...table.cards.slice(at),
+      ],
+      shelf: shelf.filter((c) => c.id !== cardId),
+    });
+  };
   const shelfAllToColumn = () => {
     const shelf = table.shelf || [];
     if (shelf.length === 0) return;
@@ -340,6 +365,9 @@ export default function StudyTablesMobile({
           onPickScripture={openPanelAt}
           onMarkCard={onMarkCard}
           themesFor={cardThemes}
+          shelf={table.shelf || []}
+          onPlaceFromShelf={placeFromShelf}
+          verseTextFor={(reference) => getVerse(reference)?.text || ""}
         />
       </div>
 
