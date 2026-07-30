@@ -11,6 +11,8 @@ import {
   HIGHLIGHT_MAP,
 } from "./types";
 import MobileVerse from "./MobileVerse";
+import { captureVerseAnchor, restoreVerseAnchor } from "./scrollAnchor";
+import type { VerseAnchor } from "./scrollAnchor";
 import { isSermonsVolume, sermonLabel } from "./sermons";
 import DefinitionView from "./components/DefinitionView";
 import { lookup as websterLookup, loadWebster, definitionForKey, WebsterResult } from "./webster";
@@ -1766,6 +1768,30 @@ export default function MobileApp() {
     setSendMode(false);
     setSendSel(new Set());
   }, [activeTabId, loc.v, loc.b, loc.c]);
+  // SCR-86: send/remove mode restructures every verse row (checkbox inset +
+  // per-row margins), re-heighting the whole column while scrollTop stays
+  // put — the verse being read slides away. Before each toggle, capture the
+  // topmost visible verse in the surface's own scroller (the chapter reader's
+  // scrollRef or the keyword-study screen's kwStudyScrollRef); restore its
+  // offset in a layout effect before paint. Direct scrollTop math only —
+  // overflow-anchor is not supported in iOS Safari.
+  const kwStudyScrollRef = useRef<HTMLDivElement>(null);
+  const pendingAnchor = useRef<{
+    el: HTMLElement;
+    anchor: VerseAnchor | null;
+  } | null>(null);
+  const anchorModeToggle = (el: HTMLElement | null) => {
+    pendingAnchor.current = el
+      ? { el, anchor: captureVerseAnchor(el) }
+      : null;
+  };
+  useLayoutEffect(() => {
+    const p = pendingAnchor.current;
+    if (p) {
+      restoreVerseAnchor(p.el, p.anchor);
+      pendingAnchor.current = null;
+    }
+  }, [sendMode, removeMode]);
   const prevBookForStudy = useRef<string | null>(null);
   // When set, the search screen is open to ADD verses to this keyword study
   // (its current verses are pre-selected); confirming merges the selection back.
@@ -4528,6 +4554,7 @@ export default function MobileApp() {
             <>
               <button
                 onClick={() => {
+                  anchorModeToggle(scrollRef.current);
                   setSendMode(true);
                   setSendSel(new Set());
                 }}
@@ -4831,6 +4858,7 @@ export default function MobileApp() {
           >
             <button
               onClick={() => {
+                anchorModeToggle(scrollRef.current);
                 setSendMode(false);
                 setSendSel(new Set());
               }}
@@ -4855,6 +4883,7 @@ export default function MobileApp() {
                 const refs = Array.from(sendSel).sort(
                   (a, b) => orderOf(a) - orderOf(b)
                 );
+                anchorModeToggle(scrollRef.current);
                 setSendMode(false);
                 setSendSel(new Set());
                 setSendPicking(false);
@@ -8785,6 +8814,7 @@ export default function MobileApp() {
                   >
                     <button
                       onClick={() => {
+                        anchorModeToggle(kwStudyScrollRef.current);
                         setSendSel(new Set());
                         setSendMode(true);
                       }}
@@ -8806,6 +8836,7 @@ export default function MobileApp() {
                     </button>
                     <button
                       onClick={() => {
+                        anchorModeToggle(kwStudyScrollRef.current);
                         setRemoveSel(new Set());
                         setRemoveMode(true);
                       }}
@@ -8855,6 +8886,7 @@ export default function MobileApp() {
               </div>
 
               <div
+                ref={kwStudyScrollRef}
                 style={{
                   flex: 1,
                   minHeight: 0,
@@ -8987,6 +9019,7 @@ export default function MobileApp() {
                 >
                   <button
                     onClick={() => {
+                      anchorModeToggle(kwStudyScrollRef.current);
                       setRemoveMode(false);
                       setRemoveSel(new Set());
                     }}
@@ -9006,7 +9039,10 @@ export default function MobileApp() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => removeSelectedVerses(study.id)}
+                    onClick={() => {
+                      anchorModeToggle(kwStudyScrollRef.current);
+                      removeSelectedVerses(study.id);
+                    }}
                     disabled={removeSel.size === 0}
                     style={{
                       flex: 1,
@@ -9044,6 +9080,7 @@ export default function MobileApp() {
                 >
                   <button
                     onClick={() => {
+                      anchorModeToggle(kwStudyScrollRef.current);
                       setSendMode(false);
                       setSendSel(new Set());
                     }}
@@ -9068,6 +9105,7 @@ export default function MobileApp() {
                       const refs = Array.from(sendSel).sort(
                         (a, b) => orderOf(a) - orderOf(b)
                       );
+                      anchorModeToggle(kwStudyScrollRef.current);
                       setSendMode(false);
                       setSendSel(new Set());
                       setSendPicking(false);

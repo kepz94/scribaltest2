@@ -1,5 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { getScriptures, volumesProxy, registerOnLoaded } from "../data/scripturesStore";
+import {
+  captureVerseAnchor,
+  restoreVerseAnchor,
+  findScrollContainer,
+} from "../scrollAnchor";
+import type { VerseAnchor } from "../scrollAnchor";
 import MarkedVerse from "./MarkedVerse";
 import { setVerseDragImage } from "../dragGhost";
 import { Mark, MarkStyle, MarkColor, Tool, WordTag } from "../types";
@@ -330,6 +336,30 @@ export default function VerseViewer(props: VerseViewerProps) {
       window.removeEventListener("resize", measure);
     };
   }, [panelMode, sidebarOpen, selectedVolume, selectedBook, selectedChapter]);
+
+  // SCR-86: entering/leaving send or remove mode restructures every verse row
+  // (checkbox inset + gap + row padding), so the whole column re-heights and
+  // the verse under the reader's eyes slides away. Right before each toggle,
+  // record the topmost visible verse; after React re-renders — before paint —
+  // put it back at the same offset via direct scrollTop math (overflow-anchor
+  // is not supported in iOS Safari).
+  const pendingAnchor = useRef<VerseAnchor | null>(null);
+  const anchorModeToggle = () => {
+    pendingAnchor.current = captureVerseAnchor(
+      findScrollContainer(bodyRef.current),
+      bodyRef.current
+    );
+  };
+  useLayoutEffect(() => {
+    if (pendingAnchor.current) {
+      restoreVerseAnchor(
+        findScrollContainer(bodyRef.current),
+        pendingAnchor.current,
+        bodyRef.current
+      );
+      pendingAnchor.current = null;
+    }
+  }, [sendMode, removeMode]);
 
   const ARROW_W = 42;
   const ARROW_GAP = 12; // equal gap on both sides, just outside the panel border
@@ -860,6 +890,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             return (
               <div
                 key={r}
+                data-vref={r}
                 style={{
                   borderRadius: "6px",
                   transition: "background-color 0.6s",
@@ -1380,6 +1411,7 @@ export default function VerseViewer(props: VerseViewerProps) {
           {onSendVerses && !removeMode && (
             <button
               onClick={() => {
+                anchorModeToggle();
                 setSendMode((v) => !v);
                 setSendSel([]);
               }}
@@ -1421,6 +1453,7 @@ export default function VerseViewer(props: VerseViewerProps) {
           {studyRefs && onRemoveVerses && !removeMode && !sendMode && (
             <button
               onClick={() => {
+                anchorModeToggle();
                 setRemoveMode(true);
                 setRemoveSel([]);
               }}
@@ -1522,6 +1555,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             <div style={{ flex: 1 }} />
             <button
               onClick={() => {
+                anchorModeToggle();
                 setSendMode(false);
                 setSendSel([]);
               }}
@@ -1543,6 +1577,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               onClick={() => {
                 if (!sendSel.length) return;
                 const refs = sendSel.slice();
+                anchorModeToggle();
                 setSendMode(false);
                 setSendSel([]);
                 onSendVerses && onSendVerses(refs);
@@ -1627,6 +1662,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             <div style={{ flex: 1 }} />
             <button
               onClick={() => {
+                anchorModeToggle();
                 setRemoveMode(false);
                 setRemoveSel([]);
               }}
@@ -1648,6 +1684,7 @@ export default function VerseViewer(props: VerseViewerProps) {
               onClick={() => {
                 if (!removeSel.length) return;
                 const refs = removeSel.slice();
+                anchorModeToggle();
                 setRemoveMode(false);
                 setRemoveSel([]);
                 onRemoveVerses && onRemoveVerses(refs);
@@ -1724,6 +1761,7 @@ export default function VerseViewer(props: VerseViewerProps) {
             return (
             <div
               key={verse.reference}
+              data-vref={verse.reference}
               onClickCapture={
                 sendMode
                   ? (e) => {
