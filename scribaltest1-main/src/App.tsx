@@ -204,6 +204,11 @@ const LIGHT_THEME = {
   "--text": NEUTRAL.light.text,
   "--muted": NEUTRAL.light.muted,
   "--border": NEUTRAL.light.border,
+  // Grabber chip (⠿) — tinted so the drag handle reads against every surface
+  // (a soft/muted chip vanished on warm paper).
+  "--grabBorder": "rgba(59,130,246,0.5)",
+  "--grabBg": "rgba(59,130,246,0.10)",
+  "--grabFg": "#2f6fb0",
   "--pen1": "#d11a2a",
   "--pen2": "#e07b1a",
   "--pen3": "#c9a200",
@@ -233,6 +238,9 @@ const DARK_THEME = {
   "--text": NEUTRAL.dark.text,
   "--muted": NEUTRAL.dark.muted,
   "--border": NEUTRAL.dark.border,
+  "--grabBorder": "rgba(124,176,232,0.55)",
+  "--grabBg": "rgba(124,176,232,0.14)",
+  "--grabFg": "#7cb0e8",
   "--pen1": "#ff7b72",
   "--pen2": "#f0a24b",
   "--pen3": "#e3c341",

@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 // the user picks one). It quietly tailors the experience; it never gates.
 export type TablePurpose = "lesson" | "talk" | "study" | "open";
 
-// The seven kinds of card, and nothing else:
+// The kinds of card (the palette is open — ADR-008):
 //  heading    — a section beat; its text is the section name (a fold point + a
 //               natural stop when presenting).
 //  scripture  — one or more verse references. Marks are NOT stored here; they
@@ -34,6 +34,9 @@ export type TablePurpose = "lesson" | "talk" | "study" | "open";
 //  quote      — an outside voice in text, with an optional `attribution`.
 //  clip       — an outside voice on video: a link plus the exact slice to play.
 //  note       — a private note-to-self. Never shown to a class or a room.
+//  grid       — a small rows/columns table for structured info (SCR-73).
+// The palette is OPEN (ADR-008) — new kinds may be added when they earn
+// their place; the old seven-kind cap is lifted.
 export type CardKind =
   | "heading"
   | "scripture"
@@ -41,10 +44,18 @@ export type CardKind =
   | "question"
   | "quote"
   | "clip"
-  | "note";
+  | "note"
+  | "grid";
 
 export type WordRole = "thought" | "story" | "invitation";
 export type QuestionType = "fact" | "analysis" | "application" | "feeling";
+
+// How a shelf (tray) entry got there. "staged" = set aside by hand (the intake
+// drawer's "+", or the legacy set-aside flow); "mark" = delivered automatically
+// because a new mark landed in the table's scope (a newly linked chapter's
+// themed verses arrive the same way). Absent => "staged", which grandfathers
+// every pre-existing shelf card without a migration.
+export type ShelfSource = "staged" | "mark";
 
 export interface TableCard {
   id: string;
@@ -54,9 +65,18 @@ export interface TableCard {
   // content here. Only the fields relevant to `kind` are set.
   text?: string;
 
-  // text (your words): optional role tag. Story + invitation live here as roles
-  // rather than as their own kinds, so the palette stays at seven.
+  // text (your words): optional role tag. Story + invitation live here as
+  // roles rather than as their own kinds.
   role?: WordRole;
+
+  // grid (SCR-73): a rows/columns table. `gridHead` is the header row and its
+  // length IS the column count (max 3 — fits a phone with no sideways
+  // scrolling); `gridRows` are the body rows (max 4), each sized to the
+  // column count. Cells are PLAIN TEXT (Kepu's rule — no verses, links, or
+  // formatting); the card's description lives in `text` like every other
+  // text-bearing kind (Lexical HTML per SCR-63).
+  gridHead?: string[];
+  gridRows?: string[][];
 
   // question: optional type tag.
   qtype?: QuestionType;
@@ -76,6 +96,11 @@ export interface TableCard {
   shelfGroupColor?: number;
   passage?: boolean;
   bookId?: string;
+  // Shelf-only: how this entry arrived (see ShelfSource) and when. Both are
+  // dropped when the card is placed into the column — placement is the act
+  // that turns an arrival into an authored card.
+  shelfSource?: ShelfSource;
+  arrivedAt?: number;
 
   // clip: the source link plus the slice to play. `startSec` is read from the
   // link's ?t= param; `endSec` is set by the user (blank => play to the end).
@@ -98,6 +123,11 @@ export interface StudyTable {
   // default (master, an existing session, or a session created for this table).
   // Individual cards can still carry their own bookId (e.g. imported studies).
   bookId?: string;
+  // Table-as-notes (ADR-007): the study this table is the notes section OF.
+  // One table per study; a linked chapter group shares one study and so one
+  // table. bookId keeps its marks-home meaning — the two are independent.
+  // Absent on legacy tables until the SCR-67 migration attaches them.
+  studyId?: string;
   // The ordered column. Index IS the order — first card first, and that order
   // drives Present. There is no board geometry here; a spatial "board" lens can
   // be layered on later without touching this shape.
@@ -111,11 +141,24 @@ export interface StudyTable {
   // Tombstone. A table counts as deleted only while the delete is its newest
   // action (>= nameAt and updatedAt), so a later edit or rename revives it.
   deletedAt?: number;
-  // Verses set aside for this table but not yet placed in the column — a staging
-  // shelf. Holds scripture cards only; each is moved into `cards` when the user
-  // decides where it goes. Syncs last-write like `cards`.
+  // Cards set aside for this table but not yet placed in the column — the
+  // tray. Mostly scripture (staged verses + mark arrivals); Clear-to-tray also
+  // parks the user's authored cards here so nothing written is ever destroyed.
+  // Each entry moves into `cards` when the user decides where it goes. Syncs
+  // last-write like `cards`.
   shelf?: TableCard[];
+  // Table-as-notes lifecycle (ADR-007 §3): stamped by the first authoring act
+  // (insert / drag / delete). Until then the table is Compiled · live — its
+  // column is GENERATED from the study's marks (cards stays empty) and re-sorts
+  // freely; the promotion write persists the on-screen arrangement into cards.
+  // Promotion is one-way, so on merge the stamp advances like deletedAt.
+  promotedAt?: number;
 }
+
+// A table counts as promoted (Table · yours) once stamped — or, for tables
+// authored before the lifecycle existed, whenever it has any cards at all.
+export const isTablePromoted = (t: StudyTable): boolean =>
+  !!t.promotedAt || t.cards.length > 0;
 
 // A table is hidden iff its delete is its newest action (so editing or renaming
 // after a delete brings it back).
@@ -154,7 +197,8 @@ export function useStudyTables() {
   const createTable = (
     name = "Untitled",
     purpose?: TablePurpose,
-    bookId?: string
+    bookId?: string,
+    studyId?: string
   ): string => {
     const now = Date.now();
     const id = newTableId();
@@ -164,6 +208,7 @@ export function useStudyTables() {
         name,
         purpose,
         bookId,
+        studyId,
         cards: [],
         createdAt: now,
         updatedAt: now,
@@ -179,7 +224,12 @@ export function useStudyTables() {
   // make a stale name win a rename sync.
   const updateTable = (
     id: string,
-    changes: Partial<Pick<StudyTable, "name" | "cards" | "purpose" | "shelf">>
+    changes: Partial<
+      Pick<
+        StudyTable,
+        "name" | "cards" | "purpose" | "shelf" | "studyId" | "promotedAt"
+      >
+    >
   ) => {
     setTables((prev) =>
       prev.map((t) => {
@@ -199,6 +249,49 @@ export function useStudyTables() {
 
   const renameTable = (id: string, name: string) => updateTable(id, { name });
 
+  // Deliver mark arrivals to a table's shelf (the tray). Each ref becomes one
+  // scripture entry stamped shelfSource:"mark" + arrivedAt. A ref already
+  // placed in the column or already waiting on the shelf is skipped, so
+  // re-marking a verse never queues a duplicate. Never places — placement is
+  // always the user's act (Monastic rule; the tray UI is SCR-57).
+  const addShelfArrivals = (
+    id: string,
+    refs: string[],
+    extras?: Partial<Pick<TableCard, "bookId" | "shelfGroup" | "shelfGroupColor">>
+  ) => {
+    setTables((prev) => {
+      let changed = false;
+      const next = prev.map((t) => {
+        if (t.id !== id) return t;
+        const have = new Set<string>();
+        t.cards.forEach((c) => (c.refs || []).forEach((r) => have.add(r)));
+        (t.shelf || []).forEach((c) =>
+          (c.refs || []).forEach((r) => have.add(r))
+        );
+        const fresh = refs.filter((r) => !have.has(r));
+        if (!fresh.length) return t;
+        changed = true;
+        const now = Date.now();
+        const arrivals: TableCard[] = fresh.map((r) => ({
+          id: newCardId(),
+          kind: "scripture",
+          refs: [r],
+          shelfSource: "mark",
+          arrivedAt: now,
+          ...extras,
+        }));
+        return {
+          ...t,
+          shelf: [...(t.shelf || []), ...arrivals],
+          updatedAt: now,
+        };
+      });
+      // Identity-stable when nothing arrived, so a reconciliation effect can
+      // call this every pass without churning state or sync.
+      return changed ? next : prev;
+    });
+  };
+
   // Soft-delete: tombstone the table (kept, stamped) so the deletion travels to
   // other devices. Filtered out of the returned list below.
   const deleteTable = (id: string) =>
@@ -209,8 +302,9 @@ export function useStudyTables() {
   // Merge a remote tables snapshot (another device's backup) into ours.
   //  - A table we've never seen (new id) is added.
   //  - A table we both have: NAME from whichever device set it most recently
-  //    (nameAt); CONTENT (cards + purpose) from whichever edited most recently
-  //    (updatedAt); updatedAt + deletedAt advance to the latest.
+  //    (nameAt); CONTENT (cards / purpose / bookId / studyId / shelf) from
+  //    whichever edited most recently (updatedAt); updatedAt + deletedAt
+  //    advance to the latest.
   // Idempotent: returns the previous array unchanged when nothing differs, so it
   // never churns the sync loop.
   const mergeRemote = (raw: string | null | undefined) => {
@@ -242,14 +336,19 @@ export function useStudyTables() {
         const cards = contentNewer ? r.cards || [] : local.cards;
         const purpose = contentNewer ? r.purpose : local.purpose;
         const bookId = contentNewer ? r.bookId : local.bookId;
+        const studyId = contentNewer ? r.studyId : local.studyId;
         const shelf = contentNewer ? r.shelf : local.shelf;
         const updatedAt = Math.max(local.updatedAt || 0, r.updatedAt || 0);
         const deletedAt = Math.max(local.deletedAt || 0, r.deletedAt || 0);
+        // Promotion is one-way, so the stamp advances to the latest on either
+        // device rather than following contentNewer.
+        const promotedAt = Math.max(local.promotedAt || 0, r.promotedAt || 0);
         const differs =
           name !== local.name ||
           nameAt !== (local.nameAt || 0) ||
           updatedAt !== (local.updatedAt || 0) ||
           deletedAt !== (local.deletedAt || 0) ||
+          promotedAt !== (local.promotedAt || 0) ||
           contentNewer;
         if (differs) {
           const merged: StudyTable = {
@@ -262,9 +361,12 @@ export function useStudyTables() {
           };
           if (bookId) merged.bookId = bookId;
           else delete merged.bookId;
+          if (studyId) merged.studyId = studyId;
+          else delete merged.studyId;
           if (shelf && shelf.length) merged.shelf = shelf;
           else delete merged.shelf;
           if (deletedAt) merged.deletedAt = deletedAt;
+          if (promotedAt) merged.promotedAt = promotedAt;
           byId.set(r.id, merged);
           changed = true;
         }
@@ -286,6 +388,7 @@ export function useStudyTables() {
     updateTable,
     renameTable,
     deleteTable,
+    addShelfArrivals,
     setTables,
     mergeRemote,
   };

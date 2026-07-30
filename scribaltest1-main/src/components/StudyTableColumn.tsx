@@ -62,6 +62,7 @@ const ICON: Record<CardKind, string> = {
   clip: "M10 8l6 4-6 4V8z M3 5h18v14H3z",
   heading: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
   note: "M2 12s3.5-7 10-7 10 7 10 7 M2 12s3.5 7 10 7 10-7 10-7 M4 4l16 16",
+  grid: "M4 4h16v16H4z M4 10h16 M4 15h16 M10 4v16 M15 10v10",
 };
 const TYPES: { kind: CardKind; name: string; desc: string }[] = [
   { kind: "scripture", name: "Scripture", desc: "your marks come with it" },
@@ -71,6 +72,7 @@ const TYPES: { kind: CardKind; name: string; desc: string }[] = [
   { kind: "clip", name: "Clip", desc: "a video, starting where you want" },
   { kind: "heading", name: "Heading", desc: "start a section" },
   { kind: "note", name: "Note to self", desc: "private — only you" },
+  { kind: "grid", name: "Grid", desc: "rows and columns of info" },
 ];
 
 const ROLES: WordRole[] = ["thought", "story", "invitation"];
