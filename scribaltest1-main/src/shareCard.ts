@@ -672,6 +672,51 @@ function buildVersesCard(
   const contentBudget = cardH - top - FOOTER_SPACE;
   let y = top + Math.max(0, (contentBudget - lay.total) / 2);
 
+  // The synthesis LEADS: a study states its conclusion first, which is where
+  // the outline puts it and therefore where a shared card puts it too. Drawn
+  // above the verses, with the rule beneath it instead of above.
+  const drawSynth = () => {
+    if (!showSynth) return;
+
+    lay.synthItems.forEach((it, i) => {
+      const accent = penHex(it.s.color, o.dark);
+      if (it.s.theme.trim()) {
+        ctx.fillStyle = accent;
+        ctx.font = "700 " + it.synthLabelSize + "px " + SANS;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        drawTrackedLeft(
+          ctx,
+          it.s.theme.trim().toUpperCase(),
+          contentX,
+          y + it.synthLabelSize,
+          3
+        );
+        y += it.synthLabelSize + synthLabelGap;
+      }
+      ctx.font = proseFont(it.synthSize);
+      ctx.fillStyle = p.text;
+      ctx.textAlign = "left";
+      it.lines.forEach((ln) => {
+        ctx.fillText(ln, contentX, y + it.synthSize);
+        y += it.synthSize * 1.34;
+      });
+      if (i < lay.synthItems.length - 1) y += synthItemGap;
+    });
+    // a rule beneath it, separating the conclusion from the verses that
+    // support it
+    y += synthRuleGap;
+    ctx.strokeStyle = p.frame;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(padX, y);
+    ctx.lineTo(W - padX, y);
+    ctx.stroke();
+    y += synthTopGap;
+  };
+
+  drawSynth();
+
   lay.blocks.forEach((b) => {
     const accent = penHex(b.v.color, o.dark);
     const highlight = hlHex(b.v.color, o.dark);
@@ -892,45 +937,6 @@ function buildVersesCard(
 
     y += verseGap;
   });
-
-  // synthesis (the study's conclusion) beneath the verses
-  if (showSynth) {
-    y -= verseGap; // undo the trailing gap after the last verse
-    y += synthTopGap;
-    ctx.strokeStyle = p.frame;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(padX, y);
-    ctx.lineTo(W - padX, y);
-    ctx.stroke();
-    y += synthRuleGap;
-
-    lay.synthItems.forEach((it, i) => {
-      const accent = penHex(it.s.color, o.dark);
-      if (it.s.theme.trim()) {
-        ctx.fillStyle = accent;
-        ctx.font = "700 " + it.synthLabelSize + "px " + SANS;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        drawTrackedLeft(
-          ctx,
-          it.s.theme.trim().toUpperCase(),
-          contentX,
-          y + it.synthLabelSize,
-          3
-        );
-        y += it.synthLabelSize + synthLabelGap;
-      }
-      ctx.font = proseFont(it.synthSize);
-      ctx.fillStyle = p.text;
-      ctx.textAlign = "left";
-      it.lines.forEach((ln) => {
-        ctx.fillText(ln, contentX, y + it.synthSize);
-        y += it.synthSize * 1.34;
-      });
-      if (i < lay.synthItems.length - 1) y += synthItemGap;
-    });
-  }
 
   paintBrand(ctx, p, penHex(verses[0] ? verses[0].color : 7, o.dark), cardH);
   return canvas;

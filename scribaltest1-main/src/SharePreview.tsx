@@ -216,8 +216,7 @@ export default function SharePreview({
         title,
         sizeOverride: pdfSize,
         showNotes,
-        // Page 1 of a multi-page share; the synthesis rides on the last page.
-        showSynthesis: showSynthesis && pages.length === 1,
+        showSynthesis,
         syntheses,
       });
     }
@@ -259,9 +258,9 @@ export default function SharePreview({
             verses: pages[i],
             dark: cardDark,
             showNotes,
-            // The synthesis closes the study, so it belongs on the last page —
-            // renderVersesCard already draws it after the final verse.
-            showSynthesis: showSynthesis && i === pages.length - 1,
+            // The synthesis LEADS the study — that is where the outline puts
+            // it, so that is where a shared study puts it too.
+            showSynthesis: showSynthesis && i === 0,
             syntheses,
             title,
             sizeOverride: pdfSize,

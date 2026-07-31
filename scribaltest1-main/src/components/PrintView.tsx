@@ -163,12 +163,10 @@ export default function PrintView(props: PrintViewProps) {
   // This study's own synthesis key — built exactly the way Outline saves it.
   const synthKey =
     "synthesis|" + compileTabs.map((t) => tabLabel(t)).join("+");
-  const reflectionKeys = [
-    ...(notes[synthKey] ? [synthKey] : []),
-    ...Object.keys(notes).filter(
-      (k) => k !== synthKey && /synth|summary|reflect/i.test(k)
-    ),
-  ];
+  // The study synthesis leads the document; anything else reflective trails it.
+  const otherReflectionKeys = Object.keys(notes).filter(
+    (k) => k !== synthKey && /synth|summary|reflect/i.test(k)
+  );
 
 
   // The definitions the reader chose, printed under the verse they belong to —
@@ -407,6 +405,38 @@ export default function PrintView(props: PrintViewProps) {
             margin: "16px 0 26px",
           }}
         />
+
+        {/* The synthesis leads — the conclusion sits at the top of a study, on
+            the outline, on paper, and on a shared card alike. */}
+        {(notes[synthKey] || "").trim() && (
+          <section
+            style={{
+              marginBottom: "26px",
+              border: "1px solid #d8d8d8",
+              borderRadius: "10px",
+              padding: "16px 18px",
+              background: "#fafafa",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 8px",
+                fontSize: "12px",
+                letterSpacing: "0.09em",
+                textTransform: "uppercase",
+                color: "#666",
+                fontFamily: "system-ui, sans-serif",
+                fontWeight: 700,
+              }}
+            >
+              Synthesis
+            </h2>
+            <RichNote
+              html={notes[synthKey]}
+              style={{ fontSize: "15.5px", lineHeight: 1.7, color: "#1a1a1a" }}
+            />
+          </section>
+        )}
 
         {themes.length === 0 && (
           <p style={{ color: "#777" }}>No marks to print in this selection.</p>
@@ -703,8 +733,9 @@ export default function PrintView(props: PrintViewProps) {
           </table>
         )}
 
-        {/* Reflections / synthesis */}
-        {reflectionKeys.some((k) => (notes[k] || "").trim()) && (
+        {/* Any other reflection notes. The study synthesis is no longer here —
+            it leads the document. */}
+        {otherReflectionKeys.some((k) => (notes[k] || "").trim()) && (
           <section style={{ marginTop: "30px" }}>
             <h2
               style={{
@@ -715,7 +746,7 @@ export default function PrintView(props: PrintViewProps) {
             >
               Reflections
             </h2>
-            {reflectionKeys.map((k) =>
+            {otherReflectionKeys.map((k) =>
               (notes[k] || "").trim() ? (
                 <RichNote
                   key={k}

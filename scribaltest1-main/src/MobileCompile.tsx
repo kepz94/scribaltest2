@@ -1275,6 +1275,44 @@ export default function MobileCompile({
               themes will gather here.
             </div>
           )}
+        {/* The study's synthesis leads — same box, same key, same position as
+            the desktop Outline. Mobile had no study-level synthesis at all;
+            the per-theme boxes below are each a thought about their own theme. */}
+        {format === "outline" && liveMarks.length > 0 && (
+          <div style={{ padding: "0 14px 14px" }}>
+            <div
+              style={{
+                border: "1px solid " + C.border,
+                borderRadius: "14px",
+                backgroundColor: C.panel,
+                padding: "14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                  letterSpacing: "0.09em",
+                  textTransform: "uppercase",
+                  color: C.muted,
+                  marginBottom: "8px",
+                }}
+              >
+                Synthesis
+              </div>
+              <RichNoteField
+                value={notes[dSynthKey()] || ""}
+                onChange={(t) => setNote(dSynthKey(), t)}
+                linkableDefinitions={linkableDefinitions}
+                accent={C.text}
+                placeholder="State the main idea these verses support…"
+                addLabel="Add your synthesis"
+                editorFontSize={16}
+              />
+            </div>
+          </div>
+        )}
+
             {format === "outline" &&
               groups.map((g) => {
               const c = g.color;
@@ -1536,8 +1574,12 @@ export default function MobileCompile({
                       ≥16px for iOS. */}
                   <div style={{ padding: "0 14px 14px" }}>
                     {(() => {
-                      const sk = dSynthKey();
-                      const sVal = notes[sk] && notes[sk].trim() ? notes[sk] : readSynth();
+                      // Per-THEME, not the study synthesis: this box used to
+                      // write dSynthKey(), so every theme edited the same field
+                      // and showed the same text. synthKey(color) is the key the
+                      // share path already reads per-theme syntheses from.
+                      const sk = synthKey(c);
+                      const sVal = notes[sk] || "";
                       const accent = COLOR_MAP[c as MarkColor];
                       return (
                         <RichNoteField
@@ -1545,7 +1587,7 @@ export default function MobileCompile({
                           onChange={(t) => setNote(sk, t)}
                           linkableDefinitions={linkableDefinitions}
                           accent={accent}
-                          placeholder="What do these verses say together in this study?"
+                          placeholder={"What does " + name + " say across these verses?"}
                           addLabel={"Add a thought about " + name}
                           editorFontSize={16}
                         />
