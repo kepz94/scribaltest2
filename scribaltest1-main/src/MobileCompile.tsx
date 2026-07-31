@@ -228,7 +228,9 @@ export default function MobileCompile({
     });
   };
   const [studyName, setStudyName] = useState(defaultName);
-  const [view, setView] = useState<"focused" | "full">("focused");
+  // Full verse by default, matching desktop. One state drives both the outline
+  // and what a share card carries, so a share defaults to full verses too.
+  const [view, setView] = useState<"focused" | "full">("full");
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
   // Distilled and Covenants are their own formats, each its own view.
   const [format, setFormat] = useState<"outline" | "distilled" | "covenants" | "semantic">(

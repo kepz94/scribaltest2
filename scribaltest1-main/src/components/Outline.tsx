@@ -111,7 +111,10 @@ export default function Outline(props: OutlineProps) {
         : [...cur, ref],
     });
   };
-  const [view, setView] = useState<"full" | "focused">("focused");
+  // Full verse by default: a study reads as scripture with your marks on it,
+  // and it is the view that carries per-verse notes and chosen definitions in
+  // one place. Focused is a step down to the marked phrases when you want it.
+  const [view, setView] = useState<"full" | "focused">("full");
   const [showChapters, setShowChapters] = useState(false);
   const [collapsedInternal, setCollapsedInternal] = useState<number[]>([]);
   const collapsed = props.collapsed ?? collapsedInternal;
