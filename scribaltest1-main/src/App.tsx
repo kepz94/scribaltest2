@@ -19,6 +19,11 @@ import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
 import { NEUTRAL, WARM, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
+import {
+  compileDelta,
+  compileCountKey,
+  studyCountKey,
+} from "./compileDelta";
 import ShareVerses from "./components/ShareVerses";
 import StudiesList, { StudyRow } from "./components/StudiesList";
 import BooksVault, { VaultBook } from "./components/BooksVault";
@@ -3275,14 +3280,19 @@ export default function App() {
       setMode("compile");
       return;
     }
-    const lastCount = Number(
-      localStorage.getItem("scribal_last_compile_count") || "0"
-    );
-    const currentCount = marks.length;
-    const delta = Math.max(0, currentCount - lastCount);
-    const duration = delta > 8 ? 2500 : 1000;
-    localStorage.setItem("scribal_last_compile_count", String(currentCount));
     const scopeSet = scopesFromTabIds(ids);
+    // Per STUDY, not globally: nothing new in THIS study means nothing to
+    // gather, so open straight into the outline.
+    const scopeMarks = marks.filter((m) => scopeSet.has(scopeOfRef(m.reference)));
+    const delta = compileDelta(
+      compileCountKey(Array.from(scopeSet)),
+      scopeMarks.length
+    );
+    if (delta === 0) {
+      setMode("compile");
+      return;
+    }
+    const duration = delta > 8 ? 2500 : 1000;
     const flyers = captureCompileFlyers((ref) => scopeSet.has(scopeOfRef(ref)));
     const colors = marks
       .filter((m) => scopeSet.has(scopeOfRef(m.reference)))
@@ -3301,14 +3311,16 @@ export default function App() {
       setMode("compile");
       return;
     }
-    const lastCount = Number(
-      localStorage.getItem("scribal_last_compile_count") || "0"
-    );
-    const currentCount = marks.length;
-    const delta = Math.max(0, currentCount - lastCount);
-    const duration = delta > 8 ? 2500 : 1000;
-    localStorage.setItem("scribal_last_compile_count", String(currentCount));
     const refSet = new Set(study.refs);
+    const studyMarkCount = getBook(study.bookId).marks.filter((m) =>
+      refSet.has(m.reference)
+    ).length;
+    const delta = compileDelta(studyCountKey(study.id), studyMarkCount);
+    if (delta === 0) {
+      setMode("compile");
+      return;
+    }
+    const duration = delta > 8 ? 2500 : 1000;
     const flyers = captureCompileFlyers((ref) => refSet.has(ref));
     const colors = getBook(study.bookId)
       .marks.filter((m) => refSet.has(m.reference))

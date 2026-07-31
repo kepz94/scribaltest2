@@ -18,6 +18,13 @@ interface StudyBook {
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
+  // When each note was last written. Notes used to merge "fill blanks only":
+  // a key that already existed locally could never be replaced by the cloud
+  // copy, so a synthesis started on the phone and finished on the desktop
+  // stayed a first paragraph on the phone forever. A stamp makes the merge
+  // last-write-wins, and lets a cleared note stay cleared without needing the
+  // old rule that caused it.
+  noteAt?: Record<string, number>;
   // Deleted mark ids → when they were deleted, so deletions propagate across
   // devices instead of an old copy resurrecting them on the next sync.
   tombstones?: Record<string, number>;
@@ -276,6 +283,58 @@ const safeGet = (key: string): string | null => {
     return null;
   }
 };
+// Merge one book's notes with a remote copy — LAST-WRITE-WINS on the stamp.
+//
+// The old rule adopted a remote note only for a key the device had never seen.
+// That cannot converge: once both devices had written the same key, neither
+// could ever learn the other's newer text. A synthesis begun on the phone and
+// finished on the desktop stayed a first paragraph on the phone permanently,
+// and no amount of syncing would fix it.
+//
+// Pure, so the rule can be tested without a React tree.
+export function mergeNotes(
+  localNotes: Record<string, string>,
+  localAt: Record<string, number>,
+  remoteNotes: Record<string, string>,
+  remoteAt: Record<string, number>
+): { notes: Record<string, string>; noteAt: Record<string, number>; changed: boolean } {
+  let notes = localNotes;
+  let noteAt = localAt;
+  let changed = false;
+  const take = (k: string, at: number) => {
+    if (!changed) {
+      notes = { ...localNotes };
+      noteAt = { ...localAt };
+      changed = true;
+    }
+    notes[k] = remoteNotes[k];
+    noteAt[k] = at;
+  };
+  Object.keys(remoteNotes || {}).forEach((k) => {
+    const rAt = remoteAt[k] || 0;
+    const lAt = localAt[k] || 0;
+    const rText = String(remoteNotes[k] || "");
+    const lText = String(localNotes[k] || "");
+    // Never seen it: take anything with content.
+    if (!(k in localNotes)) {
+      if (rText.trim()) take(k, rAt);
+      return;
+    }
+    if (rText === lText) return;
+    // Stamped on either side: newest wins, INCLUDING an empty remote, so
+    // clearing a note on one device propagates instead of being ignored.
+    if (rAt > lAt) return take(k, rAt);
+    if (rAt < lAt) return;
+    // Neither side is stamped — both predate this build, so there is no honest
+    // way to say which is newer. One-time reconciliation: take the longer text.
+    // Between a first paragraph and the whole note, the whole note is what the
+    // reader is missing, and nothing is destroyed to get it — the shorter copy
+    // existed only on this device.
+    if (rAt === 0 && lAt === 0 && rText.length > lText.length) take(k, 0);
+  });
+  return { notes, noteAt, changed };
+}
+
 const safeSet = (key: string, value: string) => {
   try {
     localStorage.setItem(key, value);
@@ -333,6 +392,9 @@ function initState(): State {
         marks: marksArr,
         colorLabels,
         notes: b.notes && typeof b.notes === "object" ? b.notes : {},
+        // Absent on anything written before note stamps existed; an unstamped
+        // note reads as 0, which the merge treats as "predates this build".
+        noteAt: b.noteAt && typeof b.noteAt === "object" ? b.noteAt : {},
         tombstones: gcTombstones(
           b.tombstones && typeof b.tombstones === "object" ? b.tombstones : {}
         ),
@@ -1047,6 +1109,8 @@ function reducer(state: State, action: Action): State {
             marks: cleanMarks,
             colorLabels: rColorLabels,
             notes: rb.notes && typeof rb.notes === "object" ? rb.notes : {},
+            noteAt:
+              rb.noteAt && typeof rb.noteAt === "object" ? rb.noteAt : {},
             tombstones: cleanTomb,
             scopedLabels:
               rb.scopedLabels && typeof rb.scopedLabels === "object"
@@ -1105,20 +1169,15 @@ function reducer(state: State, action: Action): State {
             labels[k as any] = rb.colorLabels[k];
           }
         });
-        let notes = local.notes;
-        let notesChanged = false;
-        Object.keys(rb.notes || {}).forEach((k) => {
-          // Adopt a remote note only for a key we've never had, and only when
-          // it's non-empty. A note the user cleared stays "" locally and is not
-          // resurrected from the cloud copy.
-          if (!(k in local.notes) && String(rb.notes[k] || "").trim()) {
-            if (!notesChanged) {
-              notes = { ...local.notes };
-              notesChanged = true;
-            }
-            notes[k] = rb.notes[k];
-          }
-        });
+        const nm = mergeNotes(
+          local.notes,
+          local.noteAt || {},
+          rb.notes || {},
+          rb.noteAt || {}
+        );
+        const notes = nm.notes;
+        const noteAt = nm.noteAt;
+        const notesChanged = nm.changed;
         // Merge per-chapter theme names — fill blanks only, per scope+color.
         let scoped = local.scopedLabels || {};
         let scopedChanged = false;
@@ -1180,6 +1239,7 @@ function reducer(state: State, action: Action): State {
             marks: finalMarks,
             colorLabels: labels,
             notes,
+            noteAt,
             tombstones: mergedTomb,
             scopedLabels: scoped,
             scopedRoles,
@@ -1214,6 +1274,10 @@ function reducer(state: State, action: Action): State {
           [state.activeId]: {
             ...active,
             notes: { ...active.notes, [action.key]: action.text },
+            noteAt: {
+              ...(active.noteAt || {}),
+              [action.key]: Date.now(),
+            },
           },
         },
       };

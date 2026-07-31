@@ -29,6 +29,7 @@ import MobileSearch from "./MobileSearch";
 import SharePreview, { packPages } from "./SharePreview";
 import { glossesFor } from "./components/MarkedVerse";
 import { useWebsterReady } from "./useWebsterReady";
+import { compileDelta, compileCountKey } from "./compileDelta";
 import type { VersesCardEntry } from "./shareCard";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
@@ -3677,12 +3678,20 @@ export default function MobileApp() {
   // canonical marks); when nothing visible is found it falls back to a gather
   // built from the study's mark colors.
   const startCompile = (sourceMarks: { color: number }[] = studyMarks) => {
-    const lastCount = Number(
-      localStorage.getItem("scribal_mobile_compile_count") || "0"
+    // Per STUDY, not globally: nothing new in THIS study means nothing to
+    // gather, so compile opens straight into the outline with no animation.
+    // Shares the same stored counts as desktop's rule.
+    const delta = compileDelta(
+      compileCountKey(studyScopes),
+      sourceMarks.length
     );
-    const delta = Math.max(0, marks.length - lastCount);
+    if (delta === 0) {
+      // Exactly where the animation's onDone lands, minus the wait.
+      setCompileAnim((a) => ({ ...a, show: false }));
+      setCompileOpen(true);
+      return;
+    }
     const duration = delta > 8 ? 2500 : 1000;
-    localStorage.setItem("scribal_mobile_compile_count", String(marks.length));
 
     // Capture only the marks currently on screen (their position, color, and
     // text) so the animation flies a legible handful — never hundreds — no
