@@ -256,7 +256,10 @@ export default function SharePreview({
       passages: comp.passages,
       hero,
       themes: comp.themes,
-      synthesis: comp.synthesis,
+      // Only when the cover is the WHOLE share. In a study PDF the synthesis
+      // leads the first page of verses, and putting it on the cover as well
+      // printed it twice — once flattened here, once properly there.
+      synthesis: kind === "compilation" ? comp.synthesis : undefined,
       dark: cardDark,
     });
   };

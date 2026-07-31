@@ -479,6 +479,296 @@ export function versesCardHeight(o: VersesCardOpts): number {
   return versesCardMetrics(o).height;
 }
 
+// ===== synthesis layout, shared by the verse card and the study cover =====
+// Extracted from buildVersesCard so the COVER can draw a synthesis the same
+// way: real heading sizes, a rule for a divider, hanging list markers, a
+// quotation spine, and definition/verse cards drawn as the note editor draws
+// them. The cover previously flattened all of it to one italic run.
+const SYNTH_PARA_GAP = 12; // between paragraphs within one synthesis
+// ---- synthesis layout: a note keeps the shape it was written in ----
+//
+// A synthesis is organized — headings, a divider between movements, numbered
+// steps, an emphasized clause. That organization IS the argument, so the card
+// honors it instead of flattening everything to italic prose. Sizes and gaps
+// are all relative to the prose size, so the same note reads the same whether
+// it is on a one-verse card or a fifty-page PDF.
+type SynthPiece = {
+  text: string;
+  font: string;
+  x: number;
+  w: number;
+  u: boolean;
+  chip: boolean;
+};
+type SynthLine = { pieces: SynthPiece[] };
+type SynthLaid = {
+  kind: RichBlockKind;
+  lines: SynthLine[];
+  size: number;
+  lineH: number;
+  indent: number;
+  gapBefore: number;
+  gapAfter: number;
+  marker?: string;
+  markerFont?: string;
+  height: number;
+};
+
+function runFont(
+  sz: number,
+  r: RichRun,
+  baseWeight: string,
+  baseItalic: boolean
+): string {
+  return (
+    (r.i || baseItalic ? "italic " : "") +
+  (r.b ? "700" : baseWeight) +
+  " " +
+    sz +
+    "px " +
+    SERIF
+  );
+}
+
+// Word-level wrap that measures each run in its own font, so a bold clause
+// mid-sentence breaks in the right place instead of at the wrong width.
+function wrapRuns(
+  ctx: CanvasRenderingContext2D,
+  runs: RichRun[],
+  sz: number,
+  maxW: number,
+  baseWeight: string,
+  baseItalic: boolean
+): SynthLine[] {
+  const lines: SynthLine[] = [];
+  let cur: SynthPiece[] = [];
+  let x = 0;
+  const flush = () => {
+    while (cur.length && !cur[cur.length - 1].text.trim()) cur.pop();
+    if (cur.length) lines.push({ pieces: cur });
+    cur = [];
+    x = 0;
+  };
+  runs.forEach((r) => {
+    const font = runFont(sz, r, baseWeight, baseItalic);
+    r.text.split(/(\s+)/).forEach((part) => {
+      if (!part) return;
+      const ws = /^\s+$/.test(part);
+      if (ws && x === 0) return; // no leading space on a wrapped line
+      ctx.font = font;
+      const w = ctx.measureText(part).width;
+      if (!ws && x + w > maxW && cur.length) {
+        flush();
+        ctx.font = font;
+      }
+      cur.push({ text: part, font, x, w, u: !!r.u, chip: r.chip === "verse" });
+      x += w;
+    });
+  });
+  flush();
+  return lines.length ? lines : [{ pieces: [] }];
+}
+
+const DEF_PAD = 0.42; // card padding, in prose sizes
+// A linked definition and a linked verse are both cards — a tinted panel with
+// an accent spine, set apart from the prose the way the note editor sets them.
+const isCard = (k: RichBlockKind) => k === "def" || k === "vcard";
+function tint(hex: string, a: number): string {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.replace(/(.)/g, "$1$1") : h, 16);
+  return (
+    "rgba(" +
+    ((n >> 16) & 255) +
+    "," +
+    ((n >> 8) & 255) +
+    "," +
+    (n & 255) +
+    "," +
+    a +
+    ")"
+  );
+}
+
+export function layoutSynth(
+  ctx: CanvasRenderingContext2D,
+  html: string,
+  sz: number,
+  width: number
+): SynthLaid[] {
+  const blocks = richToBlocks(html);
+  const out: SynthLaid[] = [];
+  blocks.forEach((b, i) => {
+    const first = out.length === 0;
+    if (b.kind === "rule") {
+      out.push({
+        kind: b.kind,
+        lines: [],
+        size: sz,
+        lineH: 0,
+        indent: 0,
+        gapBefore: first ? 0 : sz * 0.62,
+        gapAfter: sz * 0.62,
+        height: 2,
+      });
+      return;
+    }
+    const depth = b.depth || 0;
+    let size = sz;
+    let weight = "500";
+    let italic = false;
+    let indent = 0;
+    let gapBefore = 0;
+    let gapAfter = SYNTH_PARA_GAP;
+    let lineH = sz * 1.34;
+    let marker: string | undefined;
+    let markerFont: string | undefined;
+
+    if (b.kind === "h1") {
+      size = Math.round(sz * 1.3);
+      weight = "700";
+      gapBefore = first ? 0 : sz * 0.8;
+      gapAfter = sz * 0.3;
+      lineH = size * 1.24;
+    } else if (b.kind === "h2") {
+      size = Math.round(sz * 1.1);
+      weight = "700";
+      gapBefore = first ? 0 : sz * 0.65;
+      gapAfter = sz * 0.24;
+      lineH = size * 1.26;
+    } else if (b.kind === "quote") {
+      italic = true;
+      indent = sz * 1.0;
+      gapBefore = first ? 0 : sz * 0.3;
+      gapAfter = sz * 0.5;
+    } else if (b.kind === "li") {
+      indent = sz * 1.5 + depth * sz * 1.3;
+      gapAfter = sz * 0.26;
+      marker = b.marker || "•";
+      markerFont = "500 " + size + "px " + SERIF;
+    } else if (b.kind === "def" || b.kind === "vcard") {
+      size = Math.round(sz * 0.94);
+      italic = b.kind === "def";
+      indent = sz * 0.95;
+      gapBefore = sz * 0.45;
+      gapAfter = sz * 0.45;
+      lineH = size * 1.32;
+    }
+
+    // A list item hangs: its marker sits in the gutter, its text runs in a
+    // column of its own so a wrapped second line lines up under the first.
+    const hang = b.kind === "li" ? sz * 1.15 : 0;
+    const lines = wrapRuns(
+      ctx,
+      b.runs,
+      size,
+      Math.max(
+        60,
+        width - indent - hang - (isCard(b.kind) ? sz * DEF_PAD * 2 : 0)
+      ),
+      weight,
+      italic
+    );
+    const inner = lines.length * lineH;
+    out.push({
+      kind: b.kind,
+      lines,
+      size,
+      lineH,
+      indent: indent + hang,
+      // A divider already opened the space beneath itself; a heading that
+      // follows one must not open it a second time.
+      gapBefore:
+        out.length && out[out.length - 1].kind === "rule" ? 0 : gapBefore,
+      gapAfter: i === blocks.length - 1 ? 0 : gapAfter,
+      marker,
+      markerFont,
+      height: inner + (isCard(b.kind) ? sz * DEF_PAD * 2 : 0),
+    });
+  });
+  return out;
+}
+
+export const synthBlockH = (bl: SynthLaid[]) =>
+  bl.reduce((n, b) => n + b.gapBefore + b.height + b.gapAfter, 0);
+
+export function drawSynthBlocks(
+  ctx: CanvasRenderingContext2D,
+  pal: Palette,
+  dark: boolean,
+  maxW: number,
+  bl: SynthLaid[],
+  x0: number,
+  y0: number,
+  accent: string
+): number {
+  let yy = y0;
+  bl.forEach((b) => {
+    yy += b.gapBefore;
+    if (b.kind === "rule") {
+      ctx.strokeStyle = pal.frame;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x0, yy + 1);
+      ctx.lineTo(x0 + maxW * 0.62, yy + 1);
+      ctx.stroke();
+      yy += b.height + b.gapAfter;
+      return;
+    }
+    const bx = x0 + b.indent;
+    if (b.kind === "quote") {
+      ctx.strokeStyle = pal.frame;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x0 + b.size * 0.2, yy);
+      ctx.lineTo(x0 + b.size * 0.2, yy + b.height);
+      ctx.stroke();
+    }
+    if (isCard(b.kind)) {
+      // The same card the note editor draws: tinted panel, accent spine. A
+      // definition is tan, a linked verse takes the theme's own pen.
+      const spine = b.kind === "def" ? DEF_SPINE : accent;
+      const pad = b.size * DEF_PAD;
+      roundRect(ctx, x0, yy, maxW, b.height, 10);
+      ctx.fillStyle = tint(spine, dark ? 0.14 : 0.1);
+      ctx.fill();
+      ctx.fillStyle = spine;
+      roundRect(ctx, x0, yy, 4, b.height, 2);
+      ctx.fill();
+      yy += pad;
+    }
+    if (b.marker) {
+      ctx.font = b.markerFont || "500 " + b.size + "px " + SERIF;
+      ctx.fillStyle = pal.muted;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(b.marker, bx - b.size * 1.15, yy + b.size);
+    }
+    const textX = isCard(b.kind) ? bx + b.size * DEF_PAD : bx;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    b.lines.forEach((ln) => {
+      ln.pieces.forEach((pc) => {
+        ctx.font = pc.font;
+        ctx.fillStyle = pc.chip ? DEF_SPINE : b.kind === "quote" ? pal.muted : pal.text;
+        ctx.fillText(pc.text, textX + pc.x, yy + b.size);
+        if (pc.u) {
+          ctx.strokeStyle = ctx.fillStyle as string;
+          ctx.lineWidth = Math.max(1, b.size * 0.055);
+          ctx.beginPath();
+          ctx.moveTo(textX + pc.x, yy + b.size * 1.16);
+          ctx.lineTo(textX + pc.x + pc.w, yy + b.size * 1.16);
+          ctx.stroke();
+        }
+      });
+      yy += b.lineH;
+    });
+    if (isCard(b.kind)) yy += b.size * DEF_PAD;
+    yy += b.gapAfter;
+  });
+  return yy;
+}
+
+
 function buildVersesCard(
   o: VersesCardOpts,
   measureOnly: boolean
@@ -515,7 +805,6 @@ function buildVersesCard(
   const synthRuleGap = 18; // rule -> first synthesis
   const synthItemGap = 16; // between syntheses
   const synthLabelGap = 7; // synthesis theme label -> its text
-  const synthParaGap = 12; // between paragraphs within one synthesis
 
   const fontFor = (style: string, size: number) => {
     const weight = style === "bold" ? "700" : "500";
@@ -524,275 +813,6 @@ function buildVersesCard(
   };
   const proseFont = (sz: number) => "italic 500 " + sz + "px " + SERIF;
   const lineMul = 1.4; // full-verse line height multiple
-
-  // ---- synthesis layout: a note keeps the shape it was written in ----
-  //
-  // A synthesis is organized — headings, a divider between movements, numbered
-  // steps, an emphasized clause. That organization IS the argument, so the card
-  // honors it instead of flattening everything to italic prose. Sizes and gaps
-  // are all relative to the prose size, so the same note reads the same whether
-  // it is on a one-verse card or a fifty-page PDF.
-  type SynthPiece = {
-    text: string;
-    font: string;
-    x: number;
-    w: number;
-    u: boolean;
-    chip: boolean;
-  };
-  type SynthLine = { pieces: SynthPiece[] };
-  type SynthLaid = {
-    kind: RichBlockKind;
-    lines: SynthLine[];
-    size: number;
-    lineH: number;
-    indent: number;
-    gapBefore: number;
-    gapAfter: number;
-    marker?: string;
-    markerFont?: string;
-    height: number;
-  };
-
-  const runFont = (
-    sz: number,
-    r: RichRun,
-    baseWeight: string,
-    baseItalic: boolean
-  ) =>
-    (r.i || baseItalic ? "italic " : "") +
-    (r.b ? "700" : baseWeight) +
-    " " +
-    sz +
-    "px " +
-    SERIF;
-
-  // Word-level wrap that measures each run in its own font, so a bold clause
-  // mid-sentence breaks in the right place instead of at the wrong width.
-  const wrapRuns = (
-    runs: RichRun[],
-    sz: number,
-    maxW: number,
-    baseWeight: string,
-    baseItalic: boolean
-  ): SynthLine[] => {
-    const lines: SynthLine[] = [];
-    let cur: SynthPiece[] = [];
-    let x = 0;
-    const flush = () => {
-      while (cur.length && !cur[cur.length - 1].text.trim()) cur.pop();
-      if (cur.length) lines.push({ pieces: cur });
-      cur = [];
-      x = 0;
-    };
-    runs.forEach((r) => {
-      const font = runFont(sz, r, baseWeight, baseItalic);
-      r.text.split(/(\s+)/).forEach((part) => {
-        if (!part) return;
-        const ws = /^\s+$/.test(part);
-        if (ws && x === 0) return; // no leading space on a wrapped line
-        ctx.font = font;
-        const w = ctx.measureText(part).width;
-        if (!ws && x + w > maxW && cur.length) {
-          flush();
-          ctx.font = font;
-        }
-        cur.push({ text: part, font, x, w, u: !!r.u, chip: r.chip === "verse" });
-        x += w;
-      });
-    });
-    flush();
-    return lines.length ? lines : [{ pieces: [] }];
-  };
-
-  const DEF_PAD = 0.42; // card padding, in prose sizes
-  // A linked definition and a linked verse are both cards — a tinted panel with
-  // an accent spine, set apart from the prose the way the note editor sets them.
-  const isCard = (k: RichBlockKind) => k === "def" || k === "vcard";
-  const tint = (hex: string, a: number) => {
-    const h = hex.replace("#", "");
-    const n = parseInt(h.length === 3 ? h.replace(/(.)/g, "$1$1") : h, 16);
-    return (
-      "rgba(" +
-      ((n >> 16) & 255) +
-      "," +
-      ((n >> 8) & 255) +
-      "," +
-      (n & 255) +
-      "," +
-      a +
-      ")"
-    );
-  };
-
-  const layoutSynth = (html: string, sz: number, width: number): SynthLaid[] => {
-    const blocks = richToBlocks(html);
-    const out: SynthLaid[] = [];
-    blocks.forEach((b, i) => {
-      const first = out.length === 0;
-      if (b.kind === "rule") {
-        out.push({
-          kind: b.kind,
-          lines: [],
-          size: sz,
-          lineH: 0,
-          indent: 0,
-          gapBefore: first ? 0 : sz * 0.62,
-          gapAfter: sz * 0.62,
-          height: 2,
-        });
-        return;
-      }
-      const depth = b.depth || 0;
-      let size = sz;
-      let weight = "500";
-      let italic = false;
-      let indent = 0;
-      let gapBefore = 0;
-      let gapAfter = synthParaGap;
-      let lineH = sz * 1.34;
-      let marker: string | undefined;
-      let markerFont: string | undefined;
-
-      if (b.kind === "h1") {
-        size = Math.round(sz * 1.3);
-        weight = "700";
-        gapBefore = first ? 0 : sz * 0.8;
-        gapAfter = sz * 0.3;
-        lineH = size * 1.24;
-      } else if (b.kind === "h2") {
-        size = Math.round(sz * 1.1);
-        weight = "700";
-        gapBefore = first ? 0 : sz * 0.65;
-        gapAfter = sz * 0.24;
-        lineH = size * 1.26;
-      } else if (b.kind === "quote") {
-        italic = true;
-        indent = sz * 1.0;
-        gapBefore = first ? 0 : sz * 0.3;
-        gapAfter = sz * 0.5;
-      } else if (b.kind === "li") {
-        indent = sz * 1.5 + depth * sz * 1.3;
-        gapAfter = sz * 0.26;
-        marker = b.marker || "•";
-        markerFont = "500 " + size + "px " + SERIF;
-      } else if (b.kind === "def" || b.kind === "vcard") {
-        size = Math.round(sz * 0.94);
-        italic = b.kind === "def";
-        indent = sz * 0.95;
-        gapBefore = sz * 0.45;
-        gapAfter = sz * 0.45;
-        lineH = size * 1.32;
-      }
-
-      // A list item hangs: its marker sits in the gutter, its text runs in a
-      // column of its own so a wrapped second line lines up under the first.
-      const hang = b.kind === "li" ? sz * 1.15 : 0;
-      const lines = wrapRuns(
-        b.runs,
-        size,
-        Math.max(
-          60,
-          width - indent - hang - (isCard(b.kind) ? sz * DEF_PAD * 2 : 0)
-        ),
-        weight,
-        italic
-      );
-      const inner = lines.length * lineH;
-      out.push({
-        kind: b.kind,
-        lines,
-        size,
-        lineH,
-        indent: indent + hang,
-        // A divider already opened the space beneath itself; a heading that
-        // follows one must not open it a second time.
-        gapBefore:
-          out.length && out[out.length - 1].kind === "rule" ? 0 : gapBefore,
-        gapAfter: i === blocks.length - 1 ? 0 : gapAfter,
-        marker,
-        markerFont,
-        height: inner + (isCard(b.kind) ? sz * DEF_PAD * 2 : 0),
-      });
-    });
-    return out;
-  };
-
-  const synthBlockH = (bl: SynthLaid[]) =>
-    bl.reduce((n, b) => n + b.gapBefore + b.height + b.gapAfter, 0);
-
-  const drawSynthBlocks = (
-    bl: SynthLaid[],
-    x0: number,
-    y0: number,
-    accent: string
-  ): number => {
-    let yy = y0;
-    bl.forEach((b) => {
-      yy += b.gapBefore;
-      if (b.kind === "rule") {
-        ctx.strokeStyle = p.frame;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(x0, yy + 1);
-        ctx.lineTo(x0 + maxW * 0.62, yy + 1);
-        ctx.stroke();
-        yy += b.height + b.gapAfter;
-        return;
-      }
-      const bx = x0 + b.indent;
-      if (b.kind === "quote") {
-        ctx.strokeStyle = p.frame;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x0 + b.size * 0.2, yy);
-        ctx.lineTo(x0 + b.size * 0.2, yy + b.height);
-        ctx.stroke();
-      }
-      if (isCard(b.kind)) {
-        // The same card the note editor draws: tinted panel, accent spine. A
-        // definition is tan, a linked verse takes the theme's own pen.
-        const spine = b.kind === "def" ? DEF_SPINE : accent;
-        const pad = b.size * DEF_PAD;
-        roundRect(ctx, x0, yy, maxW, b.height, 10);
-        ctx.fillStyle = tint(spine, o.dark ? 0.14 : 0.1);
-        ctx.fill();
-        ctx.fillStyle = spine;
-        roundRect(ctx, x0, yy, 4, b.height, 2);
-        ctx.fill();
-        yy += pad;
-      }
-      if (b.marker) {
-        ctx.font = b.markerFont || "500 " + b.size + "px " + SERIF;
-        ctx.fillStyle = p.muted;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText(b.marker, bx - b.size * 1.15, yy + b.size);
-      }
-      const textX = isCard(b.kind) ? bx + b.size * DEF_PAD : bx;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      b.lines.forEach((ln) => {
-        ln.pieces.forEach((pc) => {
-          ctx.font = pc.font;
-          ctx.fillStyle = pc.chip ? DEF_SPINE : b.kind === "quote" ? p.muted : p.text;
-          ctx.fillText(pc.text, textX + pc.x, yy + b.size);
-          if (pc.u) {
-            ctx.strokeStyle = ctx.fillStyle as string;
-            ctx.lineWidth = Math.max(1, b.size * 0.055);
-            ctx.beginPath();
-            ctx.moveTo(textX + pc.x, yy + b.size * 1.16);
-            ctx.lineTo(textX + pc.x + pc.w, yy + b.size * 1.16);
-            ctx.stroke();
-          }
-        });
-        yy += b.lineH;
-      });
-      if (isCard(b.kind)) yy += b.size * DEF_PAD;
-      yy += b.gapAfter;
-    });
-    return yy;
-  };
 
   // ---- full-verse layout: split the verse at mark boundaries (exactly like
   // the reading view), then lay the pieces out word-by-word with per-mark
@@ -954,7 +974,7 @@ function buildVersesCard(
     const synthItems = showSynth
       ? syntheses
           .map((s) => {
-            const blocks = layoutSynth(s.text, synthSize, maxW);
+            const blocks = layoutSynth(ctx, s.text, synthSize, maxW);
             const labelH = s.theme.trim() ? synthLabelSize + synthLabelGap : 0;
             return { s, blocks, labelH, synthSize, synthLabelSize };
           })
@@ -1009,11 +1029,17 @@ function buildVersesCard(
     }
   }
 
-  // Grow the canvas to fit the content (clamped) rather than cramming the
-  // content into a fixed height — no empty top/bottom and no overflow.
-  const cardH = Math.round(
-    Math.max(MIN_H, Math.min(MAX_H, top + lay.total + FOOTER_SPACE))
-  );
+  // Grow the canvas to fit the content rather than cramming the content into a
+  // fixed height — no empty top/bottom and no overflow.
+  //
+  // MAX_H is the target the shrink loop above aims at, NOT a ceiling on the
+  // canvas. Clamping here capped the bitmap while the drawing carried on past
+  // it: the brand footer, positioned at cardH - FOOTER_SPACE, printed straight
+  // over the middle of a long synthesis and everything below it ran off the
+  // bottom edge. A synthesis is never clamped, so once the type has shrunk as
+  // far as it goes the page simply has to be taller.
+  const needed = top + lay.total + FOOTER_SPACE;
+  const cardH = Math.round(Math.max(MIN_H, needed));
   if (measureOnly) return { height: cardH, size };
   canvas.height = cardH;
   paintBackground(ctx, p, cardH);
@@ -1055,7 +1081,7 @@ function buildVersesCard(
         );
         y += it.synthLabelSize + synthLabelGap;
       }
-      y = drawSynthBlocks(it.blocks, contentX, y, accent);
+      y = drawSynthBlocks(ctx, p, !!o.dark, maxW, it.blocks, contentX, y, accent);
       if (i < lay.synthItems.length - 1) y += synthItemGap;
     });
     // a rule beneath it, separating the conclusion from the verses that
@@ -1436,22 +1462,15 @@ function paintCompilationCard(
   divider();
 
   // The synthesis LEADS — above the featured verse and the theme list, the way
-  // it leads the outline, the printout and the first shared card. Every
-  // paragraph is drawn; nothing here is clamped.
-  const synthParas = richToParagraphs(o.synthesis || "");
-  if (synthParas.length) {
-    ctx.textAlign = "left";
-    ctx.fillStyle = p.text;
-    const sSize = 30;
-    const sLineH = sSize * 1.42;
-    ctx.font = "italic 500 " + sSize + "px " + SERIF;
-    synthParas.forEach((para, i) => {
-      wrap(ctx, para, maxW).forEach((ln) => {
-        y += sLineH;
-        ctx.fillText(ln, padX, y);
-      });
-      if (i < synthParas.length - 1) y += 14;
-    });
+  // it leads the outline, the printout and the first shared card. Drawn through
+  // the SAME block layout the verse card uses, so it arrives looking like the
+  // note it is: real headings, dividers as rules, numbered and bulleted lists
+  // with their markers, quotations with a spine, and linked verses and
+  // definitions as the cards the note editor draws. It was briefly flattened to
+  // one italic run here, which lost every one of those.
+  const synthBlocks = layoutSynth(ctx, o.synthesis || "", 30, maxW);
+  if (synthBlocks.length) {
+    y = drawSynthBlocks(ctx, p, o.dark, maxW, synthBlocks, padX, y, accent);
     y += 40;
     divider();
   }
