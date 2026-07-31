@@ -1341,9 +1341,13 @@ export default function RichNoteField({
               you could not see the options you had just asked for. */}
           <div
             style={{
+              // Dock beneath the app's sticky chrome, whose height the shell
+              // publishes. At top: 0 the toolbar pinned itself behind the
+              // header and was simply invisible — indistinguishable from not
+              // sticking at all. Falls back to 0 where no chrome is declared.
               position: "sticky",
-              top: 0,
-              zIndex: 6,
+              top: "var(--scribal-chrome-h, 0px)",
+              zIndex: 12,
               background: "var(--soft)",
               borderRadius: "8px 8px 0 0",
             }}

@@ -1284,6 +1284,19 @@ export default function App() {
     return () => ro.disconnect();
   }, [mode]);
 
+  // How much sticky chrome sits at the top of the window: the header, the tab
+  // strip, and the 46px legend bar. A note's toolbar docks BELOW all of it, and
+  // has no way to measure it from inside the note — so publish it. Without this
+  // the toolbar pinned itself to top: 0, which is behind the header (z-index 24
+  // against its 12): it was sticking correctly and landing out of sight, so a
+  // long synthesis meant scrolling up to reach it and back down to keep typing.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--scribal-chrome-h",
+      headerH + tabsH + 46 + "px"
+    );
+  }, [headerH, tabsH]);
+
   // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
   // the same group are one study — they compile together and share one set of
   // theme names. Different groups are fully independent (no theme bleed).
