@@ -17,6 +17,9 @@ export interface StudySummary {
   totalMarks: number;
   passages: number;
   themes: CompTheme[];
+  // The study synthesis, carried as its own field so the card can give it its
+  // own block instead of squeezing it into a theme's one-line caption.
+  synthesis: string;
   candidates: { text: string; reference: string; style: string; color: number }[];
   defaultFeatured: number;
 }
@@ -28,7 +31,10 @@ export interface StudySummaryInput {
   orderOf: (ref: string) => number;
   // The study's own name, shown under the scope title.
   title: string;
-  // The synthesis text, if written; it rides on the largest theme.
+  // The synthesis as it was written — HTML is fine, the card reads its
+  // paragraphs. It used to ride on the largest theme's caption slot, and the
+  // card clamps a theme caption to one line, so a whole synthesis arrived on
+  // the cover as a single clipped sentence.
   synthesis?: string;
   // Injectable so tests aren't dated.
   now?: Date;
@@ -51,8 +57,7 @@ export function buildStudySummary(input: StudySummaryInput): StudySummary {
       synthesis: "",
       count: (byColor[c] || []).length,
     }))
-    .sort((a, b) => b.count - a.count)
-    .map((t, i) => (i === 0 ? { ...t, synthesis: (input.synthesis || "").trim() } : t));
+    .sort((a, b) => b.count - a.count);
 
   // Scripture scope — what was actually studied.
   const byBook = new Map<
@@ -145,6 +150,7 @@ export function buildStudySummary(input: StudySummaryInput): StudySummary {
     totalMarks: marks.length,
     passages,
     themes,
+    synthesis: (input.synthesis || "").trim(),
     candidates,
     defaultFeatured,
   };

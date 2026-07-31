@@ -241,7 +241,7 @@ export default function ShareVerses({
                 colorLabels,
                 orderOf: (r) => orderOf.get(r) || 0,
                 title: studyName,
-                synthesis: synthText,
+                synthesis: synthHtml,
               })
             : undefined
         }

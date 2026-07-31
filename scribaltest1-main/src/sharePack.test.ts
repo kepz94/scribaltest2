@@ -203,7 +203,7 @@ describe("buildStudySummary", () => {
     expect(s.scopeTitle).toBe("Alma – Ether");
   });
 
-  it("orders themes by mark count and hangs the synthesis on the largest", () => {
+  it("orders themes by mark count and keeps the synthesis off their captions", () => {
     const marks = [
       mark("Alma 32:21", 4),
       mark("Alma 32:27", 5),
@@ -219,8 +219,10 @@ describe("buildStudySummary", () => {
       ["Faith is a choice", 2],
       ["The seed", 1],
     ]);
-    expect(s.themes[0].synthesis).toBe("Faith is an act.");
-    expect(s.themes[1].synthesis).toBe("");
+    // The synthesis is the study's, not the biggest theme's. Riding on
+    // themes[0] put it in a caption slot the card clamps to a single line.
+    expect(s.synthesis).toBe("Faith is an act.");
+    expect(s.themes.every((t) => t.synthesis === "")).toBe(true);
   });
 
   it("features the most emphasized mark by default", () => {

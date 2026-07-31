@@ -602,6 +602,8 @@ export default function Covenants(props: CovenantsProps) {
     setShareMsg(
       res === "shared"
         ? "Shared."
+        : res === "copied"
+        ? "Copied — paste it anywhere."
         : res === "downloaded"
         ? "Saved to your device."
         : res === "cancelled"

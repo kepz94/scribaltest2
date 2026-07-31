@@ -7,7 +7,6 @@ import RichNoteField from "./components/RichNoteField";
 import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
-import { richToText } from "./richText";
 import { useWebsterReady } from "./useWebsterReady";
 import {
   linkableDefinitionsFor,
@@ -216,8 +215,6 @@ export default function MobileCompile({
       ""
     );
   };
-  // Flattened, for the one place that wants a clamped teaser: the cover blurb.
-  const readSynth = () => richToText(readSynthRaw());
   const [sortMode, setSortMode] = useState<SortMode>("order");
   // Lead verses (pins): user-chosen verses that always sit at a theme's top,
   // in the order they were pinned — above any automatic sort.
@@ -480,7 +477,9 @@ export default function MobileCompile({
       colorLabels,
       orderOf,
       title,
-      synthesis: readSynth(),
+      // Raw: the cover reads its paragraphs and prints them all. Flattening it
+      // here is what reduced a whole synthesis to one line on the card.
+      synthesis: readSynthRaw(),
     });
 
   const shareStudy = () => setCompPreview(studySummary());

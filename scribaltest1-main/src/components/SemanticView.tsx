@@ -2,7 +2,9 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import { Mark, MarkColor, COLOR_MAP, WordTag } from "../types";
 import { glossesFor } from "./MarkedVerse";
 import { volumesProxy } from "../data/scripturesStore";
-import RichNoteField from "./RichNoteField";
+import RichNoteField, { LinkableVerse } from "./RichNoteField";
+import { useWebsterReady } from "../useWebsterReady";
+import { linkableDefinitionsFor, hasTaggedWords } from "../linkableDefinitions";
 
 // ── Semantic view ────────────────────────────────────────────────────────────
 // One surface, four altitudes: the study as a color shape → named theme
@@ -156,6 +158,18 @@ export default function SemanticView({
     });
     return best;
   };
+
+  // The doorway is a study note like any other, so its toolbar offers the same
+  // two links the outline's notes do. It had neither: RichNoteField gates both
+  // buttons on these lists, and this was the one surface that never built them.
+  const dictReady = useWebsterReady(hasTaggedWords(tags));
+  const linkableDefinitions = linkableDefinitionsFor(tags, dictReady);
+  const linkableVerses: LinkableVerse[] = marked.map((r) => {
+    const c = dominant(r);
+    return { reference: r.ref, text: r.text, color: c, themeName: nameOf(c) };
+  });
+  const fullTextFor = (ref: string) =>
+    rows.find((r) => r.ref === ref)?.text || "";
 
   const goVerse = (ref: string) => {
     setSelRef(ref);
@@ -759,6 +773,10 @@ export default function SemanticView({
               placeholder="What do these verses say together in this study?"
               addLabel="Write what this theme means"
               editorFontSize={noteFontSize}
+              linkableVerses={linkableVerses}
+              linkableDefinitions={linkableDefinitions}
+              fullTextFor={fullTextFor}
+              onJumpToReference={onJumpToReference}
             />
           ) : (
             <div style={{ fontSize: "12.5px", fontStyle: "italic", color: synth ? text : muted, lineHeight: 1.55 }}>

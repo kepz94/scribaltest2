@@ -4,11 +4,64 @@
 
 import {
   richToBlocks,
+  richToParagraphs,
   RichBlockKind,
   RichRun,
 } from "./richText";
 
-export type ShareResult = "shared" | "downloaded" | "cancelled" | "failed";
+export type ShareResult =
+  | "shared"
+  | "copied"
+  | "downloaded"
+  | "cancelled"
+  | "failed";
+
+// The OS share sheet is a phone affordance. A desktop Chrome still advertises
+// canShare({ files }), so every share went to a sheet offering little more than
+// an email list and a copy button that pastes nothing — and the download
+// fallback underneath it was unreachable. On a desktop, sharing means the
+// clipboard and the file system; the sheet is only worth opening on a touch
+// device, where it reaches Messages, Notes and the rest.
+export function prefersOsShare(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function")
+    return true;
+  try {
+    return window.matchMedia("(pointer: coarse)").matches;
+  } catch {
+    return true;
+  }
+}
+
+// Put a blob on the clipboard. Desktop-only path: it needs a secure context, a
+// focused document, and ClipboardItem — any of which can be missing, so the
+// caller always has a download to fall back to.
+async function copyBlob(blob: Blob, type: string): Promise<boolean> {
+  try {
+    const w = window as any;
+    if (!w.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write)
+      return false;
+    await navigator.clipboard.write([new w.ClipboardItem({ [type]: blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadBlob(blob: Blob, filename: string): ShareResult {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return "downloaded";
+  } catch {
+    return "failed";
+  }
+}
 
 // The definition accent, shared with the reader and the note editor.
 const DEF_SPINE = "#9a7b4f";
@@ -840,23 +893,31 @@ function buildVersesCard(
           Math.max(0, phraseLines.length - 1) * phraseGap;
       }
       const headerH = (v.theme.trim() ? themeSize + 9 : 0) + refSize + headerGap;
+      // A note is the reader's own words, and it prints in full — the same rule
+      // the synthesis follows. It used to stop at four lines with an ellipsis,
+      // which quietly dropped half a long note; on the desktop PDF, which moved
+      // here from PrintView, those notes had always printed whole. The card
+      // grows to fit and the packer measures what it drew, so length is a
+      // paging question, never a truncation one.
       let noteLines: string[] = [];
       if (showNotes && v.note && v.note.trim()) {
         ctx.font = proseFont(noteSize);
-        noteLines = clampLines(wrap(ctx, v.note.trim(), maxW), 4);
+        noteLines = wrap(ctx, v.note.trim(), maxW);
       }
       const noteH = noteLines.length
         ? noteGap + noteLines.length * noteSize * 1.32
         : 0;
       // Chosen definitions sit below the note, in the same measured pass so the
-      // packer's height and the drawn card can never disagree.
+      // packer's height and the drawn card can never disagree. Whole, for the
+      // same reason a note is: a sense the reader picked on purpose is not
+      // something to show four lines of.
       const glossLines: { head: string; lines: string[] }[] = [];
       (v.glosses || []).forEach((g) => {
         ctx.font = proseFont(noteSize);
         const head = g.n > 0 ? g.word + " " + g.n + ". " : g.word + " — ";
         glossLines.push({
           head,
-          lines: clampLines(wrap(ctx, head + g.text, maxW), 4),
+          lines: wrap(ctx, head + g.text, maxW),
         });
       });
       const glossH = glossLines.length
@@ -1244,21 +1305,33 @@ export interface CompCardOpts {
     color: number;
   } | null;
   themes: CompTheme[];
+  // The study's synthesis, in full. Its own block on the cover: it is the
+  // study's conclusion, and it led every other surface while the cover showed
+  // one clipped line of it borrowed from a theme caption.
+  synthesis?: string;
   dark: boolean;
 }
 
 const COMP_FOOTER_SPACE = 190; // room beneath the content for the brand footer
+// Measuring height for pass one: tall enough that nothing is cut off or pushed
+// past the footer line while the layout is still being sized.
+const MEASURE_H = H * 8;
 
 export function renderCompilationCard(o: CompCardOpts): HTMLCanvasElement {
   // Two passes: the first finds where the content actually ends, the second
   // redraws it on a canvas trimmed to that height — a three-theme study used to
   // ship with the bottom third of the card empty. The theme count from pass one
   // carries into pass two, so trimming can never drop a theme it had room for.
-  const first = paintCompilationCard(o, H, -1);
+  //
+  // Pass one measures on a deliberately over-tall canvas, and the card GROWS to
+  // whatever it needs rather than being capped at H. The cover carries the whole
+  // synthesis now, and on a "Summary" share it is the only card there is — a cap
+  // meant the brand footer painted straight over the last paragraphs and the
+  // theme list fell off the bottom entirely.
+  const first = paintCompilationCard(o, MEASURE_H, -1);
   const cardH = Math.round(
-    Math.max(CARD_MIN_H, Math.min(H, first.contentEnd + COMP_FOOTER_SPACE))
+    Math.max(CARD_MIN_H, first.contentEnd + COMP_FOOTER_SPACE)
   );
-  if (cardH >= H) return first.canvas;
   return paintCompilationCard(o, cardH, first.drawn).canvas;
 }
 
@@ -1349,6 +1422,27 @@ function paintCompilationCard(
     y += 44;
   };
   divider();
+
+  // The synthesis LEADS — above the featured verse and the theme list, the way
+  // it leads the outline, the printout and the first shared card. Every
+  // paragraph is drawn; nothing here is clamped.
+  const synthParas = richToParagraphs(o.synthesis || "");
+  if (synthParas.length) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = p.text;
+    const sSize = 30;
+    const sLineH = sSize * 1.42;
+    ctx.font = "italic 500 " + sSize + "px " + SERIF;
+    synthParas.forEach((para, i) => {
+      wrap(ctx, para, maxW).forEach((ln) => {
+        y += sLineH;
+        ctx.fillText(ln, padX, y);
+      });
+      if (i < synthParas.length - 1) y += 14;
+    });
+    y += 40;
+    divider();
+  }
 
   if (o.hero && o.hero.text.trim()) {
     const hStyle = o.hero.style;
@@ -1491,32 +1585,27 @@ export async function shareCanvas(
     canShare?: (d: any) => boolean;
     share?: (d: any) => Promise<void>;
   };
-  try {
-    const file = new File([blob], filename, { type: "image/png" });
-    if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
-      try {
-        await nav.share({ files: [file], text: caption });
-        return "shared";
-      } catch (e) {
-        if (e && (e as { name?: string }).name === "AbortError") return "cancelled";
+  if (prefersOsShare()) {
+    try {
+      const file = new File([blob], filename, { type: "image/png" });
+      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+        try {
+          await nav.share({ files: [file], text: caption });
+          return "shared";
+        } catch (e) {
+          if (e && (e as { name?: string }).name === "AbortError")
+            return "cancelled";
+        }
       }
+    } catch {
+      /* fall through to download */
     }
-  } catch {
-    /* fall through to download */
+  } else if (await copyBlob(blob, "image/png")) {
+    // On a desktop the clipboard IS the share: the card can go straight into a
+    // message, a document, or a chat without a file ever touching the disk.
+    return "copied";
   }
-  try {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    return "downloaded";
-  } catch {
-    return "failed";
-  }
+  return downloadBlob(blob, filename);
 }
 
 // ---------- Covenant card (screen-faithful ledger, per-fragment marks) ----------

@@ -3,7 +3,7 @@
 // is needed). Used when a share selection is too large for a single image
 // card — the pages ARE the same rendered cards, so the look stays consistent.
 
-import { ShareResult } from "./shareCard";
+import { ShareResult, prefersOsShare } from "./shareCard";
 
 // Raw JPEG bytes from a canvas (strip the data-URL header, base64-decode).
 function canvasJpegBytes(canvas: HTMLCanvasElement): Uint8Array | null {
@@ -133,19 +133,26 @@ export async function sharePdf(
     canShare?: (d: any) => boolean;
     share?: (d: any) => Promise<void>;
   };
-  try {
-    const file = new File([blob], filename, { type: "application/pdf" });
-    if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
-      try {
-        await nav.share({ files: [file], text: caption });
-        return "shared";
-      } catch (e) {
-        if (e && (e as { name?: string }).name === "AbortError")
-          return "cancelled";
+  // A PDF on a desktop is a file you want on disk. Desktop Chrome advertises
+  // canShare({ files }) and then opens a sheet that can email it and little
+  // else, which is why "Create PDF" never appeared to save anything — the
+  // download below was unreachable. The sheet stays on touch devices, where it
+  // is the only way into Files, Mail and Messages.
+  if (prefersOsShare()) {
+    try {
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+        try {
+          await nav.share({ files: [file], text: caption });
+          return "shared";
+        } catch (e) {
+          if (e && (e as { name?: string }).name === "AbortError")
+            return "cancelled";
+        }
       }
+    } catch {
+      /* fall through to download */
     }
-  } catch {
-    /* fall through to download */
   }
   try {
     const url = URL.createObjectURL(blob);

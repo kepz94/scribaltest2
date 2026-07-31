@@ -9,6 +9,7 @@ import {
   shareCanvas,
   CARD_TARGET_H,
   MAX_PER_CARD,
+  prefersOsShare,
   CompTheme,
   VersesCardEntry,
   VersesSynthesis,
@@ -29,13 +30,25 @@ export function packPages(
   // Injectable so tests can pack against known heights — jsdom has no canvas,
   // where the real renderer can only ever report the minimum.
   measure: (vs: VersesCardEntry[]) => number = (vs) =>
-    versesCardHeight({ verses: vs, dark })
+    versesCardHeight({ verses: vs, dark }),
+  // The leading page carries the synthesis as well as its verses, so it is a
+  // different measurement from every other page. Measuring it like the rest
+  // packed it full and then bolted the synthesis on top: page 1 of a study
+  // share came out around 1:2.4 — the unshareable sliver this packer exists to
+  // prevent — while every page behind it obeyed the target. Defaults to
+  // `measure`, so a share with no synthesis packs exactly as before.
+  measureFirst: (vs: VersesCardEntry[]) => number = measure
 ): VersesCardEntry[][] {
   const pages: VersesCardEntry[][] = [];
   let page: VersesCardEntry[] = [];
   for (let i = verses.length - 1; i >= 0; i--) {
     const trial = [verses[i], ...page];
-    const fits = trial.length <= MAX_PER_CARD && measure(trial) <= CARD_TARGET_H;
+    // Packing backwards means the page still open when i reaches 0 IS the
+    // leading page — the only point where the synthesis has to be counted.
+    const lead = i === 0;
+    const fits =
+      trial.length <= MAX_PER_CARD &&
+      (lead ? measureFirst(trial) : measure(trial)) <= CARD_TARGET_H;
     // A single verse always gets its own page even when it overflows on its
     // own — there is nothing left to split.
     if (!fits && page.length > 0) {
@@ -86,6 +99,7 @@ interface CompData {
   totalMarks: number;
   passages: number;
   themes: CompTheme[];
+  synthesis?: string;
   candidates: { text: string; reference: string; style: string; color: number }[];
   defaultFeatured: number;
 }
@@ -161,16 +175,45 @@ export default function SharePreview({
   // so it can't shift again).
   const pages = useMemo(() => {
     if (kind !== "verses" && kind !== "study") return [];
-    const first = packPages(effVerses, cardDark);
+    // What the leading page will actually carry, so it is packed against its
+    // real height rather than its verses alone.
+    const lead =
+      showSynthesis && !!syntheses && syntheses.some((s) => s.text.trim());
+    // Measure a page exactly as it will be DRAWN — same notes, same title, and
+    // the synthesis on the leading page. The packer used to measure with none
+    // of them (showNotes defaults to false in the renderer), so every page was
+    // sized as if its notes weren't there and could overflow the target by
+    // however much they added.
+    const height = (vs: VersesCardEntry[], withSynth: boolean, size?: number) =>
+      versesCardHeight({
+        verses: vs,
+        dark: cardDark,
+        title,
+        sizeOverride: size,
+        showNotes,
+        showSynthesis: withSynth,
+        syntheses,
+      });
+    const first = packPages(
+      effVerses,
+      cardDark,
+      (vs) => height(vs, false),
+      (vs) => height(vs, lead)
+    );
     if (first.length < 2) return first;
-    const size = pdfProseSize(first, (vs) =>
-      versesCardMetrics({ verses: vs, dark: cardDark, title }).size
+    const size = pdfProseSize(
+      first,
+      (vs) =>
+        versesCardMetrics({ verses: vs, dark: cardDark, title, showNotes }).size
     );
     if (!size) return first;
-    return packPages(effVerses, cardDark, (vs) =>
-      versesCardHeight({ verses: vs, dark: cardDark, title, sizeOverride: size })
+    return packPages(
+      effVerses,
+      cardDark,
+      (vs) => height(vs, false, size),
+      (vs) => height(vs, lead, size)
     );
-  }, [kind, effVerses, cardDark, title]);
+  }, [kind, effVerses, cardDark, title, showNotes, showSynthesis, syntheses]);
   // More than one card's worth → a multi-page PDF of card-pages. A whole study
   // that outgrows one card gets the summary card as its cover page too.
   const pdfMode = pages.length > 1;
@@ -184,10 +227,16 @@ export default function SharePreview({
       pdfMode
         ? pdfProseSize(
             pages,
-            (vs) => versesCardMetrics({ verses: vs, dark: cardDark, title }).size
+            (vs) =>
+              versesCardMetrics({
+                verses: vs,
+                dark: cardDark,
+                title,
+                showNotes,
+              }).size
           )
         : undefined,
-    [pdfMode, pages, cardDark, title]
+    [pdfMode, pages, cardDark, title, showNotes]
   );
 
   const buildCover = (): HTMLCanvasElement | null => {
@@ -206,6 +255,7 @@ export default function SharePreview({
       passages: comp.passages,
       hero,
       themes: comp.themes,
+      synthesis: comp.synthesis,
       dark: cardDark,
     });
   };
@@ -294,7 +344,7 @@ export default function SharePreview({
         : "failed";
       setBusy(false);
       if (r === "downloaded") {
-        onFlash("PDF saved");
+        onFlash("PDF saved to your downloads");
         onClose();
       } else if (r === "failed") {
         onFlash("Couldn't create PDF");
@@ -320,8 +370,11 @@ export default function SharePreview({
       caption
     );
     setBusy(false);
-    if (r === "downloaded") {
-      onFlash("Image saved");
+    if (r === "copied") {
+      onFlash("Card copied — paste it anywhere");
+      onClose();
+    } else if (r === "downloaded") {
+      onFlash("Card saved to your downloads");
       onClose();
     } else if (r === "failed") {
       onFlash("Couldn't create image");
@@ -372,6 +425,9 @@ export default function SharePreview({
   } as const;
 
   const candCount = comp ? comp.candidates.length : 0;
+  // Whether the OS share sheet is worth offering — a touch device. Decides the
+  // button's wording as well as what pressing it does.
+  const osShare = prefersOsShare();
 
   return (
     <div
@@ -653,13 +709,20 @@ export default function SharePreview({
               marginBottom: "8px",
             }}
           >
+            {/* Name the actual outcome. On a desktop this saves a PDF or puts
+                the card on the clipboard; "Share" promised a sheet that had
+                nothing useful behind it. */}
             {busy
               ? pdfMode
                 ? "Building PDF…"
-                : "Sharing…"
+                : osShare
+                ? "Sharing…"
+                : "Copying…"
               : pdfMode
-              ? "Create PDF (" + pageCount + " pages)"
-              : "Share"}
+              ? (osShare ? "Create PDF (" : "Save PDF (") + pageCount + " pages)"
+              : osShare
+              ? "Share"
+              : "Copy card"}
           </button>
           <button
             onClick={onClose}
