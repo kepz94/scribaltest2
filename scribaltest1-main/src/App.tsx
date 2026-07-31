@@ -1949,6 +1949,9 @@ export default function App() {
   const [colorDraft, setColorDraft] = useState("");
 
   const [sharingVerses, setSharingVerses] = useState(false);
+  // "study" opens straight into the whole-study card PDF (the Save as PDF
+  // action); "pick" opens the verse picker.
+  const [shareMode, setShareMode] = useState<"pick" | "study">("pick");
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [studyDraftRefs, setStudyDraftRefs] = useState<string[] | null>(null);
@@ -8223,6 +8226,7 @@ export default function App() {
           marks={effectiveMarks}
           colorLabels={effectiveScopedLabels}
           studyName={compileLabel}
+          initialMode={shareMode}
           tags={effectiveTags}
           notes={notes}
           dark={dark}
@@ -13162,7 +13166,15 @@ export default function App() {
                         <button
                           onClick={() => {
                             setCompileSettingsOpen(false);
-                            handlePrintLive();
+                            // Outline gets the card PDF — the same document
+                            // mobile produces, cover and all. Charting has no
+                            // card equivalent, so it keeps the paper print.
+                            if (compileView === "outline") {
+                              setShareMode("study");
+                              setSharingVerses(true);
+                            } else {
+                              handlePrintLive();
+                            }
                           }}
                           style={{
                             display: "block",
@@ -13178,12 +13190,13 @@ export default function App() {
                             fontFamily: "inherit",
                           }}
                         >
-                          ⎙ Print / PDF
+                          {compileView === "outline" ? "⎙ Save as PDF" : "⎙ Print / PDF"}
                         </button>
                       )}
                       <button
                         onClick={() => {
                           setCompileSettingsOpen(false);
+                          setShareMode("pick");
                           setSharingVerses(true);
                         }}
                         style={{

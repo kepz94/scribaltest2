@@ -40,6 +40,9 @@ interface Props {
   studyName: string;
   // The study's word tags, so a shared card can carry the chosen definitions.
   tags?: WordTag[];
+  // "study" skips the picker and opens the whole-study PDF directly — what the
+  // Save as PDF action wants. "pick" is the ordinary verse picker.
+  initialMode?: "pick" | "study";
   notes: Record<string, string>;
   dark: boolean;
   C: CC;
@@ -56,6 +59,7 @@ export default function ShareVerses({
   colorLabels,
   studyName,
   tags,
+  initialMode = "pick",
   notes,
   dark,
   C,
@@ -64,7 +68,9 @@ export default function ShareVerses({
 }: Props) {
   const [picked, setPicked] = useState<string[]>([]);
   const [open, setOpen] = useState<number[]>([]);
-  const [previewing, setPreviewing] = useState<null | "verses" | "study">(null);
+  const [previewing, setPreviewing] = useState<null | "verses" | "study">(
+    initialMode === "study" ? "study" : null
+  );
   // Focused shows the marked phrases alone; Full redraws the whole verse with
   // the marks layered on, exactly as the reading view has them. Mirrors mobile.
   const [view, setView] = useState<"focused" | "full">("full");
@@ -238,7 +244,9 @@ export default function ShareVerses({
         }
         title={studyName}
         marksToggle
-        onClose={() => setPreviewing(null)}
+        onClose={() =>
+          initialMode === "study" ? onClose() : setPreviewing(null)
+        }
         onFlash={onFlash}
       />
     );

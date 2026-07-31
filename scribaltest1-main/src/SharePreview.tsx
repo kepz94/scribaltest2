@@ -126,7 +126,9 @@ export default function SharePreview({
   const [cardDark, setCardDark] = useState(appDark);
   const [featured, setFeatured] = useState(comp ? comp.defaultFeatured : 0);
   const [showNotes, setShowNotes] = useState(true);
-  const [showSynthesis, setShowSynthesis] = useState(false);
+  // A whole study states its conclusion first, so its synthesis is on by
+  // default; a hand-picked set of verses is not a study and stays opt-in.
+  const [showSynthesis, setShowSynthesis] = useState(kind === "study");
   const [showMarks, setShowMarks] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);

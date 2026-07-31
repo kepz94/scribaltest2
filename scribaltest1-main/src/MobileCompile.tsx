@@ -4,7 +4,7 @@ import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
 import RichNoteField from "./components/RichNoteField";
-import type { LinkableDefinition } from "./components/RichNoteField";
+import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
 import SemanticView from "./components/SemanticView";
@@ -411,6 +411,59 @@ export default function MobileCompile({
       senses: sensesFor(definitionForKey(t.dictKey) || "", t.senses),
     }))
     .filter((d) => d.senses.length > 0);
+
+  // Verses this study can link from a note, grouped by the theme they're most
+  // heavily marked in — the same shape the desktop Outline builds, so the note
+  // toolbar offers Link verse on both shells instead of desktop only.
+  const linkableVerses: LinkableVerse[] = Array.from(
+    new Set(liveMarks.map((m) => m.reference))
+  )
+    .sort((a, b) => orderOf(a) - orderOf(b))
+    .map((reference) => {
+      const vMarks = liveMarks.filter((m) => m.reference === reference);
+      let color: MarkColor | null = null;
+      let best = -1;
+      COLORS.forEach((c) => {
+        const w = vMarks
+          .filter((m) => m.color === c)
+          .reduce((sum, m) => sum + (STYLE_POINTS[m.style] || 0), 0);
+        if (w > best) {
+          best = w;
+          color = w > 0 ? c : color;
+        }
+      });
+      const info = VI.get(reference);
+      return {
+        reference,
+        text: info ? info.text : "",
+        color,
+        themeName:
+          color != null
+            ? (colorLabels[color] || "").trim() || "Color " + color
+            : "Unmarked",
+      };
+    });
+  // A chip's preview: the marked phrases alone, or the whole verse.
+  const focusedForRef = (reference: string) =>
+    liveMarks
+      .filter((m) => m.reference === reference)
+      .sort((a, b) => a.startIndex - b.startIndex)
+      .map((m) => m.markedText)
+      .join(" · ");
+  const fullTextForRef = (reference: string) => {
+    const info = VI.get(reference);
+    return info ? info.text : "";
+  };
+
+  // Everything the note toolbar needs, so mobile's editor is one-to-one with
+  // desktop's — the same buttons, the same pickers, the same chip previews.
+  const noteWiring = {
+    linkableVerses,
+    linkableDefinitions,
+    focusedFor: focusedForRef,
+    fullTextFor: fullTextForRef,
+    onJumpToReference: onJump,
+  };
 
   const studySummary = () =>
     buildStudySummary({
@@ -1303,7 +1356,7 @@ export default function MobileCompile({
               <RichNoteField
                 value={notes[dSynthKey()] || ""}
                 onChange={(t) => setNote(dSynthKey(), t)}
-                linkableDefinitions={linkableDefinitions}
+                {...noteWiring}
                 accent={C.text}
                 placeholder="State the main idea these verses support…"
                 addLabel="Add your synthesis"
@@ -1585,7 +1638,7 @@ export default function MobileCompile({
                         <RichNoteField
                           value={sVal}
                           onChange={(t) => setNote(sk, t)}
-                          linkableDefinitions={linkableDefinitions}
+                          {...noteWiring}
                           accent={accent}
                           placeholder={"What does " + name + " say across these verses?"}
                           addLabel={"Add a thought about " + name}
@@ -1978,7 +2031,7 @@ export default function MobileCompile({
                                           }}
                                         >
                                           <RichNoteField
-                                            linkableDefinitions={linkableDefinitions}
+                                            {...noteWiring}
                                             value={noteRaw}
                                             onChange={(t) => {
                                               setNote(noteKey, t);
