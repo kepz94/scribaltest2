@@ -2711,7 +2711,12 @@ export default function StudyTableColumn({
            auto-places — Place drops at the end of the theme's section, the
            grab handle drags to an exact spot. ---- */}
       {shelf && shelf.length > 0 && (() => {
-        const sideDock = !!traySide && !!outlineMode;
+        // The dock is about LAYOUT, not about how verses render. Gating it on
+        // outlineMode (verseView === "focused") meant Full view dropped the tray
+        // back into the flow, where it covered the very cards it places into —
+        // while the 288px gutter reserved for it in StudyTablesDesktop, which is
+        // reserved in BOTH views, sat empty beside it. Kepu, Jul 31 2026.
+        const sideDock = !!traySide;
         return (
         <div
           data-tray
