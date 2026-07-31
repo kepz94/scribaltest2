@@ -575,7 +575,7 @@ function buildVersesCard(
       const glossLines: { head: string; lines: string[] }[] = [];
       (v.glosses || []).forEach((g) => {
         ctx.font = proseFont(noteSize);
-        const head = g.word + " " + g.n + ". ";
+        const head = g.n > 0 ? g.word + " " + g.n + ". " : g.word + " — ";
         glossLines.push({
           head,
           lines: clampLines(wrap(ctx, head + g.text, maxW), 4),

@@ -812,12 +812,11 @@ function DefinitionPicker({ defs, filter, setFilter, onClose }: any) {
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel)) {
+        // A single-meaning word has no number to cite.
         const display =
           d.word.charAt(0).toUpperCase() +
           d.word.slice(1) +
-          ", " +
-          s.n +
-          ". " +
+          (s.n > 0 ? ", " + s.n + ". " : " — ") +
           s.text.replace(/^\s*\d+\.\s*/, "");
         sel.insertNodes([
           $createDefChipNode(d.dictKey, String(s.n), display),
@@ -894,7 +893,7 @@ function DefinitionPicker({ defs, filter, setFilter, onClose }: any) {
               {d.word.charAt(0).toUpperCase() + d.word.slice(1)}
             </span>
             <span style={{ color: DEF_ACCENT, fontWeight: 700, margin: "0 6px" }}>
-              {s.n}.
+              {s.n > 0 ? s.n + "." : "—"}
             </span>
             <span style={{ color: "var(--muted)" }}>{d.reference}</span>
             <span

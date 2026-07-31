@@ -832,7 +832,9 @@ export default function SemanticView({
               <strong style={{ color: text, fontVariant: "small-caps" }}>
                 {d.word}
               </strong>{" "}
-              <span style={{ color: "#c0a173", fontWeight: 700 }}>{d.n}.</span>{" "}
+              {d.n > 0 && (
+                <span style={{ color: "#c0a173", fontWeight: 700 }}>{d.n}.</span>
+              )}{" "}
               {d.text}
             </div>
           )

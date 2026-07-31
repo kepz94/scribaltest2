@@ -177,3 +177,55 @@ export function sensesFor(
   const want = new Set(chosen);
   return senses.filter((s) => want.has(s.n));
 }
+
+// What a tag actually carries into a study.
+//
+// Most entries have several senses and the reader picks; nothing is assumed for
+// them, because picking is the whole point. But plenty of words have exactly one
+// sense — or none numbered at all, like `zeal`, whose entry is a single
+// paragraph. Those offer nothing to choose between, so the picker correctly
+// hides, and they were then silently excluded from every surface: no gloss under
+// the verse, nothing offered to the note editor. A word with one meaning should
+// carry that meaning.
+//
+// n === 0 marks a sense that the dictionary never numbered; callers print it
+// without a number.
+// An unnumbered entry opens with its own headword, part of speech and often an
+// etymology bracket — "ZEAL, noun [Gr., Latin ] Passionate ardor…". The surfaces
+// that show a gloss print the word themselves, so leaving all that in reads as
+// "Zeal — ZEAL, noun [Gr., Latin ] Passionate ardor". Strip down to the meaning.
+function stripHeadword(text: string): string {
+  // These entries are inconsistent 19th-century typesetting: a headword, then
+  // any of a part of speech, a pronunciation note, an etymology bracket, in
+  // varying order. Strip repeatedly rather than assume one arrangement.
+  const HEAD = /^[A-Z][A-Z'\u2019\-]*(\s+[A-Z][A-Z'\u2019\-]*)*\s*,?\s*/;
+  const POS =
+    /^(noun|verb\s+transitive|verb\s+intransitive|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|participle[a-z\s]*)\b[\s,.]*/i;
+  const BRACKET = /^\[[^\]]*\]\s*/;
+  const PRON = /^[a-z]{1,3}\s+as\s+[a-z]{1,3}\s*[.,]?\s*/i; // "s as z."
+  const PUNCT = /^[\s.,;:]+/;
+
+  let out = text;
+  out = out.replace(HEAD, "");
+  for (let i = 0; i < 4; i++) {
+    const before = out;
+    out = out.replace(POS, "").replace(PRON, "").replace(BRACKET, "").replace(PUNCT, "");
+    if (out === before) break;
+  }
+  out = out.trim();
+  // If stripping ate everything, the entry was only a headword — keep the
+  // original rather than showing a blank gloss.
+  return out || text;
+}
+
+export function carriedSenses(
+  definition: string,
+  chosen: number[] | undefined
+): WebsterSense[] {
+  if (chosen && chosen.length > 0) return sensesFor(definition, chosen);
+  const { header, senses } = parseSenses(definition);
+  if (senses.length === 1) return senses;
+  if (senses.length === 0 && header.trim())
+    return [{ n: 0, text: stripHeadword(header.trim()) }];
+  return []; // several senses and no choice — the reader still has to pick
+}

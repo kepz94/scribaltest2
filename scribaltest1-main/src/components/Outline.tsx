@@ -7,7 +7,7 @@ import { definitionForKey, sensesFor } from "../webster";
 import { useWebsterReady } from "../useWebsterReady";
 import {
   linkableDefinitionsFor,
-  hasChosenSenses,
+  hasTaggedWords,
 } from "../linkableDefinitions";
 import {
   Mark,
@@ -164,7 +164,7 @@ export default function Outline(props: OutlineProps) {
   // same tags the verses use, so the picker can only ever offer what the reader
   // actually chose — nothing from outside this study, and no unpicked senses.
   // Only fetch the dictionary if this study has anything to look up.
-  const dictReady = useWebsterReady(hasChosenSenses(tags));
+  const dictReady = useWebsterReady(hasTaggedWords(tags));
   const linkableDefinitions: LinkableDefinition[] = linkableDefinitionsFor(
     tags,
     dictReady
@@ -808,11 +808,13 @@ export default function Outline(props: OutlineProps) {
                                   >
                                     {d.word}
                                   </strong>{" "}
-                                  <span
-                                    style={{ color: "#9a7b4f", fontWeight: 700 }}
-                                  >
-                                    {d.n}.
-                                  </span>{" "}
+                                  {d.n > 0 && (
+                                    <span
+                                      style={{ color: "#9a7b4f", fontWeight: 700 }}
+                                    >
+                                      {d.n}.
+                                    </span>
+                                  )}{" "}
                                   {d.text}
                                 </div>
                               ))}

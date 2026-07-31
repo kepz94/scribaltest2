@@ -3,7 +3,7 @@
 // it already held — so a choice made on one device could never reach the other.
 // These cover the parser and that merge.
 
-import { parseSenses, sensesFor } from "./webster";
+import { parseSenses, sensesFor, carriedSenses } from "./webster";
 import { mergeTagState, TagStore } from "./hooks/useWordTags";
 import { WordTag } from "./types";
 import { richToParagraphs, richToText } from "./richText";
@@ -285,5 +285,68 @@ describe("saved note HTML round trip", () => {
       n.nodeType === 1 ? true : !!(n.textContent || "").trim()
     );
     expect(kept.map((n) => n.textContent)).toEqual(["hello", "two"]);
+  });
+});
+
+// Most words have several senses and the reader picks. Plenty have exactly one —
+// or none numbered at all, like `zeal`, whose entry is a single paragraph. Those
+// offer nothing to choose, so the picker hides, and they were then excluded from
+// every surface: no gloss under the verse, nothing offered to the note editor. A
+// word with one meaning should carry that meaning.
+describe("carriedSenses", () => {
+  const multi = "GRACE, noun\n\n1. Favor.\n\n2. Unmerited love.";
+  const single = "MERCHANDISE, noun\n\n1. The objects of commerce.";
+  const unnumbered = "ZEAL, noun Passionate ardor in the pursuit of any thing.";
+
+  it("carries exactly what was chosen when the reader chose", () => {
+    expect(carriedSenses(multi, [2]).map((s) => s.n)).toEqual([2]);
+  });
+
+  it("carries the sole sense of a single-meaning word with no choice made", () => {
+    const got = carriedSenses(single, undefined);
+    expect(got).toHaveLength(1);
+    expect(got[0].n).toBe(1);
+  });
+
+  it("carries an unnumbered entry's body, marked as having no number", () => {
+    const got = carriedSenses(unnumbered, undefined);
+    expect(got).toHaveLength(1);
+    expect(got[0].n).toBe(0); // callers print it without a number
+    expect(got[0].text).toContain("Passionate ardor");
+  });
+
+  it("carries nothing for a multi-sense word until the reader picks", () => {
+    // Choosing is the point; guessing on the reader's behalf is not ours to do.
+    expect(carriedSenses(multi, undefined)).toEqual([]);
+    expect(carriedSenses(multi, [])).toEqual([]);
+  });
+
+  it("carries nothing when the entry is missing entirely", () => {
+    expect(carriedSenses("", undefined)).toEqual([]);
+  });
+});
+
+describe("carriedSenses on an unnumbered entry", () => {
+  it("drops the entry's own headword, which the surfaces already print", () => {
+    const got = carriedSenses("ZEAL, noun Passionate ardor in the pursuit of any thing.", undefined);
+    expect(got[0].text).toBe("Passionate ardor in the pursuit of any thing.");
+  });
+
+  it("drops a multi-word headword and its part of speech", () => {
+    const got = carriedSenses("CAST DOWN, verb transitive To deject; to depress the mind.", undefined);
+    expect(got[0].text).toBe("To deject; to depress the mind.");
+  });
+
+  it("drops a leading etymology bracket too", () => {
+    const got = carriedSenses(
+      "ZEAL, noun [Gr., Latin ] Passionate ardor in the pursuit of any thing.",
+      undefined
+    );
+    expect(got[0].text).toBe("Passionate ardor in the pursuit of any thing.");
+  });
+
+  it("keeps the text when stripping would leave nothing", () => {
+    const got = carriedSenses("SELAH", undefined);
+    expect(got[0].text).toBe("SELAH");
   });
 });

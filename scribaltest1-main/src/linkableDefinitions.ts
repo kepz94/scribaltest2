@@ -1,5 +1,5 @@
 import { WordTag } from "./types";
-import { definitionForKey, sensesFor } from "./webster";
+import { definitionForKey, carriedSenses } from "./webster";
 
 export interface LinkableDefinitionData {
   dictKey: string;
@@ -22,18 +22,20 @@ export function linkableDefinitionsFor(
 ): LinkableDefinitionData[] {
   if (!dictReady) return [];
   return (tags || [])
-    .filter((t) => t.senses && t.senses.length > 0)
     .map((t) => ({
       dictKey: t.dictKey,
       word: t.word || t.dictKey,
       reference: t.reference,
-      senses: sensesFor(definitionForKey(t.dictKey) || "", t.senses),
+      // Chosen senses, or the sole sense of a single-meaning word.
+      senses: carriedSenses(definitionForKey(t.dictKey) || "", t.senses),
     }))
     .filter((d) => d.senses.length > 0);
 }
 
-// Whether this study has anything to link — also whether it is worth fetching
-// the dictionary at all.
-export function hasChosenSenses(tags: WordTag[] | undefined): boolean {
-  return (tags || []).some((t) => t.senses && t.senses.length > 0);
+// Whether this study has anything to look up — and so whether it is worth
+// fetching the dictionary at all. ANY tag qualifies, not just one with chosen
+// senses: a single-meaning word carries its meaning without the reader having
+// chosen anything.
+export function hasTaggedWords(tags: WordTag[] | undefined): boolean {
+  return (tags || []).length > 0;
 }

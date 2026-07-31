@@ -5,7 +5,7 @@ import { act } from "react-dom/test-utils";
 import DefinitionView from "./components/DefinitionView";
 import {
   linkableDefinitionsFor,
-  hasChosenSenses,
+  hasTaggedWords,
 } from "./linkableDefinitions";
 import { WordTag } from "./types";
 
@@ -150,14 +150,12 @@ describe("linkableDefinitionsFor", () => {
     expect(linkableDefinitionsFor([tag({ senses: [1] })], false)).toEqual([]);
   });
 
-  it("offers nothing for a tag with no chosen senses", () => {
-    expect(hasChosenSenses([tag()])).toBe(false);
-    expect(linkableDefinitionsFor([tag()], true)).toEqual([]);
-  });
-
-  it("knows when a study has something worth fetching the dictionary for", () => {
-    expect(hasChosenSenses([tag({ senses: [2] })])).toBe(true);
-    expect(hasChosenSenses([])).toBe(false);
-    expect(hasChosenSenses(undefined)).toBe(false);
+  it("counts any tag as worth a lookup, not only one with chosen senses", () => {
+    // A single-meaning word carries its meaning without anything being picked,
+    // so gating the dictionary on chosen senses would exclude it entirely.
+    expect(hasTaggedWords([tag()])).toBe(true);
+    expect(hasTaggedWords([tag({ senses: [2] })])).toBe(true);
+    expect(hasTaggedWords([])).toBe(false);
+    expect(hasTaggedWords(undefined)).toBe(false);
   });
 });

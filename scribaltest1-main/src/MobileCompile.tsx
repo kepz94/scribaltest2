@@ -11,7 +11,7 @@ import { richToText } from "./richText";
 import { useWebsterReady } from "./useWebsterReady";
 import {
   linkableDefinitionsFor,
-  hasChosenSenses,
+  hasTaggedWords,
 } from "./linkableDefinitions";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
@@ -413,7 +413,7 @@ export default function MobileCompile({
   // Definitions tagged within this study, one row per chosen sense — what the
   // note editor's Link definition button can offer.
   // Only fetch the dictionary if this study has anything to look up.
-  const dictReady = useWebsterReady(hasChosenSenses(tags));
+  const dictReady = useWebsterReady(hasTaggedWords(tags));
   const linkableDefinitions: LinkableDefinition[] = linkableDefinitionsFor(
     tags,
     dictReady
@@ -2007,14 +2007,16 @@ export default function MobileCompile({
                                               <strong style={{ color: C.text }}>
                                                 {d.word}
                                               </strong>{" "}
-                                              <span
-                                                style={{
-                                                  color: "#9a7b4f",
-                                                  fontWeight: 700,
-                                                }}
-                                              >
-                                                {d.n}.
-                                              </span>{" "}
+                                              {d.n > 0 && (
+                                                <span
+                                                  style={{
+                                                    color: "#9a7b4f",
+                                                    fontWeight: 700,
+                                                  }}
+                                                >
+                                                  {d.n}.
+                                                </span>
+                                              )}{" "}
                                               {d.text}
                                             </div>
                                           ))}

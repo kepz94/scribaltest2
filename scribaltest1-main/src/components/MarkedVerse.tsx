@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Mark, WordTag, markStyleCSS, STYLE_POINTS } from "../types";
-import { definitionForKey, sensesFor, isLoaded, loadWebster } from "../webster";
+import { definitionForKey, carriedSenses, isLoaded, loadWebster } from "../webster";
 
 // Glosses need the dictionary, and a verse can render in surfaces that never
 // load it (the reader before Define is armed, study tables, a compile view).
@@ -25,18 +25,18 @@ function whenDictReady(cb: () => void): () => void {
 const DEF_ACCENT = "#9a7b4f";
 
 // The glosses a verse carries: for each tagged word, the senses its reader
-// chose. A tag with no chosen senses contributes nothing — choosing is opt-in,
-// and a verse without choices looks exactly as it always has.
+// chose — or, for a word with only one meaning, that meaning, since there was
+// nothing to choose. A multi-sense word with no choice still contributes
+// nothing: picking is the point, and guessing for the reader is not ours to do.
 export function glossesFor(
   verseTags: WordTag[]
 ): { word: string; n: number; text: string }[] {
   const out: { word: string; n: number; text: string }[] = [];
   verseTags.forEach((t) => {
-    if (!t.senses || t.senses.length === 0) return;
     const def = definitionForKey(t.dictKey);
     if (!def) return; // dictionary not loaded yet, or the key is gone
     const word = t.word ? t.word.charAt(0).toUpperCase() + t.word.slice(1) : t.dictKey;
-    sensesFor(def, t.senses).forEach((s) =>
+    carriedSenses(def, t.senses).forEach((s) =>
       // Strip the leading "N. " — the number is rendered as its own element.
       out.push({ word, n: s.n, text: s.text.replace(/^\s*\d+\.\s*/, "") })
     );
@@ -72,8 +72,10 @@ export default function MarkedVerse({
 }: MarkedVerseProps) {
   const verseMarks = marks.filter((m) => m.reference === reference);
   const verseTags = (tags || []).filter((t) => t.reference === reference);
-  const wantsGloss =
-    !givenGlosses && verseTags.some((t) => t.senses && t.senses.length > 0);
+  // Any tag may carry something now: a chosen sense, or the sole sense of a
+  // single-meaning word. carriedSenses decides; this just asks for the
+  // dictionary when there is any tag at all on the verse.
+  const wantsGloss = !givenGlosses && verseTags.length > 0;
   const [, bumpDict] = useState(0);
   useEffect(() => {
     if (!wantsGloss || isLoaded()) return;
@@ -210,9 +212,13 @@ export default function MarkedVerse({
               >
                 {g.word}
               </strong>
-              <span style={{ color: DEF_ACCENT, fontWeight: 700, marginRight: "5px" }}>
-                {g.n}.
-              </span>
+              {g.n > 0 && (
+                <span
+                  style={{ color: DEF_ACCENT, fontWeight: 700, marginRight: "5px" }}
+                >
+                  {g.n}.
+                </span>
+              )}
               {g.text}
             </span>
           ))}

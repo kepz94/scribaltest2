@@ -190,7 +190,9 @@ export default function PrintView(props: PrintViewProps) {
             <strong style={{ color: "#222", fontVariant: "small-caps" }}>
               {d.word}
             </strong>{" "}
-            <span style={{ color: "#7a5c33", fontWeight: 700 }}>{d.n}.</span>{" "}
+            {d.n > 0 && (
+              <span style={{ color: "#7a5c33", fontWeight: 700 }}>{d.n}.</span>
+            )}{" "}
             {d.text}
           </div>
         ))}
