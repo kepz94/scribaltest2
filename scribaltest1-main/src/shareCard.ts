@@ -47,6 +47,18 @@ async function copyBlob(blob: Blob, type: string): Promise<boolean> {
   }
 }
 
+// Save a rendered card as a file, independent of the share path — the desktop
+// preview offers it outright so copying to the clipboard is never the only way
+// to get the thing you just made.
+export function downloadCanvas(
+  canvas: HTMLCanvasElement,
+  filename: string
+): void {
+  canvas.toBlob((b) => {
+    if (b) downloadBlob(b, filename);
+  }, "image/png");
+}
+
 function downloadBlob(blob: Blob, filename: string): ShareResult {
   try {
     const url = URL.createObjectURL(blob);

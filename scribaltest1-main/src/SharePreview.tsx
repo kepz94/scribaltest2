@@ -7,6 +7,7 @@ import {
   versesCardMetrics,
   canvasURL,
   shareCanvas,
+  downloadCanvas,
   CARD_TARGET_H,
   MAX_PER_CARD,
   prefersOsShare,
@@ -297,6 +298,23 @@ export default function SharePreview({
     if (c) setUrl(canvasURL(c));
     // eslint: re-render preview when inputs change
   }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks, pages, verses, syntheses, pageIdx]);
+
+  // Save the page on screen as a file, whatever the share button does. Always
+  // the current page, so what you are looking at is what lands on disk.
+  const doDownload = () => {
+    const c = build();
+    if (!c) {
+      onFlash("Couldn't create image");
+      return;
+    }
+    downloadCanvas(
+      c,
+      (kind === "study" ? "scribal-study" : "scribal-verses") +
+        (pageCount > 1 ? "-p" + (pageIdx + 1) : "") +
+        ".png"
+    );
+    onFlash("Card saved to your downloads");
+  };
 
   const doShare = async () => {
     setBusy(true);
@@ -724,6 +742,31 @@ export default function SharePreview({
               ? "Share"
               : "Copy card"}
           </button>
+          {/* Copying is not saving. On a desktop the clipboard is the fast path,
+              but a card you want to keep needs a file, and routing the share
+              through the clipboard had left no way to get one at all. */}
+          {!osShare && !pdfMode && (
+            <button
+              onClick={doDownload}
+              disabled={busy}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid " + C.border,
+                background: "transparent",
+                color: C.text,
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                opacity: busy ? 0.6 : 1,
+                marginBottom: "8px",
+              }}
+            >
+              Download image
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{

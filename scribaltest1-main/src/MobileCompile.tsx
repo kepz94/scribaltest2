@@ -178,7 +178,13 @@ export default function MobileCompile({
     el.innerHTML = raw.replace(/<(br|\/p|\/li|\/h1|\/h2|\/blockquote)[^>]*>/gi, "\n");
     return (el.textContent || "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   };
+  // The study's chapters, in the SAME terms desktop states them: its scope.
+  // This used to be derived from the marks, which is a narrower thing — a
+  // linked study whose second chapter has no marks yet looked like a
+  // one-chapter study here, so mobile minted its own synthesis key beside
+  // desktop's and the two shells then read and wrote different notes.
   const compileChapters = () => {
+    if (studyScopes && studyScopes.length) return studyScopes.slice();
     const seen: string[] = [];
     activeColors.forEach((c) =>
       (byColor[c] || []).forEach((m: any) => {
@@ -188,17 +194,31 @@ export default function MobileCompile({
     );
     return seen;
   };
-  // Prefer an existing desktop synthesis key for these chapters (any order);
-  // otherwise mint one in reading order.
+  const chaptersOfKey = (k: string) => k.slice(10).split("+");
+  // Resolve to the key the study's synthesis is ALREADY under, and only mint a
+  // new one when there is nothing to join. Minting beside an existing note is
+  // how a synthesis written on one shell became invisible on the other.
   const dSynthKey = () => {
     const chapters = compileChapters();
     const want = chapters.slice().sort().join("+");
-    const hit = Object.keys(notes).find(
-      (k) =>
-        k.indexOf("synthesis|") === 0 &&
-        k.slice(10).split("+").sort().join("+") === want
+    const written = Object.keys(notes).filter(
+      (k) => k.indexOf("synthesis|") === 0 && (notes[k] || "").trim()
     );
-    return hit || "synthesis|" + chapters.join("+");
+    const exact = written.find(
+      (k) => chaptersOfKey(k).slice().sort().join("+") === want
+    );
+    if (exact) return exact;
+    // Nothing matches exactly: take a study whose scope CONTAINS every chapter
+    // we can see, narrowest first. Covers the case where this shell's view of
+    // the scope is a subset of the one the note was written under.
+    const superset = written
+      .filter((k) => {
+        const ks = chaptersOfKey(k);
+        return chapters.length > 0 && chapters.every((c) => ks.indexOf(c) >= 0);
+      })
+      .sort((a, b) => chaptersOfKey(a).length - chaptersOfKey(b).length)[0];
+    if (superset) return superset;
+    return "synthesis|" + chapters.join("+");
   };
   const readVerseNote = (color: number, ref: string) => {
     const v = notes[dVerseKey(color, ref)];
@@ -1379,8 +1399,12 @@ export default function MobileCompile({
             >
               Synthesis
             </div>
+            {/* One resolver for display and for every share. The box used to
+                read notes[dSynthKey()] directly while everything else read
+                readSynthRaw(), so the box could show one thing and a share
+                carry another. */}
             <RichNoteField
-              value={notes[dSynthKey()] || ""}
+              value={readSynthRaw()}
               onChange={(t) => setNote(dSynthKey(), t)}
               {...noteWiring}
               accent={C.text}
