@@ -206,16 +206,18 @@ export default function MobileCompile({
     if (v && v.trim()) return flattenRich(v);
     return flattenRich(notes[verseNoteKey(ref)] || "");
   };
-  const readSynth = () => {
+  // The synthesis as it was written — headings, dividers, lists and all. Every
+  // surface that can render structure takes this one.
+  const readSynthRaw = () => {
     const v = notes[dSynthKey()];
-    // richToText keeps paragraphs, headings and bullets; flattenRich ran them
-    // together, and the card then wrapped them into one undifferentiated block.
-    if (v && v.trim()) return richToText(v);
-    const legacy = activeColors
-      .map((c) => notes[synthKey(c)] || "")
-      .find((x) => x.trim());
-    return richToText(legacy || "");
+    if (v && v.trim()) return v;
+    return (
+      activeColors.map((c) => notes[synthKey(c)] || "").find((x) => x.trim()) ||
+      ""
+    );
   };
+  // Flattened, for the one place that wants a clamped teaser: the cover blurb.
+  const readSynth = () => richToText(readSynthRaw());
   const [sortMode, setSortMode] = useState<SortMode>("order");
   // Lead verses (pins): user-chosen verses that always sit at a theme's top,
   // in the order they were pinned — above any automatic sort.
@@ -597,7 +599,7 @@ export default function MobileCompile({
       if (text) synths.push({ theme: sv.theme, color: sv.color, text });
     });
     // The study-wide synthesis (the one the outline writes) leads.
-    const overall = readSynth().trim();
+    const overall = readSynthRaw().trim();
     if (overall) synths.unshift({ theme: "Synthesis", color: 6, text: overall });
     setStudyPreview({
       verses: entriesFor(shareableVerses),
@@ -1327,7 +1329,7 @@ export default function MobileCompile({
               }
               return "";
             }}
-            synthesisFor={() => readSynth()}
+            synthesisFor={() => readSynthRaw()}
             onSaveSynthesis={(t: string) => setNote(dSynthKey(), t)}
             panel={C.panel}
             border={C.border}

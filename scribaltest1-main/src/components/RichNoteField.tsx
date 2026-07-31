@@ -91,6 +91,11 @@ const DEF_ACCENT = "#9a7b4f";
 // which is what print and the resting view render.
 const DEF_CARD_STYLE =
   "display:block; margin:8px 0; padding:10px 12px; border-left:3px solid #9a7b4f; border-radius:8px; background:rgba(154,123,79,0.10); font-style:italic; color:#9a7b4f;";
+// A linked verse is a card too, in the verse accent: the words themselves, not
+// a reference you have to go look up. Legacy inline chips keep their old look —
+// they carry only a reference, so a card would be an empty frame.
+const VERSE_CARD_STYLE =
+  "display:block; margin:8px 0; padding:10px 12px; border-left:3px solid #8b5cf6; border-radius:8px; background:rgba(139,92,246,0.10);";
 
 // The editor/rendered-note CSS, injected once into <head> so rich notes are
 // styled wherever this component mounts — either shell, any view. (These
@@ -177,6 +182,11 @@ const ensureRichNoteCss = () => {
       font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
     }
     .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
+    /* A linked verse card is a block — it must NOT inherit the inline chip's
+       nowrap, or a whole verse would run off the side of the note. */
+    .scribal-rich-editor .scribal-vcard, .scribal-rich-view .scribal-vcard {
+      white-space: normal; font-weight: 400; color: inherit;
+    }
     /* A linked definition is a card: the whole sense, set apart from the prose
        around it rather than threaded through it like a verse reference. */
     .scribal-rich-editor .scribal-dchip, .scribal-rich-view .scribal-dchip {
@@ -195,30 +205,43 @@ if (typeof document !== "undefined") ensureRichNoteCss();
 // one unit, exactly like a chip in Docs/Notion.
 class ChipNode extends TextNode {
   __ref: string;
+  // A card carries the verse itself; a plain chip carries only the reference.
+  // Every chip written before Link verses became a card is a plain one, so the
+  // flag is what tells them apart on the way back in.
+  __card: boolean;
   static getType(): string {
     return "verse-chip";
   }
   static clone(node: any): any {
-    return new ChipNode(node.__ref, node.__text, node.__key);
+    return new ChipNode(node.__ref, node.__text, node.__card, node.__key);
   }
-  constructor(ref: string, text: string, key?: any) {
+  constructor(ref: string, text: string, card?: boolean, key?: any) {
     super(text, key);
     this.__ref = ref;
+    this.__card = !!card;
   }
   createDOM(config: any): any {
     const el = super.createDOM(config);
     el.classList.add("scribal-vchip");
     el.setAttribute("data-ref", this.__ref);
-    el.style.color = ACCENT;
-    el.style.fontWeight = "600";
-    el.style.cursor = "pointer";
+    if (this.__card) {
+      el.classList.add("scribal-vcard");
+      el.setAttribute("style", VERSE_CARD_STYLE + " cursor:pointer;");
+    } else {
+      el.style.color = ACCENT;
+      el.style.fontWeight = "600";
+      el.style.cursor = "pointer";
+    }
     return el;
   }
   exportDOM(): any {
     const el = document.createElement("span");
-    el.className = "scribal-vchip";
+    el.className = this.__card ? "scribal-vchip scribal-vcard" : "scribal-vchip";
     el.setAttribute("data-ref", this.__ref);
-    el.setAttribute("style", "color: " + ACCENT + "; font-weight: 600;");
+    el.setAttribute(
+      "style",
+      this.__card ? VERSE_CARD_STYLE : "color: " + ACCENT + "; font-weight: 600;"
+    );
     el.textContent = this.getTextContent();
     return { element: el };
   }
@@ -230,7 +253,8 @@ class ChipNode extends TextNode {
               conversion: (el: any) => ({
                 node: $createChipNode(
                   el.getAttribute("data-ref") || "",
-                  el.textContent || ""
+                  el.textContent || "",
+                  el.classList.contains("scribal-vcard")
                 ),
               }),
               priority: 3,
@@ -239,14 +263,20 @@ class ChipNode extends TextNode {
     };
   }
   exportJSON(): any {
-    return { ...super.exportJSON(), type: "verse-chip", ref: this.__ref, version: 1 };
+    return {
+      ...super.exportJSON(),
+      type: "verse-chip",
+      ref: this.__ref,
+      card: this.__card,
+      version: 1,
+    };
   }
   static importJSON(json: any): any {
-    return $createChipNode(json.ref || "", json.text || "");
+    return $createChipNode(json.ref || "", json.text || "", !!json.card);
   }
 }
-function $createChipNode(ref: string, text: string) {
-  const n: any = new ChipNode(ref, text);
+function $createChipNode(ref: string, text: string, card?: boolean) {
+  const n: any = new ChipNode(ref, text, card);
   n.setMode("token");
   return n;
 }
@@ -934,12 +964,16 @@ function VersePicker({
   onClose,
 }: any) {
   const [editor] = useLexicalComposerContext();
-  const insert = (ref: string) => {
+  // A linked verse is a card, like a linked definition: the words themselves,
+  // with the reference on them. A bare reference made the reader go and find
+  // what they had just chosen.
+  const insert = (ref: string, text: string) => {
     editor.update(() => {
       const sel = $getSelection();
       if ($isRangeSelection(sel)) {
+        const body = (text || "").trim();
         sel.insertNodes([
-          $createChipNode(ref, "\u2937\u00a0" + ref),
+          $createChipNode(ref, body ? ref + " \u2014 " + body : "\u2937\u00a0" + ref, !!body),
           $createTextNode("\u00a0"),
         ]);
       }
@@ -999,7 +1033,7 @@ function VersePicker({
                   key={v.reference}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    insert(v.reference);
+                    insert(v.reference, v.text);
                   }}
                   style={{ display: "flex", gap: "9px", padding: "8px 12px 8px 34px", cursor: "pointer", alignItems: "flex-start" }}
                 >
@@ -1300,22 +1334,57 @@ export default function RichNoteField({
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
         <LexicalComposer initialConfig={initialConfig}>
-          <Toolbar
-            accent={accent}
-            hasVerses={linkableVerses.length > 0}
-            onLinkOpen={() => {
-              setDefOpen(false);
-              setLinkOpen((v) => !v);
+          {/* The toolbar sticks, and the pickers open directly beneath it. A
+              synthesis grows as tall as it wants; with the toolbar pinned to
+              the top of the box you had to scroll back up to use it, and a
+              picker rendered at the bottom of the box opened below the fold —
+              you could not see the options you had just asked for. */}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 6,
+              background: "var(--soft)",
+              borderRadius: "8px 8px 0 0",
             }}
-            // Shown wherever Link verse is: a study note. Gating it on having
-            // definitions hid the one thing that explains how to make one —
-            // the picker's own empty state was unreachable.
-            hasDefs={linkableVerses.length > 0 || linkableDefinitions.length > 0}
-            onDefOpen={() => {
-              setLinkOpen(false);
-              setDefOpen((v) => !v);
-            }}
-          />
+          >
+            <Toolbar
+              accent={accent}
+              hasVerses={linkableVerses.length > 0}
+              onLinkOpen={() => {
+                setDefOpen(false);
+                setLinkOpen((v) => !v);
+              }}
+              // Shown wherever Link verse is: a study note. Gating it on having
+              // definitions hid the one thing that explains how to make one —
+              // the picker's own empty state was unreachable.
+              hasDefs={
+                linkableVerses.length > 0 || linkableDefinitions.length > 0
+              }
+              onDefOpen={() => {
+                setLinkOpen(false);
+                setDefOpen((v) => !v);
+              }}
+            />
+            {linkOpen && (
+              <VersePicker
+                groups={groups}
+                linkFilter={linkFilter}
+                setLinkFilter={setLinkFilter}
+                openThemes={openThemes}
+                setOpenThemes={setOpenThemes}
+                onClose={() => setLinkOpen(false)}
+              />
+            )}
+            {defOpen && (
+              <DefinitionPicker
+                defs={linkableDefinitions}
+                filter={defFilter}
+                setFilter={setDefFilter}
+                onClose={() => setDefOpen(false)}
+              />
+            )}
+          </div>
           <div style={{ position: "relative" }}>
             <RichTextPlugin
               contentEditable={
@@ -1344,24 +1413,6 @@ export default function RichNoteField({
               });
             }}
           />
-          {linkOpen && (
-            <VersePicker
-              groups={groups}
-              linkFilter={linkFilter}
-              setLinkFilter={setLinkFilter}
-              openThemes={openThemes}
-              setOpenThemes={setOpenThemes}
-              onClose={() => setLinkOpen(false)}
-            />
-          )}
-          {defOpen && (
-            <DefinitionPicker
-              defs={linkableDefinitions}
-              filter={defFilter}
-              setFilter={setDefFilter}
-              onClose={() => setDefOpen(false)}
-            />
-          )}
         </LexicalComposer>
         <div style={{ display: "flex", gap: "8px", padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
           <button

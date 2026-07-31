@@ -6,7 +6,7 @@
 import { parseSenses, sensesFor, carriedSenses } from "./webster";
 import { mergeTagState, TagStore } from "./hooks/useWordTags";
 import { WordTag } from "./types";
-import { richToParagraphs, richToText } from "./richText";
+import { richToParagraphs, richToText, richToBlocks } from "./richText";
 
 describe("parseSenses", () => {
   const grace = [
@@ -248,6 +248,93 @@ describe("richToParagraphs", () => {
 
   it("joins to newline-separated text for callers that lay out themselves", () => {
     expect(richToText("<p>a</p><p>b</p>")).toBe("a\nb");
+  });
+});
+
+// Kepu, on the deploy: "My synthesis is laid out in italics the whole way
+// through. Doesn't show my divider lines and it's just not how i want it to
+// look. i want my synthesis to look like how it does on my actual study
+// because i organized it in such a way for it to be read that way."
+// Flattening to paragraphs was never enough — the shape is the argument.
+describe("richToBlocks", () => {
+  // Exactly what Lexical writes when the reader uses the toolbar.
+  const NOTE =
+    "<h1>Why the temple</h1>" +
+    "<p><span>It is the </span><b><strong>zeal prophesied</strong></b><span> of him.</span></p>" +
+    "<hr>" +
+    "<h2>What follows</h2>" +
+    '<ul><li value="1"><span>deliberate</span></li><li value="2"><span>his own house</span></li></ul>' +
+    '<ol><li value="1"><span>He arrives</span></li><li value="2"><span>He drives them out</span></li></ol>' +
+    "<blockquote><span>as it was written.</span></blockquote>" +
+    '<span class="scribal-dchip" data-dictkey="zeal">Zeal — Passionate ardor.</span>' +
+    '<p><span class="scribal-vchip scribal-vcard" data-ref="John 2:16">John 2:16 — Take these things hence.</span></p>' +
+    "<p><span>not whether he was </span><i><em>angry</em></i><span>.</span></p>";
+
+  const kinds = (h: string) => richToBlocks(h).map((b) => b.kind);
+
+  it("keeps every block, in the order it was written", () => {
+    expect(kinds(NOTE)).toEqual([
+      "h1", "p", "rule", "h2",
+      "li", "li", "li", "li",
+      "quote", "def", "vcard", "p",
+    ]);
+  });
+
+  it("keeps the divider — it has no text, and that is not the same as no content", () => {
+    expect(richToBlocks("<p>a</p><hr><p>b</p>").map((b) => b.kind)).toEqual([
+      "p", "rule", "p",
+    ]);
+  });
+
+  it("numbers an ordered list instead of bulleting it", () => {
+    const li = richToBlocks(NOTE).filter((b) => b.kind === "li");
+    expect(li.map((b) => b.marker)).toEqual(["•", "•", "1.", "2."]);
+  });
+
+  it("carries bold and italic as runs, so emphasis survives", () => {
+    const blocks = richToBlocks(NOTE);
+    const para = blocks[1];
+    expect(para.runs.some((r) => r.b && r.text.includes("zeal prophesied"))).toBe(true);
+    const last = blocks[blocks.length - 1];
+    expect(last.runs.some((r) => r.i && r.text.includes("angry"))).toBe(true);
+  });
+
+  it("treats a linked definition and a linked verse as cards, not phrases", () => {
+    const blocks = richToBlocks(NOTE);
+    expect(blocks.find((b) => b.kind === "def")!.runs[0].text).toContain("Passionate ardor");
+    expect(blocks.find((b) => b.kind === "vcard")!.runs[0].text).toContain("John 2:16");
+  });
+
+  it("splits a paragraph around a card that interrupts it", () => {
+    const k = kinds(
+      '<p><span>before </span><span class="scribal-dchip">Zeal — ardor.</span><span> after</span></p>'
+    );
+    expect(k).toEqual(["p", "def", "p"]);
+  });
+
+  it("keeps a checklist's state as its marker", () => {
+    const k = richToBlocks(
+      '<ul __lexicallisttype="check">' +
+        '<li role="checkbox" aria-checked="true" value="1"><span>done</span></li>' +
+        '<li role="checkbox" aria-checked="false" value="2"><span>not done</span></li></ul>'
+    );
+    expect(k.map((b) => b.marker)).toEqual(["✓", "□"]);
+  });
+
+  it("nests a sub-list under its parent item, not before it", () => {
+    const b = richToBlocks(
+      "<ul><li><span>parent</span><ul><li><span>child</span></li></ul></li></ul>"
+    );
+    expect(b.map((x) => [x.runs[0].text, x.depth])).toEqual([
+      ["parent", 0],
+      ["child", 1],
+    ]);
+  });
+
+  it("returns nothing for an empty note", () => {
+    expect(richToBlocks("")).toEqual([]);
+    expect(richToBlocks("<p></p>")).toEqual([]);
+    expect(richToBlocks("<p><br></p>")).toEqual([]);
   });
 });
 

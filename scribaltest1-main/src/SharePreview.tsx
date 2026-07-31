@@ -136,6 +136,11 @@ export default function SharePreview({
   const [showMarks, setShowMarks] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  // Which page the preview is showing. A share is a document, and you should be
+  // able to read all of it before you send it — not just page 1 and a promise.
+  // Pages render on demand rather than all at once: a fifty-page study would
+  // otherwise hold fifty full-size bitmaps in memory on a phone.
+  const [pageIdx, setPageIdx] = useState(0);
 
   const hasNotes = !!verses && verses.some((v) => (v.note || "").trim());
   const hasSynth = !!syntheses && syntheses.some((s) => s.text.trim());
@@ -209,30 +214,20 @@ export default function SharePreview({
     if (kind === "verse" && verse) {
       return renderVerseCard({ ...verse, dark: cardDark });
     }
-    if (kind === "study" && verses) {
-      // The preview shows what ships first: the cover if there is one,
-      // otherwise the single card this study fits on.
-      return coverPage
-        ? buildCover()
-        : renderVersesCard({
-            verses: pages[0] || [],
-            dark: cardDark,
-            showNotes,
-            showSynthesis,
-            syntheses,
-            title,
-            sizeOverride: pdfSize,
-          });
-    }
-    if (kind === "verses" && verses) {
+    if ((kind === "study" || kind === "verses") && verses) {
+      // Page 0 of a study PDF is its cover; the verse pages follow it.
+      if (coverPage && pageIdx === 0) return buildCover();
+      const vi = coverPage ? pageIdx - 1 : pageIdx;
       return renderVersesCard({
-        verses: pages[0] || [],
+        verses: pages[vi] || pages[0] || [],
         dark: cardDark,
+        showNotes,
+        // Exactly the rule the PDF builder uses: the synthesis leads, so it
+        // rides on the first page of verses and nowhere else.
+        showSynthesis: showSynthesis && (!pdfMode || vi === 0),
+        syntheses,
         title,
         sizeOverride: pdfSize,
-        showNotes,
-        showSynthesis,
-        syntheses,
       });
     }
     if (kind === "compilation" && comp) {
@@ -241,11 +236,17 @@ export default function SharePreview({
     return null;
   };
 
+  // A toggle can change how many pages there are; never leave the reader
+  // parked past the end of the document.
+  useEffect(() => {
+    if (pageIdx > pageCount - 1) setPageIdx(Math.max(0, pageCount - 1));
+  }, [pageCount, pageIdx]);
+
   useEffect(() => {
     const c = build();
     if (c) setUrl(canvasURL(c));
     // eslint: re-render preview when inputs change
-  }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks, pages, verses, syntheses]);
+  }, [cardDark, featured, kind, showNotes, showSynthesis, showMarks, pages, verses, syntheses, pageIdx]);
 
   const doShare = async () => {
     setBusy(true);
@@ -329,6 +330,22 @@ export default function SharePreview({
     }
   };
 
+  // The pager sits on the dimmed backdrop, not on the panel, so it takes its
+  // colors from the overlay rather than the app theme.
+  const pageArrow = (off: boolean) => ({
+    width: "34px",
+    height: "34px",
+    flex: "0 0 auto",
+    borderRadius: "50%",
+    border: "none",
+    background: off ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.9)",
+    color: off ? "rgba(255,255,255,0.35)" : "#111",
+    fontSize: "20px",
+    lineHeight: "34px",
+    padding: 0,
+    cursor: off ? "default" : "pointer",
+    fontFamily: "inherit",
+  });
   const seg = (on: boolean) => ({
     flex: 1,
     padding: "10px",
@@ -384,18 +401,111 @@ export default function SharePreview({
         }}
       >
         {url ? (
-          <img
-            src={url}
-            alt="Share preview"
+          <div
             style={{
-              width: "78%",
-              maxWidth: "300px",
-              borderRadius: "14px",
-              boxShadow: "0 14px 44px rgba(0,0,0,0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              width: "100%",
             }}
-          />
+          >
+            {pageCount > 1 && (
+              <button
+                onClick={() => setPageIdx((n) => Math.max(0, n - 1))}
+                disabled={pageIdx === 0}
+                aria-label="Previous page"
+                style={pageArrow(pageIdx === 0)}
+              >
+                {"‹"}
+              </button>
+            )}
+            <img
+              src={url}
+              alt={
+                pageCount > 1
+                  ? "Share preview, page " + (pageIdx + 1) + " of " + pageCount
+                  : "Share preview"
+              }
+              style={{
+                width: pageCount > 1 ? "68%" : "78%",
+                maxWidth: "300px",
+                borderRadius: "14px",
+                boxShadow: "0 14px 44px rgba(0,0,0,0.45)",
+              }}
+            />
+            {pageCount > 1 && (
+              <button
+                onClick={() =>
+                  setPageIdx((n) => Math.min(pageCount - 1, n + 1))
+                }
+                disabled={pageIdx >= pageCount - 1}
+                aria-label="Next page"
+                style={pageArrow(pageIdx >= pageCount - 1)}
+              >
+                {"›"}
+              </button>
+            )}
+          </div>
         ) : (
           <div style={{ color: "#fff", padding: "40px" }}>Rendering…</div>
+        )}
+
+        {pageCount > 1 && (
+          // Every page is reachable: arrows for one at a time, dots to jump.
+          <div
+            data-share-pager=""
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
+              marginTop: "-6px",
+            }}
+          >
+            <div
+              style={{
+                color: "rgba(255,255,255,0.9)",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                letterSpacing: "0.03em",
+              }}
+            >
+              {coverPage && pageIdx === 0
+                ? "Cover · page 1 of " + pageCount
+                : "Page " + (pageIdx + 1) + " of " + pageCount}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "6px",
+                flexWrap: "wrap",
+                justifyContent: "center",
+                maxWidth: "300px",
+              }}
+            >
+              {Array.from({ length: pageCount }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPageIdx(i)}
+                  aria-label={"Page " + (i + 1)}
+                  style={{
+                    width: i === pageIdx ? "22px" : "8px",
+                    height: "8px",
+                    borderRadius: "4px",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    background:
+                      i === pageIdx
+                        ? "rgba(255,255,255,0.95)"
+                        : "rgba(255,255,255,0.38)",
+                    transition: "width 0.15s ease",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         )}
 
         <div
@@ -508,7 +618,6 @@ export default function SharePreview({
               }}
             >
               {verses.length} verses {"\u00b7"} shares as a PDF ({pageCount} pages)
-              {" \u2014 preview shows page 1"}
               {pageCount > BIG_PDF_PAGES && (
                 <div style={{ marginTop: "4px" }}>
                   That{"\u2019"}s a large file {"\u2014"} it may take a moment to build.

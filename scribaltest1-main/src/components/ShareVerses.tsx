@@ -178,9 +178,12 @@ export default function ShareVerses({
     return book.book + " " + book.chapters[t.chapter].chapter;
   });
   const synthKey = "synthesis|" + chapterNames.join("+");
-  // richToText, not the old flattener: a synthesis has paragraphs, headings
-  // and bullets, and they have to survive the trip to the canvas.
-  const synthText = richToText(notes[synthKey] || "");
+  // Two readings of the same note. The card gets it RAW, because the canvas
+  // now lays a synthesis out block by block and keeps its headings, dividers
+  // and lists. The cover blurb gets it flattened — it is a clamped teaser, and
+  // structure there would only be truncated mid-shape.
+  const synthHtml = notes[synthKey] || "";
+  const synthText = richToText(synthHtml);
 
   // all = every marked verse in the compilation (the whole-study share);
   // otherwise just what the user picked.
@@ -243,7 +246,7 @@ export default function ShareVerses({
             : undefined
         }
         syntheses={
-          synthText ? [{ theme: "Synthesis", color: 6, text: synthText }] : []
+          synthText ? [{ theme: "Synthesis", color: 6, text: synthHtml }] : []
         }
         title={studyName}
         marksToggle
