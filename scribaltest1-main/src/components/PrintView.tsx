@@ -3,6 +3,7 @@ import { Mark, MarkStyle, MarkColor, WordTag, COLORS, STYLE_POINTS, Tab } from "
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import WordStudies from "./WordStudies";
 import { glossesFor } from "./MarkedVerse";
+import { resolveSynthesisKey } from "../synthesisKey";
 
 const vols = volumesProxy;
 
@@ -161,8 +162,10 @@ export default function PrintView(props: PrintViewProps) {
     " " +
     vols[t.volume].books[t.book].chapters[t.chapter].chapter;
   // This study's own synthesis key — built exactly the way Outline saves it.
-  const synthKey =
-    "synthesis|" + compileTabs.map((t) => tabLabel(t)).join("+");
+  const synthKey = resolveSynthesisKey(
+    notes,
+    compileTabs.map((t) => tabLabel(t))
+  );
   // The study synthesis leads the document; anything else reflective trails it.
   const otherReflectionKeys = Object.keys(notes).filter(
     (k) => k !== synthKey && /synth|summary|reflect/i.test(k)

@@ -5,6 +5,7 @@ import SharePreview from "../SharePreview";
 import { VersesCardEntry } from "../shareCard";
 import { buildStudySummary } from "../studySummary";
 import { glossesFor } from "./MarkedVerse";
+import { resolveSynthesisKey } from "../synthesisKey";
 import { isLoaded, loadWebster } from "../webster";
 import { richToText } from "../richText";
 
@@ -177,7 +178,7 @@ export default function ShareVerses({
     const book = vols[t.volume].books[t.book];
     return book.book + " " + book.chapters[t.chapter].chapter;
   });
-  const synthKey = "synthesis|" + chapterNames.join("+");
+  const synthKey = resolveSynthesisKey(notes, chapterNames);
   // Two readings of the same note. The card gets it RAW, because the canvas
   // now lays a synthesis out block by block and keeps its headings, dividers
   // and lists. The cover blurb gets it flattened — it is a clamped teaser, and

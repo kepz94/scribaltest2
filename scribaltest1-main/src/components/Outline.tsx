@@ -5,6 +5,7 @@ import MarkedVerse, { glossesFor } from "./MarkedVerse";
 import RichNoteField, { LinkableVerse, LinkableDefinition } from "./RichNoteField";
 import { definitionForKey, sensesFor } from "../webster";
 import { useWebsterReady } from "../useWebsterReady";
+import { resolveSynthesisKey } from "../synthesisKey";
 import {
   linkableDefinitionsFor,
   hasTaggedWords,
@@ -487,8 +488,12 @@ export default function Outline(props: OutlineProps) {
         >
           <h3 style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Synthesis</h3>
           {(() => {
-            const synthKey =
-              "synthesis|" + compileTabs.map(tabLabel).join("+");
+            // Shared resolver: joins the note this study already has,
+            // whatever order the chapters were listed in when it was written.
+            const synthKey = resolveSynthesisKey(
+              notes || {},
+              compileTabs.map(tabLabel)
+            );
             return (
               <RichNoteField
                 value={(notes && notes[synthKey]) || ""}

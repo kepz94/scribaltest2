@@ -7,6 +7,7 @@ import RichNoteField from "./components/RichNoteField";
 import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
+import { resolveSynthesisKey } from "./synthesisKey";
 import { useWebsterReady } from "./useWebsterReady";
 import {
   linkableDefinitionsFor,
@@ -194,32 +195,12 @@ export default function MobileCompile({
     );
     return seen;
   };
-  const chaptersOfKey = (k: string) => k.slice(10).split("+");
-  // Resolve to the key the study's synthesis is ALREADY under, and only mint a
-  // new one when there is nothing to join. Minting beside an existing note is
-  // how a synthesis written on one shell became invisible on the other.
-  const dSynthKey = () => {
-    const chapters = compileChapters();
-    const want = chapters.slice().sort().join("+");
-    const written = Object.keys(notes).filter(
-      (k) => k.indexOf("synthesis|") === 0 && (notes[k] || "").trim()
-    );
-    const exact = written.find(
-      (k) => chaptersOfKey(k).slice().sort().join("+") === want
-    );
-    if (exact) return exact;
-    // Nothing matches exactly: take a study whose scope CONTAINS every chapter
-    // we can see, narrowest first. Covers the case where this shell's view of
-    // the scope is a subset of the one the note was written under.
-    const superset = written
-      .filter((k) => {
-        const ks = chaptersOfKey(k);
-        return chapters.length > 0 && chapters.every((c) => ks.indexOf(c) >= 0);
-      })
-      .sort((a, b) => chaptersOfKey(a).length - chaptersOfKey(b).length)[0];
-    if (superset) return superset;
-    return "synthesis|" + chapters.join("+");
-  };
+  // One resolver, shared with desktop and unit-tested: an existing note for
+  // this exact set of chapters whatever order it was written in, else a fresh
+  // key. (An earlier attempt here also matched a study whose scope merely
+  // CONTAINED these chapters, which would have let a plain chapter study adopt
+  // a keyword study's synthesis. Removed.)
+  const dSynthKey = () => resolveSynthesisKey(notes, compileChapters());
   const readVerseNote = (color: number, ref: string) => {
     const v = notes[dVerseKey(color, ref)];
     if (v && v.trim()) return flattenRich(v);
