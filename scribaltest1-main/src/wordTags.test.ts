@@ -6,6 +6,7 @@
 import { parseSenses, sensesFor } from "./webster";
 import { mergeTagState, TagStore } from "./hooks/useWordTags";
 import { WordTag } from "./types";
+import { richToParagraphs, richToText } from "./richText";
 
 describe("parseSenses", () => {
   const grace = [
@@ -201,5 +202,51 @@ describe("definition chip markup", () => {
     // A note whose only content is a chip must still save.
     const textOnly = chipHtml.replace(/<[^>]*>/g, "").replace(/ /g, " ").trim();
     expect(textOnly.length).toBeGreaterThan(0);
+  });
+});
+
+// A synthesis is written prose — paragraphs, headings, bullets. It reached the
+// share cards through a flattener that collapsed all of it into one run, and the
+// card then clamped that run to six lines. The result read as "only my first
+// paragraph came through".
+describe("richToParagraphs", () => {
+  const synth =
+    "<h1>Why the temple</h1><p>The cleansing is not an outburst.</p>" +
+    "<p>Three things follow:</p><ul><li>deliberate, not reactive</li>" +
+    "<li>his own house</li></ul><p>So the question is not anger.</p>";
+
+  it("recovers every block, in order", () => {
+    expect(richToParagraphs(synth)).toEqual([
+      "Why the temple",
+      "The cleansing is not an outburst.",
+      "Three things follow:",
+      "• deliberate, not reactive",
+      "• his own house",
+      "So the question is not anger.",
+    ]);
+  });
+
+  it("marks list items, because a bullet is content not decoration", () => {
+    expect(richToParagraphs(synth).filter((p) => p.startsWith("• "))).toHaveLength(2);
+  });
+
+  it("does not run a heading into the paragraph after it", () => {
+    // The separator has to survive innerHTML parsing; a control character does
+    // not, and everything silently concatenated.
+    expect(richToParagraphs(synth)[0]).toBe("Why the temple");
+  });
+
+  it("handles a plain-text note with newlines", () => {
+    expect(richToParagraphs("one\n\ntwo\nthree")).toEqual(["one", "two", "three"]);
+  });
+
+  it("returns nothing for empty or whitespace-only input", () => {
+    expect(richToParagraphs("")).toEqual([]);
+    expect(richToParagraphs("   ")).toEqual([]);
+    expect(richToParagraphs("<p></p>")).toEqual([]);
+  });
+
+  it("joins to newline-separated text for callers that lay out themselves", () => {
+    expect(richToText("<p>a</p><p>b</p>")).toBe("a\nb");
   });
 });

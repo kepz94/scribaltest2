@@ -126,9 +126,13 @@ export default function SharePreview({
   const [cardDark, setCardDark] = useState(appDark);
   const [featured, setFeatured] = useState(comp ? comp.defaultFeatured : 0);
   const [showNotes, setShowNotes] = useState(true);
-  // A whole study states its conclusion first, so its synthesis is on by
-  // default; a hand-picked set of verses is not a study and stays opt-in.
-  const [showSynthesis, setShowSynthesis] = useState(kind === "study");
+  // If a synthesis exists it ships by default — picking a few core verses to
+  // send alongside your conclusion is a normal thing to want, and having to
+  // find a chip for it every time is not. The chip still turns it off.
+  const [showSynthesis, setShowSynthesis] = useState(
+    kind === "study" ||
+      (!!syntheses && syntheses.some((x) => (x.text || "").trim().length > 0))
+  );
   const [showMarks, setShowMarks] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -144,15 +148,24 @@ export default function SharePreview({
       ),
     [verses, marksToggle, showMarks]
   );
-  // Measuring every candidate card is the expensive part, so pack once per
-  // change rather than on each render.
-  const pages = useMemo(
-    () =>
-      kind === "verses" || kind === "study"
-        ? packPages(effVerses, cardDark)
-        : [],
-    [kind, effVerses, cardDark]
-  );
+  // Packing and sizing are circular: a lone verse grows its type to fill a card,
+  // so measuring at natural size says two verses won't fit — then the page is
+  // drawn at the smaller uniform size and sits mostly empty. So pack twice: once
+  // to learn the document's size, then again measuring at THAT size, which is
+  // what will actually be drawn. The second pass is stable (the size is forced,
+  // so it can't shift again).
+  const pages = useMemo(() => {
+    if (kind !== "verses" && kind !== "study") return [];
+    const first = packPages(effVerses, cardDark);
+    if (first.length < 2) return first;
+    const size = pdfProseSize(first, (vs) =>
+      versesCardMetrics({ verses: vs, dark: cardDark, title }).size
+    );
+    if (!size) return first;
+    return packPages(effVerses, cardDark, (vs) =>
+      versesCardHeight({ verses: vs, dark: cardDark, title, sizeOverride: size })
+    );
+  }, [kind, effVerses, cardDark, title]);
   // More than one card's worth → a multi-page PDF of card-pages. A whole study
   // that outgrows one card gets the summary card as its cover page too.
   const pdfMode = pages.length > 1;

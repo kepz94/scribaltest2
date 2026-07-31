@@ -349,7 +349,7 @@ export function renderVerseCard(o: VerseCardOpts): HTMLCanvasElement {
   return canvas;
 }
 
-// ---------- Multi-verse card (up to 4 selected verses, focused phrases) ----------
+// ---------- Multi-verse card: as many verses as fit, focused or full ----------
 export interface VersesCardEntry {
   reference: string;
   theme: string;
@@ -441,6 +441,7 @@ function buildVersesCard(
   const synthRuleGap = 18; // rule -> first synthesis
   const synthItemGap = 16; // between syntheses
   const synthLabelGap = 7; // synthesis theme label -> its text
+  const synthParaGap = 12; // between paragraphs within one synthesis
 
   const fontFor = (style: string, size: number) => {
     const weight = style === "bold" ? "700" : "500";
@@ -599,9 +600,18 @@ function buildVersesCard(
     const synthItems = showSynth
       ? syntheses.map((s) => {
           ctx.font = proseFont(synthSize);
-          const lines = clampLines(wrap(ctx, s.text.trim(), maxW), 6);
+          // A synthesis is written prose: paragraphs, headings, bullets. Wrap
+          // each paragraph separately — wrapping the whole thing at once splits
+          // on whitespace and destroys every break — and never clamp it. It is
+          // the reader's conclusion; it prints in full.
+          const paras = s.text
+            .split("\n")
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .map((t) => wrap(ctx, t, maxW));
+          const lineCount = paras.reduce((n, pl) => n + pl.length, 0);
           const labelH = s.theme.trim() ? synthLabelSize + synthLabelGap : 0;
-          return { s, lines, labelH, synthSize, synthLabelSize };
+          return { s, paras, lineCount, labelH, synthSize, synthLabelSize };
         })
       : [];
     let synthH = 0;
@@ -610,7 +620,8 @@ function buildVersesCard(
       synthItems.forEach((it, i) => {
         synthH +=
           it.labelH +
-          it.lines.length * synthSize * 1.34 +
+          it.lineCount * synthSize * 1.34 +
+          Math.max(0, it.paras.length - 1) * synthParaGap +
           (i < synthItems.length - 1 ? synthItemGap : 0);
       });
     }
@@ -668,9 +679,14 @@ function buildVersesCard(
     cardTitle
   );
 
-  // Top-align; center only when content is shorter than the card (light cards).
+  // A single shared card centers short content so it sits nicely in frame. A
+  // PDF page must NOT — pages of a document start at the same place or the eye
+  // sees them drift as it flips. sizeOverride is only set when paginating, so
+  // it doubles as "this is a page, not a card".
   const contentBudget = cardH - top - FOOTER_SPACE;
-  let y = top + Math.max(0, (contentBudget - lay.total) / 2);
+  let y = o.sizeOverride
+    ? top
+    : top + Math.max(0, (contentBudget - lay.total) / 2);
 
   // The synthesis LEADS: a study states its conclusion first, which is where
   // the outline puts it and therefore where a shared card puts it too. Drawn
@@ -697,9 +713,12 @@ function buildVersesCard(
       ctx.font = proseFont(it.synthSize);
       ctx.fillStyle = p.text;
       ctx.textAlign = "left";
-      it.lines.forEach((ln) => {
-        ctx.fillText(ln, contentX, y + it.synthSize);
-        y += it.synthSize * 1.34;
+      it.paras.forEach((para: string[], pi: number) => {
+        para.forEach((ln: string) => {
+          ctx.fillText(ln, contentX, y + it.synthSize);
+          y += it.synthSize * 1.34;
+        });
+        if (pi < it.paras.length - 1) y += synthParaGap;
       });
       if (i < lay.synthItems.length - 1) y += synthItemGap;
     });

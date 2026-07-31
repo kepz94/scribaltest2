@@ -7,6 +7,7 @@ import RichNoteField from "./components/RichNoteField";
 import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
+import { richToText } from "./richText";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
@@ -202,11 +203,13 @@ export default function MobileCompile({
   };
   const readSynth = () => {
     const v = notes[dSynthKey()];
-    if (v && v.trim()) return flattenRich(v);
+    // richToText keeps paragraphs, headings and bullets; flattenRich ran them
+    // together, and the card then wrapped them into one undifferentiated block.
+    if (v && v.trim()) return richToText(v);
     const legacy = activeColors
       .map((c) => notes[synthKey(c)] || "")
       .find((x) => x.trim());
-    return flattenRich(legacy || "");
+    return richToText(legacy || "");
   };
   const [sortMode, setSortMode] = useState<SortMode>("order");
   // Lead verses (pins): user-chosen verses that always sit at a theme's top,

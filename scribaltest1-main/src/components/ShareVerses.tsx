@@ -6,6 +6,7 @@ import { VersesCardEntry } from "../shareCard";
 import { buildStudySummary } from "../studySummary";
 import { glossesFor } from "./MarkedVerse";
 import { isLoaded, loadWebster } from "../webster";
+import { richToText } from "../richText";
 
 const vols = volumesProxy;
 
@@ -50,9 +51,9 @@ interface Props {
   onFlash: (m: string) => void;
 }
 
-// Desktop "share up to 4 verses" picker. Mirrors the mobile flow: pick verses
-// grouped by theme, then hand off to the shared SharePreview to render/share
-// the social card.
+// Desktop verse picker. Pick as many verses as you like — the system decides how
+// they ship (one card, or a paged PDF); it never tells you to pick fewer. Whole
+// study is a convenience button, not the only alternative to a handful.
 export default function ShareVerses({
   compileTabs,
   marks,
@@ -177,7 +178,9 @@ export default function ShareVerses({
     return book.book + " " + book.chapters[t.chapter].chapter;
   });
   const synthKey = "synthesis|" + chapterNames.join("+");
-  const synthText = flattenRich(notes[synthKey] || "");
+  // richToText, not the old flattener: a synthesis has paragraphs, headings
+  // and bullets, and they have to survive the trip to the canvas.
+  const synthText = richToText(notes[synthKey] || "");
 
   // all = every marked verse in the compilation (the whole-study share);
   // otherwise just what the user picked.
