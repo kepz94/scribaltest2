@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from "react";
-import { Mark, MarkColor, COLOR_MAP } from "../types";
+import { Mark, MarkColor, COLOR_MAP, WordTag } from "../types";
+import { glossesFor } from "./MarkedVerse";
 import { volumesProxy } from "../data/scripturesStore";
 import RichNoteField from "./RichNoteField";
 
@@ -24,6 +25,8 @@ interface Tab {
 interface Props {
   compileTabs: Tab[];
   marks: Mark[];
+  // The study's word tags — a verse carries the definitions its reader chose.
+  tags?: WordTag[];
   colorLabels: Record<number, string>;
   onJumpToReference: (reference: string) => void;
   // Shell-specific note plumbing, abstracted: mobile keys "versenote:<ref>",
@@ -65,6 +68,7 @@ const STYLE_PTS: Record<string, number> = {
 export default function SemanticView({
   compileTabs,
   marks,
+  tags,
   colorLabels,
   onJumpToReference,
   noteFor,
@@ -813,6 +817,26 @@ export default function SemanticView({
           </span>
           {renderVerse(r)}
         </div>
+        {glossesFor((tags || []).filter((t) => t.reference === r.ref)).map(
+          (d, i) => (
+            <div
+              key={d.word + d.n + i}
+              style={{
+                marginTop: i === 0 ? "10px" : "3px",
+                paddingLeft: "10px",
+                fontSize: "12px",
+                color: muted,
+                lineHeight: 1.6,
+              }}
+            >
+              <strong style={{ color: text, fontVariant: "small-caps" }}>
+                {d.word}
+              </strong>{" "}
+              <span style={{ color: "#c0a173", fontWeight: 700 }}>{d.n}.</span>{" "}
+              {d.text}
+            </div>
+          )
+        )}
         {note && (
           <div
             style={{

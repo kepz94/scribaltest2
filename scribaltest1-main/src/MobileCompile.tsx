@@ -1232,6 +1232,7 @@ export default function MobileCompile({
           <SemanticView
             compileTabs={sharedCompileTabs}
             marks={liveMarks}
+            tags={tags}
             colorLabels={colorLabels}
             onJumpToReference={onJump}
             noteFor={(ref) => {
@@ -1826,6 +1827,7 @@ export default function MobileCompile({
                                         verseNumber={info.verse}
                                         text={info.text}
                                         marks={ve.marks}
+                                        tags={tags}
                                       />
                                     </div>
                                   ) : (

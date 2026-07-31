@@ -22,6 +22,13 @@ export interface WordTag {
   end: number;
   word: string;
   dictKey: string;
+  // Which of the entry's numbered senses the reader chose to carry into their
+  // study, in dictionary order. Absent or empty means they never chose, and
+  // every surface falls back to what it showed before — the first sense.
+  senses?: number[];
+  // When the selection last changed. Absent means it never has (legacy tags),
+  // which sorts as 0 so any device that HAS chosen wins the merge.
+  updatedAt?: number;
 }
 
 export interface Mark {

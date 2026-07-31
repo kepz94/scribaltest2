@@ -1308,8 +1308,15 @@ export default function MobileApp() {
     mergeRemote: vaultMergeRemote,
   } = useVault();
 
-  const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
-    useWordTags();
+  const {
+    wordTags,
+    hasTag,
+    tagAt,
+    addTag,
+    updateTag,
+    removeTag,
+    mergeRemote: wordTagsMergeRemote,
+  } = useWordTags();
 
   const [dark, setDark] = useState<boolean>(() => {
     const saved = localStorage.getItem("scribal_theme");
@@ -3532,6 +3539,9 @@ export default function MobileApp() {
     end: number;
     result: WebsterResult | null;
   } | null>(null);
+  // The senses ticked in the open sheet. Seeded from the tag when the word is
+  // already tagged, so reopening shows the choice instead of a blank slate.
+  const [defnSenses, setDefnSenses] = useState<number[]>([]);
   // In Define mode a tap looks the word up instead of marking. We resolve the
   // first whole word of the selection and remember its exact character range so
   // a tag can anchor to that one occurrence.
@@ -3542,15 +3552,18 @@ export default function MobileApp() {
     const start = s + (m.index || 0);
     const end = start + m[0].length;
     const word = m[0];
-    websterLookup(word).then((result) =>
-      setDefn({ ref, word, start, end, result })
-    );
+    websterLookup(word).then((result) => {
+      const existing = tagAt(ref, start, end);
+      setDefnSenses(existing ? existing.senses || [] : []);
+      setDefn({ ref, word, start, end, result });
+    });
   };
   // Tapping a word's footnote marker reopens the same sheet as a quick
   // reference, with the definition pulled fresh from the dictionary by its key.
   const openTagRef = (tag: WordTag) => {
     loadWebster().then(() => {
       const def = definitionForKey(tag.dictKey);
+      setDefnSenses(tag.senses || []);
       setDefn({
         ref: tag.reference,
         word: tag.word,
@@ -11576,6 +11589,13 @@ export default function MobileApp() {
             result={defn.result}
             colors={C}
             tagged={hasTag(defn.ref, defn.start, defn.end)}
+            senses={defnSenses}
+            onPickSenses={(s) => {
+              setDefnSenses(s);
+              // Already tagged? The choice applies at once — no second step.
+              if (hasTag(defn.ref, defn.start, defn.end))
+                updateTag(defn.ref, defn.start, defn.end, s);
+            }}
             onToggleTag={
               defn.result
                 ? () => {
@@ -11588,6 +11608,8 @@ export default function MobileApp() {
                         end: defn.end,
                         word: defn.word,
                         dictKey: defn.result.key,
+                        senses: defnSenses.length ? defnSenses : undefined,
+                        updatedAt: defnSenses.length ? Date.now() : undefined,
                       });
                     }
                   }

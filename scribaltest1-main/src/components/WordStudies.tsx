@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { WordTag } from "../types";
-import { loadWebster, definitionForKey, isLoaded } from "../webster";
+import { loadWebster, definitionForKey, isLoaded, sensesFor } from "../webster";
 
 interface WordStudiesColors {
   text: string;
@@ -25,6 +25,10 @@ interface Entry {
   headword: string;
   definition: string;
   refs: string[];
+  // The senses the reader chose for this word, pooled across every verse it was
+  // tagged in. Empty means they never chose, and the entry shows the compact
+  // form it always has.
+  chosen: number[];
 }
 
 // Webster entries open with a header paragraph ("WILL, noun [etymology]")
@@ -84,6 +88,9 @@ export default function WordStudies({
     const existing = byKey.get(t.dictKey);
     if (existing) {
       if (!existing.refs.includes(t.reference)) existing.refs.push(t.reference);
+      (t.senses || []).forEach((n) => {
+        if (!existing.chosen.includes(n)) existing.chosen.push(n);
+      });
     } else {
       const headword = t.word
         ? t.word.charAt(0).toUpperCase() + t.word.slice(1)
@@ -93,6 +100,7 @@ export default function WordStudies({
         headword,
         definition: def,
         refs: [t.reference],
+        chosen: (t.senses || []).slice(),
       });
     }
   });
@@ -132,6 +140,9 @@ export default function WordStudies({
       </div>
       {entries.map((e) => {
         const { compact, senseCount, hasMore } = splitEntry(e.definition);
+        // The senses this reader chose lead the entry. Absent a choice it falls
+        // back to the compact form (header + sense 1) exactly as before.
+        const picked = sensesFor(e.definition, e.chosen);
         const open = full || !!openKeys[e.key] || !hasMore;
         return (
           <div key={e.key} style={{ marginBottom: "14px" }}>
@@ -156,16 +167,33 @@ export default function WordStudies({
                 {e.refs.join(" · ")}
               </div>
             </div>
-            <div
-              style={{
-                fontSize: "14px",
-                lineHeight: 1.5,
-                color: colors.text,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {open ? e.definition : compact}
-            </div>
+            {picked.length > 0 && !open ? (
+              <div
+                style={{
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                  color: colors.text,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {picked.map((s) => (
+                  <div key={s.n} style={{ marginBottom: "5px" }}>
+                    {s.text}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                  color: colors.text,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {open ? e.definition : compact}
+              </div>
+            )}
             {!full && hasMore && (
               <button
                 onClick={() =>

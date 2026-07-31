@@ -10,6 +10,7 @@ import {
   COLOR_MAP,
   STYLE_POINTS,
   markStyleCSS,
+  WordTag,
 } from "../types";
 import { Tab } from "../types";
 
@@ -24,6 +25,8 @@ interface OutlineProps {
   onToggleCompileTab: (id: string) => void;
   hideTabPicker?: boolean;
   marks: Mark[];
+  // The study's word tags — a verse shows the definitions its reader chose.
+  tags?: WordTag[];
   colorLabels: Record<number, string>;
   setColorLabel: (color: MarkColor, label: string) => void;
   notes: Record<string, string>;
@@ -85,6 +88,7 @@ export default function Outline(props: OutlineProps) {
     onToggleCompileTab,
     hideTabPicker,
     marks,
+    tags,
     colorLabels,
     setColorLabel,
     notes,
@@ -710,6 +714,7 @@ export default function Outline(props: OutlineProps) {
                               verseNumber={entry.verse}
                               text={entry.text}
                               marks={colorMarks}
+                              tags={tags}
                             />
                           </div>
                         ) : (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Mark, MarkStyle, MarkColor, WordTag, COLORS, STYLE_POINTS, Tab } from "../types";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import WordStudies from "./WordStudies";
+import { glossesFor } from "./MarkedVerse";
 
 const vols = volumesProxy;
 
@@ -168,6 +169,36 @@ export default function PrintView(props: PrintViewProps) {
       (k) => k !== synthKey && /synth|summary|reflect/i.test(k)
     ),
   ];
+
+
+  // The definitions the reader chose, printed under the verse they belong to —
+  // the same slot the per-verse note occupies. Print colors are fixed for paper.
+  const renderGloss = (reference: string) => {
+    const g = glossesFor((tags || []).filter((t) => t.reference === reference));
+    if (g.length === 0) return null;
+    return (
+      <div
+        style={{
+          marginTop: "5px",
+          paddingTop: "4px",
+          borderTop: "1px solid #e4e4e4",
+          fontSize: "13px",
+          lineHeight: 1.5,
+          color: "#555",
+        }}
+      >
+        {g.map((d, i) => (
+          <div key={d.word + d.n + i}>
+            <strong style={{ color: "#222", fontVariant: "small-caps" }}>
+              {d.word}
+            </strong>{" "}
+            <span style={{ color: "#7a5c33", fontWeight: 700 }}>{d.n}.</span>{" "}
+            {d.text}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const renderFullVerse = (text: string, vmarks: Mark[]) => {
     const out: React.ReactNode[] = [];
@@ -446,6 +477,7 @@ export default function PrintView(props: PrintViewProps) {
                         ? renderFullVerse(v.text, v.vmarks)
                         : renderPhrases(v.vmarks)}
                     </div>
+                    {renderGloss(v.reference)}
                     {note.trim() && (
                       <div
                         style={{
@@ -536,6 +568,7 @@ export default function PrintView(props: PrintViewProps) {
                         }}
                       >
                         {renderFullVerse(v.text, v.vmarks)}
+                        {renderGloss(v.reference)}
                       </div>
                     ) : (
                       v.vmarks.map((m, k) => (

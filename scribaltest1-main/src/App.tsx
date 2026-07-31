@@ -1057,8 +1057,15 @@ export default function App() {
     mergeRemote: mergeRecordedRemote,
   } = useStudies();
 
-  const { wordTags, hasTag, addTag, removeTag, mergeRemote: wordTagsMergeRemote } =
-    useWordTags();
+  const {
+    wordTags,
+    hasTag,
+    tagAt,
+    addTag,
+    updateTag,
+    removeTag,
+    mergeRemote: wordTagsMergeRemote,
+  } = useWordTags();
 
   // Live-merge from a pulled cloud backup: the study lists (recorded + keyword)
   // and the chapter-link groups. All additive — syncing only ADDS studies/links
@@ -1423,6 +1430,9 @@ export default function App() {
     end: number;
     result: WebsterResult | null;
   } | null>(null);
+  // The senses ticked in the open panel. Seeded from the tag when the word is
+  // already tagged, so reopening shows the choice instead of a blank slate.
+  const [defnSenses, setDefnSenses] = useState<number[]>([]);
   const handleDefine = (
     reference: string,
     _verseText: string,
@@ -1430,15 +1440,18 @@ export default function App() {
     end: number,
     word: string
   ) => {
-    websterLookup(word).then((result) =>
-      setDefn({ ref: reference, word, start, end, result })
-    );
+    websterLookup(word).then((result) => {
+      const existing = tagAt(reference, start, end);
+      setDefnSenses(existing ? existing.senses || [] : []);
+      setDefn({ ref: reference, word, start, end, result });
+    });
   };
   // Clicking a word's footnote marker reopens the same modal as a quick
   // reference, the definition pulled fresh from the dictionary by its key.
   const openTagRef = (tag: WordTag) => {
     loadWebster().then(() => {
       const def = definitionForKey(tag.dictKey);
+      setDefnSenses(tag.senses || []);
       setDefn({
         ref: tag.reference,
         word: tag.word,
@@ -8077,6 +8090,13 @@ export default function App() {
                 soft: "var(--soft)",
               }}
               tagged={hasTag(defn.ref, defn.start, defn.end)}
+              senses={defnSenses}
+              onPickSenses={(s) => {
+                setDefnSenses(s);
+                // Already tagged? The choice applies at once — no second step.
+                if (hasTag(defn.ref, defn.start, defn.end))
+                  updateTag(defn.ref, defn.start, defn.end, s);
+              }}
               onToggleTag={
                 defn.result
                   ? () => {
@@ -8089,6 +8109,8 @@ export default function App() {
                           end: defn.end,
                           word: defn.word,
                           dictKey: defn.result.key,
+                          senses: defnSenses.length ? defnSenses : undefined,
+                          updatedAt: defnSenses.length ? Date.now() : undefined,
                         });
                       }
                     }
@@ -13440,6 +13462,7 @@ export default function App() {
                 savedPins={scopedPins[effectiveScope]}
                 onPins={(p) => setScopedPins(effectiveScope, p)}
                 {...sharedCompileProps}
+                tags={effectiveTags}
                 notes={notes}
                 setNote={setNote}
                 collapsed={compileCollapsed}
@@ -13451,6 +13474,7 @@ export default function App() {
               <SemanticView
                 compileTabs={sharedCompileProps.compileTabs}
                 marks={sharedCompileProps.marks}
+                tags={effectiveTags}
                 colorLabels={sharedCompileProps.colorLabels}
                 onJumpToReference={sharedCompileProps.onJumpToReference}
                 noteFor={(ref) => {

@@ -47,6 +47,68 @@ function gc(t: Record<string, number>): Record<string, number> {
   return out;
 }
 
+export interface TagStore {
+  tags: WordTag[];
+  tombs: Record<string, number>;
+}
+
+// The merge, as a pure function so it can be tested without a React tree.
+//
+// Tombstones: newest deletion per id wins, then expired ones are dropped.
+// Tags: union by id — but for an id BOTH sides hold, the sense selection is
+// last-write-wins on `updatedAt` (absent = 0, so a device that has chosen beats
+// one that never has). Before this, the local row simply won and a selection
+// made on one device could never reach the other. Everything else about a tag is
+// immutable — it is anchored to a fixed character range — so the selection is
+// the only field that can legitimately differ between two copies.
+//
+// Idempotent: when nothing changes, the previous object identities are returned
+// so two syncing devices don't ping-pong.
+export function mergeTagState(
+  prev: TagStore,
+  remoteTags: WordTag[],
+  remoteTombs: Record<string, number>
+): TagStore {
+  const mergedRaw: Record<string, number> = { ...prev.tombs };
+  Object.keys(remoteTombs).forEach((id) => {
+    const rt = remoteTombs[id];
+    if (typeof rt === "number" && (mergedRaw[id] == null || rt > mergedRaw[id]))
+      mergedRaw[id] = rt;
+  });
+  const tombs = gc(mergedRaw);
+
+  const byId = new Map(
+    remoteTags.filter((t) => t && t.id).map((t) => [t.id, t])
+  );
+  let changed = false;
+  const reconciled = prev.tags.map((mine) => {
+    const theirs = byId.get(mine.id);
+    if (!theirs) return mine;
+    if ((theirs.updatedAt || 0) <= (mine.updatedAt || 0)) return mine;
+    changed = true;
+    return { ...mine, senses: theirs.senses, updatedAt: theirs.updatedAt };
+  });
+  const haveIds = new Set(prev.tags.map((t) => t.id));
+  const added = remoteTags.filter((t) => t && t.id && !haveIds.has(t.id));
+  const unioned = added.length ? reconciled.concat(added) : reconciled;
+  const tags = unioned.filter((t) => tombs[t.id] == null);
+
+  const tagsSame =
+    !changed &&
+    tags.length === prev.tags.length &&
+    tags.every((t, i) => t === prev.tags[i]);
+  const tKeys = Object.keys(tombs);
+  const pKeys = Object.keys(prev.tombs);
+  const tombsSame =
+    tKeys.length === pKeys.length &&
+    tKeys.every((k) => tombs[k] === prev.tombs[k]);
+  if (tagsSame && tombsSame) return prev;
+  return {
+    tags: tagsSame ? prev.tags : tags,
+    tombs: tombsSame ? prev.tombs : tombs,
+  };
+}
+
 export function useWordTags() {
   const [store, setStore] = useState<Store>(read);
   const wordTags = store.tags;
@@ -91,6 +153,29 @@ export function useWordTags() {
       return { tags, tombs };
     });
   }, []);
+
+  // Change which senses a tag carries. Separate from addTag, which is a no-op on
+  // an existing tag — a selection has to be revisable after the fact, and the
+  // stamp is what lets the other device's merge see that this side is newer.
+  const updateTag = useCallback(
+    (reference: string, start: number, end: number, senses: number[]) => {
+      const id = reference + ":" + start + ":" + end;
+      setStore((prev) => {
+        const i = prev.tags.findIndex((t) => t.id === id);
+        if (i < 0) return prev;
+        const cur = prev.tags[i];
+        const next = senses.slice().sort((a, b) => a - b);
+        const same =
+          (cur.senses || []).length === next.length &&
+          (cur.senses || []).every((s, j) => s === next[j]);
+        if (same) return prev;
+        const tags = prev.tags.slice();
+        tags[i] = { ...cur, senses: next, updatedAt: Date.now() };
+        return { tags, tombs: prev.tombs };
+      });
+    },
+    []
+  );
 
   const removeTag = useCallback(
     (reference: string, start: number, end: number) => {
@@ -137,41 +222,18 @@ export function useWordTags() {
       if (remoteTags.length === 0 && Object.keys(remoteTombs).length === 0) {
         return;
       }
-      setStore((prev) => {
-        // Merge tombstones (newest per id wins), then drop expired ones.
-        const mergedRaw: Record<string, number> = { ...prev.tombs };
-        Object.keys(remoteTombs).forEach((id) => {
-          const rt = remoteTombs[id];
-          if (
-            typeof rt === "number" &&
-            (mergedRaw[id] == null || rt > mergedRaw[id])
-          )
-            mergedRaw[id] = rt;
-        });
-        const tombs = gc(mergedRaw);
-        // Union tags by id, then remove any that are tombstoned.
-        const haveIds = new Set(prev.tags.map((t) => t.id));
-        const added = remoteTags.filter((t) => t && t.id && !haveIds.has(t.id));
-        const unioned = added.length ? prev.tags.concat(added) : prev.tags;
-        const tags = unioned.filter((t) => tombs[t.id] == null);
-        // Idempotency: return prev refs when content is unchanged.
-        const tagsSame =
-          tags.length === prev.tags.length &&
-          tags.every((t, i) => t === prev.tags[i]);
-        const tKeys = Object.keys(tombs);
-        const pKeys = Object.keys(prev.tombs);
-        const tombsSame =
-          tKeys.length === pKeys.length &&
-          tKeys.every((k) => tombs[k] === prev.tombs[k]);
-        if (tagsSame && tombsSame) return prev;
-        return {
-          tags: tagsSame ? prev.tags : tags,
-          tombs: tombsSame ? prev.tombs : tombs,
-        };
-      });
+      setStore((prev) => mergeTagState(prev, remoteTags, remoteTombs));
     },
     []
   );
 
-  return { wordTags, hasTag, addTag, removeTag, mergeRemote };
+  const tagAt = useCallback(
+    (reference: string, start: number, end: number): WordTag | null =>
+      store.tags.find(
+        (t) => t.reference === reference && t.start === start && t.end === end
+      ) || null,
+    [store.tags]
+  );
+
+  return { wordTags, hasTag, tagAt, addTag, updateTag, removeTag, mergeRemote };
 }

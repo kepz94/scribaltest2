@@ -131,3 +131,49 @@ export function definitionForKey(key: string): string | null {
 export function hasEntry(word: string): boolean {
   return lookupSync(word) !== null;
 }
+
+export interface WebsterSense {
+  n: number; // the sense's own number, as the dictionary prints it
+  text: string; // the sense, with any quotation paragraphs that belong to it
+}
+export interface WebsterEntry {
+  header: string; // "GRACE, noun [Latin gratia…]" — everything before sense 1
+  senses: WebsterSense[];
+}
+
+// An 1828 entry is one blob of text: a header paragraph ("WILL, noun [etym]"),
+// then numbered senses as their own paragraphs ("1. …", "2. …"), with unnumbered
+// paragraphs — scripture citations, verse quotations — belonging to whichever
+// sense they follow. This splits it without judging: every sense is returned, in
+// the dictionary's own order and numbering, and the caller decides what to show.
+// 54.7% of entries have more than one sense; `grace` has 23.
+export function parseSenses(definition: string): WebsterEntry {
+  const paras = (definition || "").split(/\n\s*\n/).filter((p) => p.trim());
+  const headerParas: string[] = [];
+  const senses: WebsterSense[] = [];
+  paras.forEach((para) => {
+    const m = para.match(/^\s*(\d+)\.\s/);
+    if (m) {
+      senses.push({ n: parseInt(m[1], 10), text: para.trim() });
+    } else if (senses.length) {
+      // A quotation or citation — it illustrates the sense above it.
+      senses[senses.length - 1].text += "\n\n" + para.trim();
+    } else {
+      headerParas.push(para.trim());
+    }
+  });
+  return { header: headerParas.join("\n\n"), senses };
+}
+
+// The senses a tag chose, in dictionary order. An empty or absent selection
+// means the reader never chose — the caller falls back to its own default
+// (today: the first sense), which is exactly the pre-selection behavior.
+export function sensesFor(
+  definition: string,
+  chosen: number[] | undefined
+): WebsterSense[] {
+  if (!chosen || chosen.length === 0) return [];
+  const { senses } = parseSenses(definition);
+  const want = new Set(chosen);
+  return senses.filter((s) => want.has(s.n));
+}
