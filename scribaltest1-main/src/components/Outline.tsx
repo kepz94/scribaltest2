@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
-import MarkedVerse from "./MarkedVerse";
+import MarkedVerse, { glossesFor } from "./MarkedVerse";
 import RichNoteField, { LinkableVerse, LinkableDefinition } from "./RichNoteField";
 import { definitionForKey, sensesFor } from "../webster";
 import {
@@ -772,6 +772,51 @@ export default function Outline(props: OutlineProps) {
                             ))}
                           </div>
                         )}
+
+                        {/* Focused view renders the marked runs itself instead
+                            of MarkedVerse, so the chosen definitions have to be
+                            drawn here too — otherwise picking them does nothing
+                            in the view the outline actually opens in. */}
+                        {(() => {
+                          const g = glossesFor(
+                            (tags || []).filter(
+                              (t) => t.reference === entry.reference
+                            )
+                          );
+                          if (view === "full" || g.length === 0) return null;
+                          return (
+                            <div
+                              style={{
+                                marginLeft: "30px",
+                                marginTop: "8px",
+                                paddingTop: "6px",
+                                borderTop: "1px solid var(--border)",
+                                fontSize: "13px",
+                                lineHeight: 1.5,
+                                color: "var(--muted)",
+                              }}
+                            >
+                              {g.map((d, gi) => (
+                                <div key={d.word + d.n + gi}>
+                                  <strong
+                                    style={{
+                                      color: "var(--text)",
+                                      fontVariant: "small-caps",
+                                    }}
+                                  >
+                                    {d.word}
+                                  </strong>{" "}
+                                  <span
+                                    style={{ color: "#9a7b4f", fontWeight: 700 }}
+                                  >
+                                    {d.n}.
+                                  </span>{" "}
+                                  {d.text}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
 
                         <div style={{ marginLeft: "30px", marginTop: "8px" }}>
                           <RichNoteField

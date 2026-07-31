@@ -1974,6 +1974,49 @@ export default function MobileCompile({
                                       ))}
                                     </div>
                                   )}
+                                  {/* Focused renders the marked phrases itself
+                                      rather than MarkedVerse, so the chosen
+                                      definitions are drawn here too — otherwise
+                                      picking them does nothing in the view the
+                                      outline opens in. */}
+                                  {view !== "full" &&
+                                    (() => {
+                                      const g = glossesFor(
+                                        (tags || []).filter(
+                                          (t) => t.reference === ve.reference
+                                        )
+                                      );
+                                      if (g.length === 0) return null;
+                                      return (
+                                        <div
+                                          style={{
+                                            marginTop: "8px",
+                                            paddingTop: "6px",
+                                            borderTop: "1px solid " + C.border,
+                                            fontSize: "12.5px",
+                                            lineHeight: 1.5,
+                                            color: C.muted,
+                                          }}
+                                        >
+                                          {g.map((d, gi) => (
+                                            <div key={d.word + d.n + gi}>
+                                              <strong style={{ color: C.text }}>
+                                                {d.word}
+                                              </strong>{" "}
+                                              <span
+                                                style={{
+                                                  color: "#9a7b4f",
+                                                  fontWeight: 700,
+                                                }}
+                                              >
+                                                {d.n}.
+                                              </span>{" "}
+                                              {d.text}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
                                   {!selectMode && (
                                     <div
                                       style={{
