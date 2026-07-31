@@ -2742,8 +2742,14 @@ export default function StudyTableColumn({
                   // screen's right edge instead left the tray stranded out in
                   // the margin on a wide monitor (Kepu, Jul 31 2026).
                   position: "fixed",
+                  // Left edge from the measured gutter, right edge at the
+                  // screen. Pinning BOTH is what makes the tray absorb whatever
+                  // is left over: it starts where the column ends and runs to
+                  // the edge, so there is no dead margin at any window size and
+                  // no width to keep re-tuning. Giving it a width instead left
+                  // a strip of wasted space beyond it (Kepu, Jul 31 2026).
                   ...(trayBox
-                    ? { left: trayBox.left, width: trayBox.width }
+                    ? { left: trayBox.left, right: 14 }
                     : { right: 14, width: trayWidth }),
                   top: trayTop || 90,
                   maxHeight: "calc(100vh - " + ((trayTop || 90) + 24) + "px)",
