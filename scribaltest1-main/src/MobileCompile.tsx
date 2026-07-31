@@ -622,6 +622,12 @@ export default function MobileCompile({
       const text = (notes[synthKey(sv.color)] || "").trim();
       if (text) synths.push({ theme: sv.theme, color: sv.color, text });
     });
+    // The study's own synthesis leads, as it does on a whole-study share and on
+    // desktop — sending a few core verses alongside your conclusion is a normal
+    // thing to want. Unshifted, so it sits at the forefront of the card rather
+    // than behind the theme notes; the preview's Synthesis chip turns it off.
+    const overall = readSynthRaw().trim();
+    if (overall) synths.unshift({ theme: "Synthesis", color: 6, text: overall });
     setVersesSyntheses(synths);
     setSelectMode(false);
   };
