@@ -356,6 +356,10 @@ export interface VersesCardEntry {
   color: number;
   phrases: { text: string; style: string }[];
   note?: string;
+  // The definitions the reader chose for words tagged in this verse, already
+  // resolved to text — the canvas never loads the dictionary, and a shared card
+  // has to carry its own meaning.
+  glosses?: { word: string; n: number; text: string }[];
   // When the verse is shown in "full" mode, the card redraws the entire verse
   // with its marks layered on (exactly like the reading view) instead of only
   // the marked snippets. These carry that view; absent => focused snippets.
@@ -565,14 +569,30 @@ function buildVersesCard(
       const noteH = noteLines.length
         ? noteGap + noteLines.length * noteSize * 1.32
         : 0;
+      // Chosen definitions sit below the note, in the same measured pass so the
+      // packer's height and the drawn card can never disagree.
+      const glossLines: { head: string; lines: string[] }[] = [];
+      (v.glosses || []).forEach((g) => {
+        ctx.font = proseFont(noteSize);
+        const head = g.word + " " + g.n + ". ";
+        glossLines.push({
+          head,
+          lines: clampLines(wrap(ctx, head + g.text, maxW), 4),
+        });
+      });
+      const glossH = glossLines.length
+        ? noteGap +
+          glossLines.reduce((s2, gl) => s2 + gl.lines.length * noteSize * 1.32, 0)
+        : 0;
       return {
         v,
         full,
         phraseLines,
         verseLines,
         noteLines,
+        glossLines,
         noteSize,
-        height: headerH + bodyH + noteH,
+        height: headerH + bodyH + noteH + glossH,
       };
     });
 
@@ -836,6 +856,32 @@ function buildVersesCard(
       b.noteLines.forEach((ln) => {
         ctx.fillText(ln, contentX, y + b.noteSize);
         y += b.noteSize * 1.32;
+      });
+    }
+
+    // chosen definitions, under the note; the accent bar below grows to cover
+    // them because it is sized from the running y.
+    if (b.glossLines.length) {
+      y += noteGap;
+      ctx.font = proseFont(b.noteSize);
+      ctx.textAlign = "left";
+      b.glossLines.forEach((gl) => {
+        gl.lines.forEach((ln, li) => {
+          // The headword takes the card's text color so a definition doesn't
+          // read as a continuation of the note above it. Same font either way —
+          // a bolder head would widen the first line past what was measured.
+          if (li === 0 && ln.indexOf(gl.head) === 0) {
+            ctx.fillStyle = p.text;
+            ctx.fillText(gl.head, contentX, y + b.noteSize);
+            const hw = ctx.measureText(gl.head).width;
+            ctx.fillStyle = p.muted;
+            ctx.fillText(ln.slice(gl.head.length), contentX + hw, y + b.noteSize);
+          } else {
+            ctx.fillStyle = p.muted;
+            ctx.fillText(ln, contentX, y + b.noteSize);
+          }
+          y += b.noteSize * 1.32;
+        });
       });
     }
 

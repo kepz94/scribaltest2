@@ -8223,6 +8223,7 @@ export default function App() {
           marks={effectiveMarks}
           colorLabels={effectiveScopedLabels}
           studyName={compileLabel}
+          tags={effectiveTags}
           notes={notes}
           dark={dark}
           C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}

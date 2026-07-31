@@ -11,6 +11,7 @@ import {
   markStyleCSS,
 } from "../types";
 import { mergedRunsFor } from "../outlineAssembly";
+import { glossesFor } from "./MarkedVerse";
 import {
   StudyTable,
   TablePurpose,
@@ -2326,6 +2327,20 @@ export default function StudyTablesDesktop({
                     c.bookId || open.bookId
                   );
                 });
+                // The presenter's chosen definitions, resolved to words: a
+                // follower has the room doc and no dictionary.
+                const roomGlosses: Record<
+                  string,
+                  { word: string; n: number; text: string }[]
+                > = {};
+                Array.from(new Set(marks.map((m) => m.reference))).forEach(
+                  (ref) => {
+                    const g = glossesFor(
+                      (wordTags || []).filter((t) => t.reference === ref)
+                    );
+                    if (g.length) roomGlosses[ref] = g;
+                  }
+                );
                 const code = newRoomCode();
                 await createRoom(code, {
                   tableJson: JSON.stringify(
@@ -2335,6 +2350,7 @@ export default function StudyTablesDesktop({
                   ),
                   marksJson: JSON.stringify(marks),
                   themesJson: JSON.stringify(themes),
+                  glossesJson: JSON.stringify(roomGlosses),
                 });
                 return code;
               },

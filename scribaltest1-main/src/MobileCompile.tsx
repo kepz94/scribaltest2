@@ -6,6 +6,7 @@ import Distilled from "./components/Distilled";
 import RichNoteField from "./components/RichNoteField";
 import type { LinkableDefinition } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
+import { glossesFor } from "./components/MarkedVerse";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
@@ -516,6 +517,7 @@ export default function MobileCompile({
         fullText: info ? info.text : undefined,
         verseNumber: info ? info.verse : undefined,
         marks: sv.marks,
+        glosses: glossesFor((tags || []).filter((t) => t.reference === sv.reference)),
       };
     });
 

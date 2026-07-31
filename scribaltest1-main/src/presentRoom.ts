@@ -47,6 +47,11 @@ export interface RoomDoc {
   tableJson: string; // the StudyTable (cards drive the beats)
   marksJson: string; // Mark[] for the table's verses (rendering the marking)
   themesJson: string; // { [refsKey]: {color,label}[] } — named themes per card
+  // { [reference]: {word,n,text}[] } — the definitions the presenter chose,
+  // already resolved. Followers have no dictionary, and the room is meant to be
+  // self-contained, so the words travel rather than a key. Optional: a room
+  // written before this existed simply has none.
+  glossesJson?: string;
   i: number; // the presenter's current beat
   revealed: number[]; // beat indexes whose veil the presenter lifted
   ended: boolean;

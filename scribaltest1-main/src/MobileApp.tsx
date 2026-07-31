@@ -27,6 +27,7 @@ import CompileBook, {
 import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview, { packPages } from "./SharePreview";
+import { glossesFor } from "./components/MarkedVerse";
 import type { VersesCardEntry } from "./shareCard";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
@@ -2572,6 +2573,7 @@ export default function MobileApp() {
           style: m.style,
           color: m.color,
         })),
+        glosses: glossesFor(wordTags.filter((t) => t.reference === ref)),
       };
     });
     // Deps are the inputs the entries are actually built from; the helpers
@@ -10923,11 +10925,26 @@ export default function MobileApp() {
                       .sort((a, b) => a[0] - b[0])
                       .map(([color, label]) => ({ color, label }));
                   });
+                  // The presenter's chosen definitions, resolved to words: a
+                  // follower has the room doc and no dictionary.
+                  const roomGlosses: Record<
+                    string,
+                    { word: string; n: number; text: string }[]
+                  > = {};
+                  Array.from(new Set(marks.map((m) => m.reference))).forEach(
+                    (ref) => {
+                      const g = glossesFor(
+                        wordTags.filter((t) => t.reference === ref)
+                      );
+                      if (g.length) roomGlosses[ref] = g;
+                    }
+                  );
                   const code = newRoomCode();
                   await createRoom(code, {
                     tableJson: JSON.stringify(redactTableForRoom(t)),
                     marksJson: JSON.stringify(marks),
                     themesJson: JSON.stringify(themes),
+                    glossesJson: JSON.stringify(roomGlosses),
                   });
                   return code;
                 },

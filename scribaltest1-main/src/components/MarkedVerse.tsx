@@ -53,6 +53,10 @@ interface MarkedVerseProps {
   dark?: boolean;
   tags?: WordTag[];
   onTagTap?: (tag: WordTag) => void;
+  // Pre-resolved definitions, for surfaces that cannot look anything up — a
+  // Present-room follower has the room doc and no dictionary. When supplied
+  // these are used verbatim instead of resolving the tags.
+  glosses?: { word: string; n: number; text: string }[];
 }
 
 export default function MarkedVerse({
@@ -64,16 +68,18 @@ export default function MarkedVerse({
   dark = false,
   tags,
   onTagTap,
+  glosses: givenGlosses,
 }: MarkedVerseProps) {
   const verseMarks = marks.filter((m) => m.reference === reference);
   const verseTags = (tags || []).filter((t) => t.reference === reference);
-  const wantsGloss = verseTags.some((t) => t.senses && t.senses.length > 0);
+  const wantsGloss =
+    !givenGlosses && verseTags.some((t) => t.senses && t.senses.length > 0);
   const [, bumpDict] = useState(0);
   useEffect(() => {
     if (!wantsGloss || isLoaded()) return;
     return whenDictReady(() => bumpDict((n) => n + 1));
   }, [wantsGloss]);
-  const glosses = wantsGloss ? glossesFor(verseTags) : [];
+  const glosses = givenGlosses || (wantsGloss ? glossesFor(verseTags) : []);
 
   const boundaries = new Set<number>([0, text.length]);
   verseMarks.forEach((m) => {

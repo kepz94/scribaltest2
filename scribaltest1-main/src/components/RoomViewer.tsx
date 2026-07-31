@@ -58,12 +58,15 @@ export default function RoomViewer({ code }: { code: string }) {
   const marksJson = room !== "loading" && room ? room.marksJson || "[]" : "[]";
   const themesJson =
     room !== "loading" && room ? room.themesJson || "{}" : "{}";
+  const glossesJson =
+    room !== "loading" && room ? room.glossesJson || "{}" : "{}";
   const parsed = useMemo(() => {
     if (!tableJson)
       return {
         table: null as StudyTable | null,
         marks: [] as Mark[],
         themes: {} as Record<string, { color: number; label: string }[]>,
+        glosses: {} as Record<string, { word: string; n: number; text: string }[]>,
       };
     try {
       return {
@@ -73,16 +76,18 @@ export default function RoomViewer({ code }: { code: string }) {
           string,
           { color: number; label: string }[]
         >,
+        glosses: JSON.parse(glossesJson) as Record<string, { word: string; n: number; text: string }[]>,
       };
     } catch {
       return {
         table: null as StudyTable | null,
         marks: [] as Mark[],
         themes: {} as Record<string, { color: number; label: string }[]>,
+        glosses: {} as Record<string, { word: string; n: number; text: string }[]>,
       };
     }
-  }, [tableJson, marksJson, themesJson]);
-  const { table, marks, themes } = parsed;
+  }, [tableJson, marksJson, themesJson, glossesJson]);
+  const { table, marks, themes, glosses } = parsed;
 
   if (room === "loading")
     return <Notice title="Joining…" body={"Connecting to room " + code + "."} />;
@@ -121,6 +126,7 @@ export default function RoomViewer({ code }: { code: string }) {
             verseNumber={rec.verse}
             text={rec.text}
             marks={marks}
+            glosses={glosses[reference]}
           />
         );
       }}

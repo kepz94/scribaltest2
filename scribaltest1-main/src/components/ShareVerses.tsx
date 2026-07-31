@@ -1,9 +1,11 @@
-import { useState, CSSProperties } from "react";
+import { useState, useEffect, CSSProperties } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
-import { Mark, MarkColor, COLORS, COLOR_MAP, Tab } from "../types";
+import { Mark, MarkColor, COLORS, COLOR_MAP, Tab, WordTag } from "../types";
 import SharePreview from "../SharePreview";
 import { VersesCardEntry } from "../shareCard";
 import { buildStudySummary } from "../studySummary";
+import { glossesFor } from "./MarkedVerse";
+import { isLoaded, loadWebster } from "../webster";
 
 const vols = volumesProxy;
 
@@ -36,6 +38,8 @@ interface Props {
   colorLabels: Record<number, string>;
   // What this compilation is called — a named study, else the chapter(s).
   studyName: string;
+  // The study's word tags, so a shared card can carry the chosen definitions.
+  tags?: WordTag[];
   notes: Record<string, string>;
   dark: boolean;
   C: CC;
@@ -51,6 +55,7 @@ export default function ShareVerses({
   marks,
   colorLabels,
   studyName,
+  tags,
   notes,
   dark,
   C,
@@ -63,6 +68,19 @@ export default function ShareVerses({
   // Focused shows the marked phrases alone; Full redraws the whole verse with
   // the marks layered on, exactly as the reading view has them. Mirrors mobile.
   const [view, setView] = useState<"focused" | "full">("full");
+  // The canvas can't look anything up, so the dictionary has to be in memory
+  // before the entries are built or a shared card ships without its definitions.
+  const [dictReady, setDictReady] = useState(isLoaded());
+  useEffect(() => {
+    if (dictReady) return;
+    let alive = true;
+    loadWebster().then(() => alive && setDictReady(true));
+    return () => {
+      alive = false;
+    };
+  }, [dictReady]);
+  const tagsFor = (reference: string) =>
+    dictReady ? (tags || []).filter((t) => t.reference === reference) : [];
 
   // The verses of the compiled chapters, in reading order (same as Outline).
   type Row = {
@@ -185,6 +203,7 @@ export default function ShareVerses({
           fullText: info ? info.text : undefined,
           verseNumber: info ? info.verse : undefined,
           marks: v.marks,
+          glosses: glossesFor(tagsFor(v.reference)),
         });
       });
     });
