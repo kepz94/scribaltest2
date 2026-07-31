@@ -28,6 +28,7 @@ import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview, { packPages } from "./SharePreview";
 import { glossesFor } from "./components/MarkedVerse";
+import { useWebsterReady } from "./useWebsterReady";
 import type { VersesCardEntry } from "./shareCard";
 import MobileWalkthrough from "./MobileWalkthrough";
 import FeatureSlides from "./FeatureSlides";
@@ -2551,6 +2552,12 @@ export default function MobileApp() {
   // The verses the send sheet is about to share, as share-card entries. Built
   // here rather than in the button so the button's own label can ask the packer
   // how many cards this actually makes instead of guessing from a count.
+  // A shared card carries the definitions the reader chose, and resolving them
+  // needs the dictionary — which this path never touched, since Define is the
+  // only thing that loads it. Without this the cards shipped without glosses.
+  const shareDictReady = useWebsterReady(
+    wordTags.some((t) => t.senses && t.senses.length > 0)
+  );
   const sendShareEntries = useMemo((): VersesCardEntry[] => {
     if (!sendRefs) return [];
     const VI = verseByRef();
@@ -2573,12 +2580,14 @@ export default function MobileApp() {
           style: m.style,
           color: m.color,
         })),
-        glosses: glossesFor(wordTags.filter((t) => t.reference === ref)),
+        glosses: shareDictReady
+          ? glossesFor(wordTags.filter((t) => t.reference === ref))
+          : [],
       };
     });
     // Deps are the inputs the entries are actually built from; the helpers
     // (chapterColorName / scopeOf / getBook) all read from these.
-  }, [sendRefs, activeBookId, marks, scopedLabels]);
+  }, [sendRefs, activeBookId, marks, scopedLabels, wordTags, shareDictReady]);
   const sendSharePages = useMemo(
     () => (sendShareEntries.length ? packPages(sendShareEntries, dark).length : 0),
     [sendShareEntries, dark]
@@ -10926,7 +10935,11 @@ export default function MobileApp() {
                       .map(([color, label]) => ({ color, label }));
                   });
                   // The presenter's chosen definitions, resolved to words: a
-                  // follower has the room doc and no dictionary.
+                  // follower has the room doc and no dictionary. Await the
+                  // dictionary here — presenting may be the first thing this
+                  // session does, and an unloaded dictionary resolves to
+                  // nothing at all.
+                  await loadWebster();
                   const roomGlosses: Record<
                     string,
                     { word: string; n: number; text: string }[]

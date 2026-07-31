@@ -859,9 +859,11 @@ function DefinitionPicker({ defs, filter, setFilter, onClose }: any) {
         }}
       />
       {shown.length === 0 && (
-        <div style={{ fontSize: "12.5px", color: "var(--muted)", padding: "6px 0" }}>
-          No tagged definitions in this study yet. Tag a word with the Define
-          tool and tick the senses you want.
+        <div style={{ fontSize: "12.5px", color: "var(--muted)", padding: "6px 0", lineHeight: 1.55 }}>
+          No definitions tagged in this study yet. In the reader, arm the
+          <strong style={{ color: "var(--text)" }}> Define </strong>
+          tool, tap a word, tick the senses you want to keep, then tag it —
+          they'll be offered here.
         </div>
       )}
       {shown.map((d) =>
@@ -1297,7 +1299,10 @@ export default function RichNoteField({
               setDefOpen(false);
               setLinkOpen((v) => !v);
             }}
-            hasDefs={linkableDefinitions.length > 0}
+            // Shown wherever Link verse is: a study note. Gating it on having
+            // definitions hid the one thing that explains how to make one —
+            // the picker's own empty state was unreachable.
+            hasDefs={linkableVerses.length > 0 || linkableDefinitions.length > 0}
             onDefOpen={() => {
               setLinkOpen(false);
               setDefOpen((v) => !v);

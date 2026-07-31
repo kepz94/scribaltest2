@@ -12,6 +12,7 @@ import {
 } from "../types";
 import { mergedRunsFor } from "../outlineAssembly";
 import { glossesFor } from "./MarkedVerse";
+import { loadWebster } from "../webster";
 import {
   StudyTable,
   TablePurpose,
@@ -2328,7 +2329,9 @@ export default function StudyTablesDesktop({
                   );
                 });
                 // The presenter's chosen definitions, resolved to words: a
-                // follower has the room doc and no dictionary.
+                // follower has the room doc and no dictionary. Await it here —
+                // an unloaded dictionary resolves to nothing at all.
+                await loadWebster();
                 const roomGlosses: Record<
                   string,
                   { word: string; n: number; text: string }[]
