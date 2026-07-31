@@ -19,6 +19,15 @@
 // written under, and rewriting that string would orphan it.
 
 export const SYNTH_PREFIX = "synthesis|";
+// The stable key. A chapter list describes what a study CONTAINS, and that
+// changes every time the study gains a verse from a new chapter — which on
+// Jul 31 2026 detached an 8,656-character synthesis from a keyword study the
+// moment five verses were gathered into it, on both shells at once, because
+// both compute the chapter key the same way. A scope names the study ITSELF
+// and does not move when its contents do. The per-theme syntheses were always
+// keyed this way ("synthesis:" + scope + ":" + color); only the study-level
+// one was keyed by its chapters.
+export const SYNTH_SCOPE_PREFIX = "synthesis|scope:";
 
 export function chaptersOfKey(key: string): string[] {
   return key.slice(SYNTH_PREFIX.length).split("+").filter(Boolean);
@@ -28,25 +37,69 @@ export function synthesisKeyFor(chapters: string[]): string {
   return SYNTH_PREFIX + chapters.join("+");
 }
 
+export function synthesisKeyForScope(scope: string): string {
+  return SYNTH_SCOPE_PREFIX + scope;
+}
+
 const canon = (chapters: string[]) => chapters.slice().sort().join("+");
 
-// The key this study's synthesis lives under: an existing note for the same set
-// of chapters, whatever order it was written in, else a fresh key in the order
-// given.
+// Legacy chapter-list keys only — a scope key is not a chapter list and must
+// never be read as one.
+const legacyKeys = (notes: Record<string, string>) =>
+  Object.keys(notes).filter(
+    (k) =>
+      k.indexOf(SYNTH_PREFIX) === 0 &&
+      k.indexOf(SYNTH_SCOPE_PREFIX) !== 0 &&
+      (notes[k] || "").trim()
+  );
+
+// The key this study's synthesis lives under.
 //
-// Deliberately NO fuzzy matching. An earlier attempt fell back to "any written
-// study whose scope contains all my chapters", which reads well until a plain
-// chapter study of John 2 silently adopts the synthesis of a keyword study that
-// happens to include John 2. Two studies over overlapping chapters are still two
-// studies; only an exact set is the same study.
+// 1. The scope key, when it holds text. Stable across anything the study gains.
+// 2. Else a legacy chapter-list note for this exact set of chapters, whatever
+//    order it was written in — read in place, so nothing already written moves
+//    or is orphaned by this change.
+// 3. Else mint. Prefer the scope key; fall back to the chapter list only when
+//    the caller has no scope to give.
+//
+// Step 2 stays deliberately NON-fuzzy. An earlier attempt fell back to "any
+// written study whose scope contains all my chapters", which reads well until a
+// plain chapter study of John 2 silently adopts the synthesis of a keyword study
+// that happens to include John 2. Two studies over overlapping chapters are
+// still two studies; only an exact set is the same study. The scope key is what
+// makes that strictness safe — identity no longer rides on the chapter list.
 export function resolveSynthesisKey(
   notes: Record<string, string>,
-  chapters: string[]
+  chapters: string[],
+  scope?: string
 ): string {
+  if (scope) {
+    const sk = synthesisKeyForScope(scope);
+    if ((notes[sk] || "").trim()) return sk;
+  }
   const want = canon(chapters);
-  const written = Object.keys(notes).filter(
-    (k) => k.indexOf(SYNTH_PREFIX) === 0 && (notes[k] || "").trim()
+  const exact = legacyKeys(notes).find(
+    (k) => canon(chaptersOfKey(k)) === want
   );
-  const exact = written.find((k) => canon(chaptersOfKey(k)) === want);
-  return exact || synthesisKeyFor(chapters);
+  if (exact) return exact;
+  return scope ? synthesisKeyForScope(scope) : synthesisKeyFor(chapters);
+}
+
+// The one-time hand-off: a legacy chapter-keyed note that should be copied onto
+// this study's scope key, or null when there is nothing to move. Returns a key
+// only while the scope key is still empty, so the copy happens once and never
+// overwrites a synthesis written under the new scheme.
+//
+// Without this, an existing note keeps being read in place (resolve step 2) and
+// stays exposed to the exact failure this change exists to stop: it survives
+// only until the study's chapter set moves.
+export function legacySynthesisKeyToMigrate(
+  notes: Record<string, string>,
+  chapters: string[],
+  scope: string
+): string | null {
+  if (!scope) return null;
+  if ((notes[synthesisKeyForScope(scope)] || "").trim()) return null;
+  const want = canon(chapters);
+  return legacyKeys(notes).find((k) => canon(chaptersOfKey(k)) === want) || null;
 }

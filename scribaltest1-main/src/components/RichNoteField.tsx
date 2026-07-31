@@ -1184,7 +1184,13 @@ export function RichCardText({
     // an editor holding only an empty paragraph saves as empty
     const out = htmlRef.current || "";
     const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
-    onChange(textOnly ? out : "");
+    // An editor that opened empty and is still empty has nothing to say. It
+    // used to save "" anyway, which reads as a deletion \u2014 and a deletion that
+    // syncs. That is how an untouched Done could erase a note the editor had
+    // simply never been handed. Emptying text the user could see is still a
+    // real clear and still saves.
+    if (textOnly) onChange(out);
+    else if (has) onChange("");
     setEditing(false);
     if (onDone) onDone();
   };
@@ -1425,7 +1431,14 @@ export default function RichNoteField({
               // an editor holding only an empty paragraph saves as empty
               const out = htmlRef.current || "";
               const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
-              onChange(textOnly ? out : "");
+              // An editor that opened empty and is still empty has nothing to
+              // say. It used to save "" anyway, which reads as a deletion \u2014 and
+              // under last-write-wins, a deletion that syncs. That is how an
+              // untouched Done could erase a note the editor had simply never
+              // been handed. Emptying text the user could actually see is still
+              // a real clear; Delete, below, remains the deliberate path.
+              if (textOnly) onChange(out);
+              else if (has) onChange("");
               setEditing(false);
               setLinkOpen(false);
             }}

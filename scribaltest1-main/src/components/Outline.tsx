@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse, { glossesFor } from "./MarkedVerse";
 import RichNoteField, { LinkableVerse, LinkableDefinition } from "./RichNoteField";
 import { definitionForKey, sensesFor } from "../webster";
 import { useWebsterReady } from "../useWebsterReady";
-import { resolveSynthesisKey } from "../synthesisKey";
+import {
+  resolveSynthesisKey,
+  legacySynthesisKeyToMigrate,
+  synthesisKeyForScope,
+} from "../synthesisKey";
 import {
   linkableDefinitionsFor,
   hasTaggedWords,
@@ -38,6 +42,10 @@ interface OutlineProps {
   setColorLabel: (color: MarkColor, label: string) => void;
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
+  // This study's stable identity (its scope). The synthesis is keyed by it, so
+  // gathering a verse from a chapter the study did not already cover can no
+  // longer orphan the note.
+  scope?: string;
   onJumpToReference: (reference: string) => void;
   // Optional controlled collapse state — the colors whose theme sections are
   // collapsed. When supplied, the parent owns it, so a quick-find result can
@@ -100,6 +108,7 @@ export default function Outline(props: OutlineProps) {
     setColorLabel,
     notes,
     setNote,
+    scope,
     onJumpToReference,
   } = props;
 
@@ -130,6 +139,22 @@ export default function Outline(props: OutlineProps) {
     vols[t.volume].books[t.book].book +
     " " +
     vols[t.volume].books[t.book].chapters[t.chapter].chapter;
+
+  // One-time hand-off. A synthesis written under the old chapter-list key is
+  // copied onto this study's scope key the first time the study is opened —
+  // reading it in place would leave it exposed to the very failure the scope
+  // key exists to prevent. Idempotent: once the scope key holds text the helper
+  // returns null and this never fires again.
+  useEffect(() => {
+    if (!scope) return;
+    const old = legacySynthesisKeyToMigrate(
+      notes || {},
+      compileTabs.map(tabLabel),
+      scope
+    );
+    if (old) setNote(synthesisKeyForScope(scope), (notes || {})[old]);
+    // eslint-disable-next-line
+  }, [scope, notes, compileTabs]);
 
   type VEntry = {
     chapterRef: string;
@@ -488,11 +513,13 @@ export default function Outline(props: OutlineProps) {
         >
           <h3 style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Synthesis</h3>
           {(() => {
-            // Shared resolver: joins the note this study already has,
-            // whatever order the chapters were listed in when it was written.
+            // Shared resolver: the study's scope names the note, and the
+            // chapter list is consulted only to find one written before that
+            // was true.
             const synthKey = resolveSynthesisKey(
               notes || {},
-              compileTabs.map(tabLabel)
+              compileTabs.map(tabLabel),
+              scope
             );
             return (
               <RichNoteField

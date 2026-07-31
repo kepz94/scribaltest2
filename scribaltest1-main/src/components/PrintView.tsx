@@ -14,6 +14,9 @@ interface PrintViewProps {
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
+  // The study's stable identity — see Outline. Needed so a printed synthesis
+  // resolves to the same note the study shows on screen.
+  scope?: string;
   tags?: WordTag[];
   onClose: () => void;
 }
@@ -94,8 +97,17 @@ const phraseStyle = (style: MarkStyle): React.CSSProperties => {
 };
 
 export default function PrintView(props: PrintViewProps) {
-  const { view, title, compileTabs, marks, colorLabels, notes, tags, onClose } =
-    props;
+  const {
+    view,
+    title,
+    compileTabs,
+    marks,
+    colorLabels,
+    notes,
+    scope,
+    tags,
+    onClose,
+  } = props;
   const [full, setFull] = useState(false);
 
   // Build structural data
@@ -164,7 +176,8 @@ export default function PrintView(props: PrintViewProps) {
   // This study's own synthesis key — built exactly the way Outline saves it.
   const synthKey = resolveSynthesisKey(
     notes,
-    compileTabs.map((t) => tabLabel(t))
+    compileTabs.map((t) => tabLabel(t)),
+    scope
   );
   // The study synthesis leads the document; anything else reflective trails it.
   const otherReflectionKeys = Object.keys(notes).filter(

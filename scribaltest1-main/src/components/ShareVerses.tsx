@@ -46,6 +46,9 @@ interface Props {
   // Save as PDF action wants. "pick" is the ordinary verse picker.
   initialMode?: "pick" | "study";
   notes: Record<string, string>;
+  // The study's stable identity — see Outline. Needed so a shared synthesis
+  // resolves to the same note the study shows on screen.
+  scope?: string;
   dark: boolean;
   C: CC;
   onClose: () => void;
@@ -63,6 +66,7 @@ export default function ShareVerses({
   tags,
   initialMode = "pick",
   notes,
+  scope,
   dark,
   C,
   onClose,
@@ -178,7 +182,7 @@ export default function ShareVerses({
     const book = vols[t.volume].books[t.book];
     return book.book + " " + book.chapters[t.chapter].chapter;
   });
-  const synthKey = resolveSynthesisKey(notes, chapterNames);
+  const synthKey = resolveSynthesisKey(notes, chapterNames, scope);
   // Two readings of the same note. The card gets it RAW, because the canvas
   // now lays a synthesis out block by block and keeps its headings, dividers
   // and lists. The cover blurb gets it flattened — it is a clamped teaser, and

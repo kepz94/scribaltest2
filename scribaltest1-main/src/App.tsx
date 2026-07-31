@@ -13,6 +13,7 @@ import StudyTablesDesktop from "./components/StudyTablesDesktop";
 import { useStudyTables, newCardId, TableCard } from "./hooks/useStudyTables";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
+import { resolveSynthesisKey } from "./synthesisKey";
 import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
 import Covenants from "./components/Covenants";
@@ -959,6 +960,9 @@ interface PrintData {
   marks: Mark[];
   colorLabels: Record<number, string>;
   notes: Record<string, string>;
+  // The study scope the print was taken from, so a printed synthesis resolves
+  // to the same note the study shows on screen.
+  scope?: string;
   tags: WordTag[];
 }
 
@@ -4876,6 +4880,7 @@ export default function App() {
       marks: effectiveMarks,
       colorLabels: effectiveScopedLabels,
       notes,
+      scope: effectiveScope,
       tags: effectiveTags,
     });
   };
@@ -5950,6 +5955,10 @@ export default function App() {
     colorLabels: effectiveScopedLabels,
     setColorLabel: (c: MarkColor, l: string) =>
       setScopedLabel(effectiveScope, c, l),
+    // The study's stable identity. Theme names have always been scoped by it;
+    // the synthesis now is too, so a study that gains a verse from a chapter it
+    // did not already cover keeps its note instead of minting an empty one.
+    scope: effectiveScope,
     onJumpToReference: jumpToReference,
   };
 
@@ -8254,6 +8263,7 @@ export default function App() {
           initialMode={shareMode}
           tags={effectiveTags}
           notes={notes}
+          scope={effectiveScope}
           dark={dark}
           C={(reading.warm ? WARM : NEUTRAL)[dark ? "dark" : "light"]}
           onClose={() => setSharingVerses(false)}
@@ -9938,6 +9948,7 @@ export default function App() {
           marks={printData.marks}
           colorLabels={printData.colorLabels}
           notes={printData.notes}
+          scope={printData.scope}
           tags={printData.tags}
           onClose={() => setPrintData(null)}
         />
@@ -13530,16 +13541,22 @@ export default function App() {
                 }}
                 synthesisFor={() => {
                   // Desktop keeps ONE synthesis per study (not per theme);
-                  // every doorway shows it.
-                  const k =
-                    "synthesis|" +
-                    sharedCompileProps.compileTabs.map(tabLabel).join("+");
+                  // every doorway shows it. These two minted the chapter key by
+                  // hand instead of asking the resolver, so this surface could
+                  // read a different note from the one Outline was writing.
+                  const k = resolveSynthesisKey(
+                    notes || {},
+                    sharedCompileProps.compileTabs.map(tabLabel),
+                    effectiveScope
+                  );
                   return notes[k] || "";
                 }}
                 onSaveSynthesis={(t) => {
-                  const k =
-                    "synthesis|" +
-                    sharedCompileProps.compileTabs.map(tabLabel).join("+");
+                  const k = resolveSynthesisKey(
+                    notes || {},
+                    sharedCompileProps.compileTabs.map(tabLabel),
+                    effectiveScope
+                  );
                   setNote(k, t);
                 }}
               />

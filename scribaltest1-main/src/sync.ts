@@ -321,6 +321,31 @@ function countNotesFromJson(raw: string | null | undefined): number {
   }
 }
 
+// Counts non-empty notes living INSIDE the book store — syntheses, theme notes
+// and verse notes. These are the notes that actually matter, and they were
+// invisible to the emptiness guards, which only ever counted the legacy flat
+// scribal_notes map. A books payload that had lost every note still counted as
+// full because its marks were intact, and pushed straight over the cloud copy.
+function countBookNotesFromJson(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const s = JSON.parse(raw);
+    const books = s && s.books;
+    if (!books || typeof books !== "object") return 0;
+    let n = 0;
+    Object.keys(books).forEach((id) => {
+      const notes = books[id] && books[id].notes;
+      if (!notes || typeof notes !== "object") return;
+      Object.keys(notes).forEach((k) => {
+        if (typeof notes[k] === "string" && notes[k].trim() !== "") n++;
+      });
+    });
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
 function countContent(get: (key: string) => string | null): ContentCounts {
   return {
     marks: countBookMarksFromJson(get("scribal_books_v1")),
@@ -328,7 +353,9 @@ function countContent(get: (key: string) => string | null): ContentCounts {
     studies: countStudiesFromJson(get("scribal_studies_v1")),
     search: countStudiesFromJson(get("scribal_search_studies")),
     tables: countTablesFromJson(get("scribal_tables_v1")),
-    notes: countNotesFromJson(get("scribal_notes")),
+    notes:
+      countNotesFromJson(get("scribal_notes")) +
+      countBookNotesFromJson(get("scribal_books_v1")),
   };
 }
 

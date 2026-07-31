@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, CSSProperties } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, CSSProperties } from "react";
 import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
@@ -7,7 +7,11 @@ import RichNoteField from "./components/RichNoteField";
 import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteField";
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
-import { resolveSynthesisKey } from "./synthesisKey";
+import {
+  resolveSynthesisKey,
+  legacySynthesisKeyToMigrate,
+  synthesisKeyForScope,
+} from "./synthesisKey";
 import { useWebsterReady } from "./useWebsterReady";
 import {
   linkableDefinitionsFor,
@@ -195,12 +199,22 @@ export default function MobileCompile({
     );
     return seen;
   };
-  // One resolver, shared with desktop and unit-tested: an existing note for
-  // this exact set of chapters whatever order it was written in, else a fresh
-  // key. (An earlier attempt here also matched a study whose scope merely
-  // CONTAINED these chapters, which would have let a plain chapter study adopt
-  // a keyword study's synthesis. Removed.)
-  const dSynthKey = () => resolveSynthesisKey(notes, compileChapters());
+  // One resolver, shared with desktop and unit-tested. The scope names the
+  // STUDY and is what a new synthesis is keyed by; the chapter list is only
+  // consulted to find notes written before that was true. Passing the scope is
+  // what stops a study losing its synthesis the moment it gathers a verse from
+  // a chapter it did not already cover.
+  const dSynthKey = () => resolveSynthesisKey(notes, compileChapters(), scope);
+  // One-time hand-off. A synthesis written under the old chapter-list key is
+  // copied onto this study's scope key the first time the study is opened,
+  // because reading it in place leaves it exposed to the very failure the scope
+  // key exists to prevent. Idempotent: once the scope key holds text the helper
+  // returns null and this never fires again.
+  useEffect(() => {
+    const old = legacySynthesisKeyToMigrate(notes, compileChapters(), scope);
+    if (old) setNote(synthesisKeyForScope(scope), notes[old]);
+    // eslint-disable-next-line
+  }, [scope, notes]);
   const readVerseNote = (color: number, ref: string) => {
     const v = notes[dVerseKey(color, ref)];
     if (v && v.trim()) return flattenRich(v);

@@ -25,6 +25,13 @@ interface StudyBook {
   // last-write-wins, and lets a cleared note stay cleared without needing the
   // old rule that caused it.
   noteAt?: Record<string, number>;
+  // When each note was deliberately CLEARED. A stamp alone cannot be trusted to
+  // carry a deletion: last-write-wins on `noteAt` means any empty write — a
+  // stale editor saving blank, a clock running ahead — erases real text on every
+  // device at once. Only a key recorded here is allowed to beat a non-empty
+  // note, so an accidental blank stays local and losable, never global and
+  // permanent.
+  noteDel?: Record<string, number>;
   // Deleted mark ids → when they were deleted, so deletions propagate across
   // devices instead of an old copy resurrecting them on the next sync.
   tombstones?: Record<string, number>;
@@ -296,8 +303,15 @@ export function mergeNotes(
   localNotes: Record<string, string>,
   localAt: Record<string, number>,
   remoteNotes: Record<string, string>,
-  remoteAt: Record<string, number>
-): { notes: Record<string, string>; noteAt: Record<string, number>; changed: boolean } {
+  remoteAt: Record<string, number>,
+  localDel: Record<string, number> = {},
+  remoteDel: Record<string, number> = {}
+): {
+  notes: Record<string, string>;
+  noteAt: Record<string, number>;
+  noteDel: Record<string, number>;
+  changed: boolean;
+} {
   let notes = localNotes;
   let noteAt = localAt;
   let changed = false;
@@ -310,6 +324,21 @@ export function mergeNotes(
     notes[k] = remoteNotes[k];
     noteAt[k] = at;
   };
+  // Deletion markers always merge forward (newest per key) so a clear keeps
+  // defending itself on later syncs, exactly like a mark tombstone.
+  let noteDel = localDel;
+  let delChanged = false;
+  Object.keys(remoteDel || {}).forEach((k) => {
+    const rd = remoteDel[k];
+    if (typeof rd !== "number") return;
+    if (noteDel[k] == null || rd > noteDel[k]) {
+      if (!delChanged) {
+        noteDel = { ...localDel };
+        delChanged = true;
+      }
+      noteDel[k] = rd;
+    }
+  });
   Object.keys(remoteNotes || {}).forEach((k) => {
     const rAt = remoteAt[k] || 0;
     const lAt = localAt[k] || 0;
@@ -321,8 +350,17 @@ export function mergeNotes(
       return;
     }
     if (rText === lText) return;
-    // Stamped on either side: newest wins, INCLUDING an empty remote, so
-    // clearing a note on one device propagates instead of being ignored.
+    // An empty remote is only allowed to erase real text when the other device
+    // RECORDED a deletion, and recorded it after our own last write. A newer
+    // stamp is not enough — that rule let one stale blank editor erase a
+    // synthesis everywhere, and clock skew between a phone and a desktop can
+    // manufacture "newer" on its own.
+    if (!rText.trim() && lText.trim()) {
+      const rDel = remoteDel[k] || 0;
+      if (rDel && rDel >= lAt) take(k, Math.max(rAt, rDel));
+      return;
+    }
+    // Stamped on either side: newest wins.
     if (rAt > lAt) return take(k, rAt);
     if (rAt < lAt) return;
     // Neither side is stamped — both predate this build, so there is no honest
@@ -332,7 +370,7 @@ export function mergeNotes(
     // existed only on this device.
     if (rAt === 0 && lAt === 0 && rText.length > lText.length) take(k, 0);
   });
-  return { notes, noteAt, changed };
+  return { notes, noteAt, noteDel, changed: changed || delChanged };
 }
 
 const safeSet = (key: string, value: string) => {
@@ -395,6 +433,7 @@ function initState(): State {
         // Absent on anything written before note stamps existed; an unstamped
         // note reads as 0, which the merge treats as "predates this build".
         noteAt: b.noteAt && typeof b.noteAt === "object" ? b.noteAt : {},
+        noteDel: b.noteDel && typeof b.noteDel === "object" ? b.noteDel : {},
         tombstones: gcTombstones(
           b.tombstones && typeof b.tombstones === "object" ? b.tombstones : {}
         ),
@@ -1111,6 +1150,8 @@ function reducer(state: State, action: Action): State {
             notes: rb.notes && typeof rb.notes === "object" ? rb.notes : {},
             noteAt:
               rb.noteAt && typeof rb.noteAt === "object" ? rb.noteAt : {},
+            noteDel:
+              rb.noteDel && typeof rb.noteDel === "object" ? rb.noteDel : {},
             tombstones: cleanTomb,
             scopedLabels:
               rb.scopedLabels && typeof rb.scopedLabels === "object"
@@ -1173,10 +1214,13 @@ function reducer(state: State, action: Action): State {
           local.notes,
           local.noteAt || {},
           rb.notes || {},
-          rb.noteAt || {}
+          rb.noteAt || {},
+          local.noteDel || {},
+          rb.noteDel || {}
         );
         const notes = nm.notes;
         const noteAt = nm.noteAt;
+        const noteDel = nm.noteDel;
         const notesChanged = nm.changed;
         // Merge per-chapter theme names — fill blanks only, per scope+color.
         let scoped = local.scopedLabels || {};
@@ -1240,6 +1284,7 @@ function reducer(state: State, action: Action): State {
             colorLabels: labels,
             notes,
             noteAt,
+            noteDel,
             tombstones: mergedTomb,
             scopedLabels: scoped,
             scopedRoles,
@@ -1266,7 +1311,20 @@ function reducer(state: State, action: Action): State {
         },
       };
 
-    case "setNote":
+    case "setNote": {
+      // A save that changes nothing must not move the clock. The stamp decides
+      // merges, so re-saving identical text used to hand this device a "newer"
+      // copy of a note it had not actually edited — enough to win against a
+      // real edit made elsewhere.
+      const prevText = active.notes[action.key] || "";
+      if (prevText === action.text) return state;
+      const wasCleared = !!prevText.trim() && !action.text.trim();
+      const noteDel = { ...(active.noteDel || {}) };
+      // Clearing text the user could actually see is a deliberate deletion and
+      // earns the marker that lets it propagate. Writing blank over blank does
+      // not, and neither does writing content — that revokes any old marker.
+      if (wasCleared) noteDel[action.key] = Date.now();
+      else if (action.text.trim()) delete noteDel[action.key];
       return {
         ...state,
         books: {
@@ -1278,9 +1336,11 @@ function reducer(state: State, action: Action): State {
               ...(active.noteAt || {}),
               [action.key]: Date.now(),
             },
+            noteDel,
           },
         },
       };
+    }
 
     case "setScopedLabel": {
       const cur = active.scopedLabels || {};

@@ -34,12 +34,46 @@ describe("mergeNotes", () => {
     expect(r.changed).toBe(false);
   });
 
-  it("propagates a note cleared on another device", () => {
-    // The old rule ignored this outright, so a deletion never travelled.
-    const r = mergeNotes({ [KEY]: WHOLE }, { [KEY]: 100 }, { [KEY]: "" }, {
-      [KEY]: 200,
-    });
+  it("propagates a note DELIBERATELY cleared on another device", () => {
+    // The original rule ignored this outright, so a deletion never travelled.
+    // It still travels — but now it has to say so.
+    const r = mergeNotes(
+      { [KEY]: WHOLE },
+      { [KEY]: 100 },
+      { [KEY]: "" },
+      { [KEY]: 200 },
+      {},
+      { [KEY]: 200 }
+    );
     expect(r.notes[KEY]).toBe("");
+  });
+
+  it("an empty remote does NOT erase real text without a recorded deletion", () => {
+    // Jul 31 2026, and the reason this file exists. A stale editor saved blank
+    // and last-write-wins carried that blank to every device at once. A newer
+    // stamp is not evidence of intent — two devices' clocks disagree by more
+    // than the gap between a save and a sync.
+    const r = mergeNotes(
+      { [KEY]: WHOLE },
+      { [KEY]: 100 },
+      { [KEY]: "" },
+      { [KEY]: 999999 }
+    );
+    expect(r.notes[KEY]).toBe(WHOLE);
+    expect(r.changed).toBe(false);
+  });
+
+  it("a deletion recorded BEFORE our own edit does not win", () => {
+    // They cleared it, then we wrote again. Ours is the later intent.
+    const r = mergeNotes(
+      { [KEY]: WHOLE },
+      { [KEY]: 500 },
+      { [KEY]: "" },
+      { [KEY]: 400 },
+      {},
+      { [KEY]: 400 }
+    );
+    expect(r.notes[KEY]).toBe(WHOLE);
   });
 
   it("does not resurrect a note cleared HERE more recently", () => {

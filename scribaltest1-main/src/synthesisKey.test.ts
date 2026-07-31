@@ -1,6 +1,8 @@
 import {
   resolveSynthesisKey,
   synthesisKeyFor,
+  synthesisKeyForScope,
+  legacySynthesisKeyToMigrate,
   chaptersOfKey,
 } from "./synthesisKey";
 
@@ -66,5 +68,71 @@ describe("resolveSynthesisKey", () => {
       "Alma 32",
       "Alma 33",
     ]);
+  });
+});
+
+// Jul 31 2026. Kepu's keyword study "Cleansing The Temple" held an 8,656
+// character synthesis under a twelve-chapter key. He gathered five more verses
+// into the study — Exodus 21, Matthew 13, 1 Corinthians 6 and two JST chapters
+// — and the chapter set changed. The exact-set match found nothing, a fresh
+// empty key was minted, and the synthesis vanished from both shells at once.
+// Nothing had been deleted; the study had simply stopped answering to its own
+// note's name.
+describe("a study that gains a chapter keeps its synthesis", () => {
+  const SCOPE = "searchstudy:ss_1785368084577_wsanz";
+  const BEFORE = ["Psalms 69", "Jeremiah 7", "Matthew 21", "Mark 11"];
+  const AFTER = BEFORE.concat(["Exodus 21", "Matthew 13", "1 Corinthians 6"]);
+
+  it("REGRESSION: the chapter-keyed note is lost when the study grows", () => {
+    // The old behaviour, kept as a test so it can never come back silently.
+    const notes = { [synthesisKeyFor(BEFORE)]: FULL };
+    const key = resolveSynthesisKey(notes, AFTER);
+    expect(notes[key]).toBeUndefined();
+  });
+
+  it("the scope key survives the same growth", () => {
+    const notes = { [synthesisKeyForScope(SCOPE)]: FULL };
+    expect(notes[resolveSynthesisKey(notes, AFTER, SCOPE)]).toBe(FULL);
+    expect(notes[resolveSynthesisKey(notes, BEFORE, SCOPE)]).toBe(FULL);
+    expect(notes[resolveSynthesisKey(notes, [], SCOPE)]).toBe(FULL);
+  });
+
+  it("reads a legacy chapter-keyed note in place before it has moved", () => {
+    const notes = { [synthesisKeyFor(BEFORE)]: FULL };
+    expect(notes[resolveSynthesisKey(notes, BEFORE, SCOPE)]).toBe(FULL);
+  });
+
+  it("mints on the scope, not the chapter list, once a scope is known", () => {
+    expect(resolveSynthesisKey({}, BEFORE, SCOPE)).toBe(
+      synthesisKeyForScope(SCOPE)
+    );
+    // No scope to give (an unsaved compile) still mints the chapter key.
+    expect(resolveSynthesisKey({}, BEFORE)).toBe(synthesisKeyFor(BEFORE));
+  });
+
+  it("hands a legacy note off to the scope key exactly once", () => {
+    const legacy = synthesisKeyFor(BEFORE);
+    const notes: Record<string, string> = { [legacy]: FULL };
+    expect(legacySynthesisKeyToMigrate(notes, BEFORE, SCOPE)).toBe(legacy);
+    // After the copy the helper goes quiet — no loop, no second write.
+    notes[synthesisKeyForScope(SCOPE)] = FULL;
+    expect(legacySynthesisKeyToMigrate(notes, BEFORE, SCOPE)).toBeNull();
+  });
+
+  it("never migrates over a synthesis already written on the scope key", () => {
+    const notes = {
+      [synthesisKeyFor(BEFORE)]: FULL,
+      [synthesisKeyForScope(SCOPE)]: "<p>Newer, written since.</p>",
+    };
+    expect(legacySynthesisKeyToMigrate(notes, BEFORE, SCOPE)).toBeNull();
+  });
+
+  it("a scope key is never mistaken for a chapter list", () => {
+    // Two studies, one of them already on a scope key. The legacy matcher must
+    // not read "scope:searchstudy:…" as a chapter and match it to anything.
+    const notes = { [synthesisKeyForScope(SCOPE)]: FULL };
+    expect(resolveSynthesisKey(notes, ["scope:" + SCOPE])).toBe(
+      synthesisKeyFor(["scope:" + SCOPE])
+    );
   });
 });
