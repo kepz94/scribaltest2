@@ -127,6 +127,27 @@ describe("a study that gains a chapter keeps its synthesis", () => {
     expect(legacySynthesisKeyToMigrate(notes, BEFORE, SCOPE)).toBeNull();
   });
 
+  it("matches across the two spellings of the same chapter", () => {
+    // "Record Of John", Jul 31 2026. The note was minted from desktop's tab
+    // label ("Doctrine and Covenants 93"); the study's own chapters use the ref
+    // convention ("D&C 93"). Same chapter, same study, and the note was
+    // unreachable — no verse was ever added.
+    const key = synthesisKeyFor(["John 1", "Doctrine and Covenants 93"]);
+    const notes = { [key]: FULL };
+    expect(resolveSynthesisKey(notes, ["John 1", "D&C 93"])).toBe(key);
+    expect(
+      legacySynthesisKeyToMigrate(notes, ["John 1", "D&C 93"], "group:gmqjv8mjercv")
+    ).toBe(key);
+  });
+
+  it("still refuses two studies that merely overlap", () => {
+    // The widening is spelling only. A study over John 2 must never adopt the
+    // synthesis of one that happens to include John 2.
+    const notes = { [synthesisKeyFor(["Luke 19", "John 2"])]: FULL };
+    expect(notes[resolveSynthesisKey(notes, ["John 2"])]).toBeUndefined();
+    expect(legacySynthesisKeyToMigrate(notes, ["John 2"], "John 2")).toBeNull();
+  });
+
   it("a scope key is never mistaken for a chapter list", () => {
     // Two studies, one of them already on a scope key. The legacy matcher must
     // not read "scope:searchstudy:…" as a chapter and match it to anything.

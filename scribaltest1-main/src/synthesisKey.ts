@@ -41,7 +41,28 @@ export function synthesisKeyForScope(scope: string): string {
   return SYNTH_SCOPE_PREFIX + scope;
 }
 
-const canon = (chapters: string[]) => chapters.slice().sort().join("+");
+// One chapter, two spellings. Verse references say "D&C 93" (MobileApp's ref
+// convention, BOOK_ABBREV there); desktop's tab label and the reading header say
+// "Doctrine and Covenants 93". A synthesis minted from one spelling could not be
+// found from the other, which is how "Record Of John" lost its note without the
+// study ever changing — a second, independent way for a chapter-list key to
+// break, found Jul 31 2026 alongside the first.
+//
+// Matching only. Minting still uses whatever the caller was given, so no
+// existing key is ever rewritten.
+const BOOK_ALIASES: Record<string, string> = {
+  "doctrine and covenants": "d&c",
+};
+
+const normalizeChapter = (chapter: string): string => {
+  const s = String(chapter).trim().replace(/\s+/g, " ").toLowerCase();
+  const m = s.match(/^(.*\S)(\s+\d+)$/);
+  if (!m) return s;
+  return (BOOK_ALIASES[m[1]] || m[1]) + m[2];
+};
+
+const canon = (chapters: string[]) =>
+  chapters.map(normalizeChapter).sort().join("+");
 
 // Legacy chapter-list keys only — a scope key is not a chapter list and must
 // never be read as one.
