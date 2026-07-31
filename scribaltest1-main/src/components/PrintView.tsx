@@ -279,6 +279,7 @@ export default function PrintView(props: PrintViewProps) {
         .print-richnote ul { margin: 0 0 6px 20px; list-style: disc; }
         .print-richnote hr { border: none; border-top: 1px solid #ccc; margin: 8px 0; }
         .print-richnote .scribal-vchip { color: #7c4fd8; font-weight: 600; }
+        .print-richnote .scribal-dchip { color: #6b5433; font-style: italic; }
         @media print {
           body * { visibility: hidden !important; }
           #scribal-print, #scribal-print * { visibility: visible !important; }

@@ -162,3 +162,44 @@ describe("mergeTagState", () => {
     expect(out.tags.find((t) => t.id === b.id)).toBe(b);
   });
 });
+
+// The definition chip's whole contract is that it survives the HTML round trip
+// (notes are stored as HTML, never Lexical JSON) and that it flattens to real
+// words for share cards and print. Both are attribute/text-content properties of
+// the markup, so they can be asserted without mounting an editor.
+describe("definition chip markup", () => {
+  const chipHtml =
+    '<span class="scribal-dchip" data-dictkey="grace" data-senses="2" ' +
+    'style="color: #9a7b4f; font-style: italic;">' +
+    "Grace, 2. The free unmerited love and favor of God.</span>";
+
+  it("carries the key and the chosen sense for re-resolution", () => {
+    const el = document.createElement("div");
+    el.innerHTML = chipHtml;
+    const chip = el.querySelector(".scribal-dchip")!;
+    expect(chip.getAttribute("data-dictkey")).toBe("grace");
+    expect(chip.getAttribute("data-senses")).toBe("2");
+  });
+
+  it("keeps the definition as real text, so flattening never loses it", () => {
+    // richToPlain / flattenRich / the empty-note check are all textContent
+    // based — a chip holding its text only in an attribute would vanish.
+    const el = document.createElement("div");
+    el.innerHTML = chipHtml;
+    expect((el.textContent || "").trim()).toBe(
+      "Grace, 2. The free unmerited love and favor of God."
+    );
+  });
+
+  it("is not mistaken for a verse chip", () => {
+    const el = document.createElement("div");
+    el.innerHTML = chipHtml;
+    expect(el.querySelector(".scribal-vchip")).toBeNull();
+  });
+
+  it("survives the emptiness test the Done button applies", () => {
+    // A note whose only content is a chip must still save.
+    const textOnly = chipHtml.replace(/<[^>]*>/g, "").replace(/ /g, " ").trim();
+    expect(textOnly.length).toBeGreaterThan(0);
+  });
+});

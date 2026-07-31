@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse from "./MarkedVerse";
-import RichNoteField, { LinkableVerse } from "./RichNoteField";
+import RichNoteField, { LinkableVerse, LinkableDefinition } from "./RichNoteField";
+import { definitionForKey, sensesFor } from "../webster";
 import {
   Mark,
   MarkColor,
@@ -151,6 +152,22 @@ export default function Outline(props: OutlineProps) {
 
   // Verses available to link from a note: this study's verses, grouped by the
   // theme (color) they're most heavily marked in. Feeds RichNoteField's picker.
+  // Definitions this study has tagged, one row per chosen sense. Built from the
+  // same tags the verses use, so the picker can only ever offer what the reader
+  // actually chose — nothing from outside this study, and no unpicked senses.
+  const linkableDefinitions: LinkableDefinition[] = (tags || [])
+    .filter((t) => t.senses && t.senses.length > 0)
+    .map((t) => {
+      const def = definitionForKey(t.dictKey) || "";
+      return {
+        dictKey: t.dictKey,
+        word: t.word || t.dictKey,
+        reference: t.reference,
+        senses: sensesFor(def, t.senses),
+      };
+    })
+    .filter((d) => d.senses.length > 0);
+
   const linkableVerses: LinkableVerse[] = allEntries.map((e) => {
     const vMarks = relevantMarks.filter((m) => m.reference === e.reference);
     let color: MarkColor | null = null;
@@ -477,6 +494,7 @@ export default function Outline(props: OutlineProps) {
                 accent="var(--text)"
                 placeholder="State the main idea these verses support…"
                 linkableVerses={linkableVerses}
+                linkableDefinitions={linkableDefinitions}
                 focusedFor={focusedFor}
                 fullTextFor={fullTextFor}
                 onJumpToReference={onJumpToReference}
@@ -763,6 +781,7 @@ export default function Outline(props: OutlineProps) {
                             placeholder="Write a note…"
                             addLabel="Add a note about this verse"
                             linkableVerses={linkableVerses}
+                            linkableDefinitions={linkableDefinitions}
                             focusedFor={focusedFor}
                             fullTextFor={fullTextFor}
                             onJumpToReference={onJumpToReference}

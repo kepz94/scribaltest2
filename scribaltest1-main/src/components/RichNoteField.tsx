@@ -69,6 +69,9 @@ interface Props {
   placeholder?: string;
   addLabel?: string;
   linkableVerses?: LinkableVerse[];
+  // Definitions the reader tagged within this study, offered by the toolbar's
+  // Link definition button. Built and scoped by the parent.
+  linkableDefinitions?: LinkableDefinition[];
   focusedFor?: (reference: string) => string;
   fullTextFor?: (reference: string) => string;
   onJumpToReference?: (reference: string) => void;
@@ -80,6 +83,8 @@ interface Props {
 
 const isPlainText = (v: string) => !/<[a-z][\s\S]*>/i.test(v);
 const ACCENT = "#8b5cf6";
+// The established "definition" tan, distinct from the verse-chip purple.
+const DEF_ACCENT = "#9a7b4f";
 
 // The editor/rendered-note CSS, injected once into <head> so rich notes are
 // styled wherever this component mounts — either shell, any view. (These
@@ -166,6 +171,12 @@ const ensureRichNoteCss = () => {
       font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
     }
     .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
+    /* A definition chip carries a whole sense, so it wraps like prose rather
+       than staying on one line the way a verse reference does. */
+    .scribal-rich-editor .scribal-dchip, .scribal-rich-view .scribal-dchip {
+      background: rgba(154,123,79,0.10); border-radius: 4px; padding: 0 3px;
+      box-decoration-break: clone; -webkit-box-decoration-break: clone;
+    }
     .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   `;
   document.head.appendChild(el);
@@ -233,6 +244,93 @@ function $createChipNode(ref: string, text: string) {
   return n;
 }
 
+// ── Definition chip: the sibling of the verse chip, for a word the reader
+// tagged in this study. Unlike a verse chip — which carries only a reference and
+// resolves the verse at display time — this carries the DEFINITION TEXT ITSELF as
+// its text content. Three reasons it has to: the Done button decides a note is
+// empty by stripping tags and looking at what's left, every share-card and print
+// flattener reads textContent, and a note has to still say something on a device
+// that never loaded the 5MB dictionary. data-dictkey and data-senses ride along
+// so the entry can still be traced back to its source.
+class DefChipNode extends TextNode {
+  __dictKey: string;
+  __senses: string;
+  static getType(): string {
+    return "definition-chip";
+  }
+  static clone(node: any): any {
+    return new DefChipNode(
+      node.__dictKey,
+      node.__senses,
+      node.__text,
+      node.__key
+    );
+  }
+  constructor(dictKey: string, senses: string, text: string, key?: any) {
+    super(text, key);
+    this.__dictKey = dictKey;
+    this.__senses = senses;
+  }
+  private style(el: any) {
+    el.setAttribute("data-dictkey", this.__dictKey);
+    el.setAttribute("data-senses", this.__senses);
+  }
+  createDOM(config: any): any {
+    const el = super.createDOM(config);
+    el.classList.add("scribal-dchip");
+    this.style(el);
+    el.style.color = DEF_ACCENT;
+    el.style.fontStyle = "italic";
+    return el;
+  }
+  exportDOM(): any {
+    const el = document.createElement("span");
+    el.className = "scribal-dchip";
+    this.style(el);
+    el.setAttribute("style", "color: " + DEF_ACCENT + "; font-style: italic;");
+    el.textContent = this.getTextContent();
+    return { element: el };
+  }
+  static importDOM(): any {
+    return {
+      span: (node: any) =>
+        node.classList && node.classList.contains("scribal-dchip")
+          ? {
+              conversion: (el: any) => ({
+                node: $createDefChipNode(
+                  el.getAttribute("data-dictkey") || "",
+                  el.getAttribute("data-senses") || "",
+                  el.textContent || ""
+                ),
+              }),
+              priority: 3,
+            }
+          : null,
+    };
+  }
+  exportJSON(): any {
+    return {
+      ...super.exportJSON(),
+      type: "definition-chip",
+      dictKey: this.__dictKey,
+      senses: this.__senses,
+      version: 1,
+    };
+  }
+  static importJSON(json: any): any {
+    return $createDefChipNode(
+      json.dictKey || "",
+      json.senses || "",
+      json.text || ""
+    );
+  }
+}
+function $createDefChipNode(dictKey: string, senses: string, text: string) {
+  const n: any = new DefChipNode(dictKey, senses, text);
+  n.setMode("token");
+  return n;
+}
+
 const editorTheme = {
   text: { bold: "rt-bold", italic: "rt-italic", underline: "rt-underline" },
   heading: { h1: "rt-h1", h2: "rt-h2" },
@@ -284,10 +382,14 @@ const Sep = () => (
 function Toolbar({
   accent,
   hasVerses,
+  hasDefs,
+  onDefOpen,
   onLinkOpen,
 }: {
   accent: string;
   hasVerses: boolean;
+  hasDefs: boolean;
+  onDefOpen: () => void;
   onLinkOpen: () => void;
 }) {
   const [editor] = useLexicalComposerContext();
@@ -409,7 +511,9 @@ function Toolbar({
       if (!$isRangeSelection(sel)) return;
       $patchStyleText(sel, { color: null, "background-color": null });
       sel.getNodes().forEach((node: any) => {
-        if (node.getType && node.getType() === "verse-chip") return; // chips keep their look
+        const nt = node.getType && node.getType();
+        // chips keep their look
+        if (nt === "verse-chip" || nt === "definition-chip") return;
         if (node.setFormat) node.setFormat(0);
         if (node.setStyle) node.setStyle("");
       });
@@ -589,6 +693,12 @@ function Toolbar({
           <span style={{ fontSize: "12px", fontWeight: 600 }}>Link verse</span>
         </button>
       )}
+      {hasDefs && (
+        <button style={{ ...BTN(), minWidth: undefined, padding: "0 10px" }} title="Link a definition you tagged in this study" onMouseDown={md(onDefOpen)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13ZM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>
+          <span style={{ fontSize: "12px", fontWeight: 600 }}>Link definition</span>
+        </button>
+      )}
       <Sep />
       <button style={BTN(active.align === "left" || active.align === "")} title="Align left" onMouseDown={md(() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left"))}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -666,6 +776,129 @@ function InitPlugin({ html }: { html: string }) {
     // eslint-disable-next-line
   }, []);
   return null;
+}
+
+// A definition the reader tagged somewhere in this study, as the note editor
+// offers it. Built by the parent from its already-scoped tags — the editor never
+// sees the whole tag store.
+export interface LinkableDefinition {
+  dictKey: string;
+  word: string; // display form, as the reader tagged it
+  reference: string; // where they tagged it
+  senses: { n: number; text: string }[]; // the senses they chose
+}
+
+// Unlike the verse picker — which inserts a reference and resolves the verse
+// later — this inserts the definition's own words, because that is what the
+// reader chose and what has to survive into a share card, a printout, or a
+// device that never loaded the dictionary.
+function DefinitionPicker({ defs, filter, setFilter, onClose }: any) {
+  const [editor] = useLexicalComposerContext();
+  const insert = (d: LinkableDefinition, s: { n: number; text: string }) => {
+    editor.update(() => {
+      const sel = $getSelection();
+      if ($isRangeSelection(sel)) {
+        const display =
+          d.word.charAt(0).toUpperCase() +
+          d.word.slice(1) +
+          ", " +
+          s.n +
+          ". " +
+          s.text.replace(/^\s*\d+\.\s*/, "");
+        sel.insertNodes([
+          $createDefChipNode(d.dictKey, String(s.n), display),
+          $createTextNode("\u00a0"),
+        ]);
+      }
+    });
+    editor.focus();
+    onClose();
+  };
+  const q = (filter || "").trim().toLowerCase();
+  const shown = (defs as LinkableDefinition[]).filter(
+    (d) => !q || d.word.toLowerCase().includes(q) || d.reference.toLowerCase().includes(q)
+  );
+  return (
+    <div
+      style={{
+        borderTop: "1px solid var(--border)",
+        maxHeight: "240px",
+        overflowY: "auto",
+        padding: "10px 12px",
+        background: "var(--bg)",
+      }}
+    >
+      <input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Find a word you tagged…"
+        style={{
+          width: "100%",
+          padding: "7px 9px",
+          borderRadius: "8px",
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--text)",
+          fontSize: "13px",
+          fontFamily: "inherit",
+          marginBottom: "8px",
+        }}
+      />
+      {shown.length === 0 && (
+        <div style={{ fontSize: "12.5px", color: "var(--muted)", padding: "6px 0" }}>
+          No tagged definitions in this study yet. Tag a word with the Define
+          tool and tick the senses you want.
+        </div>
+      )}
+      {shown.map((d) =>
+        d.senses.map((s) => (
+          <button
+            key={d.dictKey + ":" + d.reference + ":" + s.n}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insert(d, s);
+            }}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "9px",
+              padding: "8px 10px",
+              marginBottom: "6px",
+              cursor: "pointer",
+              color: "var(--text)",
+              font: "inherit",
+              fontSize: "13px",
+              lineHeight: 1.5,
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>
+              {d.word.charAt(0).toUpperCase() + d.word.slice(1)}
+            </span>
+            <span style={{ color: DEF_ACCENT, fontWeight: 700, margin: "0 6px" }}>
+              {s.n}.
+            </span>
+            <span style={{ color: "var(--muted)" }}>{d.reference}</span>
+            <span
+              style={{
+                color: "var(--muted)",
+                marginTop: "3px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              } as any}
+            >
+              {s.text.replace(/^\s*\d+\.\s*/, "")}
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  );
 }
 
 function VersePicker({
@@ -886,7 +1119,7 @@ export function RichCardText({
     namespace: "scribal-card",
     theme: editorTheme,
     onError: (e: Error) => console.error("Lexical:", e),
-    nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
+    nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode, DefChipNode],
     html: { import: styleImportMap },
   };
   const save = () => {
@@ -909,6 +1142,8 @@ export function RichCardText({
         <Toolbar
           accent={accent || ACCENT}
           hasVerses={false}
+          hasDefs={false}
+          onDefOpen={() => {}}
           onLinkOpen={() => {}}
         />
         <div style={{ position: "relative" }}>
@@ -996,6 +1231,7 @@ export default function RichNoteField({
   placeholder,
   addLabel,
   linkableVerses = [],
+  linkableDefinitions = [],
   focusedFor,
   fullTextFor,
   onJumpToReference,
@@ -1003,8 +1239,10 @@ export default function RichNoteField({
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [defOpen, setDefOpen] = useState(false);
   const [openThemes, setOpenThemes] = useState<Record<string, boolean>>({});
   const [linkFilter, setLinkFilter] = useState("");
+  const [defFilter, setDefFilter] = useState("");
   const [preview, setPreview] = useState<{ ref: string; focused: boolean } | null>(null);
   const has = (value || "").trim().length > 0;
   const htmlRef = useRef(value);
@@ -1032,13 +1270,25 @@ export default function RichNoteField({
       namespace: "scribal-note",
       theme: editorTheme,
       onError: (e: Error) => console.error("Lexical:", e),
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode, DefChipNode],
       html: { import: styleImportMap },
     };
     return (
       <div style={{ border: "1px solid " + ACCENT, borderRadius: "8px", background: "var(--soft)" }}>
         <LexicalComposer initialConfig={initialConfig}>
-          <Toolbar accent={accent} hasVerses={linkableVerses.length > 0} onLinkOpen={() => setLinkOpen((v) => !v)} />
+          <Toolbar
+            accent={accent}
+            hasVerses={linkableVerses.length > 0}
+            onLinkOpen={() => {
+              setDefOpen(false);
+              setLinkOpen((v) => !v);
+            }}
+            hasDefs={linkableDefinitions.length > 0}
+            onDefOpen={() => {
+              setLinkOpen(false);
+              setDefOpen((v) => !v);
+            }}
+          />
           <div style={{ position: "relative" }}>
             <RichTextPlugin
               contentEditable={
@@ -1075,6 +1325,14 @@ export default function RichNoteField({
               openThemes={openThemes}
               setOpenThemes={setOpenThemes}
               onClose={() => setLinkOpen(false)}
+            />
+          )}
+          {defOpen && (
+            <DefinitionPicker
+              defs={linkableDefinitions}
+              filter={defFilter}
+              setFilter={setDefFilter}
+              onClose={() => setDefOpen(false)}
             />
           )}
         </LexicalComposer>

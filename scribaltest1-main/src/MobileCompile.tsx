@@ -4,6 +4,8 @@ import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
 import Distilled from "./components/Distilled";
 import RichNoteField from "./components/RichNoteField";
+import type { LinkableDefinition } from "./components/RichNoteField";
+import { definitionForKey, sensesFor } from "./webster";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
@@ -396,6 +398,18 @@ export default function MobileCompile({
     if (a.isSealed !== b.isSealed) return a.isSealed ? 1 : -1;
     return groupMinOrder(a) - groupMinOrder(b);
   });
+
+  // Definitions tagged within this study, one row per chosen sense — what the
+  // note editor's Link definition button can offer.
+  const linkableDefinitions: LinkableDefinition[] = (tags || [])
+    .filter((t) => t.senses && t.senses.length > 0)
+    .map((t) => ({
+      dictKey: t.dictKey,
+      word: t.word || t.dictKey,
+      reference: t.reference,
+      senses: sensesFor(definitionForKey(t.dictKey) || "", t.senses),
+    }))
+    .filter((d) => d.senses.length > 0);
 
   const studySummary = () =>
     buildStudySummary({
@@ -1527,6 +1541,7 @@ export default function MobileCompile({
                         <RichNoteField
                           value={sVal}
                           onChange={(t) => setNote(sk, t)}
+                          linkableDefinitions={linkableDefinitions}
                           accent={accent}
                           placeholder="What do these verses say together in this study?"
                           addLabel={"Add a thought about " + name}
@@ -1919,6 +1934,7 @@ export default function MobileCompile({
                                           }}
                                         >
                                           <RichNoteField
+                                            linkableDefinitions={linkableDefinitions}
                                             value={noteRaw}
                                             onChange={(t) => {
                                               setNote(noteKey, t);
