@@ -286,6 +286,35 @@ export default function StudyTablesDesktop({
   const [dockToolbarOrient, setDockToolbarOrient] = useState<
     "horizontal" | "vertical"
   >("vertical");
+  // Where the tray's reserved gutter actually IS. The tray is a fixed panel so
+  // it can stay put while the column scrolls, but fixed means viewport
+  // coordinates, and the editor is a centred box — so anchoring it to the
+  // screen's right edge stranded it away from the column on a wide monitor and
+  // crowded it on a narrow one. Measuring the gutter instead means the tray
+  // occupies the space beside the middle column at ANY screen size, which is
+  // the thing that was actually wanted (Kepu, Jul 31 2026).
+  const trayGutterRef = useRef<HTMLDivElement | null>(null);
+  const [trayBox, setTrayBox] = useState<{
+    left: number;
+    width: number;
+  } | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = trayGutterRef.current;
+      if (!el) return setTrayBox(null);
+      const r = el.getBoundingClientRect();
+      const left = Math.round(r.left);
+      const width = Math.round(r.width);
+      // Same numbers → same object, so React bails out. Without this the
+      // measure-on-every-render below would set state forever.
+      setTrayBox((p) =>
+        p && p.left === left && p.width === width ? p : { left, width }
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  });
   // Read tab: the reading location, a one-shot verse to scroll to, and the
   // "Marks go to" book (was App's tableReader state).
   const [readLoc, setReadLoc] = useState<{ v: number; b: number; c: number }>({
@@ -2294,6 +2323,7 @@ export default function StudyTablesDesktop({
               onExternalDrop={dropFromPicker}
               traySide
               trayWidth={TRAY_W}
+              trayBox={trayBox}
               trayTop={headerOffset + 14}
             />
           </div>
@@ -2301,7 +2331,10 @@ export default function StudyTablesDesktop({
               overlaps the cards it places (Kepu, Jul 22). With the reader on
               the left, the tray keeps this slot even while picking. */}
           {visibleShelf.length > 0 && (
-            <div style={{ width: TRAY_GUTTER, flex: "0 0 auto" }} />
+            <div
+              ref={trayGutterRef}
+              style={{ width: TRAY_GUTTER, flex: "0 0 auto" }}
+            />
           )}
         </div>
 

@@ -94,6 +94,11 @@ interface StudyTableColumnProps {
   // 14px right offset, so the two are passed from one constant rather than
   // written twice and left to drift.
   trayWidth?: number;
+  // The measured position of that reserved gutter, in viewport coordinates. The
+  // tray fills it exactly, so it sits beside the middle column at every screen
+  // size instead of against the screen's own right edge. Falls back to trayWidth
+  // against the right edge when the host does not measure.
+  trayBox?: { left: number; width: number } | null;
   // Top offset for the side panel (below the app's sticky header).
   trayTop?: number;
 }
@@ -622,6 +627,7 @@ export default function StudyTableColumn({
   onExternalDrop,
   traySide,
   trayWidth = 274,
+  trayBox,
   trayTop,
   live,
   verseView = "full",
@@ -2730,10 +2736,16 @@ export default function StudyTableColumn({
               ? {
                   // Right-side dock (Kepu, Jul 22): a fixed panel while cards
                   // wait, so the tray never covers the column it places into.
+                  // It fills the gutter the host measured for it, so it takes
+                  // the space beside the middle column wherever that column
+                  // lands — the editor is a centred box, and anchoring to the
+                  // screen's right edge instead left the tray stranded out in
+                  // the margin on a wide monitor (Kepu, Jul 31 2026).
                   position: "fixed",
-                  right: 14,
+                  ...(trayBox
+                    ? { left: trayBox.left, width: trayBox.width }
+                    : { right: 14, width: trayWidth }),
                   top: trayTop || 90,
-                  width: trayWidth,
                   maxHeight: "calc(100vh - " + ((trayTop || 90) + 24) + "px)",
                   overflowY: "auto",
                   zIndex: 30,
