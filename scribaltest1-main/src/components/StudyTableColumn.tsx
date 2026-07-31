@@ -62,6 +62,10 @@ interface StudyTableColumnProps {
   // ruling); absent on chapter tables, where verses leave by unmarking. The
   // tray confirms before calling this.
   onDeleteFromShelf?: (cardId: string) => void;
+  // Take a card off the tray without touching the study. Distinct from
+  // onDeleteFromShelf, which removes the verse from the study itself — one is
+  // reversible, the other is not, and they get different icons and confirms.
+  onRemoveFromTray?: (cardId: string) => void;
   // Verse text for tray row previews.
   verseTextFor?: (reference: string) => string;
   // ---- Outline mode (SCR-58 inverse): the desktop table wears Outline's UI.
@@ -621,6 +625,7 @@ export default function StudyTableColumn({
   shelf,
   onPlaceFromShelf,
   onDeleteFromShelf,
+  onRemoveFromTray,
   verseTextFor,
   outlineMode,
   externalDragRef,
@@ -645,7 +650,15 @@ export default function StudyTableColumn({
   // Tray state: pill vs expanded, the delete being confirmed, and the
   // grab-drag in flight (trayOverIndex = where the drop line sits).
   const [trayOpen, setTrayOpen] = useState(false);
-  const [trayConfirmId, setTrayConfirmId] = useState<string | null>(null);
+  // The docked tray keeps its own open state, and starts OPEN — the inline tray
+  // starts collapsed behind its pill, and the two should not share a default.
+  const [dockTrayOpen, setDockTrayOpen] = useState(true);
+  // Which row is asking, and which removal it is asking about. They are
+  // different acts: leaving the tray is reversible, leaving the study is not.
+  const [trayConfirm, setTrayConfirm] = useState<{
+    id: string;
+    kind: "tray" | "study";
+  } | null>(null);
   const [trayDragId, setTrayDragId] = useState<string | null>(null);
   const [trayOverIndex, setTrayOverIndex] = useState<number | null>(null);
   // Any drag the column can receive: a tray card, a row reorder, or a verse
@@ -2728,11 +2741,21 @@ export default function StudyTableColumn({
         // while the 288px gutter reserved for it in StudyTablesDesktop, which is
         // reserved in BOTH views, sat empty beside it. Kepu, Jul 31 2026.
         const sideDock = !!traySide;
+        const collapsed = sideDock ? !dockTrayOpen : !trayOpen;
         return (
         <div
           data-tray
           style={
-            sideDock
+            sideDock && collapsed
+              ? {
+                  // Collapsed: just the pill, hugging the right edge. The full
+                  // panel's stretch would otherwise leave a tall empty box.
+                  position: "fixed",
+                  right: 14,
+                  top: trayTop || 90,
+                  zIndex: 30,
+                }
+              : sideDock
               ? {
                   // Right-side dock (Kepu, Jul 22): a fixed panel while cards
                   // wait, so the tray never covers the column it places into.
@@ -2768,9 +2791,11 @@ export default function StudyTableColumn({
                 }
           }
         >
-          {!sideDock && !trayOpen ? (
+          {collapsed ? (
             <button
-              onClick={() => setTrayOpen(true)}
+              onClick={() =>
+                sideDock ? setDockTrayOpen(true) : setTrayOpen(true)
+              }
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -2840,15 +2865,34 @@ export default function StudyTableColumn({
                 </span>
                 <span style={{ fontWeight: 600, color: accent }}>waiting</span>
                 {sideDock ? (
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      color: "var(--muted)",
-                      fontSize: 10.5,
-                    }}
-                  >
-                    drag or Place
-                  </span>
+                  <>
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        color: "var(--muted)",
+                        fontSize: 10.5,
+                      }}
+                    >
+                      drag or Place
+                    </span>
+                    {/* The docked tray has never been collapsible in either
+                        view. It opens by default and this puts it away
+                        (Kepu, Jul 31 2026). */}
+                    <button
+                      onClick={() => setDockTrayOpen(false)}
+                      title="Collapse tray"
+                      style={{
+                        border: 0,
+                        background: "transparent",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                        lineHeight: 0,
+                        padding: "2px 0 2px 4px",
+                      }}
+                    >
+                      <Icon d="M6 9l6 6 6-6" size={14} />
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => setTrayOpen(false)}
@@ -2923,18 +2967,24 @@ export default function StudyTableColumn({
                           : c.kind === "text"
                           ? "Your words"
                           : c.kind.charAt(0).toUpperCase() + c.kind.slice(1);
-                      if (trayConfirmId === c.id) {
+                      if (trayConfirm && trayConfirm.id === c.id) {
+                        // Two removals, two confirms. Leaving the tray is
+                        // reversible and wears the accent; leaving the study is
+                        // not and stays red. Never let them read alike.
+                        const fromStudy = trayConfirm.kind === "study";
                         return (
                           <div
                             key={c.id}
                             style={{
                               // SCR-72: the confirm keeps the row's bounded
-                              // tile, turned red — no doubt which entry the
-                              // remove acts on.
+                              // tile — no doubt which entry the remove acts on.
                               margin: "6px 8px",
                               padding: "8px 11px",
-                              border: "1px solid #b3452f",
-                              boxShadow: "0 0 0 3px rgba(179,69,47,.14)",
+                              border:
+                                "1px solid " + (fromStudy ? "#b3452f" : accent),
+                              boxShadow: fromStudy
+                                ? "0 0 0 3px rgba(179,69,47,.14)"
+                                : "0 0 0 3px " + softAccent,
                               borderRadius: 9,
                               background: "var(--panel)",
                               fontFamily: SANS,
@@ -2942,7 +2992,9 @@ export default function StudyTableColumn({
                             }}
                           >
                             <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                              Remove {rowLabel} from this study?
+                              {fromStudy
+                                ? "Remove " + rowLabel + " from this study?"
+                                : "Remove " + rowLabel + " from the tray?"}
                             </div>
                             <div
                               style={{
@@ -2952,8 +3004,9 @@ export default function StudyTableColumn({
                                 lineHeight: 1.5,
                               }}
                             >
-                              The verse leaves this study and its table. Its
-                              marks stay in the book.
+                              {fromStudy
+                                ? "The verse leaves this study and its table. Its marks stay in the book."
+                                : "It leaves the tray only. The verse stays in this study, and its marks stay in the book."}
                             </div>
                             <div
                               style={{
@@ -2963,7 +3016,7 @@ export default function StudyTableColumn({
                               }}
                             >
                               <button
-                                onClick={() => setTrayConfirmId(null)}
+                                onClick={() => setTrayConfirm(null)}
                                 style={{
                                   fontFamily: SANS,
                                   fontSize: 11.5,
@@ -2979,15 +3032,19 @@ export default function StudyTableColumn({
                               </button>
                               <button
                                 onClick={() => {
-                                  setTrayConfirmId(null);
-                                  onDeleteFromShelf && onDeleteFromShelf(c.id);
+                                  setTrayConfirm(null);
+                                  if (fromStudy)
+                                    onDeleteFromShelf &&
+                                      onDeleteFromShelf(c.id);
+                                  else
+                                    onRemoveFromTray && onRemoveFromTray(c.id);
                                 }}
                                 style={{
                                   fontFamily: SANS,
                                   fontSize: 11.5,
                                   fontWeight: 700,
                                   border: 0,
-                                  background: "#b3452f",
+                                  background: fromStudy ? "#b3452f" : accent,
                                   color: "#fff",
                                   borderRadius: 7,
                                   padding: "5px 12px",
@@ -3107,20 +3164,57 @@ export default function StudyTableColumn({
                                 {rowLabel}
                               </span>
                             </span>
-                            <span
-                              style={{
-                                display: "block",
-                                color: "var(--muted)",
-                                fontFamily: SERIF,
-                                fontSize: 11.5,
-                                lineHeight: 1.45,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {preview}
-                            </span>
+                            {/* A waiting verse reads the way a placed one does:
+                                through the same renderers, so its marks show
+                                and the Full / Focused toggle drives it. It used
+                                to be one clipped line of unmarked plain text,
+                                which told you the reference and nothing about
+                                why you gathered it. Wrapping, not truncating —
+                                a focused verse is short, and a full one needs
+                                the room (Kepu, Jul 31 2026). */}
+                            {c.kind === "scripture" && (renderVerse || renderVerseFocused) ? (
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontFamily: SERIF,
+                                  fontSize: 11.5,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {(c.refs || []).map((r) => (
+                                  <span key={r} style={{ display: "block" }}>
+                                    {verseView === "focused" && renderVerseFocused
+                                      ? renderVerseFocused(
+                                          r,
+                                          c.bookId,
+                                          c.shelfGroupColor as MarkColor
+                                        )
+                                      : renderVerse
+                                      ? renderVerse(
+                                          r,
+                                          c.bookId,
+                                          c.shelfGroupColor as MarkColor
+                                        )
+                                      : null}
+                                  </span>
+                                ))}
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  display: "block",
+                                  color: "var(--muted)",
+                                  fontFamily: SERIF,
+                                  fontSize: 11.5,
+                                  lineHeight: 1.45,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {preview}
+                              </span>
+                            )}
                           </span>
                           <button
                             onClick={() =>
@@ -3141,10 +3235,12 @@ export default function StudyTableColumn({
                           >
                             Place
                           </button>
-                          {onDeleteFromShelf && c.kind === "scripture" && (
+                          {onRemoveFromTray && (
                             <button
-                              onClick={() => setTrayConfirmId(c.id)}
-                              title="Remove from this study"
+                              onClick={() =>
+                                setTrayConfirm({ id: c.id, kind: "tray" })
+                              }
+                              title="Remove from tray"
                               style={{
                                 border: 0,
                                 background: "transparent",
@@ -3155,6 +3251,30 @@ export default function StudyTableColumn({
                               }}
                             >
                               <Icon d="M18 6 6 18 M6 6l12 12" size={13} />
+                            </button>
+                          )}
+                          {onDeleteFromShelf && c.kind === "scripture" && (
+                            <button
+                              onClick={() =>
+                                setTrayConfirm({ id: c.id, kind: "study" })
+                              }
+                              title="Remove from this study"
+                              style={{
+                                border: 0,
+                                background: "transparent",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                                lineHeight: 0,
+                                flex: "0 0 auto",
+                              }}
+                            >
+                              {/* A bin, not another ✕. Two removals sitting
+                                  side by side must not wear the same glyph —
+                                  one is reversible and one is not. */}
+                              <Icon
+                                d="M3 6h18 M8 6V4h8v2 M6 6l1 14h10l1-14"
+                                size={13}
+                              />
                             </button>
                           )}
                         </div>

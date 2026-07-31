@@ -706,6 +706,18 @@ export default function StudyTablesDesktop({
 
   // Tray delete — topic tables only (Kepu's ruling): the confirmed delete
   // removes the verse from the STUDY itself; its marks stay in the book.
+  // Off the tray, and nothing more. The verse stays in the study and can be
+  // gathered onto the tray again — which is exactly what makes this a different
+  // act from deleteFromShelf below, and why it never touches the study.
+  const removeFromTray = (cardId: string) => {
+    if (!open) return;
+    const shelfList = open.shelf || [];
+    if (!shelfList.some((c) => c.id === cardId)) return;
+    updateTable(open.id, {
+      shelf: shelfList.filter((c) => c.id !== cardId),
+    });
+  };
+
   const deleteFromShelf = (cardId: string) => {
     if (!open || !topicStudy || !onRemoveVersesFromStudy) return;
     const shelfList = open.shelf || [];
@@ -2311,6 +2323,7 @@ export default function StudyTablesDesktop({
                   ? deleteFromShelf
                   : undefined
               }
+              onRemoveFromTray={removeFromTray}
               verseTextFor={(r) => {
                 const rec = getVerse(r);
                 return rec ? rec.text : "";
