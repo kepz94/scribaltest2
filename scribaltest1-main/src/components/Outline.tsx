@@ -4,6 +4,11 @@ import { getScriptures, volumesProxy } from "../data/scripturesStore";
 import MarkedVerse, { glossesFor } from "./MarkedVerse";
 import RichNoteField, { LinkableVerse, LinkableDefinition } from "./RichNoteField";
 import { definitionForKey, sensesFor } from "../webster";
+import { useWebsterReady } from "../useWebsterReady";
+import {
+  linkableDefinitionsFor,
+  hasChosenSenses,
+} from "../linkableDefinitions";
 import {
   Mark,
   MarkColor,
@@ -158,18 +163,12 @@ export default function Outline(props: OutlineProps) {
   // Definitions this study has tagged, one row per chosen sense. Built from the
   // same tags the verses use, so the picker can only ever offer what the reader
   // actually chose — nothing from outside this study, and no unpicked senses.
-  const linkableDefinitions: LinkableDefinition[] = (tags || [])
-    .filter((t) => t.senses && t.senses.length > 0)
-    .map((t) => {
-      const def = definitionForKey(t.dictKey) || "";
-      return {
-        dictKey: t.dictKey,
-        word: t.word || t.dictKey,
-        reference: t.reference,
-        senses: sensesFor(def, t.senses),
-      };
-    })
-    .filter((d) => d.senses.length > 0);
+  // Only fetch the dictionary if this study has anything to look up.
+  const dictReady = useWebsterReady(hasChosenSenses(tags));
+  const linkableDefinitions: LinkableDefinition[] = linkableDefinitionsFor(
+    tags,
+    dictReady
+  );
 
   const linkableVerses: LinkableVerse[] = allEntries.map((e) => {
     const vMarks = relevantMarks.filter((m) => m.reference === e.reference);

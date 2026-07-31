@@ -3,6 +3,11 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import DefinitionView from "./components/DefinitionView";
+import {
+  linkableDefinitionsFor,
+  hasChosenSenses,
+} from "./linkableDefinitions";
+import { WordTag } from "./types";
 
 // Two senses, in the shape the 1828 file actually uses: blank-line-separated
 // paragraphs, the entry opening with a header line.
@@ -124,5 +129,35 @@ describe("DefinitionView sense picker", () => {
       />
     );
     expect(host.querySelectorAll("[data-sense]")).toHaveLength(0);
+  });
+});
+
+// The gate behind the toolbar's Link definition button. It went missing because
+// this returned [] — every row resolves through the dictionary, and neither
+// outline had loaded it.
+describe("linkableDefinitionsFor", () => {
+  const tag = (over: Partial<WordTag> = {}): WordTag => ({
+    id: "Alma 32:21:8:13",
+    reference: "Alma 32:21",
+    start: 8,
+    end: 13,
+    word: "faith",
+    dictKey: "faith",
+    ...over,
+  });
+
+  it("offers nothing until the dictionary is in memory", () => {
+    expect(linkableDefinitionsFor([tag({ senses: [1] })], false)).toEqual([]);
+  });
+
+  it("offers nothing for a tag with no chosen senses", () => {
+    expect(hasChosenSenses([tag()])).toBe(false);
+    expect(linkableDefinitionsFor([tag()], true)).toEqual([]);
+  });
+
+  it("knows when a study has something worth fetching the dictionary for", () => {
+    expect(hasChosenSenses([tag({ senses: [2] })])).toBe(true);
+    expect(hasChosenSenses([])).toBe(false);
+    expect(hasChosenSenses(undefined)).toBe(false);
   });
 });

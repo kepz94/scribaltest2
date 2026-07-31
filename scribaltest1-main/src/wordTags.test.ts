@@ -250,3 +250,40 @@ describe("richToParagraphs", () => {
     expect(richToText("<p>a</p><p>b</p>")).toBe("a\nb");
   });
 });
+
+// The synthesis box grew blank space between paragraphs on every reopen. The
+// cause is below the app: parsing saved note HTML yields a node for the
+// WHITESPACE between block tags, and the loader wrapped every non-element node
+// in a fresh paragraph. Those blanks were saved, re-parsed and wrapped again, so
+// the gaps compounded each time the note was opened.
+describe("saved note HTML round trip", () => {
+  const parseBody = (html: string) =>
+    Array.from(
+      new DOMParser().parseFromString(html, "text/html").body.childNodes
+    );
+
+  it("yields whitespace nodes between block tags — the source of the blank paragraphs", () => {
+    const saved = "<p>one</p>\n<p>two</p>\n<p>three</p>";
+    const kids = parseBody(saved);
+    const blanks = kids.filter(
+      (n) => n.nodeType === 3 && !(n.textContent || "").trim()
+    );
+    expect(blanks.length).toBeGreaterThan(0);
+  });
+
+  it("keeps exactly the real paragraphs once whitespace is ignored", () => {
+    const saved = "<p>one</p>\n<p>two</p>\n<p>three</p>";
+    const kept = parseBody(saved).filter((n) =>
+      n.nodeType === 1 ? true : !!(n.textContent || "").trim()
+    );
+    expect(kept).toHaveLength(3);
+    expect(kept.map((n) => n.textContent)).toEqual(["one", "two", "three"]);
+  });
+
+  it("still keeps a bare text node that has real content", () => {
+    const kept = parseBody("hello<p>two</p>").filter((n) =>
+      n.nodeType === 1 ? true : !!(n.textContent || "").trim()
+    );
+    expect(kept.map((n) => n.textContent)).toEqual(["hello", "two"]);
+  });
+});

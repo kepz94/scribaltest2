@@ -8,6 +8,11 @@ import type { LinkableDefinition, LinkableVerse } from "./components/RichNoteFie
 import { definitionForKey, sensesFor } from "./webster";
 import { glossesFor } from "./components/MarkedVerse";
 import { richToText } from "./richText";
+import { useWebsterReady } from "./useWebsterReady";
+import {
+  linkableDefinitionsFor,
+  hasChosenSenses,
+} from "./linkableDefinitions";
 import SemanticView from "./components/SemanticView";
 import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
@@ -407,15 +412,12 @@ export default function MobileCompile({
 
   // Definitions tagged within this study, one row per chosen sense — what the
   // note editor's Link definition button can offer.
-  const linkableDefinitions: LinkableDefinition[] = (tags || [])
-    .filter((t) => t.senses && t.senses.length > 0)
-    .map((t) => ({
-      dictKey: t.dictKey,
-      word: t.word || t.dictKey,
-      reference: t.reference,
-      senses: sensesFor(definitionForKey(t.dictKey) || "", t.senses),
-    }))
-    .filter((d) => d.senses.length > 0);
+  // Only fetch the dictionary if this study has anything to look up.
+  const dictReady = useWebsterReady(hasChosenSenses(tags));
+  const linkableDefinitions: LinkableDefinition[] = linkableDefinitionsFor(
+    tags,
+    dictReady
+  );
 
   // Verses this study can link from a note, grouped by the theme they're most
   // heavily marked in — the same shape the desktop Outline builds, so the note

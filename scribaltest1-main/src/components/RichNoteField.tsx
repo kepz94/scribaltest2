@@ -85,6 +85,11 @@ const isPlainText = (v: string) => !/<[a-z][\s\S]*>/i.test(v);
 const ACCENT = "#8b5cf6";
 // The established "definition" tan, distinct from the verse-chip purple.
 const DEF_ACCENT = "#9a7b4f";
+// A linked definition is a CARD, not a link: the whole sense, set apart from
+// the prose around it. Inline styles so the look survives into the saved HTML,
+// which is what print and the resting view render.
+const DEF_CARD_STYLE =
+  "display:block; margin:8px 0; padding:10px 12px; border-left:3px solid #9a7b4f; border-radius:8px; background:rgba(154,123,79,0.10); font-style:italic; color:#9a7b4f;";
 
 // The editor/rendered-note CSS, injected once into <head> so rich notes are
 // styled wherever this component mounts — either shell, any view. (These
@@ -171,11 +176,12 @@ const ensureRichNoteCss = () => {
       font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; text-decoration: none;
     }
     .scribal-rich-view .scribal-vchip { cursor: pointer; white-space: nowrap; }
-    /* A definition chip carries a whole sense, so it wraps like prose rather
-       than staying on one line the way a verse reference does. */
+    /* A linked definition is a card: the whole sense, set apart from the prose
+       around it rather than threaded through it like a verse reference. */
     .scribal-rich-editor .scribal-dchip, .scribal-rich-view .scribal-dchip {
-      background: rgba(154,123,79,0.10); border-radius: 4px; padding: 0 3px;
-      box-decoration-break: clone; -webkit-box-decoration-break: clone;
+      display: block; margin: 8px 0; padding: 10px 12px;
+      border-left: 3px solid #9a7b4f; border-radius: 8px;
+      background: rgba(154,123,79,0.10); font-style: italic;
     }
     .scribal-rich-editor hr, .scribal-rich-view hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   `;
@@ -279,15 +285,14 @@ class DefChipNode extends TextNode {
     const el = super.createDOM(config);
     el.classList.add("scribal-dchip");
     this.style(el);
-    el.style.color = DEF_ACCENT;
-    el.style.fontStyle = "italic";
+    el.setAttribute("style", DEF_CARD_STYLE);
     return el;
   }
   exportDOM(): any {
     const el = document.createElement("span");
     el.className = "scribal-dchip";
     this.style(el);
-    el.setAttribute("style", "color: " + DEF_ACCENT + "; font-style: italic;");
+    el.setAttribute("style", DEF_CARD_STYLE);
     el.textContent = this.getTextContent();
     return { element: el };
   }
@@ -763,12 +768,21 @@ function InitPlugin({ html }: { html: string }) {
       const dom = new DOMParser().parseFromString(html, "text/html");
       const nodes = $generateNodesFromDOM(editor, dom);
       nodes.forEach((n: any) => {
-        if (n instanceof ElementNode) root.append(n);
-        else {
-          const p = $createParagraphNode();
-          p.append(n);
-          root.append(p);
+        if (n instanceof ElementNode) {
+          root.append(n);
+          return;
         }
+        // Whitespace BETWEEN block tags in the saved HTML arrives here as its
+        // own text node. Wrapping those in paragraphs inserted a blank
+        // paragraph between every real one — and that blank was then saved,
+        // re-imported, and wrapped again, so the gaps grew a little every time
+        // the note was reopened. Only real content earns a paragraph.
+        const text =
+          typeof n.getTextContent === "function" ? n.getTextContent() : "";
+        if (!text || !text.trim()) return;
+        const p = $createParagraphNode();
+        p.append(n);
+        root.append(p);
       });
       if (root.getChildrenSize() === 0) root.append($createParagraphNode());
     });
