@@ -28,6 +28,7 @@ import {
   KEY_DOWN_COMMAND,
   COMMAND_PRIORITY_LOW,
   ElementNode,
+  $isDecoratorNode,
 } from "lexical";
 import {
   $setBlocksType,
@@ -769,6 +770,14 @@ function InitPlugin({ html }: { html: string }) {
       const nodes = $generateNodesFromDOM(editor, dom);
       nodes.forEach((n: any) => {
         if (n instanceof ElementNode) {
+          root.append(n);
+          return;
+        }
+        // A divider is a decorator node: real block content that carries no
+        // text at all. It belongs at the top level as itself — not wrapped in
+        // a paragraph, and never judged by the whitespace rule below, which
+        // would read its empty text as "nothing here" and drop it.
+        if ($isDecoratorNode(n) && !n.isInline()) {
           root.append(n);
           return;
         }

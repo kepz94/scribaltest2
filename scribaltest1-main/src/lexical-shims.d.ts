@@ -18,6 +18,7 @@ declare module "lexical" {
   export const INDENT_CONTENT_COMMAND: any;
   export const OUTDENT_CONTENT_COMMAND: any;
   export const ElementNode: any;
+  export const $isDecoratorNode: any;
   export class TextNode {
     constructor(...args: any[]);
     [k: string]: any;

@@ -545,7 +545,7 @@ export default function MobileCompile({
   groups.forEach((g) => {
     verseEntriesFor(g.marks, g.color).forEach((ve) => {
       shareableVerses.push({
-        key: g.key + "|" + ve.reference,
+        key: g.key + "|c" + g.color + "|" + ve.reference,
         reference: ve.reference,
         theme: g.name,
         color: g.color,
@@ -797,7 +797,16 @@ export default function MobileCompile({
                 Choose verses to share
               </div>
               <div style={{ fontSize: "12px", color: C.muted }}>
-                {picked.length} of 4 selected
+                {/* There is no cap. Say what the selection will BECOME — the
+                    system decides the format, the reader decides the verses. */}
+                {picked.length === 0
+                  ? "Tap verses to select · " +
+                    shareableVerses.length +
+                    " in this study"
+                  : picked.length +
+                    (picked.length === 1 ? " verse" : " verses") +
+                    " · shares as " +
+                    (picked.length > 4 ? "a PDF" : "one card")}
               </div>
             </div>
           </div>
@@ -1339,37 +1348,39 @@ export default function MobileCompile({
             the desktop Outline. Mobile had no study-level synthesis at all;
             the per-theme boxes below are each a thought about their own theme. */}
         {format === "outline" && liveMarks.length > 0 && (
-          <div style={{ padding: "0 14px 14px" }}>
+          <div
+            style={{
+              // Same box as a theme card below it: the container supplies the
+              // horizontal padding, so adding our own inset it by 14px a side
+              // and it read as a different width from everything under it.
+              marginBottom: "14px",
+              border: "1px solid " + C.border,
+              borderRadius: "14px",
+              backgroundColor: C.panel,
+              padding: "14px",
+            }}
+          >
             <div
               style={{
-                border: "1px solid " + C.border,
-                borderRadius: "14px",
-                backgroundColor: C.panel,
-                padding: "14px",
+                fontSize: "11.5px",
+                fontWeight: 700,
+                letterSpacing: "0.09em",
+                textTransform: "uppercase",
+                color: C.muted,
+                marginBottom: "8px",
               }}
             >
-              <div
-                style={{
-                  fontSize: "11.5px",
-                  fontWeight: 700,
-                  letterSpacing: "0.09em",
-                  textTransform: "uppercase",
-                  color: C.muted,
-                  marginBottom: "8px",
-                }}
-              >
-                Synthesis
-              </div>
-              <RichNoteField
-                value={notes[dSynthKey()] || ""}
-                onChange={(t) => setNote(dSynthKey(), t)}
-                {...noteWiring}
-                accent={C.text}
-                placeholder="State the main idea these verses support…"
-                addLabel="Add your synthesis"
-                editorFontSize={16}
-              />
+              Synthesis
             </div>
+            <RichNoteField
+              value={notes[dSynthKey()] || ""}
+              onChange={(t) => setNote(dSynthKey(), t)}
+              {...noteWiring}
+              accent={C.text}
+              placeholder="State the main idea these verses support…"
+              addLabel="Add your synthesis"
+              editorFontSize={16}
+            />
           </div>
         )}
 
@@ -1689,7 +1700,7 @@ export default function MobileCompile({
                           const hasNote = noteVal.trim().length > 0;
                           const isFlipped = flippedRef === ve.reference;
                           const on = picked.includes(
-                            g.key + "|" + ve.reference
+                            g.key + "|c" + g.color + "|" + ve.reference
                           );
                           const fullStyle: CSSProperties = {
                             fontFamily: '"Times New Roman", Times, serif',
@@ -1734,7 +1745,9 @@ export default function MobileCompile({
                                 <div
                                   onClick={() => {
                                     if (selectMode) {
-                                      togglePick(g.key + "|" + ve.reference);
+                                      togglePick(
+                                        g.key + "|c" + g.color + "|" + ve.reference
+                                      );
                                       return;
                                     }
                                     setFlippedRef(ve.reference);
