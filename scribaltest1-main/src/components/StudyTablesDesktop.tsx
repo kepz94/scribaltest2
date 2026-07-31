@@ -55,6 +55,14 @@ import VerseViewer from "./VerseViewer";
 // the next steps; this is the working core — create, open, build, reorder,
 // delete, persist.
 
+// The docked tray's width, and the gutter reserved for it (the panel plus its
+// 14px right offset). Widened from 274 on Kepu's read of the live screen — the
+// tray looked stranded against the space beside the card column. ONE constant
+// each because the gutter figure was previously written out three times and the
+// panel width once, four places that had to agree and nothing making them.
+const TRAY_W = 380;
+const TRAY_GUTTER = TRAY_W + 14;
+
 interface Props {
   // Return to the reading view (the shell owns the actual mode switch).
   onClose: () => void;
@@ -257,12 +265,27 @@ export default function StudyTablesDesktop({
   // The Read tab hosts a full VerseViewer, and on main the marking toolbar
   // lives INSIDE it (ADR-011 kept it inline rather than extracting it), so the
   // dock owns the toolbar's floating position for its own reader.
+  // It opens in the gap between the reader and the cards, standing vertical
+  // (Kepu, Jul 31 2026 — where he moved it to every single time). It used to
+  // open at x 24, horizontal, which is INSIDE the dock: the toolbar covered the
+  // verses it had just been opened to mark. Computed from the dock's real width
+  // rather than hardcoded, because that width is min(440px, 94vw) and on a
+  // narrow window a fixed number lands off-screen.
   const [dockToolbarPos, setDockToolbarPos] = useState<{ x: number; y: number }>(
-    { x: 24, y: 140 }
+    () => ({
+      x:
+        Math.round(
+          Math.min(
+            440,
+            (typeof window === "undefined" ? 1024 : window.innerWidth) * 0.94
+          )
+        ) + 12,
+      y: 140,
+    })
   );
   const [dockToolbarOrient, setDockToolbarOrient] = useState<
     "horizontal" | "vertical"
-  >("horizontal");
+  >("vertical");
   // Read tab: the reading location, a one-shot verse to scroll to, and the
   // "Marks go to" book (was App's tableReader state).
   const [readLoc, setReadLoc] = useState<{ v: number; b: number; c: number }>({
@@ -1422,7 +1445,7 @@ export default function StudyTablesDesktop({
     // shifts right of it instead of centering underneath.
     const dockInset = dock ? 452 : 0;
     const editorMax =
-      780 + (hasRail && !dock ? 200 : 0) + (trayDocked ? 288 : 0);
+      780 + (hasRail && !dock ? 200 : 0) + (trayDocked ? TRAY_GUTTER : 0);
     return (
       <div
         style={{
@@ -1437,7 +1460,7 @@ export default function StudyTablesDesktop({
             purpose pills (purpose is identity, not an action), status sits at
             its right end, and the actions live below in grouped clusters. The
             wrapper keeps both rows clear of the docked tray. */}
-        <div style={{ paddingRight: trayDocked ? 288 : 0 }}>
+        <div style={{ paddingRight: trayDocked ? TRAY_GUTTER : 0 }}>
         <div
           style={{
             display: "flex",
@@ -2270,6 +2293,7 @@ export default function StudyTablesDesktop({
               externalDragRef={externalInsert ? externalInsert.refs[0] : null}
               onExternalDrop={dropFromPicker}
               traySide
+              trayWidth={TRAY_W}
               trayTop={headerOffset + 14}
             />
           </div>
@@ -2277,7 +2301,7 @@ export default function StudyTablesDesktop({
               overlaps the cards it places (Kepu, Jul 22). With the reader on
               the left, the tray keeps this slot even while picking. */}
           {visibleShelf.length > 0 && (
-            <div style={{ width: 288, flex: "0 0 auto" }} />
+            <div style={{ width: TRAY_GUTTER, flex: "0 0 auto" }} />
           )}
         </div>
 

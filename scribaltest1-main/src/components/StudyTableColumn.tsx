@@ -90,6 +90,10 @@ interface StudyTableColumnProps {
   // the caller passes false while it's open, falling back to the bottom pill).
   // Absent/false = the sticky bottom pill (mobile, and the fallback).
   traySide?: boolean;
+  // Width of the docked tray panel. The host reserves a gutter of this plus the
+  // 14px right offset, so the two are passed from one constant rather than
+  // written twice and left to drift.
+  trayWidth?: number;
   // Top offset for the side panel (below the app's sticky header).
   trayTop?: number;
 }
@@ -617,6 +621,7 @@ export default function StudyTableColumn({
   externalDragRef,
   onExternalDrop,
   traySide,
+  trayWidth = 274,
   trayTop,
   live,
   verseView = "full",
@@ -2728,7 +2733,7 @@ export default function StudyTableColumn({
                   position: "fixed",
                   right: 14,
                   top: trayTop || 90,
-                  width: 274,
+                  width: trayWidth,
                   maxHeight: "calc(100vh - " + ((trayTop || 90) + 24) + "px)",
                   overflowY: "auto",
                   zIndex: 30,
