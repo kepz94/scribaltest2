@@ -925,11 +925,31 @@ export default function StudyTablePresent({
           </div>
         </div>
 
-        {/* the page. Tap to advance (or lift the veil). The notepad cue is a
-            single red margin line down the left — a horizontal rule grid can
-            never align with the beats' varied text sizes, so it always looked
-            broken; the margin line can't clash with anything. NOTE: content is
-            NOT flex-centered in the scroller; `margin: auto` centers it when it
+        {/* The notepad's red rule, moved from the LEFT MARGIN to the top edge
+            (Kepu, Aug 1). The change is about room, not taste: as a margin it
+            cost min(74px, 16vw) of left padding against 24px on the right, so
+            on a phone a long card had roughly 30 characters to a line and sat
+            visibly leaning right. Here the cost is 1.5px of height, once, and
+            the words get the full width at every screen size.
+
+            It reads as a pad because the bound edge above it — the binding
+            strip with punched holes — already carries that job; the rule now
+            finishes that edge instead of competing with it from the side.
+
+            Horizontal rules ACROSS the page are still the wrong answer, for
+            the reason they were dropped: they cannot line up with beats whose
+            text sizes differ (a question is 29px, a thought 20px). A single
+            rule under the bound edge has nothing to align with. */}
+        <div
+          aria-hidden
+          style={{
+            flex: "0 0 auto",
+            height: 1.5,
+            background: "rgba(209, 84, 84, 0.30)",
+          }}
+        />
+        {/* the page. Tap to advance (or lift the veil). NOTE: content is NOT
+            flex-centered in the scroller; `margin: auto` centers it when it
             fits and top-aligns when it overflows, so long passages scroll
             instead of clipping at the top. */}
         <div
@@ -942,8 +962,6 @@ export default function StudyTablePresent({
             display: "flex",
             flexDirection: "column",
             cursor: atEnd ? "default" : "pointer",
-            background:
-              "linear-gradient(90deg, transparent 0px, transparent min(52px, 11vw), rgba(209, 84, 84, 0.30) min(52px, 11vw), rgba(209, 84, 84, 0.30) min(53.5px, calc(11vw + 1.5px)), transparent min(53.5px, calc(11vw + 1.5px)))",
           }}
         >
           <div
@@ -953,7 +971,8 @@ export default function StudyTablePresent({
               margin: "auto",
               width: "100%",
               maxWidth: 640,
-              padding: "30px 24px 40px min(74px, 16vw)",
+              // Even gutters now that nothing lives in the left margin.
+              padding: "26px 22px 38px",
               boxSizing: "border-box",
             }}
             onClick={atEnd ? (e) => e.stopPropagation() : undefined}
