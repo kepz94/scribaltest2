@@ -260,22 +260,29 @@ export default function StudyTablesMobile({
           editor — including the verse panel rendered inside it — to 16px so
           the trigger can't exist. Stylesheet !important outranks the inline
           sizes the shared components carry. */}
-      {/* Second rule, same idea: nothing may push the page sideways. The card
-          column is shared with desktop and its cards are free to be wider than
-          a phone there. Rather than fight each case, contain them — anything
-          genuinely wide (a grid card, a long link) scrolls INSIDE its own box,
-          and unbroken strings wrap instead of stretching the page. */}
+      {/* Second rule: the phone scrolls DOWN, never sideways.
+
+          `overflow-wrap: anywhere` on the whole subtree is what does the work,
+          and it has to be `anywhere` rather than `break-word`. Only `anywhere`
+          changes an element's MIN-CONTENT width, and that is the number a grid
+          track or a flex item sizes itself from — so an unbroken string (a
+          pasted link, a run of markup) stops forcing its column wider than the
+          screen. Measured in Chromium at 390px with the editor's real box
+          structure: an unbroken 130-character link left the scroller 1042px
+          wide; with this rule it is exactly 390.
+
+          Clipping was tried first and is NOT a fix — overflow-x:hidden left
+          the content 1042px wide and simply hid the overspill, losing text.
+          It stays below only as a backstop for anything exotic. */}
       <style>{`
         .st-mobile input, .st-mobile textarea { font-size: 16px !important; }
-        .st-mobile * { max-width: 100%; }
-        .st-mobile img, .st-mobile iframe, .st-mobile video { height: auto; }
-        .st-mobile .scribal-rich-view,
-        .st-mobile .scribal-rich-view * { overflow-wrap: anywhere; }
-        .st-mobile pre, .st-mobile code {
-          white-space: pre-wrap;
-          overflow-wrap: anywhere;
+        .st-mobile, .st-mobile * { overflow-wrap: anywhere; }
+        .st-mobile img, .st-mobile iframe, .st-mobile video {
+          max-width: 100%;
+          height: auto;
         }
-        .st-mobile table { display: block; overflow-x: auto; }
+        .st-mobile pre, .st-mobile code { white-space: pre-wrap; }
+        .st-mobile table { display: block; overflow-x: auto; max-width: 100%; }
       `}</style>
       {/* header: back · name · present · delete */}
       <div
@@ -405,8 +412,16 @@ export default function StudyTablesMobile({
       <div
         style={{
           flex: 1,
+          minWidth: 0,
           minHeight: 0,
           overflowY: "auto",
+          // Stated deliberately: `overflow-x: visible` beside `overflow-y:
+          // auto` computes to `auto`, which made THIS element the sideways
+          // scroller — an ancestor's overflow-x:hidden cannot stop a
+          // descendant scroll container, which is why clamping the root did
+          // nothing. On its own this only CLIPS though; the wrapping rule in
+          // the <style> block above is what actually makes content fit.
+          overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
           padding: "14px 12px calc(90px + env(safe-area-inset-bottom))",
         }}
