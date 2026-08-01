@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MarkColor, COLOR_MAP } from "../types";
+import { isThemelessColor, richToHtml } from "../cardText";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -1057,8 +1058,15 @@ function VersePicker({
 // Registered via the composer's `html.import` config below.
 const styleImportMap: any = {
   span: (el: HTMLElement) => {
-    const color = el.style ? el.style.color : "";
-    const bg = el.style ? el.style.backgroundColor : "";
+    // A pasted span usually carries the SOURCE SITE's body colour rather than
+    // a choice — near-black or near-white, which is invisible in one of our
+    // two themes. Those are dropped at the door so they never reach storage;
+    // mid-tone colours are decisions and are kept (see isThemelessColor).
+    const rawColor = el.style ? el.style.color : "";
+    const rawBg = el.style ? el.style.backgroundColor : "";
+    const color = rawColor && !isThemelessColor(rawColor) ? rawColor : "";
+    const bg =
+      rawBg && !isThemelessColor(rawBg, "background") ? rawBg : "";
     if (!color && !bg) return null; // plain span — default handling
     return {
       conversion: () => ({
@@ -1082,36 +1090,17 @@ const styleImportMap: any = {
 };
 
 // ═══ card-text helpers (SCR-63) ═══════════════════════════════════════════
-// A study-table card's text may be legacy plain text or Lexical HTML. These
-// two rules are THE way every surface displays it — editor column, Present
-// (and through it, Present Rooms), rails.
-
-// Card text counts as rich HTML only when it carries a tag Lexical actually
-// exports — the loose "any <x…>" test would eat hand-typed text like
-// "an <angle> example" as if it were markup.
-const RICH_TAG =
-  /<(p|br|span|strong|em|b|i|u|s|h[1-6]|ul|ol|li|blockquote|hr|div|a)\b/i;
-export const isRichHtml = (v: string): boolean => RICH_TAG.test(v || "");
-
-// Renderable HTML for a card-text value (escapes legacy plain text).
-export const richToHtml = (v: string): string =>
-  !isRichHtml(v || "")
-    ? (v || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>")
-    : v || "";
-
-// Plain words of a card-text value — for places that need text, not markup
-// (heading section names, outline rails, tooltips).
-export const richToPlain = (v: string): string => {
-  if (!v) return "";
-  if (!isRichHtml(v)) return v.trim();
-  const div = document.createElement("div");
-  div.innerHTML = v;
-  return (div.textContent || "").replace(/\u00a0+/g, " ").trim();
-};
+// The rules themselves live in ../cardText — pure, no React and no Lexical, so
+// they are directly testable (jest cannot resolve @lexical/react's export map,
+// which is why they cannot live in this file). Re-exported here because every
+// existing call site imports them from RichNoteField.
+export {
+  isRichHtml,
+  richToHtml,
+  richToPlain,
+  isThemelessColor,
+  stripThemelessColors,
+} from "../cardText";
 
 // ═══ RichCardText: a study-table card's text slot (SCR-63) ═════════════════
 // The lazy-mount rule in one component: at rest the value renders as static
