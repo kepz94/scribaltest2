@@ -248,6 +248,11 @@ export default function StudyTablesMobile({
         display: "flex",
         flexDirection: "column",
         paddingTop: "env(safe-area-inset-top)",
+        // The phone scrolls DOWN and never sideways. The card column is shared
+        // with desktop, where a card is free to be wider than the screen; here
+        // that turned into a whole-page horizontal scroll (Kepu, Aug 1).
+        maxWidth: "100vw",
+        overflowX: "hidden",
       }}
     >
       {/* iOS auto-zooms (and a standalone PWA can't zoom back out) whenever a
@@ -255,7 +260,23 @@ export default function StudyTablesMobile({
           editor — including the verse panel rendered inside it — to 16px so
           the trigger can't exist. Stylesheet !important outranks the inline
           sizes the shared components carry. */}
-      <style>{`.st-mobile input, .st-mobile textarea { font-size: 16px !important; }`}</style>
+      {/* Second rule, same idea: nothing may push the page sideways. The card
+          column is shared with desktop and its cards are free to be wider than
+          a phone there. Rather than fight each case, contain them — anything
+          genuinely wide (a grid card, a long link) scrolls INSIDE its own box,
+          and unbroken strings wrap instead of stretching the page. */}
+      <style>{`
+        .st-mobile input, .st-mobile textarea { font-size: 16px !important; }
+        .st-mobile * { max-width: 100%; }
+        .st-mobile img, .st-mobile iframe, .st-mobile video { height: auto; }
+        .st-mobile .scribal-rich-view,
+        .st-mobile .scribal-rich-view * { overflow-wrap: anywhere; }
+        .st-mobile pre, .st-mobile code {
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
+        .st-mobile table { display: block; overflow-x: auto; }
+      `}</style>
       {/* header: back · name · present · delete */}
       <div
         style={{

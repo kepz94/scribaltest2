@@ -49,27 +49,46 @@ export async function createShare(payload: SharePayload): Promise<string> {
   void cleanupMyRooms();
   const code = newRoomCode();
   const body: ShareDoc = {
-    ...payload,
     kind: "copy",
+    v: payload.v,
+    // One string, not a structured object — see ShareDoc for why Firestore
+    // cannot take this payload any other way.
+    payloadJson: JSON.stringify(payload),
     createdAt: Date.now(),
     ownerUid: uid,
   };
   try {
     await setDoc(doc(db, "rooms", code), body);
-  } catch {
-    throw new ShareFailure("offline");
+  } catch (err) {
+    throw writeFailure(err);
   }
   return code;
 }
 
+// Firestore failures are not all "no connection", and saying so when the write
+// was actually REJECTED sends someone off to check their wifi while the real
+// problem sits in the payload or the rules. Map what we can name; only fall
+// back to offline for what we genuinely cannot.
+function writeFailure(err: unknown): ShareFailure {
+  const code = (err as { code?: string } | null)?.code || "";
+  if (code === "permission-denied") return new ShareFailure("not-allowed");
+  if (code === "invalid-argument" || code === "not-found")
+    return new ShareFailure("bad-payload");
+  if (code === "resource-exhausted") return new ShareFailure("too-big");
+  // Log the real thing — a swallowed write error is how this class of bug
+  // stays invisible (the SCR-68 lesson: never hide a failed write).
+  console.warn("share write failed", err);
+  return new ShareFailure("offline");
+}
+
 // Fetch a payload by code. Throws ShareFailure with a reason the UI turns into
 // one plain sentence (shareErrorText).
-export async function readShare(code: string): Promise<ShareDoc> {
+export async function readShare(code: string): Promise<SharePayload> {
   let snap;
   try {
     snap = await getDoc(doc(db, "rooms", (code || "").trim().toUpperCase()));
-  } catch {
-    throw new ShareFailure("offline");
+  } catch (err) {
+    throw writeFailure(err);
   }
   if (!snap.exists()) throw new ShareFailure("not-found");
   const data = snap.data() as RoomDoc & Partial<ShareDoc>;
@@ -77,9 +96,17 @@ export async function readShare(code: string): Promise<ShareDoc> {
   // not-found rather than half-importing somebody's presentation.
   if (data.kind !== "copy") throw new ShareFailure("not-found");
   const share = data as ShareDoc;
-  // Written by a newer Scribal than this one: refuse whole rather than import
-  // a table with pieces missing.
+  // Read the version from the DOCUMENT, before parsing: a payload from a newer
+  // Scribal is refused whole rather than imported with pieces missing.
   if ((share.v || 0) > SHARE_VERSION) throw new ShareFailure("needs-update");
   if (shareExpired(share, Date.now())) throw new ShareFailure("expired");
-  return share;
+  let payload: SharePayload;
+  try {
+    payload = JSON.parse(share.payloadJson || "") as SharePayload;
+  } catch {
+    throw new ShareFailure("bad-payload");
+  }
+  if (!payload || !Array.isArray(payload.cards))
+    throw new ShareFailure("bad-payload");
+  return payload;
 }

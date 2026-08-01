@@ -6,6 +6,8 @@
 
 import {
   KNOWN_KINDS,
+  ShareFailure,
+  shareFailureReason,
   SharePayload,
   chapterOf,
   columnRefs,
@@ -384,5 +386,68 @@ describe("what the sender copies and the recipient reads", () => {
         expect(shareErrorText(r).toLowerCase()).not.toContain("error");
       }
     );
+  });
+});
+
+describe("what Firestore will actually accept", () => {
+  // The payload rides as ONE JSON string because Firestore refuses both of
+  // these, and the write failure surfaced to Kepu as "No connection".
+  it("carries no undefined values once serialized", () => {
+    // senderName is absent on every share (no display name is sent) and
+    // purpose is absent on most tables. As object fields those are rejected
+    // outright; JSON.stringify drops the keys.
+    const payload = pack({ table: table({ bookId: "master" }), senderName: undefined });
+    expect("senderName" in payload).toBe(true);
+    expect(payload.senderName).toBeUndefined();
+    const round = JSON.parse(JSON.stringify(payload));
+    expect("senderName" in round).toBe(false);
+    expect("purpose" in round).toBe(false);
+  });
+
+  it("survives a grid card, whose gridRows is an array of arrays", () => {
+    // Firestore cannot store an array inside an array at all.
+    const grid: TableCard = {
+      id: "g1",
+      kind: "grid",
+      gridHead: ["Who", "Promise"],
+      gridRows: [["Enos", "forgiven"], ["Alma", "delivered"]],
+    };
+    const payload = pack({ cards: [...baseCards, grid] });
+    const json = JSON.stringify(payload);
+    const round = JSON.parse(json) as SharePayload;
+    const back = round.cards.find((c) => c.kind === "grid");
+    expect(back!.gridRows).toEqual([["Enos", "forgiven"], ["Alma", "delivered"]]);
+    // And it still installs.
+    const out = installShare({
+      payload: round,
+      bookId: "b",
+      tableId: "t",
+      newId: (s2) => "n_" + s2,
+      now: 1,
+    });
+    expect(out.table.cards.some((c) => c.kind === "grid")).toBe(true);
+  });
+});
+
+describe("shareFailureReason", () => {
+  // Never instanceof: subclassing Error breaks it the moment anything
+  // downlevels the class, and then EVERY failure reads as "no connection".
+  it("reads the reason off a failure without instanceof", () => {
+    expect(shareFailureReason(new ShareFailure("expired"))).toBe("expired");
+    expect(shareFailureReason(new ShareFailure("too-big"))).toBe("too-big");
+  });
+
+  it("returns null for anything that is not one of ours", () => {
+    expect(shareFailureReason(new Error("boom"))).toBeNull();
+    expect(shareFailureReason(null)).toBeNull();
+    expect(shareFailureReason("expired")).toBeNull();
+  });
+
+  it("gives every reason its own sentence, including the new ones", () => {
+    expect(shareErrorText("not-allowed")).toContain("Sign out");
+    expect(shareErrorText("bad-payload")).toContain("couldn\u2019t be sent");
+    // A rejected write must never claim the network is down.
+    expect(shareErrorText("not-allowed")).not.toContain("connection");
+    expect(shareErrorText("bad-payload")).not.toContain("connection");
   });
 });

@@ -89,8 +89,25 @@ export interface SharePayload {
   marksIncluded: boolean;
 }
 
-export interface ShareDoc extends SharePayload {
+// What actually lands in Firestore. The payload travels as ONE JSON STRING,
+// the same way presentRoom carries a room (tableJson / marksJson / themesJson).
+// That is not stylistic — Firestore refuses two things this payload is full of:
+//
+//   * `undefined` field values. `purpose` is absent on most tables and
+//     `senderName` is absent on every one of them (no display name is sent),
+//     and writing `{ purpose: undefined }` is rejected outright. JSON.stringify
+//     drops those keys, which is also why the size guard never noticed them.
+//   * nested arrays. A grid card's `gridRows` is string[][], and an array
+//     inside an array cannot be stored at all.
+//
+// Storing structured objects hit both and surfaced as a write failure the UI
+// then reported as "No connection" (Kepu, Aug 1). One string cannot.
+export interface ShareDoc {
   kind: "copy";
+  // Kept OUT of the JSON as well as in it, so a reader can refuse a payload
+  // from a newer Scribal without parsing it first.
+  v: number;
+  payloadJson: string;
   createdAt: number;
   ownerUid: string;
 }
@@ -101,6 +118,8 @@ export type ShareError =
   | "not-found"
   | "expired"
   | "needs-update"
+  | "not-allowed"
+  | "bad-payload"
   | "offline";
 
 export class ShareFailure extends Error {
@@ -110,6 +129,15 @@ export class ShareFailure extends Error {
     this.reason = reason;
   }
 }
+
+// Never `instanceof ShareFailure`. Subclassing Error breaks instanceof the
+// moment anything downlevels the class, and the failure mode is silent: every
+// error would fall to the generic branch and every problem would read as "no
+// connection". Duck-typing the reason cannot rot that way.
+export const shareFailureReason = (e: unknown): ShareError | null => {
+  const r = (e as { reason?: string } | null)?.reason;
+  return typeof r === "string" ? (r as ShareError) : null;
+};
 
 // "John 2:15" -> "John 2". Theme names (scopedLabels) are keyed by chapter, so
 // this is how a card's verses name the scopes whose palettes must travel.
@@ -374,6 +402,10 @@ export const shareErrorText = (reason: ShareError): string => {
       return "Sign in to send a copy.";
     case "too-big":
       return "This table is too large to send. Try sending it without marking.";
+    case "not-allowed":
+      return "Scribal wasn’t allowed to save this code. Sign out and back in, then try again.";
+    case "bad-payload":
+      return "Something in this table couldn’t be sent. Tell Kepu which table it was.";
     default:
       return "No connection. Try again in a moment.";
   }

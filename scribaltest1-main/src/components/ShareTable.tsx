@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  ShareFailure,
+  shareFailureReason,
   shareErrorText,
   shareInstructions,
   summarize,
@@ -42,7 +42,12 @@ function Shell({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 60,
+        // Above the mobile table editor, which is a full-screen sheet at 260 —
+        // at a lower value these dialogs opened BEHIND it and read as a dead
+        // button (Kepu, Aug 1: "non responsive"). 600 also clears the mobile
+        // shell's other overlays (highest is 500) and stays under the 99999
+        // update banner, which should always win.
+        zIndex: 600,
         background: "rgba(30,25,15,.4)",
         display: "grid",
         placeItems: "center",
@@ -239,11 +244,7 @@ export function SendCopyDialog({
       const made = await onCreate(marks, notes);
       setCode(made.code);
     } catch (e) {
-      setErr(
-        e instanceof ShareFailure
-          ? shareErrorText(e.reason)
-          : shareErrorText("offline")
-      );
+      setErr(shareErrorText(shareFailureReason(e) || "offline"));
     }
     setBusy(false);
   };
@@ -267,7 +268,7 @@ export function SendCopyDialog({
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 70,
+          zIndex: 610, // one above the dialog it opens from
           background: "var(--text)",
           display: "flex",
           flexDirection: "column",
@@ -488,11 +489,7 @@ export function EnterCodeDialog({
       setSeenBefore(savedShareAt(code));
       setFound(payload);
     } catch (e) {
-      setErr(
-        e instanceof ShareFailure
-          ? shareErrorText(e.reason)
-          : shareErrorText("offline")
-      );
+      setErr(shareErrorText(shareFailureReason(e) || "offline"));
     }
     setBusy(false);
   };
