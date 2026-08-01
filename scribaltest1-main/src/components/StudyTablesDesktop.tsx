@@ -783,6 +783,24 @@ export default function StudyTablesDesktop({
     });
   };
 
+  // Take a card off the column and set it back on the tray. The column's own
+  // control does this instead of deleting, so nothing built is ever destroyed
+  // from there (Kepu, Aug 1). One write, so the move cannot half-happen.
+  const cardToTray = (cardId: string) => {
+    if (!open) return;
+    const card = open.cards.find((c) => c.id === cardId);
+    if (!card) return;
+    updateTable(open.id, {
+      cards: open.cards.filter((c) => c.id !== cardId),
+      shelf: [
+        ...(open.shelf || []),
+        // It arrives the way a hand-staged card does — it was placed by hand
+        // once, and putting it back is the same kind of act.
+        { ...card, shelfSource: "staged" as const, arrivedAt: Date.now() },
+      ],
+    });
+  };
+
   const deleteFromShelf = (cardId: string) => {
     if (!open || !topicStudy || !onRemoveVersesFromStudy) return;
     const shelfList = open.shelf || [];
@@ -2409,6 +2427,7 @@ export default function StudyTablesDesktop({
                   : undefined
               }
               onRemoveFromTray={removeFromTray}
+              onCardToTray={cardToTray}
               verseTextFor={(r) => {
                 const rec = getVerse(r);
                 return rec ? rec.text : "";

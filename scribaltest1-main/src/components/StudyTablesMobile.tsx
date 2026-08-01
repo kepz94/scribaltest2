@@ -204,6 +204,21 @@ export default function StudyTablesMobile({
       shelf: shelf.filter((c) => c.id !== cardId),
     });
   };
+  // Take a card off the column and set it back on the tray — what the column's
+  // control does instead of deleting (Kepu, Aug 1). One write, so the move
+  // cannot half-happen.
+  const cardToTray = (cardId: string) => {
+    const card = table.cards.find((c) => c.id === cardId);
+    if (!card) return;
+    updateTable(table.id, {
+      cards: table.cards.filter((c) => c.id !== cardId),
+      shelf: [
+        ...(table.shelf || []),
+        { ...card, shelfSource: "staged" as const, arrivedAt: Date.now() },
+      ],
+    });
+  };
+
   const shelfAllToColumn = () => {
     const shelf = table.shelf || [];
     if (shelf.length === 0) return;
@@ -436,6 +451,8 @@ export default function StudyTablesMobile({
           themesFor={cardThemes}
           shelf={table.shelf || []}
           onPlaceFromShelf={placeFromShelf}
+          onCardToTray={cardToTray}
+          onRemoveFromTray={unshelve}
           verseTextFor={(reference) => getVerse(reference)?.text || ""}
         />
       </div>

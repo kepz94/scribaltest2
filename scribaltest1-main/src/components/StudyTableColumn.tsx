@@ -66,6 +66,13 @@ interface StudyTableColumnProps {
   // onDeleteFromShelf, which removes the verse from the study itself — one is
   // reversible, the other is not, and they get different icons and confirms.
   onRemoveFromTray?: (cardId: string) => void;
+  // Take a card OUT of the column and set it back on the tray. This is what
+  // the column's removal control does now — the column never destroys anything
+  // (Kepu, Aug 1: "Back to tray when it's on a column, delete only lives when
+  // a scripture is in the tray"). Deleting outright stays a tray action, and
+  // there only for scripture, so authored words cannot be thrown away by a
+  // mis-tap in the middle of building a lesson.
+  onCardToTray?: (cardId: string) => void;
   // Verse text for tray row previews.
   verseTextFor?: (reference: string) => string;
   // ---- Outline mode (SCR-58 inverse): the desktop table wears Outline's UI.
@@ -626,6 +633,7 @@ export default function StudyTableColumn({
   onPlaceFromShelf,
   onDeleteFromShelf,
   onRemoveFromTray,
+  onCardToTray,
   verseTextFor,
   outlineMode,
   externalDragRef,
@@ -886,11 +894,12 @@ export default function StudyTableColumn({
       return (
         <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontFamily: SANS, fontSize: 12.5, color: "var(--muted)", marginRight: "auto" }}>
-            Delete this card?
+            Take this card off the column?
           </span>
           <button
             onClick={() => {
-              remove(id);
+              if (onCardToTray) onCardToTray(id);
+              else remove(id);
               setConfirmId(null);
             }}
             style={{
@@ -899,13 +908,15 @@ export default function StudyTableColumn({
               fontWeight: 600,
               cursor: "pointer",
               color: "#fff",
-              background: "var(--pen1)",
+              // Accent, not the red: this puts the card on the tray, it does
+              // not destroy it. Red is reserved for the tray's own delete.
+              background: accent,
               border: 0,
               borderRadius: 8,
               padding: "6px 13px",
             }}
           >
-            Delete
+            Back to tray
           </button>
           <button
             onClick={() => setConfirmId(null)}
@@ -2141,20 +2152,20 @@ export default function StudyTableColumn({
         onClick={() => {
           if (outlineConfirmId === card.id) {
             setOutlineConfirmId(null);
-            remove(card.id);
+            if (onCardToTray) onCardToTray(card.id);
+            else remove(card.id);
           } else {
             setOutlineConfirmId(card.id);
           }
         }}
         title={
           outlineConfirmId === card.id
-            ? "Tap again to remove" +
-              (card.kind === "scripture" ? " — the verse waits in the tray" : "")
-            : "Remove"
+            ? "Tap again — the card goes back to the tray"
+            : "Back to tray"
         }
         style={
           outlineConfirmId === card.id
-            ? { ...toolBtn, background: "#b3452f", borderColor: "#b3452f", color: "#fff" }
+            ? { ...toolBtn, background: accent, borderColor: accent, color: "#fff" }
             : toolBtn
         }
       >
@@ -2606,8 +2617,10 @@ export default function StudyTableColumn({
                   // SCR-72: every card sits in its own bounded surface so its
                   // controls — hover tools, the Controls row, the delete
                   // confirm — visibly belong to THIS card and no other. While
-                  // a delete is armed the border turns red, identifying the
-                  // card that's about to go.
+                  // an action is armed the border lights up, identifying the
+                  // card it will act on. Accent rather than red since SCR-108:
+                  // the column's control returns a card to the tray, and red
+                  // now means only the tray's own delete.
                   <div
                     style={{
                       position: "relative",
@@ -2615,11 +2628,11 @@ export default function StudyTableColumn({
                       border:
                         "1px solid " +
                         (outlineConfirmId === card.id || confirmId === card.id
-                          ? "#b3452f"
+                          ? accent
                           : "var(--border)"),
                       boxShadow:
                         outlineConfirmId === card.id || confirmId === card.id
-                          ? "0 0 0 3px rgba(179,69,47,.14)"
+                          ? "0 0 0 3px " + hexToRgba(accent, 0.14)
                           : "0 1px 2px rgba(60,50,30,.04)",
                       borderRadius: 11,
                       padding:
