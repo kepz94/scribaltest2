@@ -453,6 +453,7 @@ export default function StudyTablesMobile({
           onPlaceFromShelf={placeFromShelf}
           onCardToTray={cardToTray}
           onRemoveFromTray={unshelve}
+          traySheet
           verseTextFor={(reference) => getVerse(reference)?.text || ""}
         />
       </div>

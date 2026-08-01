@@ -73,6 +73,13 @@ interface StudyTableColumnProps {
   // there only for scripture, so authored words cannot be thrown away by a
   // mis-tap in the middle of building a lesson.
   onCardToTray?: (cardId: string) => void;
+  // Phone: the tray is a PULL-UP SHEET off the bottom edge rather than an
+  // inline block. Inline it is `position: sticky; bottom: 12`, which only
+  // holds the bottom while the column is taller than the screen — on a short
+  // column sticky leaves the element at its natural spot, so the tray sat in
+  // the middle of the screen (Kepu, Aug 1). A sheet is always where a thumb
+  // expects it.
+  traySheet?: boolean;
   // Verse text for tray row previews.
   verseTextFor?: (reference: string) => string;
   // ---- Outline mode (SCR-58 inverse): the desktop table wears Outline's UI.
@@ -634,6 +641,7 @@ export default function StudyTableColumn({
   onDeleteFromShelf,
   onRemoveFromTray,
   onCardToTray,
+  traySheet,
   verseTextFor,
   outlineMode,
   externalDragRef,
@@ -2792,6 +2800,39 @@ export default function StudyTableColumn({
                   overflowY: "auto",
                   zIndex: 30,
                 }
+              : traySheet && collapsed
+              ? {
+                  // Phone, closed: the pill sits on the bottom edge, centred,
+                  // clear of the home indicator.
+                  position: "fixed",
+                  left: 0,
+                  right: 0,
+                  bottom: "calc(10px + env(safe-area-inset-bottom))",
+                  display: "flex",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                  zIndex: 30,
+                }
+              : traySheet
+              ? {
+                  // Phone, open: a sheet off the bottom edge. Fixed, so it is
+                  // never left stranded mid-column the way sticky did, and
+                  // capped at 62vh so the column stays visible behind it —
+                  // the tray places INTO that column, so covering it whole
+                  // would hide the thing being aimed at.
+                  position: "fixed",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  maxHeight: "62vh",
+                  overflowY: "auto",
+                  background: "var(--panel)",
+                  borderTop: "1px solid var(--border)",
+                  borderRadius: "16px 16px 0 0",
+                  boxShadow: "0 -10px 30px rgba(0,0,0,.18)",
+                  padding: "10px 12px calc(12px + env(safe-area-inset-bottom))",
+                  zIndex: 30,
+                }
               : {
                   paddingLeft: 32,
                   marginTop: 16,
@@ -2822,7 +2863,13 @@ export default function StudyTableColumn({
                 borderRadius: 999,
                 padding: "8px 16px",
                 cursor: "pointer",
-                boxShadow: "0 2px 8px " + softAccent,
+                // The sheet's collapsed wrapper is click-through so the column
+                // stays usable either side of the pill; the pill takes its own
+                // events back.
+                pointerEvents: "auto",
+                boxShadow: traySheet
+                  ? "0 4px 16px rgba(0,0,0,.22)"
+                  : "0 2px 8px " + softAccent,
               }}
             >
               <span
@@ -2844,15 +2891,37 @@ export default function StudyTableColumn({
             </button>
           ) : (
             <div
-              style={{
-                background: "var(--panel)",
-                border: "1.5px solid " + accent,
-                borderRadius: 13,
-                overflow: "hidden",
-                maxWidth: sideDock ? undefined : 560,
-                boxShadow: "0 4px 14px " + softAccent,
-              }}
+              style={
+                traySheet
+                  ? {
+                      // The sheet itself is already the panel — a second
+                      // border, radius and shadow inside it just reads as a
+                      // box in a box.
+                      background: "transparent",
+                      overflow: "visible",
+                    }
+                  : {
+                      background: "var(--panel)",
+                      border: "1.5px solid " + accent,
+                      borderRadius: 13,
+                      overflow: "hidden",
+                      maxWidth: sideDock ? undefined : 560,
+                      boxShadow: "0 4px 14px " + softAccent,
+                    }
+              }
             >
+              {traySheet && (
+                <div
+                  aria-hidden
+                  style={{
+                    width: 34,
+                    height: 4,
+                    borderRadius: 2,
+                    background: "var(--border)",
+                    margin: "0 auto 8px",
+                  }}
+                />
+              )}
               <div
                 style={{
                   display: "flex",
