@@ -1003,6 +1003,8 @@ export default function App() {
     isEphemeralActive,
     setActiveBook,
     createSession,
+    installSharedBook,
+    newSessionBookId,
     renameBook,
     setBookLocked,
     deleteBook,
@@ -1025,6 +1027,7 @@ export default function App() {
   const {
     tables: studyTables,
     createTable: createStudyTable,
+    addTable: addStudyTable,
     updateTable: updateStudyTable,
     renameTable: renameStudyTable,
     deleteTable: deleteStudyTable,
@@ -12770,6 +12773,10 @@ export default function App() {
           renameTable={renameStudyTable}
           deleteTable={deleteStudyTable}
           createSession={createSession}
+          addTable={addStudyTable}
+          installSharedBook={installSharedBook}
+          newSessionBookId={newSessionBookId}
+          addWordTag={addTag}
           openTableId={openTableId}
           onConsumeOpenTable={() => setOpenTableId(null)}
           onMarkVerses={openTableMarkPanel}

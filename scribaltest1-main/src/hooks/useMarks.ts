@@ -134,6 +134,14 @@ type Action =
   | { type: "redo" }
   | { type: "setActive"; id: string }
   | { type: "createSession"; id: string; name: string; ephemeral?: boolean }
+  | {
+      type: "installSharedBook";
+      id: string;
+      name: string;
+      marks: Mark[];
+      colorLabels: Record<number, string>;
+      scopedLabels: Record<string, Record<number, string>>;
+    }
   | { type: "rename"; id: string; name: string }
   | { type: "deleteBook"; id: string }
   | { type: "setBookLocked"; id: string; locked: boolean }
@@ -775,6 +783,34 @@ function reducer(state: State, action: Action): State {
         activeId: id,
         past: [],
         future: [],
+      };
+    }
+
+    // A study table someone SENT (shareTable.ts) arrives whole, in a book of
+    // its own. Deliberately not a merge into any existing book and deliberately
+    // not `absorb`: the recipient's own marking must be unreachable from here,
+    // which is the promise the share sheet makes. The new book does NOT become
+    // active — the table's cards name it explicitly, and stealing the active
+    // book would move the reader out from under someone mid-study.
+    case "installSharedBook": {
+      if (state.books[action.id]) return state;
+      const book: StudyBook = {
+        id: action.id,
+        name: action.name,
+        marks: action.marks,
+        colorLabels: { ...defaultLabels(), ...action.colorLabels },
+        notes: {},
+        scopedLabels: action.scopedLabels,
+        // The palette arrived already per-chapter, so there is nothing for the
+        // book-level migration to seed.
+        scopedMigrated: true,
+        createdAt: Date.now(),
+        lastStudiedAt: Date.now(),
+      };
+      return {
+        ...state,
+        books: { ...state.books, [action.id]: book },
+        order: [...state.order, action.id],
       };
     }
 
@@ -1691,6 +1727,39 @@ export function useMarks() {
     []
   );
 
+  // Mint a session-book id without creating anything. Same shape as
+  // createSession's, so a shared book is indistinguishable from any other
+  // session once it lands.
+  const newSessionBookId = useCallback(
+    () => "session_" + Date.now() + "_" + rand(),
+    []
+  );
+
+  // Land a sent study table's marking in a book of its own.
+  //
+  // The caller mints the id (newSessionBookId) because the table's cards must
+  // already name this book before the table is added — the id has to exist
+  // before either write, so it cannot be minted in here.
+  const installSharedBook = useCallback(
+    (
+      id: string,
+      name: string,
+      marks: Mark[],
+      colorLabels: Record<number, string>,
+      scopedLabels: Record<string, Record<number, string>>
+    ) => {
+      dispatch({
+        type: "installSharedBook",
+        id,
+        name,
+        marks,
+        colorLabels,
+        scopedLabels,
+      });
+    },
+    []
+  );
+
   // SCR-94: the two halves of a verified chapter transfer.
   const copyChapters = useCallback(
     (sourceId: string, targetId: string, refs: string[], scopes: string[]) =>
@@ -1896,6 +1965,8 @@ export function useMarks() {
     deleteBook,
     getBook,
     ensureBook,
+    installSharedBook,
+    newSessionBookId,
     absorb,
     copyChapters,
     clearChapters,

@@ -219,6 +219,14 @@ export function useStudyTables() {
     return id;
   };
 
+  // Add a table that already exists in full — today, one that arrived as a
+  // sent copy (shareTable.ts installShare). Distinct from createTable, which
+  // mints a blank one: everything here is already decided, including the id.
+  const addTable = (t: StudyTable) => {
+    setTables((prev) => (prev.some((p) => p.id === t.id) ? prev : [t, ...prev]));
+    return t.id;
+  };
+
   // Save an edit: any of cards / purpose / name. Always advances updatedAt;
   // advances nameAt only when the name actually changes, so a card edit can't
   // make a stale name win a rename sync.
@@ -385,6 +393,7 @@ export function useStudyTables() {
   return {
     tables: visibleTables,
     createTable,
+    addTable,
     updateTable,
     renameTable,
     deleteTable,

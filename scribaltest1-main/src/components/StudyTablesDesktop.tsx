@@ -24,6 +24,15 @@ import type { Study } from "../hooks/useStudies";
 import type { SearchStudy } from "../hooks/useSearchStudies";
 import StudyTableColumn from "./StudyTableColumn";
 import StudyTablePresent from "./StudyTablePresent";
+import { SendCopyDialog, EnterCodeDialog } from "./ShareTable";
+import {
+  installShare,
+  packShare,
+  rememberSavedShare,
+  summarize,
+} from "../shareTable";
+import type { SharePayload } from "../shareTable";
+import { createShare, readShare } from "../shareRoom";
 import { richToPlain } from "./RichNoteField";
 import {
   newRoomCode,
@@ -112,6 +121,23 @@ interface Props {
   ) => void;
   renameTable: (id: string, name: string) => void;
   deleteTable: (id: string) => void;
+  // "Send a copy" (shareTable.ts). A received table arrives whole, so it is
+  // added rather than created, and its marking lands in a book of its own so
+  // it can never disturb the marking already here.
+  addTable?: (t: StudyTable) => string;
+  // The id is minted by the caller (newSessionBookId) because the received
+  // table's cards must already name the book before either write lands.
+  installSharedBook?: (
+    id: string,
+    name: string,
+    marks: Mark[],
+    colorLabels: Record<number, string>,
+    scopedLabels: Record<string, Record<number, string>>
+  ) => void;
+  addWordTag?: (t: Omit<WordTag, "id">) => void;
+  newSessionBookId?: () => string;
+  // Shown to the recipient as "<name> sent you". Best-effort; absent is fine.
+  senderName?: string;
   // Create a new session book (for "start from scratch" → new session): the
   // shell owns useMarks, so book creation happens there. Returns the book id.
   createSession: (name: string, ephemeral?: boolean) => string;
@@ -240,6 +266,11 @@ export default function StudyTablesDesktop({
   onRemoveVersesFromStudy,
   onAddVersesToStudy,
   setThemeLabel,
+  addTable,
+  installSharedBook,
+  addWordTag,
+  newSessionBookId,
+  senderName,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -370,6 +401,40 @@ export default function StudyTablesDesktop({
   };
   // Present mode: the open table performed full-screen, beat by beat.
   const [presenting, setPresenting] = useState(false);
+  // "Send a copy": the sender's sheet on the open table, and the recipient's
+  // code entry (reached from the New study table chooser).
+  const [sending, setSending] = useState(false);
+  const [entering, setEntering] = useState(false);
+
+  // Save a table someone sent. The order matters: the session book has to
+  // exist before the table points its cards at it.
+  const saveSharedTable = (payload: SharePayload, code: string) => {
+    if (!installSharedBook || !addTable || !newSessionBookId) return;
+    const name = payload.name || "Shared table";
+    // The book id is minted first: the table's scripture cards have to name it
+    // before either write happens.
+    const bookId = newSessionBookId();
+    const rand = () => Math.random().toString(36).slice(2, 7);
+    const installed = installShare({
+      payload,
+      bookId,
+      tableId: "table_" + Date.now() + "_" + rand(),
+      newId: (seed) => seed + "_" + Date.now() + "_" + rand(),
+      now: Date.now(),
+    });
+    installSharedBook(
+      bookId,
+      name,
+      installed.book.marks,
+      installed.book.colorLabels,
+      installed.book.scopedLabels
+    );
+    addTable(installed.table);
+    installed.wordTags.forEach((t) => addWordTag && addWordTag(t));
+    rememberSavedShare(code);
+    setEntering(false);
+    setOpenId(installed.table.id);
+  };
 
   const softAccent = hexToRgba(accent, 0.1);
   const softAccentBorder = hexToRgba(accent, 0.28);
@@ -1679,6 +1744,26 @@ export default function StudyTablesDesktop({
             >
               <Ico d="M8 5v14l11-7z" size={13} /> Present
             </button>
+            <button
+              onClick={() => visibleColumnCards.length > 0 && setSending(true)}
+              disabled={visibleColumnCards.length === 0}
+              title={
+                visibleColumnCards.length === 0
+                  ? "Add cards first — there is nothing to send yet"
+                  : "Send someone their own copy of this table"
+              }
+              style={{
+                ...headerPill,
+                color: accent,
+                borderColor: accent,
+                opacity: visibleColumnCards.length === 0 ? 0.4 : 1,
+                cursor:
+                  visibleColumnCards.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              <Ico d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7 M12 15V3 M8 7l4-4 4 4" size={13} />{" "}
+              Send a copy
+            </button>
           </span>
           <span style={headerGroup}>
             <div
@@ -2365,6 +2450,39 @@ export default function StudyTablesDesktop({
           />
         )}
 
+        {sending && (
+          <SendCopyDialog
+            accent={accent}
+            onClose={() => setSending(false)}
+            noteCount={visibleColumnCards.filter((c) => c.kind === "note").length}
+            summary={summarize(
+              packShare({
+                table: open,
+                cards: visibleColumnCards,
+                bookOf: getBook,
+                wordTags: wordTags || [],
+                includeMarks: true,
+                includeNotes: true,
+                senderName,
+              })
+            )}
+            onCreate={async (includeMarks, includeNotes) => {
+              // Packed at Create time, not when the sheet opened, so the
+              // switches decide what actually leaves the device.
+              const payload = packShare({
+                table: open,
+                cards: visibleColumnCards,
+                bookOf: getBook,
+                wordTags: wordTags || [],
+                includeMarks,
+                includeNotes,
+                senderName,
+              });
+              return { code: await createShare(payload), name: open.name };
+            }}
+          />
+        )}
+
         {presenting && (
           <StudyTablePresent
             table={{ ...open, cards: visibleColumnCards }}
@@ -2605,6 +2723,15 @@ export default function StudyTablesDesktop({
         />
       )}
 
+      {entering && (
+        <EnterCodeDialog
+          accent={accent}
+          onClose={() => setEntering(false)}
+          onLookup={readShare}
+          onSave={saveSharedTable}
+        />
+      )}
+
       {creating && (
         <div
           onClick={() => setCreating(null)}
@@ -2791,8 +2918,8 @@ export default function StudyTablesDesktop({
                     marginBottom: 18,
                   }}
                 >
-                  Begin from a study you’ve already gathered, or from a blank
-                  table.
+                  Begin from a study you’ve already gathered, from a code
+                  someone sent you, or from a blank table.
                 </div>
                 {[
                   {
@@ -2801,6 +2928,16 @@ export default function StudyTablesDesktop({
                     title: "Import a study",
                     sub: "Its marked verses arrive in Selected, ready to place",
                     strong: true,
+                  },
+                  {
+                    on: () => {
+                      setCreating(null);
+                      setEntering(true);
+                    },
+                    d: "M4 7h16v10H4z M8 11h.01 M12 11h.01 M16 11h.01 M8 14h8",
+                    title: "Enter a code",
+                    sub: "Someone sent you a table — six characters brings it over",
+                    strong: false,
                   },
                   {
                     on: startScratch,

@@ -39,6 +39,15 @@ import { useWordTags } from "./hooks/useWordTags";
 import { useStudyTables, StudyTable, TableCard, newCardId } from "./hooks/useStudyTables";
 import StudyTablePresent from "./components/StudyTablePresent";
 import StudyTablesMobile from "./components/StudyTablesMobile";
+import { SendCopyDialog, EnterCodeDialog } from "./components/ShareTable";
+import {
+  installShare,
+  packShare,
+  rememberSavedShare,
+  summarize,
+} from "./shareTable";
+import type { SharePayload } from "./shareTable";
+import { createShare, readShare } from "./shareRoom";
 import MarkedVerse from "./components/MarkedVerse";
 import { getVerse } from "./data/verseIndex";
 import {
@@ -1030,6 +1039,8 @@ export default function MobileApp() {
     activeBookId,
     setActiveBook,
     createSession,
+    installSharedBook,
+    newSessionBookId,
     deleteBook,
     addMark,
     deleteMark,
@@ -1059,12 +1070,45 @@ export default function MobileApp() {
   const {
     tables: studyTables,
     createTable: createStudyTable,
+    addTable: addStudyTable,
     updateTable: updateStudyTable,
     renameTable: renameStudyTable,
     deleteTable: deleteStudyTable,
     mergeRemote: tablesMergeRemote,
   } = useStudyTables();
   const [presentTableId, setPresentTableId] = useState<string | null>(null);
+  // "Send a copy": which table is being handed over, and whether the code
+  // entry is open (reached from the Study tables home).
+  const [sendTableId, setSendTableId] = useState<string | null>(null);
+  const [enteringCode, setEnteringCode] = useState(false);
+  // Save a table someone sent: its marking lands in a book of its own, so an
+  // arrival can never disturb the marking already on this phone.
+  const saveSharedTable = (payload: SharePayload, code: string) => {
+    const name = payload.name || "Shared table";
+    // Minted first — the table's scripture cards must name the book before
+    // either write happens.
+    const bookId = newSessionBookId();
+    const rnd = () => Math.random().toString(36).slice(2, 7);
+    const installed = installShare({
+      payload,
+      bookId,
+      tableId: "table_" + Date.now() + "_" + rnd(),
+      newId: (seed) => seed + "_" + Date.now() + "_" + rnd(),
+      now: Date.now(),
+    });
+    installSharedBook(
+      bookId,
+      name,
+      installed.book.marks,
+      installed.book.colorLabels,
+      installed.book.scopedLabels
+    );
+    addStudyTable(installed.table);
+    installed.wordTags.forEach((t) => addTag(t));
+    rememberSavedShare(code);
+    setEnteringCode(false);
+    setEditTableId(installed.table.id);
+  };
   // The mobile table editor: which table is open for editing.
   const [editTableId, setEditTableId] = useState<string | null>(null);
   // The Study tables home screen (menu entry), with the how-it-works intro.
@@ -10773,6 +10817,29 @@ export default function MobileApp() {
               + New study table
             </button>
 
+            <button
+              onClick={() => {
+                setTablesHomeOpen(false);
+                setEnteringCode(true);
+              }}
+              style={{
+                width: "100%",
+                marginTop: "10px",
+                padding: "13px 12px",
+                borderRadius: "12px",
+                border: "1.5px dashed " + C.border,
+                background: "transparent",
+                color: ACCENT,
+                fontSize: "14px",
+                fontWeight: 650,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textAlign: "center",
+              }}
+            >
+              Have a code?
+            </button>
+
             {tablesIntroSeen && (
               <button
                 onClick={() => {
@@ -10801,6 +10868,47 @@ export default function MobileApp() {
         </div>
       )}
 
+      {enteringCode && (
+        <EnterCodeDialog
+          accent={ACCENT}
+          onClose={() => setEnteringCode(false)}
+          onLookup={readShare}
+          onSave={saveSharedTable}
+        />
+      )}
+
+      {/* Send a copy of a table: the sheet packs it and returns the code. */}
+      {sendTableId &&
+        (() => {
+          const t =
+            exampleTable && sendTableId === exampleTable.id
+              ? exampleTable
+              : studyTables.find((x) => x.id === sendTableId);
+          if (!t) return null;
+          const cards = t.cards || [];
+          const pack = (includeMarks: boolean, includeNotes: boolean) =>
+            packShare({
+              table: t,
+              cards,
+              bookOf: getBook,
+              wordTags: wordTags || [],
+              includeMarks,
+              includeNotes,
+            });
+          return (
+            <SendCopyDialog
+              accent={ACCENT}
+              onClose={() => setSendTableId(null)}
+              noteCount={cards.filter((c) => c.kind === "note").length}
+              summary={summarize(pack(true, true))}
+              onCreate={async (includeMarks, includeNotes) => ({
+                code: await createShare(pack(includeMarks, includeNotes)),
+                name: t.name,
+              })}
+            />
+          );
+        })()}
+
       {/* Edit a study table on the phone */}
       {editTableId &&
         (() => {
@@ -10819,6 +10927,7 @@ export default function MobileApp() {
                 if (isExample) setExampleTable(null);
               }}
               onPresent={() => setPresentTableId(t.id)}
+              onSendCopy={() => setSendTableId(t.id)}
               updateTable={tableUpdate}
               renameTable={tableRename}
               onDelete={() => {

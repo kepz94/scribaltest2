@@ -27,6 +27,9 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
+// A sent table's week-long TTL. Defined in the pure share module so this
+// module stays the only one that talks to the rooms collection.
+import { SHARE_TTL_MS } from "./shareTable";
 
 // Same project as cloudSync; guarded so whichever module loads first wins.
 const firebaseConfig = {
@@ -44,6 +47,11 @@ const db = getFirestore(app);
 // What lives in a room document. Everything a viewer needs is self-contained:
 // no account, no local marks.
 export interface RoomDoc {
+  // Absent on a live room. "copy" marks a SENT TABLE (shareTable.ts) riding
+  // this same collection because its rules — anyone with the code reads, only
+  // the owner writes — are already exactly what sharing needs. The two shapes
+  // are otherwise unrelated: a copy has no beats and is never followed.
+  kind?: "copy";
   tableJson: string; // the StudyTable (cards drive the beats)
   marksJson: string; // Mark[] for the table's verses (rendering the marking)
   themesJson: string; // { [refsKey]: {color,label}[] } — named themes per card
@@ -164,9 +172,36 @@ export function endRoom(code: string): void {
 // sweep their own old rooms away every time they start a new one (no server
 // job needed — the owner is the only account the rules let delete them).
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+
+export const ttlFor = (doc: Pick<RoomDoc, "kind">): number =>
+  doc.kind === "copy" ? SHARE_TTL_MS : ROOM_TTL_MS;
+
 export function roomExpired(doc: RoomDoc): boolean {
   const born = doc.createdAt || doc.updatedAt || 0;
-  return Date.now() - born > ROOM_TTL_MS;
+  return Date.now() - born > ttlFor(doc);
+}
+
+// Which of this account's docs the sweep is allowed to destroy. Extracted and
+// exported so the rule is testable: a shared copy must survive the owner
+// starting a presentation, which is what `ended` + the one-day TTL would
+// otherwise do to it within a day of sending.
+export function sweepable(
+  // Every field optional: a doc written before a field existed simply lacks it,
+  // and the rule has to hold for those too.
+  doc: {
+    kind?: "copy";
+    ended?: boolean;
+    createdAt?: number;
+    updatedAt?: number;
+  },
+  now: number
+): boolean {
+  const born = doc.createdAt || doc.updatedAt || 0;
+  const old = now - born > ttlFor(doc);
+  // A copy is never "ended" — nothing ends it, and the presenter's End
+  // presentation must not reach across and delete a table they sent.
+  if (doc.kind === "copy") return old;
+  return !!doc.ended || old;
 }
 
 // Best-effort cleanup of the signed-in user's stale rooms. Fire-and-forget:
@@ -180,11 +215,7 @@ export async function cleanupMyRooms(): Promise<void> {
     const now = Date.now();
     await Promise.all(
       snap.docs
-        .filter((d) => {
-          const v = d.data() as RoomDoc;
-          const born = v.createdAt || v.updatedAt || 0;
-          return v.ended || now - born > ROOM_TTL_MS;
-        })
+        .filter((d) => sweepable(d.data() as RoomDoc, now))
         .map((d) => deleteDoc(d.ref))
     );
   } catch (err) {
