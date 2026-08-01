@@ -2458,6 +2458,29 @@ export default function MobileApp() {
     setActiveTabId(id);
     setScreensOpen(false);
   };
+  // Point the CURRENT tab somewhere else — the default for every "go here"
+  // action, the way following a link works in any tab system. Opening a new
+  // tab is a deliberate, separate act (the + in Screens, or "New tab" in the
+  // link sheet); everything else used to spawn one, which filled the strip
+  // with tabs nobody asked for (Kepu, Aug 1).
+  //
+  // `study` replaces the tab's study outright: undefined turns a study tab
+  // back into a plain reading tab, so navigating away from a study leaves it
+  // rather than stranding the tab half in it.
+  const navigateActiveTab = (target: Loc, study?: string) =>
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId
+          ? {
+              ...t,
+              v: target.v,
+              b: target.b,
+              c: target.c,
+              studyId: study,
+            }
+          : t
+      )
+    );
   const closeTab = (id: string) => {
     if (tabs.length <= 1) return; // always keep one panel open
     const idx = tabs.findIndex((t) => t.id === id);
@@ -2475,7 +2498,10 @@ export default function MobileApp() {
   // Open a keyword study as a tab (switch to it if already open). Sets
   // openStudyId explicitly so re-showing an already-active study works; the
   // active-tab effect handles the book swap.
-  const openStudyTab = (study: SearchStudy) => {
+  // Opening a study uses the CURRENT tab. Already open somewhere? Switch to
+  // that tab rather than making a second copy of it. Pass newTab for the
+  // deliberate "open this alongside" case.
+  const openStudyTab = (study: SearchStudy, newTab?: boolean) => {
     const existing = tabs.find((t) => t.studyId === study.id);
     if (existing) {
       setActiveTabId(existing.id);
@@ -2483,24 +2509,24 @@ export default function MobileApp() {
       setScreensOpen(false);
       return;
     }
-    if (tabs.length >= MAX_TABS) {
-      flash("Close a tab to open another");
-      return;
-    }
     const first = study.refs[0];
     const cl = first ? chapterLoc.get(refScope(first)) : undefined;
-    const id = newTabId();
-    setTabs([
-      ...tabs,
-      {
-        id,
-        v: cl ? cl.v : loc.v,
-        b: cl ? cl.b : loc.b,
-        c: cl ? cl.c : loc.c,
-        studyId: study.id,
-      },
-    ]);
-    setActiveTabId(id);
+    const at: Loc = {
+      v: cl ? cl.v : loc.v,
+      b: cl ? cl.b : loc.b,
+      c: cl ? cl.c : loc.c,
+    };
+    if (newTab) {
+      if (tabs.length >= MAX_TABS) {
+        flash("Close a tab to open another");
+        return;
+      }
+      const id = newTabId();
+      setTabs([...tabs, { id, ...at, studyId: study.id }]);
+      setActiveTabId(id);
+    } else {
+      navigateActiveTab(at, study.id);
+    }
     setOpenStudyId(study.id);
     setScreensOpen(false);
   };
@@ -3283,11 +3309,11 @@ export default function MobileApp() {
     );
     if (existing) {
       setActiveTabId(existing.id);
-    } else if (tabs.length >= MAX_TABS) {
-      flash("Close a tab to open another");
-      return;
     } else {
-      openTab({ v: cl.v, b: cl.b, c: cl.c });
+      // "Go to" means go — in this tab. The sheet's own "New tab" is the way
+      // to get a second one, and it can no longer fail for want of room.
+      navigateActiveTab({ v: cl.v, b: cl.b, c: cl.c }, undefined);
+      setOpenStudyId(null);
     }
     setKwLinkStudy(null);
   };
