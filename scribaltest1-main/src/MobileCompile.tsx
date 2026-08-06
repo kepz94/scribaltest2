@@ -18,7 +18,6 @@ import {
   hasTaggedWords,
 } from "./linkableDefinitions";
 import SemanticView from "./components/SemanticView";
-import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
 import SharePreview from "./SharePreview";
 import type { VersesCardEntry, VersesSynthesis } from "./shareCard";
@@ -42,27 +41,19 @@ interface Props {
   onJump: (ref: string) => void;
   notes: Record<string, string>;
   setNote: (key: string, text: string) => void;
-  onSave: (name: string, view: "outline" | "distilled" | "covenants" | "semantic") => void;
+  onSave: (name: string, view: "outline" | "distilled" | "semantic") => void;
   // The view to open in — a saved study reopens on the tab it was saved in.
   // Absent → Outline.
-  initialFormat?: "outline" | "distilled" | "covenants" | "semantic";
+  initialFormat?: "outline" | "distilled" | "semantic";
   // True when this compile is a saved study (opened from the Studies tab). Saved
   // studies open straight to their saved format with the format switcher tucked
   // behind a button, to keep the study itself the focus.
   savedStudy?: boolean;
   // This study's saved relational condition/promise roles (synced) + a setter
-  // to persist changes. Forwarded straight to the Relational (Covenants) view.
-  relSavedRoles?: Record<string, { a: number; b: number }>;
-  onRelRoles?: (roles: Record<string, { a: number; b: number }>) => void;
-  relSavedLens?: string;
-  onRelLens?: (lens: string) => void;
   // Outline lead verses: per color, refs the user pinned to a theme's top —
   // "this verse carries the theme for me." Pure user choice; no ranking.
   savedPins?: Record<string, string[]>;
   onPins?: (pins: Record<string, string[]>) => void;
-  // Relational threads: user-declared verse pairs, per lens (see Covenants).
-  relSavedThreads?: Record<string, { a: string | string[]; b: string | string[] }[]>;
-  onRelThreads?: (t: Record<string, { a: string | string[]; b: string | string[] }[]>) => void;
   defaultName: string;
   onClose: () => void;
   dark: boolean;
@@ -140,14 +131,8 @@ export default function MobileCompile({
   onSave,
   initialFormat,
   savedStudy,
-  relSavedRoles,
-  onRelRoles,
-  relSavedLens,
-  onRelLens,
   savedPins,
   onPins,
-  relSavedThreads,
-  onRelThreads,
   defaultName,
   onClose,
   dark,
@@ -251,8 +236,8 @@ export default function MobileCompile({
   // and what a share card carries, so a share defaults to full verses too.
   const [view, setView] = useState<"focused" | "full">("full");
   // The study format. Outline keeps its own Focused/Full + sort sub-options;
-  // Distilled and Covenants are their own formats, each its own view.
-  const [format, setFormat] = useState<"outline" | "distilled" | "covenants" | "semantic">(
+  // Distilled is its own format, its own view.
+  const [format, setFormat] = useState<"outline" | "distilled" | "semantic">(
     initialFormat || "outline"
   );
   // Whether the tucked-away view options (Focused/Full, In order/By points) are
@@ -268,7 +253,6 @@ export default function MobileCompile({
   const [editSynth, setEditSynth] = useState<string | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
-  const [covShareSignal, setCovShareSignal] = useState(0);
   const [picked, setPicked] = useState<string[]>([]);
   // Hide the header + toggles while reading down through verses (and bring
   // them back when scrolling up), so a long study isn't half-covered by chrome.
@@ -908,25 +892,7 @@ export default function MobileCompile({
                 + Chapter
               </button>
             )}
-            {format === "covenants" ? (
-              <button
-                onClick={() => setCovShareSignal((n) => n + 1)}
-                style={{
-                  flexShrink: 0,
-                  background: "transparent",
-                  color: C.text,
-                  border: "1px solid " + C.border,
-                  borderRadius: "999px",
-                  padding: "10px 18px",
-                  fontSize: "13.5px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Share image
-              </button>
-            ) : (
+            {(
               <button
                 onClick={() => {
                   setPicked([]);
@@ -1028,9 +994,7 @@ export default function MobileCompile({
                     borderRadius: "10px",
                   }}
                 >
-                  {format === "covenants"
-                    ? "Relational"
-                    : format === "distilled"
+                  {format === "distilled"
                     ? "Distilled"
                     : format === "semantic"
                     ? "Semantic"
@@ -1055,9 +1019,6 @@ export default function MobileCompile({
                   )}
                   {seg(format === "distilled", "Distilled", () =>
                     setFormat("distilled")
-                  )}
-                  {seg(format === "covenants", "Relational", () =>
-                    setFormat("covenants")
                   )}
                   {seg(format === "semantic", "Semantic", () =>
                     setFormat("semantic")
@@ -1239,9 +1200,6 @@ export default function MobileCompile({
                 {seg(format === "distilled", "Distilled", () =>
                   setFormat("distilled")
                 )}
-                {seg(format === "covenants", "Relational", () =>
-                  setFormat("covenants")
-                )}
                 {seg(format === "semantic", "Semantic", () =>
                   setFormat("semantic")
                 )}
@@ -1322,19 +1280,6 @@ export default function MobileCompile({
         }}
       >
         {format === "distilled" && <Distilled {...sharedViewProps} />}
-        {format === "covenants" && (
-          <Covenants
-            key={scope}
-            {...sharedViewProps}
-            savedRoles={relSavedRoles}
-            onRoles={onRelRoles}
-            savedLens={relSavedLens}
-            onLens={onRelLens}
-            savedThreads={relSavedThreads}
-            onThreads={onRelThreads}
-            shareSignal={covShareSignal}
-          />
-        )}
         {format === "semantic" && (
           <SemanticView
             compileTabs={sharedCompileTabs}

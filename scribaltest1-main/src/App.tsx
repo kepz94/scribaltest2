@@ -14,9 +14,7 @@ import { useStudyTables, newCardId, TableCard } from "./hooks/useStudyTables";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
 import { resolveSynthesisKey } from "./synthesisKey";
-import Charting from "./components/Charting";
 import Distilled from "./components/Distilled";
-import Covenants from "./components/Covenants";
 import WordStudies from "./components/WordStudies";
 import { NEUTRAL, WARM, ACCENT } from "./theme";
 import PrintView from "./components/PrintView";
@@ -40,15 +38,12 @@ import {
   ParsedImport,
 } from "./scriptureNotesImport";
 import { useStudies, Study, isStudyDeleted } from "./hooks/useStudies";
-import FeatureSlides from "./FeatureSlides";
 import SemanticView from "./components/SemanticView";
-import DesktopWalkthrough from "./DesktopWalkthrough";
 import NewTabPanel, { NewTabStudyChoice } from "./components/NewTabPanel";
 import StudyPanel from "./components/StudyPanel";
 
 import Shortcuts from "./components/Shortcuts";
 import CompileBook, { CompileFlyer } from "./components/CompileBook";
-import DesktopExample from "./components/DesktopExample";
 import SearchPanel from "./components/SearchPanel";
 import { getScriptures, volumesProxy, registerOnLoaded } from "./data/scripturesStore";
 import {
@@ -405,12 +400,17 @@ const GROUP_COLORS = LINK_COLORS.filter(
 
 const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
-  charting: "Charting",
   distilled: "Distilled",
-  covenants: "Relational",
 };
 
-type CompileView = "outline" | "charting" | "distilled" | "covenants" | "semantic";
+type CompileView = "outline" | "distilled" | "semantic";
+
+// A study saved before Charting and Relational were retired still carries that
+// view on its record. Setting it verbatim would select a view nothing renders —
+// a blank board, no error, no way back except picking another tab. Everything
+// unrecognised lands on Outline.
+const liveView = (v: string | undefined | null): CompileView =>
+  v === "distilled" || v === "semantic" ? v : "outline";
 
 type Mode = "read" | "compile" | "vault" | "table";
 
@@ -985,14 +985,8 @@ export default function App() {
     scopedLabels,
     setScopedLabel,
     seedScopeLabels,
-    scopedRoles,
-    setScopedRoles,
-    scopedLens,
-    setScopedLens,
     scopedPins,
     setScopedPins,
-    scopedThreads,
-    setScopedThreads,
     notes,
     setNote,
     books,
@@ -1134,14 +1128,12 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("read");
   // The built-in, read-only "See how it works" example (marked John 1 + a live
   // compile using the real desktop views). Opens over everything; writes nothing.
-  const [exampleOpen, setExampleOpen] = useState(false);
+  // Anything else — including the retired "charting" and "covenants" — falls
+  // back to Outline rather than setting a view nothing renders, which would be
+  // a blank compile board with no error.
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
-    return saved === "outline" ||
-      saved === "charting" ||
-      saved === "distilled" ||
-      saved === "covenants" ||
-      saved === "semantic"
+    return saved === "outline" || saved === "distilled" || saved === "semantic"
       ? saved
       : "outline";
   });
@@ -1494,9 +1486,6 @@ export default function App() {
 
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
 
-  const [showTutorial, setShowTutorial] = useState<boolean>(
-    () => !localStorage.getItem("scribal_tutorial_seen")
-  );
   // Desktop search is a set of persistent reading-row panels (SCR-28), not a
   // toggled overlay. Each open panel carries its own context: a plain panel is
   // general search; addToStudyId puts it in "add verses to this keyword study"
@@ -1674,8 +1663,6 @@ export default function App() {
   const [markVersesStudyId, setMarkVersesStudyId] = useState<string | null>(
     null
   );
-  const [slidesOpen, setSlidesOpen] = useState(false);
-  const [walkOpen, setWalkOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [compileAnim, setCompileAnim] = useState<{
@@ -2412,17 +2399,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
 
-  // First run: greet new users with the live guided tour, once any opening
-  // gate is out of the way.
-  useEffect(() => {
-    if (showTutorial && !gateOpen) {
-      localStorage.setItem("scribal_tutorial_seen", "1");
-      setShowTutorial(false);
-      setExampleOpen(false);
-      setWalkOpen(true);
-    }
-  }, [showTutorial, gateOpen]);
-
   // SCR-43: + opens a launcher panel (Library / Search picker) instead of
   // auto-opening the next unopened chapter. Launchers count toward the tab
   // cap since each becomes a tab.
@@ -2918,26 +2894,6 @@ export default function App() {
     land(id);
   };
 
-  // Guided-tour navigation: open the demo chapter in a NEW tab bound to the
-  // tour's ephemeral book. jumpToReference must not be used here — it REPLACES
-  // the active tab and inherits that tab's bookId (usually "master"), which is
-  // exactly how the tour ended up marking the user's real Master Book (SCR-19).
-  const openTourChapter = (bookId: string) => {
-    const loc = locateReference("1 Nephi 1:1");
-    if (!loc) return;
-    const id = makeTabId(bookId, loc.v, loc.b, loc.c);
-    setTabs((prev) =>
-      prev.find((t) => t.id === id)
-        ? prev
-        : [
-            ...prev,
-            { id, volume: loc.v, book: loc.b, chapter: loc.c, bookId },
-          ]
-    );
-    setActiveTabId(id);
-    setMode("read");
-    setJumpTarget("1 Nephi 1:1");
-  };
 
   const openInNewTab = (reference: string) => {
     const loc = locateReference(reference);
@@ -4202,7 +4158,7 @@ export default function App() {
     if (roomForRep) setActiveTabId(repId);
     // Reopen on the view this study was saved in (Relational, Distilled, …)
     // instead of whatever view happened to be on screen.
-    setCompileView(s.view ?? "outline");
+    setCompileView(liveView(s.view));
     // The compile covers every chapter in the study, even the ones we didn't
     // open as tabs — build synthetic compile tabs (scripture order) exactly the
     // way a linked/keyword compile does, so the notes stay complete.
@@ -4262,7 +4218,7 @@ export default function App() {
     if (room) setActiveTabId(tabId);
     // Reopen on the view this study was saved in, so a relational keyword study
     // lands on Relational instead of whatever view was last on screen.
-    setCompileView(study.view ?? "outline");
+    setCompileView(liveView(study.view));
     // Opened from the Studies list: show its verses in the reading panel (its
     // notes are one Compile away).
     if (landInReading) setMode("read");
@@ -6078,24 +6034,6 @@ export default function App() {
               Continue without signing in
             </button>
 
-            <button
-              onClick={() => {
-                setGateOpen(false);
-                setExampleOpen(true);
-              }}
-              style={{
-                marginTop: "16px",
-                background: "transparent",
-                border: "none",
-                color: ICON_ACCENT,
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              See how Scribal works →
-            </button>
-
             {gateMsg && (
               <p
                 style={{
@@ -6109,62 +6047,6 @@ export default function App() {
             )}
           </div>
         </div>
-      )}
-
-      {exampleOpen && (
-        <DesktopExample
-          dark={dark}
-          onClose={() => setExampleOpen(false)}
-          onTryIt={() => {
-            setExampleOpen(false);
-            updateActiveTab(1, 3, 0);
-            setMode("read");
-          }}
-        />
-      )}
-
-      {walkOpen && (
-        <DesktopWalkthrough
-          onClose={() => setWalkOpen(false)}
-          createSession={createSession}
-          deleteBook={deleteBook}
-          setActiveBook={setActiveBook}
-          addMark={addMark}
-          setScopedLabel={setScopedLabel}
-          resolveScope={resolveScope}
-          scopedLabels={getBook(activeBookId).scopedLabels || {}}
-          marks={marks}
-          activeBookId={activeBookId}
-          openDemoChapter={openTourChapter}
-          tabIds={tabs.map((t) => t.id)}
-          activeTabId={activeTabId}
-          setActiveTab={setActiveTabId}
-          closeTab={closeTab}
-          compileOpen={mode === "compile"}
-          setCompileOpen={(v) => setMode(v ? "compile" : "read")}
-          pen={{ color: selectedColor, tool: selectedTool }}
-          setPen={(p) => {
-            setSelectedColor(p.color);
-            setSelectedTool(p.tool);
-          }}
-          notes={notes}
-          setNote={setNote}
-        />
-      )}
-
-      {slidesOpen && (
-        <FeatureSlides
-          C={{
-            bg: "var(--bg)",
-            panel: "var(--panel)",
-            soft: "var(--soft)",
-            text: "var(--text)",
-            muted: "var(--muted)",
-            border: "var(--border)",
-          }}
-          onClose={() => setSlidesOpen(false)}
-          desktop
-        />
       )}
 
       {showShortcuts && (
@@ -10002,7 +9884,7 @@ export default function App() {
 
       {printData && (
         <PrintView
-          view={printData.view as "outline" | "charting"}
+          view={printData.view as "outline"}
           title={printData.title}
           compileTabs={printData.compileTabs}
           marks={printData.marks}
@@ -10531,68 +10413,6 @@ export default function App() {
                         margin: "6px 4px",
                       }}
                     />
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setExampleOpen(false);
-                        setWalkOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      ▶ Take the guided tour
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setSlidesOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        color: "var(--text)",
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.backgroundColor = "var(--soft)")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.backgroundColor = "transparent")
-                      }
-                    >
-                      ◈ How Scribal works
-                    </div>
-                    <div
-                      onClick={() => {
-                        setBackupOpen(false);
-                        setExampleOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        color: "var(--text)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          verticalAlign: "-2px",
-                          marginRight: "6px",
-                        }}
-                      >
-                        <IconBulb size={14} />
-                      </span>
-                      See how it works
-                    </div>
                     <div
                       onClick={() => {
                         setBackupOpen(false);
@@ -13261,20 +13081,14 @@ export default function App() {
                         width: "190px",
                       }}
                     >
-                      {(compileView === "outline" ||
-                        compileView === "charting") && (
+                      {compileView === "outline" && (
                         <button
                           onClick={() => {
                             setCompileSettingsOpen(false);
                             // Outline gets the card PDF — the same document
-                            // mobile produces, cover and all. Charting has no
-                            // card equivalent, so it keeps the paper print.
-                            if (compileView === "outline") {
-                              setShareMode("study");
-                              setSharingVerses(true);
-                            } else {
-                              handlePrintLive();
-                            }
+                            // mobile produces, cover and all.
+                            setShareMode("study");
+                            setSharingVerses(true);
                           }}
                           style={{
                             display: "block",
@@ -13290,7 +13104,7 @@ export default function App() {
                             fontFamily: "inherit",
                           }}
                         >
-                          {compileView === "outline" ? "⎙ Save as PDF" : "⎙ Print / PDF"}
+                          ⎙ Save as PDF
                         </button>
                       )}
                       <button
@@ -13321,52 +13135,28 @@ export default function App() {
               </div>
             </div>
 
-            {compileStudy?.view === "covenants" ? (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    letterSpacing: "1px",
-                    textTransform: "uppercase",
-                    color: "var(--muted)",
-                    padding: "6px 0",
-                  }}
-                >
-                  Relational study
-                </div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                  backgroundColor: "var(--panel)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {viewTabButton(compileView === "outline", "Outline", () =>
+                  setCompileView("outline")
+                )}
+                {viewTabButton(compileView === "distilled", "Distilled", () =>
+                  setCompileView("distilled")
+                )}
+                {viewTabButton(compileView === "semantic", "Semantic", () =>
+                  setCompileView("semantic")
+                )}
               </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <div
-                  data-tour="compile-views"
-                  style={{
-                    display: "flex",
-                    border: "1px solid var(--border)",
-                    borderRadius: "999px",
-                    overflow: "hidden",
-                    backgroundColor: "var(--panel)",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {viewTabButton(compileView === "outline", "Outline", () =>
-                    setCompileView("outline")
-                  )}
-                  {viewTabButton(compileView === "charting", "Charting", () =>
-                    setCompileView("charting")
-                  )}
-                  {viewTabButton(compileView === "distilled", "Distilled", () =>
-                    setCompileView("distilled")
-                  )}
-                  {viewTabButton(compileView === "covenants", "Relational", () =>
-                    setCompileView("covenants")
-                  )}
-                  {viewTabButton(compileView === "semantic", "Semantic", () =>
-                    setCompileView("semantic")
-                  )}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
 
           <style>{`
@@ -13583,7 +13373,6 @@ export default function App() {
                 onCollapsedChange={setCompileCollapsed}
               />
             )}
-            {compileView === "charting" && <Charting {...sharedCompileProps} />}
             {compileView === "semantic" && (
               <SemanticView
                 compileTabs={sharedCompileProps.compileTabs}
@@ -13627,18 +13416,6 @@ export default function App() {
             )}
             {compileView === "distilled" && (
               <Distilled {...sharedCompileProps} />
-            )}
-            {compileView === "covenants" && (
-              <Covenants
-                key={effectiveScope}
-                {...sharedCompileProps}
-                savedRoles={scopedRoles[effectiveScope]}
-                onRoles={(r) => setScopedRoles(effectiveScope, r)}
-                savedLens={scopedLens[effectiveScope]}
-                onLens={(l) => setScopedLens(effectiveScope, l)}
-                savedThreads={scopedThreads[effectiveScope]}
-                onThreads={(t) => setScopedThreads(effectiveScope, t)}
-              />
             )}
             {/* Word Studies renders in ONE place — the Outline (the study's
                 primary compiled output) — instead of trailing every view tab

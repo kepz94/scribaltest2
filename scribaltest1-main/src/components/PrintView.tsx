@@ -8,7 +8,7 @@ import { resolveSynthesisKey } from "../synthesisKey";
 const vols = volumesProxy;
 
 interface PrintViewProps {
-  view: "cornell" | "outline" | "charting";
+  view: "cornell" | "outline";
   title: string;
   compileTabs: Tab[];
   marks: Mark[];
@@ -24,7 +24,6 @@ interface PrintViewProps {
 const VIEW_NAMES: Record<string, string> = {
   cornell: "Cornell Notes",
   outline: "Outline",
-  charting: "Charting",
 };
 
 // Fixed print colors (independent of light/dark theme)
@@ -284,9 +283,7 @@ export default function PrintView(props: PrintViewProps) {
       }}
     >
       <style>{`
-        @page { margin: 16mm; ${
-          view === "charting" ? "size: A4 landscape;" : ""
-        } }
+        @page { margin: 16mm; }
         .print-richnote p { margin: 0 0 6px; }
         .print-richnote h1 { font-size: 17px; font-weight: 800; margin: 4px 0; }
         .print-richnote h2 { font-size: 14.5px; font-weight: 800; margin: 4px 0; }
@@ -338,7 +335,7 @@ export default function PrintView(props: PrintViewProps) {
           ← Close
         </button>
 
-        {view !== "charting" && (
+        {(
           <div
             style={{
               display: "flex",
@@ -401,7 +398,7 @@ export default function PrintView(props: PrintViewProps) {
       {/* Document */}
       <div
         style={{
-          maxWidth: view === "charting" ? "100%" : "760px",
+          maxWidth: "760px",
           margin: "0 auto",
           padding: "34px 30px 60px",
           fontFamily: "Georgia, 'Times New Roman', serif",
@@ -667,93 +664,6 @@ export default function PrintView(props: PrintViewProps) {
             </section>
           ))}
 
-        {/* CHARTING */}
-        {view === "charting" && themes.length > 0 && (
-          <table
-            style={{
-              borderCollapse: "collapse",
-              width: "100%",
-              fontSize: "13px",
-            }}
-          >
-            <thead>
-              <tr>
-                <th style={chTh}>Verse</th>
-                {themes.map((th) => (
-                  <th key={th.color} style={chTh}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: "10px",
-                        height: "10px",
-                        borderRadius: "50%",
-                        backgroundColor: PRINT_PEN[th.color],
-                        marginRight: "6px",
-                        verticalAlign: "middle",
-                      }}
-                    />
-                    {th.label}
-                  </th>
-                ))}
-                <th style={{ ...chTh, textAlign: "right" }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from(new Set(relevantMarks.map((m) => m.reference)))
-                .map((r) => refMeta[r])
-                .sort((a, b) => a.order - b.order)
-                .map((row) => {
-                  const rowTotal = relevantMarks
-                    .filter((m) => m.reference === row.reference)
-                    .reduce((s, m) => s + STYLE_POINTS[m.style], 0);
-                  return (
-                    <tr key={row.reference}>
-                      <td
-                        style={{
-                          ...chTd,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {row.reference}
-                      </td>
-                      {themes.map((th) => {
-                        const cm = th.verses.find(
-                          (v) => v.reference === row.reference
-                        );
-                        return (
-                          <td key={th.color} style={chTd}>
-                            {cm ? (
-                              <>
-                                <div>{renderPhrases(cm.vmarks)}</div>
-                                <div
-                                  style={{
-                                    fontSize: "10px",
-                                    color: "#999",
-                                    fontFamily: "system-ui, sans-serif",
-                                    marginTop: "3px",
-                                  }}
-                                >
-                                  +{cm.points}
-                                </div>
-                              </>
-                            ) : (
-                              <span style={{ color: "#ccc" }}>·</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td
-                        style={{ ...chTd, textAlign: "right", fontWeight: 700 }}
-                      >
-                        {rowTotal}
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        )}
 
         {/* Any other reflection notes. The study synthesis is no longer here —
             it leads the document. */}
@@ -813,17 +723,3 @@ export default function PrintView(props: PrintViewProps) {
   );
 }
 
-const chTh: React.CSSProperties = {
-  border: "1px solid #ccc",
-  padding: "7px 9px",
-  textAlign: "left",
-  fontFamily: "system-ui, sans-serif",
-  fontSize: "12px",
-  backgroundColor: "#f3f1ea",
-};
-const chTd: React.CSSProperties = {
-  border: "1px solid #ddd",
-  padding: "7px 9px",
-  verticalAlign: "top",
-  lineHeight: 1.5,
-};

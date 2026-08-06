@@ -24,15 +24,12 @@ import StyleGlyph from "./components/StyleGlyph";
 import CompileBook, {
   CompileFlyer,
 } from "./components/CompileBook";
-import ExampleStudy from "./components/ExampleStudy";
 import MobileSearch from "./MobileSearch";
 import SharePreview, { packPages } from "./SharePreview";
 import { glossesFor } from "./components/MarkedVerse";
 import { useWebsterReady } from "./useWebsterReady";
 import { compileDelta, compileCountKey } from "./compileDelta";
 import type { VersesCardEntry } from "./shareCard";
-import MobileWalkthrough from "./MobileWalkthrough";
-import FeatureSlides from "./FeatureSlides";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
@@ -401,7 +398,7 @@ interface SearchStudy {
   note?: string;
   // The compile view this keyword study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
-  view?: "outline" | "distilled" | "covenants" | "semantic";
+  view?: "outline" | "distilled" | "semantic";
   // When set, this keyword search is linked into a chapter study (that chapter's
   // scope). It then shares the chapter's book/themes and folds into its compile.
   linkedScope?: string;
@@ -427,7 +424,7 @@ extraRefsAt?: number;
   memberScopes?: string[];
   // The compile view this study was last saved in (Outline / Distilled /
   // Relational), so reopening lands on the same tab. Absent → Outline.
-  view?: "outline" | "charting" | "distilled" | "covenants" | "semantic";
+  view?: "outline" | "distilled" | "semantic";
   compiledAt: number;
   // When the name was last set by the user (create or rename). Drives rename
   // sync; treated as compiledAt when absent (older records).
@@ -1051,14 +1048,8 @@ export default function MobileApp() {
     setScopedLabel,
     seedScopeLabels,
     scopedLabels,
-    scopedRoles,
-    setScopedRoles,
     scopedPins,
     setScopedPins,
-    scopedThreads,
-    setScopedThreads,
-    scopedLens,
-    setScopedLens,
     getBook,
     moveStudyMarks,
     notes,
@@ -1787,7 +1778,6 @@ export default function MobileApp() {
   const [studiesOpen, setStudiesOpen] = useState(false);
   // The built-in, read-only "See how it works" example (marked John 1 + a live
   // compile). Opens over everything; writes nothing.
-  const [exampleOpen, setExampleOpen] = useState(false);
   // Which study row (if any) is expanded to show its scope + themes peek.
   const [infoStudyId, setInfoStudyId] = useState<string | null>(null);
   // Verses just picked in search, waiting for the source + name step.
@@ -1907,16 +1897,7 @@ export default function MobileApp() {
   const [signInOpen, setSignInOpen] = useState(
     () => !localStorage.getItem("scribal_mobile_onboarded")
   );
-  const [mtourOpen, setMtourOpen] = useState(false);
-  const [slidesOpen, setSlidesOpen] = useState(false);
   const [chooseRef, setChooseRef] = useState<string | null>(null);
-
-  // Replay the first-run tour (which then opens the gestures sheet).
-  const resetIntro = () => {
-    setSettingsOpen(false);
-    setHomeOpen(true);
-    setMtourOpen(true);
-  };
 
   // After the sign-in reload, finish opening the gestures sheet.
   useEffect(() => {
@@ -2334,13 +2315,7 @@ export default function MobileApp() {
   };
   // A chapter's label scope: its group's shared scope if linked, else its own.
   const resolveScope = (cs: string) =>
-    // During the first-run walkthrough the open chapter IS the demo chapter, so
-    // keep it standalone — otherwise the throwaway study inherits whatever real
-    // link group this chapter belongs to, which would collapse its themes and
-    // mis-key (hide) their names.
-    mtourOpen && cs === title
-      ? cs
-      : chapterGroups[cs]
+    chapterGroups[cs]
       ? "group:" + chapterGroups[cs]
       : cs;
   // A chapter reads as "combined" when a live keyword search is linked into it
@@ -3731,7 +3706,7 @@ export default function MobileApp() {
   // The chapters Compile gathers: the current chapter's whole study if it's
   // linked, otherwise just this chapter (sorted in canonical order).
   const studyScopes = (
-    chapterGroups[title] && !mtourOpen ? groupMembers(title) : [title]
+    chapterGroups[title] ? groupMembers(title) : [title]
   )
     .slice()
     .sort(
@@ -3811,10 +3786,9 @@ export default function MobileApp() {
     scopeRef: string,
     name: string,
     rename: boolean = true,
-    view?: "outline" | "charting" | "distilled" | "covenants" | "semantic",
+    view?: "outline" | "distilled" | "semantic",
     memberScopes?: string[]
   ) => {
-    if (mtourOpen) return;
     const bookId = activeBookId;
     setStudies((prev) => {
       const now = Date.now();
@@ -4992,14 +4966,7 @@ export default function MobileApp() {
                 onTagTap={openTagRef}
               />
             );
-            if (!sendMode)
-              return mtourOpen && vi === 0 ? (
-                <div data-wt="wt-verse" key={vs.reference}>
-                  {verse}
-                </div>
-              ) : (
-                verse
-              );
+            if (!sendMode) return verse;
             const checked = sendSel.has(vs.reference);
             return (
               <div
@@ -7458,27 +7425,6 @@ export default function MobileApp() {
               }
             )}
             {homeTile(
-              "How Scribal works",
-              "Every feature, on the real screens",
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M16 8l-2.5 5.5L8 16l2.5-5.5z" />
-              </svg>,
-              () => {
-                setHomeOpen(false);
-                setSlidesOpen(true);
-              }
-            )}
-            {homeTile(
               "Study tables",
               "Build & present lessons",
               <svg
@@ -7829,7 +7775,6 @@ export default function MobileApp() {
           900
         )}
 
-      {/* Gestures cheat sheet */}
       {/* Settings */}
       {settingsOpen &&
         sheet(
@@ -8299,12 +8244,6 @@ export default function MobileApp() {
                   () => setReading((r) => ({ ...r, warm: !r.warm }))
                 )}
 
-                {label("Help")}
-                {actionBtn("How Scribal works", () => {
-                  setSettingsOpen(false);
-                  setSlidesOpen(true);
-                })}
-                {actionBtn("Replay the welcome tour", resetIntro)}
 
                 {label("About")}
                 <div
@@ -8315,29 +8254,6 @@ export default function MobileApp() {
                   marks stay in step across desktop and phone whenever you're
                   signed in.
                 </div>
-                <button
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setHomeOpen(true);
-                    setMtourOpen(true);
-                  }}
-                  style={{
-                    width: "100%",
-                    marginTop: "14px",
-                    padding: "12px",
-                    borderRadius: "10px",
-                    border: "1px solid " + C.border,
-                    background: "transparent",
-                    color: C.text,
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Show the tour again
-                </button>
-
                 {label("Legal")}
                 {actionBtn("Privacy Policy", () => {
                   window.open("/privacy.html", "_blank");
@@ -10044,26 +9960,6 @@ export default function MobileApp() {
                       <b style={{ color: C.text }}>Compile</b> to record it here,
                       or build one from Search.
                     </div>
-                    <button
-                      onClick={() => {
-                        setStudiesOpen(false);
-                        setExampleOpen(true);
-                      }}
-                      style={{
-                        marginTop: "16px",
-                        background: "transparent",
-                        border: "1px solid " + C.border,
-                        borderRadius: "999px",
-                        padding: "10px 18px",
-                        color: C.text,
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      See an example study →
-                    </button>
                   </>
                 ) : (
                   <>
@@ -11748,19 +11644,13 @@ export default function MobileApp() {
               initialFormat={
                 (cr?.view ?? cs?.view) === "distilled"
                   ? "distilled"
-                  : (cr?.view ?? cs?.view) === "covenants"
-                  ? "covenants"
+                  : (cr?.view ?? cs?.view) === "semantic"
+                  ? "semantic"
                   : "outline"
               }
               savedStudy={!!(cr || cs)}
-              relSavedRoles={scopedRoles[cScope]}
-              onRelRoles={(r) => setScopedRoles(cScope, r)}
               savedPins={scopedPins[cScope]}
               onPins={(p) => setScopedPins(cScope, p)}
-              relSavedThreads={scopedThreads[cScope]}
-              onRelThreads={(t) => setScopedThreads(cScope, t)}
-              relSavedLens={scopedLens[cScope]}
-              onRelLens={(l) => setScopedLens(cScope, l)}
               marks={cMarks}
               tags={cTags}
               studyScopes={cScopes}
@@ -11773,13 +11663,6 @@ export default function MobileApp() {
               setNote={setNote}
               defaultName={cTitle}
               onSave={(nm, view) => {
-                // During the walkthrough, "Save" just closes the demo compile —
-                // nothing is persisted (the throwaway study is discarded on exit,
-                // and the walkthrough's own cleanup runs off compileOpen).
-                if (mtourOpen) {
-                  setCompileOpen(false);
-                  return;
-                }
                 const name = nm.trim();
                 if (cs) {
                   setSearchStudies((prev) =>
@@ -11845,20 +11728,6 @@ export default function MobileApp() {
             />
           );
         })()}
-
-      {/* See how it works — read-only example (marked John 1 + live compile) */}
-      {exampleOpen && (
-        <ExampleStudy
-          C={C}
-          dark={dark}
-          onClose={() => setExampleOpen(false)}
-          onTryIt={() => {
-            setExampleOpen(false);
-            setLoc({ v: 1, b: 3, c: 0 });
-            setHomeOpen(false);
-          }}
-        />
-      )}
 
 
       {/* Manage a mark (long-press) */}
@@ -12599,7 +12468,6 @@ export default function MobileApp() {
                 } catch {
                   /* popup dismissed — they can sign in later from the menu */
                 }
-                setMtourOpen(true);
               }}
               style={{
                 width: "100%",
@@ -12621,7 +12489,6 @@ export default function MobileApp() {
               onClick={() => {
                 localStorage.setItem("scribal_mobile_onboarded", "1");
                 setSignInOpen(false);
-                setMtourOpen(true);
               }}
               style={{
                 width: "100%",
@@ -12641,7 +12508,7 @@ export default function MobileApp() {
           </div>
         </div>
       )}
-      {undoFlash && canUndo && !compileOpen && !mtourOpen && (
+      {undoFlash && canUndo && !compileOpen && (
         <button
           onClick={() => {
             undo();
@@ -12671,46 +12538,6 @@ export default function MobileApp() {
         >
           ↺ Undo
         </button>
-      )}
-
-      {slidesOpen && (
-        <FeatureSlides C={C} onClose={() => setSlidesOpen(false)} />
-      )}
-
-      {mtourOpen && (
-        <MobileWalkthrough
-          C={C}
-          onClose={() => setMtourOpen(false)}
-          createSession={createSession}
-          deleteBook={deleteBook}
-          setActiveBook={setActiveBook}
-          addMark={addMark}
-          setScopedLabel={setScopedLabel}
-          resolveScope={resolveScope}
-          scopedLabels={getBook(activeBookId).scopedLabels || {}}
-          linkOpen={linkOpen}
-          searchOpen={searchOpen}
-          chapterGroups={chapterGroups}
-          searchStudyIds={searchStudies.map((x) => x.id)}
-          tabIds={tabs.map((x) => x.id)}
-          demoCombined={chapterIsCombined("1 Nephi 1")}
-          unlinkChapter={unlink}
-          deleteSearchStudy={(id) =>
-            setSearchStudies((prev) => prev.filter((x) => x.id !== id))
-          }
-          closeTab={closeTab}
-          marks={marks}
-          activeBookId={activeBookId}
-          loc={loc}
-          setLoc={setLoc}
-          setHomeOpen={setHomeOpen}
-          setCompileOpen={setCompileOpen}
-          compileOpen={compileOpen}
-          pen={pen}
-          setPen={setPen}
-          notes={notes}
-          setNote={setNote}
-        />
       )}
 
       {/* Edit-mark mode bar */}

@@ -40,24 +40,18 @@ export interface StudyBook {
   scopedLabels?: Record<string, Record<number, string>>;
   // One-time flag: have we seeded scopedLabels from the old book-level palette?
   scopedMigrated?: boolean;
-  // Relational (covenant) condition/promise role colors, per study scope —
-  // e.g. { "Alma 5": { at: 1700000000000, roles: { covenant: { a: 1, b: 2 } } } }.
-  // Kept on the book (not localStorage) so each study's pair syncs across
-  // devices, last-write-wins per scope via `at`. Same per-scope keying as
-  // scopedLabels.
+  // Per-study-scope entries, last-write-wins via `at`. Kept on the book (not
+  // localStorage) so they sync across devices, same per-scope keying as
+  // scopedLabels. The name is historical: this held the Relational view's
+  // condition/promise roles, lens and threads, all removed with that view.
+  // Outline's pinned lead verses live here and are the only remaining field.
   scopedRoles?: Record<
     string,
     {
       at: number;
-      roles: Record<string, { a: number; b: number }>;
-      lens?: string;
       // Outline lead verses: per color, the refs the user pinned to the top of
-      // that theme (in pin order). Rides the same per-scope LWW sync.
+      // that theme (in pin order).
       pins?: Record<string, string[]>;
-      // Relational threads: per lens, the verse pairs the USER connected —
-      // "this condition ties to that promise" across any distance. The system
-      // never invents these; it only renders them.
-      threads?: Record<string, { a: string | string[]; b: string | string[] }[]>;
     }
   >;
   createdAt: number;
@@ -169,18 +163,7 @@ type Action =
       scope: string;
       labels: Record<number, string>;
     }
-  | {
-      type: "setScopedRoles";
-      scope: string;
-      roles: Record<string, { a: number; b: number }>;
-    }
-  | { type: "setScopedLens"; scope: string; lens: string }
   | { type: "setScopedPins"; scope: string; pins: Record<string, string[]> }
-  | {
-      type: "setScopedThreads";
-      scope: string;
-      threads: Record<string, { a: string | string[]; b: string | string[] }[]>;
-    }
   | { type: "setNote"; key: string; text: string }
   | { type: "ensureBook"; id: string; name: string }
   | { type: "absorb"; targetId: string; sourceId: string; refs: string[] }
@@ -424,6 +407,29 @@ function migrateMaster(): StudyBook {
   };
 }
 
+// Relational's condition/promise roles, lens and threads were removed with the
+// view. Scope entries still carry them in stored and remote copies, so every
+// entry is narrowed to { at, pins } on the way in — on load AND on merge.
+// Stripping in only one place would not hold: the merge takes a remote entry
+// whenever its `at` is newer, so a device on an older build would keep handing
+// the dead fields back and they would never actually go away.
+function stripRetiredScopeFields(
+  sr: any
+): Record<string, { at: number; pins?: Record<string, string[]> }> {
+  const out: Record<string, { at: number; pins?: Record<string, string[]> }> = {};
+  if (!sr || typeof sr !== "object") return out;
+  Object.keys(sr).forEach((k) => {
+    const e = sr[k];
+    if (!e || typeof e !== "object") return;
+    const kept: { at: number; pins?: Record<string, string[]> } = {
+      at: typeof e.at === "number" ? e.at : 0,
+    };
+    if (e.pins && typeof e.pins === "object") kept.pins = e.pins;
+    out[k] = kept;
+  });
+  return out;
+}
+
 function initState(): State {
   const saved = safeParse<any>(safeGet("scribal_books_v1"), null);
   if (saved && saved.books && saved.books.master) {
@@ -468,10 +474,7 @@ function initState(): State {
         ),
           scopedLabels,
         scopedMigrated: true,
-        scopedRoles:
-          b.scopedRoles && typeof b.scopedRoles === "object"
-            ? b.scopedRoles
-            : {},
+        scopedRoles: stripRetiredScopeFields(b.scopedRoles),
         createdAt: typeof b.createdAt === "number" ? b.createdAt : Date.now(),
         lastStudiedAt:
           typeof b.lastStudiedAt === "number"
@@ -1273,10 +1276,7 @@ export function reducer(state: State, action: Action): State {
                 ? rb.scopedLabels
                 : migrateScopedLabels(cleanMarks, rColorLabels, undefined),
             scopedMigrated: true,
-            scopedRoles:
-              rb.scopedRoles && typeof rb.scopedRoles === "object"
-                ? rb.scopedRoles
-                : {},
+            scopedRoles: stripRetiredScopeFields(rb.scopedRoles),
             createdAt:
               typeof rb.createdAt === "number" ? rb.createdAt : Date.now(),
             lastStudiedAt:
@@ -1361,12 +1361,10 @@ export function reducer(state: State, action: Action): State {
         });
         // Merge relational roles — newest write per scope wins, so a change on
         // either device propagates (names use fill-blanks; roles get replaced).
-        let scopedRoles = local.scopedRoles || {};
+        let scopedRoles = stripRetiredScopeFields(local.scopedRoles);
         let rolesChanged = false;
         const rRoles =
-          rb.scopedRoles && typeof rb.scopedRoles === "object"
-            ? rb.scopedRoles
-            : {};
+          stripRetiredScopeFields(rb.scopedRoles);
         Object.keys(rRoles).forEach((s) => {
           const r = rRoles[s];
           if (!r || typeof r.at !== "number") return;
@@ -1529,72 +1527,6 @@ export function reducer(state: State, action: Action): State {
       };
     }
 
-    case "setScopedRoles": {
-      const cur = active.scopedRoles || {};
-      return {
-        ...state,
-        books: {
-          ...state.books,
-          [state.activeId]: {
-            ...active,
-            scopedRoles: {
-              ...cur,
-              [action.scope]: {
-                at: Date.now(),
-                roles: action.roles,
-                lens: cur[action.scope]?.lens,
-                pins: cur[action.scope]?.pins,
-                threads: cur[action.scope]?.threads,
-              },
-            },
-          },
-        },
-      };
-    }
-    case "setScopedLens": {
-      const cur = active.scopedRoles || {};
-      return {
-        ...state,
-        books: {
-          ...state.books,
-          [state.activeId]: {
-            ...active,
-            scopedRoles: {
-              ...cur,
-              [action.scope]: {
-                at: Date.now(),
-                roles: cur[action.scope]?.roles || {},
-                lens: action.lens,
-                pins: cur[action.scope]?.pins,
-                threads: cur[action.scope]?.threads,
-              },
-            },
-          },
-        },
-      };
-    }
-    case "setScopedThreads": {
-      const cur = active.scopedRoles || {};
-      return {
-        ...state,
-        books: {
-          ...state.books,
-          [state.activeId]: {
-            ...active,
-            scopedRoles: {
-              ...cur,
-              [action.scope]: {
-                at: Date.now(),
-                roles: cur[action.scope]?.roles || {},
-                lens: cur[action.scope]?.lens,
-                pins: cur[action.scope]?.pins,
-                threads: action.threads,
-              },
-            },
-          },
-        },
-      };
-    }
     case "setScopedPins": {
       const cur = active.scopedRoles || {};
       return {
@@ -1605,13 +1537,7 @@ export function reducer(state: State, action: Action): State {
             ...active,
             scopedRoles: {
               ...cur,
-              [action.scope]: {
-                at: Date.now(),
-                roles: cur[action.scope]?.roles || {},
-                lens: cur[action.scope]?.lens,
-                pins: action.pins,
-                threads: cur[action.scope]?.threads,
-              },
+              [action.scope]: { at: Date.now(), pins: action.pins },
             },
           },
         },
@@ -1775,24 +1701,9 @@ export function useMarks() {
       dispatch({ type: "seedScopeLabels", scope, labels }),
     []
   );
-  const setScopedRoles = useCallback(
-    (scope: string, roles: Record<string, { a: number; b: number }>) =>
-      dispatch({ type: "setScopedRoles", scope, roles }),
-    []
-  );
-  const setScopedThreads = useCallback(
-    (scope: string, threads: Record<string, { a: string | string[]; b: string | string[] }[]>) =>
-      dispatch({ type: "setScopedThreads", scope, threads }),
-    []
-  );
   const setScopedPins = useCallback(
     (scope: string, pins: Record<string, string[]>) =>
       dispatch({ type: "setScopedPins", scope, pins }),
-    []
-  );
-  const setScopedLens = useCallback(
-    (scope: string, lens: string) =>
-      dispatch({ type: "setScopedLens", scope, lens }),
     []
   );
   const setNote = useCallback(
@@ -1961,43 +1872,13 @@ export function useMarks() {
     setColorLabel,
     setScopedLabel,
     seedScopeLabels,
-    setScopedRoles,
-    setScopedLens,
     setScopedPins,
-    setScopedThreads,
     scopedLabels: active.scopedLabels || EMPTY_SCOPED_LABELS,
-    scopedRoles: (() => {
-      const src = active.scopedRoles || {};
-      const out: Record<string, Record<string, { a: number; b: number }>> = {};
-      Object.keys(src).forEach((k) => {
-        out[k] = src[k].roles;
-      });
-      return out;
-    })(),
-    scopedLens: (() => {
-      const src = active.scopedRoles || {};
-      const out: Record<string, string> = {};
-      Object.keys(src).forEach((k) => {
-        if (src[k].lens) out[k] = src[k].lens as string;
-      });
-      return out;
-    })(),
     scopedPins: (() => {
       const src = active.scopedRoles || {};
       const out: Record<string, Record<string, string[]>> = {};
       Object.keys(src).forEach((k) => {
         if (src[k].pins) out[k] = src[k].pins as Record<string, string[]>;
-      });
-      return out;
-    })(),
-    scopedThreads: (() => {
-      const src = active.scopedRoles || {};
-      const out: Record<
-        string,
-        Record<string, { a: string | string[]; b: string | string[] }[]>
-      > = {};
-      Object.keys(src).forEach((k) => {
-        if (src[k].threads) out[k] = src[k].threads!;
       });
       return out;
     })(),
