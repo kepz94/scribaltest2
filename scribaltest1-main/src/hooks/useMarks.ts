@@ -6,7 +6,7 @@ import { Mark, MarkStyle, MarkColor } from "../types";
 // as "data changed" — one ingredient of the SCR-10 idle write loop.
 const EMPTY_SCOPED_LABELS: Record<string, Record<number, string>> = {};
 
-interface StudyBook {
+export interface StudyBook {
   id: string;
   name: string;
   // SCR-93 book lock: a locked book cannot be deleted by ANY caller — the
@@ -72,6 +72,14 @@ type State = {
   books: Record<string, StudyBook>;
   order: string[];
   activeId: string;
+  // Deleted books, by id, stamped when the delete happened. Books are the one
+  // thing that used to be hard-deleted with no record, so the merge below —
+  // which rebuilds any book that is remote-but-not-local — resurrected every
+  // deletion the moment another device (or a stale cloud copy) synced back.
+  // Same 90-day TTL as mark tombstones. Session ids are minted unique per
+  // creation, so a tombstoned id is gone for good and no "was it re-created
+  // after the delete?" comparison is needed.
+  deletedBooks: Record<string, number>;
   past: Mark[][];
   future: Mark[][];
 };
@@ -420,6 +428,19 @@ function initState(): State {
   const saved = safeParse<any>(safeGet("scribal_books_v1"), null);
   if (saved && saved.books && saved.books.master) {
     const books: Record<string, StudyBook> = saved.books;
+    // Deletions this device already knows about. Applied on load as well as on
+    // merge, so a Vault restore of an older backup can't quietly reinstate a
+    // book that was deleted after that backup was taken. "master" can never be
+    // deleted, so it is never allowed to carry a tombstone.
+    const deletedBooks = gcTombstones(
+      saved.deletedBooks && typeof saved.deletedBooks === "object"
+        ? saved.deletedBooks
+        : {}
+    );
+    delete deletedBooks.master;
+    Object.keys(deletedBooks).forEach((id) => {
+      if (books[id]) delete books[id];
+    });
     // ensure each book is well-formed
     Object.keys(books).forEach((id) => {
       const b = books[id];
@@ -468,19 +489,25 @@ function initState(): State {
     });
     order = ["master", ...order.filter((id) => id !== "master")];
     const activeId = books[saved.activeId] ? saved.activeId : "master";
-    return { books, order, activeId, past: [], future: [] };
+    return { books, order, activeId, deletedBooks, past: [], future: [] };
   }
   const master = migrateMaster();
   return {
     books: { master },
     order: ["master"],
     activeId: "master",
+    deletedBooks: {},
     past: [],
     future: [],
   };
 }
 
-function reducer(state: State, action: Action): State {
+// Exported for tests only. The book-deletion rules below have no pure module of
+// their own and are exactly the kind of merge that looks right and silently
+// loses data, so they get direct coverage (bookTombstone.test.ts).
+export type MarksState = State;
+export type MarksAction = Action;
+export function reducer(state: State, action: Action): State {
   const active = state.books[state.activeId];
 
   const withActiveMarks = (nextMarks: Mark[], history: boolean): State => {
@@ -1095,7 +1122,22 @@ function reducer(state: State, action: Action): State {
       delete books[action.id];
       const order = state.order.filter((x) => x !== action.id);
       const activeId = state.activeId === action.id ? "master" : state.activeId;
-      return { ...state, books, order, activeId, past: [], future: [] };
+      // Record the deletion so the merge can tell "deleted here" apart from
+      // "not synced here yet" — without this the next inbound snapshot rebuilds
+      // the book and the delete is lost silently. Ephemeral books never reach
+      // storage or sync, so tombstoning one would be dead weight in the blob.
+      const deletedBooks = bkDel.ephemeral
+        ? state.deletedBooks
+        : gcTombstones({ ...state.deletedBooks, [action.id]: Date.now() });
+      return {
+        ...state,
+        books,
+        order,
+        activeId,
+        deletedBooks,
+        past: [],
+        future: [],
+      };
     }
 
     case "importStudy": {
@@ -1160,11 +1202,48 @@ function reducer(state: State, action: Action): State {
       const rbooks = remote && remote.books ? remote.books : null;
       if (!rbooks || typeof rbooks !== "object") return state;
       const books = { ...state.books };
-      const order = [...state.order];
+      let order = [...state.order];
       let changed = false;
+      // Book deletions, both directions. Newest stamp per id wins, then expire
+      // at the same 90 days as mark tombstones. A device that deleted a book
+      // teaches every other device to drop it; a device that hasn't heard yet
+      // keeps pushing the book up, and this is what stops that copy from
+      // reinstating it here. "master" is undeletable, so it can never be
+      // tombstoned no matter what a remote blob claims.
+      const rDeleted =
+        remote.deletedBooks && typeof remote.deletedBooks === "object"
+          ? (remote.deletedBooks as Record<string, number>)
+          : {};
+      const mergedDelRaw: Record<string, number> = { ...state.deletedBooks };
+      Object.keys(rDeleted).forEach((bid) => {
+        const rt = rDeleted[bid];
+        if (
+          typeof rt === "number" &&
+          (mergedDelRaw[bid] == null || rt > mergedDelRaw[bid])
+        )
+          mergedDelRaw[bid] = rt;
+      });
+      const deletedBooks = gcTombstones(mergedDelRaw);
+      delete deletedBooks.master;
+      const delChanged =
+        Object.keys(deletedBooks).length !==
+          Object.keys(state.deletedBooks).length ||
+        Object.keys(deletedBooks).some(
+          (bid) => deletedBooks[bid] !== state.deletedBooks[bid]
+        );
+      if (delChanged) changed = true;
+      // Deletions learned from another device: drop those books here too.
+      Object.keys(deletedBooks).forEach((bid) => {
+        if (books[bid]) {
+          delete books[bid];
+          changed = true;
+        }
+      });
       Object.keys(rbooks).forEach((id) => {
         const rb = rbooks[id];
         if (!rb) return;
+        // Deleted — and a session id is never reused, so this is permanent.
+        if (deletedBooks[id] != null) return;
         const rmarks: Mark[] = Array.isArray(rb.marks) ? rb.marks : [];
         const rTomb =
           rb.tombstones && typeof rb.tombstones === "object"
@@ -1329,7 +1408,12 @@ function reducer(state: State, action: Action): State {
         }
       });
       if (!changed) return state; // unchanged — no re-render / persist / push
-      return { ...state, books, order };
+      // A book dropped by a remote deletion has to leave `order` too, and can't
+      // be left as the active book — that would strand the reader on a book
+      // that no longer exists.
+      order = order.filter((id) => books[id]);
+      const activeId = books[state.activeId] ? state.activeId : "master";
+      return { ...state, books, order, activeId, deletedBooks };
     }
 
     case "setLabel":
@@ -1561,9 +1645,12 @@ export function useMarks() {
         books: persistBooks,
         order: persistOrder,
         activeId: persistActive,
+        // Rides the same blob the cloud push serializes, so a deletion travels
+        // to the other devices instead of dying on the one that made it.
+        deletedBooks: state.deletedBooks,
       })
     );
-  }, [state.books, state.order, state.activeId]);
+  }, [state.books, state.order, state.activeId, state.deletedBooks]);
 
   const active = state.books[state.activeId] || state.books["master"];
 

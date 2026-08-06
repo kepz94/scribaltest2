@@ -4026,6 +4026,35 @@ export default function MobileApp() {
     });
   }, [books]);
 
+  // ---- Create a session study book, deliberately ----
+  // Every mobile entry point that makes a session book routes through here.
+  // They used to create one on a single tap with no name and no way back, which
+  // is how books nobody remembers making appeared — the "+ New session" button
+  // sits directly under the tappable book rows in the Study books sheet, so a
+  // stray tap read exactly like switching books. Now nothing exists until
+  // Create is pressed, and it arrives with a name you chose.
+  const [newSessionAsk, setNewSessionAsk] = useState<{
+    after: (id: string) => void;
+  } | null>(null);
+  const [newSessionName, setNewSessionName] = useState("");
+  const defaultSessionName = () =>
+    "Session · " +
+    new Date().toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  const askNewSession = (after: (id: string) => void) => {
+    setNewSessionName(defaultSessionName());
+    setNewSessionAsk({ after });
+  };
+  const confirmNewSession = () => {
+    if (!newSessionAsk) return;
+    const after = newSessionAsk.after;
+    const id = createSession(newSessionName.trim() || defaultSessionName());
+    setNewSessionAsk(null);
+    after(id);
+  };
+
   // ---- Close (delete) a session study book ----
   const closeSession = (id: string, name: string, markCount: number) => {
     // SCR-93: books are locked by default and the reducer refuses to delete
@@ -7690,17 +7719,12 @@ export default function MobileApp() {
               );
             })}
             <button
-              onClick={() => {
-                const id = createSession(
-                  "Session · " +
-                    new Date().toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })
-                );
-                setActiveBook(id);
-                setMenuOpen(false);
-              }}
+              onClick={() =>
+                askNewSession((id) => {
+                  setActiveBook(id);
+                  setMenuOpen(false);
+                })
+              }
               style={{
                 width: "100%",
                 background: "transparent",
@@ -7717,6 +7741,92 @@ export default function MobileApp() {
               + New session
             </button>
           </div>
+        )}
+
+      {/* Name a new session book. Every other sheet in this shell sits at the
+          450 default except one at 460, so z=900 puts this above any of them —
+          SCR-102's dialog opened BEHIND its parent sheet, which is
+          indistinguishable from a dead button. Dismissing leaves nothing. */}
+      {newSessionAsk &&
+        sheet(
+          () => setNewSessionAsk(null),
+          <div>
+            <div
+              style={{ fontSize: "16px", fontWeight: 700, marginBottom: "4px" }}
+            >
+              Name this session
+            </div>
+            <div
+              style={{
+                fontSize: "12px",
+                color: C.muted,
+                marginBottom: "14px",
+                lineHeight: 1.45,
+              }}
+            >
+              A session book is its own layer of marking, separate from the
+              Master Book. Nothing is created until you tap Create.
+            </div>
+            <input
+              autoFocus
+              value={newSessionName}
+              onChange={(e) => setNewSessionName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmNewSession();
+              }}
+              style={{
+                width: "100%",
+                border: "1px solid " + C.border,
+                borderRadius: "10px",
+                background: C.soft,
+                color: C.text,
+                // 16px floor — below it iOS zooms on focus and the zoom sticks
+                // in an installed PWA.
+                fontSize: "16px",
+                padding: "12px",
+                outline: "none",
+                fontFamily: "inherit",
+                marginBottom: "12px",
+              }}
+            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => setNewSessionAsk(null)}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "1px solid " + C.border,
+                  borderRadius: "10px",
+                  padding: "12px",
+                  color: C.text,
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmNewSession}
+                style={{
+                  flex: 1,
+                  background: ACCENT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "12px",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>,
+          900
         )}
 
       {/* Gestures cheat sheet */}
@@ -11205,10 +11315,6 @@ export default function MobileApp() {
           const ref = chooseRef;
           const activeBook = books.find((b) => b.id === activeBookId);
           const isMaster = activeBookId === "master";
-          const dateStr = new Date().toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          });
           const choice = (label: string, sub: string, onClick: () => void) => (
             <button
               onClick={onClick}
@@ -11257,11 +11363,12 @@ export default function MobileApp() {
                 }
               )}
 
-              {choice("Open in a new session", "start a fresh study layer", () => {
-                const id = createSession("Session · " + dateStr);
-                setActiveBook(id);
-                jumpToRef(ref);
-              })}
+              {choice("Open in a new session", "start a fresh study layer", () =>
+                askNewSession((id) => {
+                  setActiveBook(id);
+                  jumpToRef(ref);
+                })
+              )}
             </div>
           );
         })()}

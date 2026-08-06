@@ -2043,25 +2043,33 @@ export default function App() {
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
 
-  // Reusable confirmation dialog for destructive actions.
+  // Reusable confirmation dialog for destructive actions — and, when `prompt` is
+  // set, for naming something before it is created. The naming form exists so a
+  // creation can be BACKED OUT of: a session book used to appear on one
+  // unconfirmed tap, which is how books nobody remembers making got here.
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     body: string;
     confirmLabel: string;
     cancelLabel: string;
-    onConfirm: () => void;
+    onConfirm: (value: string) => void;
     secondaryLabel?: string;
     onSecondary?: () => void;
+    // Seed for the text field. Absent = no field, the plain confirm dialog.
+    prompt?: string;
   } | null>(null);
+  const [confirmText, setConfirmText] = useState("");
   const askConfirm = (opts: {
     title: string;
     body: string;
     confirmLabel?: string;
     cancelLabel?: string;
-    onConfirm: () => void;
+    onConfirm: (value: string) => void;
     secondaryLabel?: string;
     onSecondary?: () => void;
-  }) =>
+    prompt?: string;
+  }) => {
+    setConfirmText(opts.prompt || "");
     setConfirmAction({
       title: opts.title,
       body: opts.body,
@@ -2070,7 +2078,9 @@ export default function App() {
       onConfirm: opts.onConfirm,
       secondaryLabel: opts.secondaryLabel,
       onSecondary: opts.onSecondary,
+      prompt: opts.prompt,
     });
+  };
 
 
   const [dark, setDark] = useState<boolean>(() => {
@@ -2553,9 +2563,23 @@ export default function App() {
     return fmtShortDate(ts);
   };
 
+  // Every "make me a new session book" entry point goes through here, so none of
+  // them can create one on a single unconfirmed tap and none of them can drift
+  // apart later. The name is the point as much as the confirm step is: a book
+  // that arrives called "Session · Aug 2" is unidentifiable a week later.
+  const askNewSession = (after: (id: string) => void) => {
+    const fallback = "Session · " + fmtShortDate(Date.now());
+    askConfirm({
+      title: "Name this session",
+      body: "A session book is its own layer of marking, separate from the Master Book. Nothing is created until you press Create.",
+      confirmLabel: "Create",
+      prompt: fallback,
+      onConfirm: (name) => after(createSession(name.trim() || fallback)),
+    });
+  };
+
   const newSessionForActiveTab = () => {
-    const id = createSession("Session · " + fmtShortDate(Date.now()));
-    setActiveTabBook(id);
+    askNewSession((id) => setActiveTabBook(id));
   };
 
   // Open the "which tabs do you want to link?" prompt for a tab. Pre-checks the
@@ -9864,7 +9888,7 @@ export default function App() {
             </h3>
             <p
               style={{
-                margin: "0 0 20px 0",
+                margin: confirmAction.prompt == null ? "0 0 20px 0" : "0 0 14px 0",
                 fontSize: "14px",
                 lineHeight: 1.5,
                 color: "var(--muted)",
@@ -9872,6 +9896,35 @@ export default function App() {
             >
               {confirmAction.body}
             </p>
+            {confirmAction.prompt != null && (
+              <input
+                autoFocus
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const fn = confirmAction.onConfirm;
+                    const v = confirmText;
+                    setConfirmAction(null);
+                    fn(v);
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  marginBottom: "18px",
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  borderRadius: "10px",
+                  padding: "11px 12px",
+                  // 16px floor: anything smaller makes iOS zoom on focus, and in
+                  // an installed PWA that zoom sticks.
+                  fontSize: "16px",
+                  outline: "none",
+                  fontFamily: "inherit",
+                }}
+              />
+            )}
             {confirmAction.onSecondary && (
               <button
                 onClick={() => {
@@ -9921,11 +9974,15 @@ export default function App() {
               <button
                 onClick={() => {
                   const fn = confirmAction.onConfirm;
+                  const v = confirmText;
                   setConfirmAction(null);
-                  fn();
+                  fn(v);
                 }}
                 style={{
-                  background: "#c0392b",
+                  // Red is for destroying something. A naming step is creating
+                  // one, so it must not wear the delete colour.
+                  background:
+                    confirmAction.prompt == null ? "#c0392b" : ACCENT,
                   border: "none",
                   color: "#fff",
                   borderRadius: "10px",
@@ -13626,12 +13683,7 @@ export default function App() {
             <BooksVault
               books={vaultBooks}
               onSetActive={setActiveBook}
-              onNewSession={() => {
-                const id = createSession(
-                  "Session · " + fmtShortDate(Date.now())
-                );
-                setActiveBook(id);
-              }}
+              onNewSession={() => askNewSession((id) => setActiveBook(id))}
               onRename={(id, name) => renameBook(id, name)}
               onDelete={(id) =>
                 askConfirm({
