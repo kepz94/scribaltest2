@@ -4365,15 +4365,6 @@ export default function MobileApp() {
     onClick: () => void
   ) => (
     <button
-      data-tour={
-        label === "Browse books"
-          ? "m-browse"
-          : label === "Studies"
-          ? "m-studies"
-          : label === "Search"
-          ? "m-search"
-          : undefined
-      }
       onClick={onClick}
       style={{
         display: "flex",
@@ -4620,7 +4611,6 @@ export default function MobileApp() {
               ‹
             </button>
             <button
-              data-tour="m-chapter"
               onClick={() => setJumpOpen(true)}
               style={{
                 minWidth: 0,
@@ -4662,8 +4652,6 @@ export default function MobileApp() {
           </div>
 
           <button
-            data-tour="m-compile"
-            data-wt="wt-compile"
             onClick={compileCurrentStudy}
             disabled={sendMode}
             style={{
@@ -4765,7 +4753,6 @@ export default function MobileApp() {
                 </span>
               </button>
           <button
-            data-tour="m-menu"
             onClick={() => setSettingsOpen(true)}
             style={{
               display: "flex",
@@ -4829,7 +4816,6 @@ export default function MobileApp() {
               fontFamily: "inherit",
             }}
             aria-label="Link this chapter into a study"
-            data-wt="wt-link"
           >
             <LinkGlyph
               color={chapterIsCombined(title) ? TYPE_PURPLE : TYPE_RED}
@@ -4932,7 +4918,6 @@ export default function MobileApp() {
           {displayTitle}
         </h2>
         <div
-          data-tour="m-read"
           style={{
             fontFamily: '"Times New Roman", Times, serif',
             fontSize: verseSize,
@@ -5118,7 +5103,6 @@ export default function MobileApp() {
         }}
       >
         <div
-          data-wt="wt-tray"
           style={{
             pointerEvents: "auto",
             backgroundColor: C.panel,
@@ -5131,7 +5115,7 @@ export default function MobileApp() {
           }}
         >
           {/* Colors — always visible */}
-          <div data-wt="wt-colors" style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
+          <div style={{ padding: "12px 14px 0", display: "flex", gap: "8px" }}>
             {COLORS.map((c) => (
               <button
                 key={c}
@@ -5155,7 +5139,6 @@ export default function MobileApp() {
 
           {/* Styles — always visible (single letters keep the bar short) */}
           <div
-            data-wt="wt-styles"
             style={{
               padding: "8px 14px 0",
               display: "flex",
@@ -5167,13 +5150,6 @@ export default function MobileApp() {
               return (
                 <button
                   key={s.tool}
-                  data-wt={
-                    s.tool === "eraser"
-                      ? "wt-eraser"
-                      : s.tool === "define"
-                      ? "wt-define"
-                      : undefined
-                  }
                   onClick={() => setPen((p) => ({ ...p, tool: s.tool }))}
                   aria-label={s.label}
                   title={s.label}
@@ -5915,7 +5891,7 @@ export default function MobileApp() {
             >
               Or add a keyword search
             </div>
-            <button data-wt="wt-search"
+            <button
 
               onClick={() => {
                 setLinkToChapterScope(title);
@@ -7293,7 +7269,6 @@ export default function MobileApp() {
 
           {/* Continue reading — hero */}
           <button
-            data-tour="m-continue"
             onClick={() => setHomeOpen(false)}
             style={{
               display: "block",
@@ -7538,7 +7513,6 @@ export default function MobileApp() {
 
           {/* Settings — slim row */}
           <button
-            data-tour="m-settings"
             onClick={() => {
               setHomeOpen(false);
               setSettingsOpen(true);

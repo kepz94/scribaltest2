@@ -1129,7 +1129,6 @@ export default function VerseViewer(props: VerseViewerProps) {
       {showToolbar && (
       <div
         ref={toolbarRef}
-        data-tour="toolbar"
         style={{
           position: "fixed",
           left: pos.x,

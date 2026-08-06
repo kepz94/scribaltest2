@@ -937,7 +937,6 @@ export default function MobileCompile({
         {readOnly && onTryIt && (
           <button
             onClick={onTryIt}
-            data-tour="ex-tryit"
             style={{
               width: "100%",
               background: C.text,
@@ -1005,7 +1004,6 @@ export default function MobileCompile({
                 </button>
               ) : (
                 <div
-                  data-tour="ex-formats"
                   style={{
                     display: "flex",
                     gap: "4px",
@@ -1185,7 +1183,6 @@ export default function MobileCompile({
             </div>
             {savedStudy && showFormats && (
               <div
-                data-tour="ex-formats"
                 style={{
                   display: "flex",
                   gap: "4px",
@@ -1427,11 +1424,6 @@ export default function MobileCompile({
                         }}
                         placeholder="Name this theme…"
                         aria-label="Theme name"
-                        data-wt={
-                          !(colorLabels[c] || "").trim()
-                            ? "wt-themename"
-                            : undefined
-                        }
                         style={{
                           flex: 1,
                           minWidth: 0,

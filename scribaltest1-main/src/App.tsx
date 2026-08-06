@@ -90,12 +90,6 @@ const BACKUP_KEYS = [
   "scribal_map_layout",
   "scribal_map_colorfilter",
   "scribal_map_stylefilter",
-  "scribal_tutorial_seen",
-  "scribal_guide_compile",
-  "scribal_guide_search",
-  "scribal_guide_vault",
-  "scribal_guide_tabs",
-  "scribal_guide_books",
   "scribal_last_compile_count",
 ]
 
@@ -10206,7 +10200,6 @@ export default function App() {
           {/* Find group */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              data-tour="search"
               onClick={() => openSearchPanel()}
               title="Search (Ctrl/Cmd+K)"
               style={pillStyle}
@@ -10215,7 +10208,6 @@ export default function App() {
               Search
             </button>
             <button
-              data-tour="studies"
               onClick={() => setStudiesOpen(true)}
               title="Every study you've done"
               style={pillStyle}
@@ -10302,7 +10294,6 @@ export default function App() {
             })()}
             <div style={{ position: "relative" }}>
               <button
-                data-tour="more"
                 onClick={() => setBackupOpen((o) => !o)}
                 title="More — display, study books, shortcuts, back up"
                 style={{
@@ -11143,7 +11134,7 @@ export default function App() {
             {mode === "read" &&
               actionButton("Study tables", () => setMode("table"))}
             {mode === "read" && (
-              <span data-tour="compile" style={{ display: "inline-flex" }}>
+              <span style={{ display: "inline-flex" }}>
                 {actionButton(
                   "Compile →",
                   activeTab.studyId
@@ -11190,7 +11181,6 @@ export default function App() {
             zIndex: 31,
           }}
           ref={tabsRef}
-          data-tour="tabs"
         >
           {tabs.map((t) => {
             const active = t.id === activeTabId;
@@ -12999,7 +12989,6 @@ export default function App() {
                 }}
               />
               <button
-                data-tour="save-study"
                 onClick={saveToStudies}
                 style={{
                   display: "inline-flex",
