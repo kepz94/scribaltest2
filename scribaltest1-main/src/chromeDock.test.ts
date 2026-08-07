@@ -79,3 +79,46 @@ describe("nonsense in, usable CSS out", () => {
     ).toBe("50px");
   });
 });
+
+describe("the keyboard: a MEASURED visible edge, not a model (Aug 7 recording)", () => {
+  // Two models shipped and disproved on device. The input is now a measurement:
+  // visualViewport.offsetTop − screen.getBoundingClientRect().top. On an iOS
+  // that resizes or clamps it reads 0 and nothing below changes.
+  test("viewportTop 0 (resizing/clamping iOS): the chrome rule stands alone", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: true, scrollerPadTop: PAD, viewportTop: 0 })
+    ).toBe("calc(env(safe-area-inset-top) - 137px)");
+  });
+
+  test("the visible edge below the chrome wins — the bar rides down to what can be seen", () => {
+    // The recording's state: chrome hidden, screen displaced ~260px up, the
+    // old dock line off above the status bar.
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: true, scrollerPadTop: PAD, viewportTop: 260 })
+    ).toBe("calc(max(env(safe-area-inset-top), 260px) - 137px)");
+  });
+
+  test("chrome showing and a small pan: the chrome is still the lower edge", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: false, scrollerPadTop: PAD, viewportTop: 40 })
+    ).toBe("calc(127px - 137px)");
+  });
+
+  test("chrome showing but the pan is past it: the visible edge wins", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: false, scrollerPadTop: PAD, viewportTop: 300 })
+    ).toBe("calc(300px - 137px)");
+  });
+
+  test("a negative measurement (screen below the visible top) reads as 0", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: false, scrollerPadTop: PAD, viewportTop: -80 })
+    ).toBe("calc(127px - 137px)");
+  });
+
+  test("keyboard closing returns the bar exactly where it was", () => {
+    const before = dockTop({ chromeH: CHROME, chromeHidden: true, scrollerPadTop: PAD });
+    const after = dockTop({ chromeH: CHROME, chromeHidden: true, scrollerPadTop: PAD, viewportTop: 0 });
+    expect(after).toBe(before);
+  });
+});

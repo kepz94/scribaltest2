@@ -28,6 +28,21 @@
 // Desktop passes scrollerPadTop: 0 — its compile screen scrolls the document
 // and has no such padding, so target and offset are the same number there.
 
+// ── the keyboard ──────────────────────────────────────────────────────────────
+// iOS moves the visible window over (or shrinks it under) a fixed screen in
+// THREE different ways — resize the layout viewport, pan the visual viewport,
+// or overlay without touching either — and which one you get depends on iOS
+// version and on installed-PWA vs Safari-tab. Two models have now been shipped
+// and disproved by device (ebcd981: "the keyboard pans, add offsetTop" — put
+// the bar mid-screen; c1b5884: "iOS clamps the screen, no offset needed" — the
+// bar wandered whenever the keyboard was involved). So: no model. The caller
+// MEASURES where the visible top edge actually sits relative to the screen —
+//   viewportTop = visualViewport.offsetTop − screen.getBoundingClientRect().top
+// — and the dock line is simply the LOWER of that edge and the chrome's
+// bottom. Under a resizing/clamping iOS the measurement reads 0 and the chrome
+// rule stands alone; under a panning iOS it reads the pan and the bar rides
+// the visible edge. Either way the bar sits where the user can see it.
+
 export interface DockInput {
   // Measured height of the chrome overlay (header + toggles).
   chromeH: number;
@@ -35,6 +50,9 @@ export interface DockInput {
   chromeHidden: boolean;
   // The scroll container's own top padding, which the offset must cancel.
   scrollerPadTop: number;
+  // MEASURED: how far the visible window's top edge sits below the screen's
+  // top (see above). 0 whenever no keyboard is involved.
+  viewportTop?: number;
 }
 
 const nonNeg = (n: number): number => {
@@ -46,11 +64,18 @@ const nonNeg = (n: number): number => {
 export function dockTarget({
   chromeH,
   chromeHidden,
-}: Pick<DockInput, "chromeH" | "chromeHidden">): string {
+  viewportTop,
+}: Pick<DockInput, "chromeH" | "chromeHidden" | "viewportTop">): string {
+  const vv = nonNeg(viewportTop || 0);
   // Under the camera cutout. The chrome carries its own notch strip, so when
   // the chrome is showing, its measured height already clears the same area.
-  if (chromeHidden) return "env(safe-area-inset-top)";
-  return nonNeg(chromeH) + "px";
+  // The visible edge, when the keyboard has pushed it lower than either, wins
+  // — a bar docked above what can be seen is a bar the user does not have.
+  if (chromeHidden)
+    return vv > 0
+      ? "max(env(safe-area-inset-top), " + vv + "px)"
+      : "env(safe-area-inset-top)";
+  return Math.max(nonNeg(chromeH), vv) + "px";
 }
 
 export function dockTop(input: DockInput): string {
@@ -59,3 +84,10 @@ export function dockTop(input: DockInput): string {
   if (!pad) return target;
   return "calc(" + target + " - " + pad + "px)";
 }
+
+// How the toolbar travels to a new dock line. The chrome's slide is a 0.3s
+// animation the bar should ride along with; a keyboard move is tracking the
+// OS's own slide through sparse viewport events, so a short glide smooths the
+// gaps without reading as lag.
+export const DOCK_ANIM_CHROME = "0.3s";
+export const DOCK_ANIM_VIEWPORT = "0.15s";

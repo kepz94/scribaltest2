@@ -1507,11 +1507,14 @@ export default function RichNoteField({
               zIndex: 12,
               background: "var(--soft)",
               borderRadius: "8px 8px 0 0",
-              // Mobile's chrome slides away on scroll-down and back on
-              // scroll-up, so the line this docks to MOVES. Matching that
-              // 0.3s ease means the toolbar travels with the header instead of
-              // arriving early and waiting for it to catch up.
-              transition: "top 0.3s ease",
+              // The line this docks to MOVES: the chrome slides on scroll,
+              // and the keyboard moves the visible edge (Kepu's Aug 7 screen
+              // recording: the whole fixed screen displaced upward, dock line
+              // off above the status bar). The shell publishes how each trip
+              // should feel — 0.3s to ride with the chrome's slide, a short
+              // glide to track the keyboard between sparse viewport events.
+              // Desktop publishes nothing and takes the fallback.
+              transition: "top var(--scribal-chrome-anim, 0.3s) ease",
               // A hairline so the text scrolling underneath reads as passing
               // BEHIND the toolbar. Without it the bar and the box share one
               // background and the words simply vanish at an invisible edge,

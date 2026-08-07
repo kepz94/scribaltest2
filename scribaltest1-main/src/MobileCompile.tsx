@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, CSSProperties } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, CSSProperties } from "react";
 import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import MarkedVerse from "./components/MarkedVerse";
 import { Mark, MarkColor, Tab, WordTag, COLORS, COLOR_MAP, STYLE_POINTS, markStyleCSS } from "./types";
@@ -13,7 +13,7 @@ import {
   synthesisKeyForScope,
 } from "./synthesisKey";
 import { useWebsterReady } from "./useWebsterReady";
-import { dockTop } from "./chromeDock";
+import { dockTop, DOCK_ANIM_CHROME, DOCK_ANIM_VIEWPORT } from "./chromeDock";
 import {
   linkableDefinitionsFor,
   linkableVersesFor,
@@ -316,27 +316,66 @@ export default function MobileCompile({
   // sticky ancestor — and only App.tsx was ever setting the variable, so on
   // mobile the toolbar fell back to top: 0 and docked underneath the overlay.
   //
-  // The chrome is the only input. The keyboard needs no term of its own: iOS
-  // clamps this fixed screen to the visual viewport, so the top of the screen
-  // already IS the top of what can be seen. See chromeDock.ts — adding
-  // visualViewport.offsetTop on top of that is what left the toolbar floating
-  // mid-screen.
-  useEffect(() => {
-    document.documentElement.style.setProperty(
+  // Two inputs: the chrome, and the MEASURED top edge of the visible window
+  // (see chromeDock.ts — iOS handles the keyboard three different ways, two
+  // models have been shipped and disproved on device, so the code measures
+  // instead of modelling). Viewport events fire continuously while the
+  // keyboard slides, so they write the CSS variable directly instead of going
+  // through React state — a re-render per pan frame is jank the bar would
+  // show.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef({ chromeH: 0, chromeHidden: false, pad: 0 });
+  dockRef.current = {
+    chromeH: headerH,
+    chromeHidden: headHidden,
+    pad: scrollPadTop,
+  };
+  const publishDock = useCallback((anim: string) => {
+    const d = dockRef.current;
+    let viewportTop = 0;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (vv && rootRef.current) {
+      // Both numbers are in layout-viewport coordinates, so the difference is
+      // the visible edge in the SCREEN's own space — 0 on an iOS that resizes
+      // or clamps, the pan distance on one that pans.
+      viewportTop = Math.round(
+        vv.offsetTop - rootRef.current.getBoundingClientRect().top
+      );
+    }
+    const s = document.documentElement.style;
+    s.setProperty("--scribal-chrome-anim", anim);
+    s.setProperty(
       "--scribal-chrome-h",
       dockTop({
-        chromeH: headerH,
-        chromeHidden: headHidden,
+        chromeH: d.chromeH,
+        chromeHidden: d.chromeHidden,
         // The scroller's own padding sits between the top of the screen and a
         // sticky `top: 0`, so the offset has to cancel it. Same expression as
         // the scroller below, off one constant, so the two cannot drift.
-        scrollerPadTop: scrollPadTop,
+        scrollerPadTop: d.pad,
+        viewportTop,
       })
     );
+  }, []);
+  useEffect(() => {
+    publishDock(DOCK_ANIM_CHROME);
     return () => {
-      document.documentElement.style.setProperty("--scribal-chrome-h", "0px");
+      const s = document.documentElement.style;
+      s.setProperty("--scribal-chrome-h", "0px");
+      s.setProperty("--scribal-chrome-anim", DOCK_ANIM_CHROME);
     };
-  }, [headerH, headHidden, scrollPadTop]);
+  }, [headerH, headHidden, scrollPadTop, publishDock]);
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const onMove = () => publishDock(DOCK_ANIM_VIEWPORT);
+    vv.addEventListener("resize", onMove);
+    vv.addEventListener("scroll", onMove);
+    return () => {
+      vv.removeEventListener("resize", onMove);
+      vv.removeEventListener("scroll", onMove);
+    };
+  }, [publishDock]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
@@ -780,6 +819,7 @@ export default function MobileCompile({
 
   return (
     <div
+      ref={rootRef}
       style={{
         position: "fixed",
         inset: 0,
