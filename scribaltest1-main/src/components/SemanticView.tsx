@@ -767,6 +767,7 @@ export default function SemanticView({
             // one rich editor everywhere notes are taken (SCR-9), which also
             // ends the plain-textarea/HTML clash between the two views.
             <RichNoteField
+              verseMarksFor={(r) => marks.filter((m) => m.reference === r)}
               value={synthesisFor(selColor)}
               onChange={(t) => onSaveSynthesis(t)}
               accent={COLOR_MAP[selColor]}

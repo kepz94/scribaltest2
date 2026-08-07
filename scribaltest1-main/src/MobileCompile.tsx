@@ -555,6 +555,8 @@ export default function MobileCompile({
     // Every note field on this screen reports its editor, so the chrome knows
     // to leave the top of the screen alone while one is open.
     onEditingChange: noteEditing,
+    // Verse cards at rest render the study's actual markings.
+    verseMarksFor: (r: string) => liveMarks.filter((m) => m.reference === r),
   };
 
   const studySummary = () =>

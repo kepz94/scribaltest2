@@ -535,6 +535,7 @@ export default function Outline(props: OutlineProps) {
                 linkableDefinitions={linkableDefinitions}
                 focusedFor={focusedFor}
                 fullTextFor={fullTextFor}
+                verseMarksFor={(r) => relevantMarks.filter((m) => m.reference === r)}
                 onJumpToReference={onJumpToReference}
                 addLabel="Add your synthesis"
               />
@@ -864,6 +865,7 @@ export default function Outline(props: OutlineProps) {
                             linkableDefinitions={linkableDefinitions}
                             focusedFor={focusedFor}
                             fullTextFor={fullTextFor}
+                verseMarksFor={(r) => relevantMarks.filter((m) => m.reference === r)}
                             onJumpToReference={onJumpToReference}
                           />
                         </div>

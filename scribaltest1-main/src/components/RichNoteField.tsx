@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MarkColor, COLOR_MAP } from "../types";
+import { Mark, MarkColor, COLOR_MAP } from "../types";
+import { chipSegments } from "../chipMarks";
 import { isThemelessColor, richToHtml } from "../cardText";
 import { blockArmAction } from "../blockArm";
 import {
@@ -88,6 +89,10 @@ interface Props {
   // >= 16 — iOS zooms (and the zoom can stick in installed PWAs) when any
   // focused editable's font is under 16px.
   editorFontSize?: number;
+  // The study's marks for a verse, so a verse card at rest renders the SAME
+  // markings the reader shows instead of plain text — the reason people were
+  // hand-bolding inside chips. Omitted = chips render plain, as before.
+  verseMarksFor?: (reference: string) => Mark[];
   // Whether this field currently has its editor open. The mobile compile screen
   // uses it to stop the chrome reclaiming the top of the screen while you are
   // writing — the toolbar is anchored up there, and a returning header would
@@ -1461,6 +1466,7 @@ export default function RichNoteField({
   onJumpToReference,
   editorFontSize = 13.5,
   onEditingChange,
+  verseMarksFor,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -1514,6 +1520,45 @@ export default function RichNoteField({
       if (ref) setPreview({ ref, focused: true });
     }
   }, []);
+
+  // Verse cards at rest inherit the study's ACTUAL markings. The chip's body
+  // is re-rendered through the reader's own segmentation (chipMarks.ts) using
+  // the marks the caller supplies — so a verse looks the same in a note as it
+  // does in the study, and nobody has to hand-bold a chip to see their marks.
+  // Runs over the resting HTML only; the editor's chips stay plain (Lexical
+  // owns that DOM). Safe with dangerouslySetInnerHTML: React rewrites this
+  // container only when `value` changes, which re-runs the decoration.
+  const restRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (editing || !verseMarksFor) return;
+    const host = restRef.current;
+    if (!host) return;
+    const chips = host.querySelectorAll<HTMLElement>(
+      ".scribal-vchip.scribal-vcard[data-ref]"
+    );
+    chips.forEach((el) => {
+      const ref = el.getAttribute("data-ref") || "";
+      if (!ref) return;
+      const full = el.textContent || "";
+      const sep = ref + " — ";
+      if (full.indexOf(sep) !== 0) return; // ref-only chip / unexpected shape
+      const body = full.slice(sep.length);
+      const marks = (verseMarksFor(ref) || []).filter(
+        (m) => m.reference === ref
+      );
+      if (!marks.length) return; // no marks — leave the plain text alone
+      el.textContent = "";
+      const head = document.createElement("span");
+      head.textContent = sep;
+      el.appendChild(head);
+      chipSegments(body.length, marks).forEach((sg) => {
+        const sp = document.createElement("span");
+        sp.textContent = body.slice(sg.start, sg.end);
+        if (sg.css) Object.assign(sp.style, sg.css as any);
+        el.appendChild(sp);
+      });
+    });
+  }, [editing, value, verseMarksFor, has]);
 
   if (editing) {
     const initialConfig = {
@@ -1676,6 +1721,7 @@ export default function RichNoteField({
         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", borderLeft: "3px solid " + accent, background: "var(--soft)", borderRadius: "0 8px 8px 0", padding: "10px 12px" }}>
           <div
             className="scribal-rich-view"
+            ref={restRef}
             onClick={onRestingClick}
             style={{ flex: 1, fontSize: editorFontSize + "px", lineHeight: 1.6, color: "var(--text)", fontFamily: "system-ui, sans-serif", overflowWrap: "anywhere" }}
             dangerouslySetInnerHTML={{
