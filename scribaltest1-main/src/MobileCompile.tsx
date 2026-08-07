@@ -16,6 +16,7 @@ import { useWebsterReady } from "./useWebsterReady";
 import { dockTop } from "./chromeDock";
 import {
   linkableDefinitionsFor,
+  linkableVersesFor,
   hasTaggedWords,
 } from "./linkableDefinitions";
 import SemanticView from "./components/SemanticView";
@@ -38,6 +39,10 @@ interface Props {
   colorLabels: Record<number, string>;
   C: Palette;
   orderOf: (ref: string) => number;
+  // The exact references this study's reading panel shows, when narrower than
+  // its chapters (a keyword study's gathered verses). The Link verse picker
+  // offers these and only these — see linkableVersesFor.
+  panelRefs?: string[];
   sessionNew: Set<string>;
   onJump: (ref: string) => void;
   notes: Record<string, string>;
@@ -125,6 +130,7 @@ export default function MobileCompile({
   colorLabels,
   C,
   orderOf,
+  panelRefs,
   sessionNew,
   onJump,
   notes,
@@ -467,37 +473,26 @@ export default function MobileCompile({
     dictReady
   );
 
-  // Verses this study can link from a note, grouped by the theme they're most
-  // heavily marked in — the same shape the desktop Outline builds, so the note
-  // toolbar offers Link verse on both shells instead of desktop only.
-  const linkableVerses: LinkableVerse[] = Array.from(
-    new Set(liveMarks.map((m) => m.reference))
-  )
-    .sort((a, b) => orderOf(a) - orderOf(b))
-    .map((reference) => {
-      const vMarks = liveMarks.filter((m) => m.reference === reference);
-      let color: MarkColor | null = null;
-      let best = -1;
-      COLORS.forEach((c) => {
-        const w = vMarks
-          .filter((m) => m.color === c)
-          .reduce((sum, m) => sum + (STYLE_POINTS[m.style] || 0), 0);
-        if (w > best) {
-          best = w;
-          color = w > 0 ? c : color;
-        }
-      });
-      const info = VI.get(reference);
-      return {
-        reference,
-        text: info ? info.text : "",
-        color,
-        themeName:
-          color != null
-            ? (colorLabels[color] || "").trim() || "Color " + color
-            : "Unmarked",
-      };
-    });
+  // Verses this study can link from a note — the shared builder, one rule with
+  // desktop: exactly what the reading panel shows. Marked verses group under
+  // their heaviest theme; panelRefs (a keyword study's gathered verses) adds
+  // its not-yet-marked verses as the Unmarked group, and ONLY those — never
+  // the whole chapters they came from.
+  const linkableVerses: LinkableVerse[] = linkableVersesFor(
+    Array.from(
+      new Set([...liveMarks.map((m) => m.reference), ...(panelRefs || [])])
+    )
+      .sort((a, b) => orderOf(a) - orderOf(b))
+      .map((reference) => {
+        const info = VI.get(reference);
+        return { reference, text: info ? info.text : "" };
+      }),
+    liveMarks,
+    STYLE_POINTS as Record<string, number>,
+    (c) => colorLabels[c] || "",
+    // The entry list is already the panel; no second filter needed.
+    null
+  ) as LinkableVerse[];
   // A chip's preview: the marked phrases alone, or the whole verse.
   const focusedForRef = (reference: string) =>
     liveMarks

@@ -11672,6 +11672,9 @@ export default function MobileApp() {
               C={C}
               orderOf={orderOf}
               sessionNew={sessionNew}
+              // A keyword study's reading panel is its gathered verses — the
+              // Link verse picker offers those and only those.
+              panelRefs={cs ? cs.refs : undefined}
               onJump={jumpToRef}
               notes={notes}
               setNote={setNote}

@@ -12,6 +12,7 @@ import {
 } from "../synthesisKey";
 import {
   linkableDefinitionsFor,
+  linkableVersesFor,
   hasTaggedWords,
 } from "../linkableDefinitions";
 import {
@@ -53,6 +54,10 @@ interface OutlineProps {
   // to local state when omitted, so the view still works on its own.
   collapsed?: number[];
   onCollapsedChange?: Dispatch<SetStateAction<number[]>>;
+  // The exact references the study's reading panel shows, when narrower than
+  // the chapters spanned (a keyword study's gathered verses). Restricts the
+  // Link verse picker to the panel — see linkableVersesFor.
+  panelRefs?: string[];
 }
 
 type SortMode = "points" | "order";
@@ -203,25 +208,17 @@ export default function Outline(props: OutlineProps) {
     dictReady
   );
 
-  const linkableVerses: LinkableVerse[] = allEntries.map((e) => {
-    const vMarks = relevantMarks.filter((m) => m.reference === e.reference);
-    let color: MarkColor | null = null;
-    let best = -1;
-    COLORS.forEach((c) => {
-      const w = vMarks
-        .filter((m) => m.color === c)
-        .reduce((sum, m) => sum + STYLE_POINTS[m.style], 0);
-      if (w > best && w > 0) {
-        best = w;
-        color = c;
-      }
-    });
-    const themeName =
-      color != null
-        ? (colorLabels[color] || "").trim() || "Color " + color
-        : "Unmarked";
-    return { reference: e.reference, text: e.text, color, themeName };
-  });
+  // One shared builder (linkableVersesFor) and one rule: offer exactly what
+  // the reading panel shows. For a keyword study that is its GATHERED verses
+  // (panelRefs); built from allEntries instead, the Unmarked group carried
+  // every verse of every chapter a gathered verse came from.
+  const linkableVerses: LinkableVerse[] = linkableVersesFor(
+    allEntries,
+    relevantMarks,
+    STYLE_POINTS,
+    (c) => colorLabels[c] || "",
+    props.panelRefs
+  ) as LinkableVerse[];
 
   // Merge overlapping/adjacent ranges of the SAME style into clean runs
   // (SCR-12). Stacked near-duplicate marks (the triple-click double-fire,

@@ -13382,6 +13382,15 @@ export default function App() {
               <Outline
                 savedPins={scopedPins[effectiveScope]}
                 onPins={(p) => setScopedPins(effectiveScope, p)}
+                // A keyword study's reading panel shows its GATHERED verses,
+                // not the whole chapters they came from — so that is all the
+                // Link verse picker may offer (Kepu, Aug 7: the Unmarked group
+                // was every verse of every chapter he had ever pulled from).
+                panelRefs={
+                  compileStudy && studyRefSet
+                    ? Array.from(studyRefSet)
+                    : undefined
+                }
                 {...sharedCompileProps}
                 tags={effectiveTags}
                 notes={notes}
