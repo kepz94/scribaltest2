@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MarkColor, COLOR_MAP } from "../types";
 import { isThemelessColor, richToHtml } from "../cardText";
+import {
+  noteCommit,
+  autosaveDueNow,
+  AUTOSAVE_PAUSE_MS,
+  CommitReason,
+} from "../noteAutosave";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -1102,6 +1108,126 @@ export {
   stripThemelessColors,
 } from "../cardText";
 
+// ═══ autosave ══════════════════════════════════════════════════════════════
+// An open editor commits as you go, the way everything else in this app does.
+// A mark is in the reducer — and in localStorage, and on its way to the cloud —
+// the instant you make it; a note used to reach the store ONLY when Done was
+// pressed, so the words lived nowhere but the editor's own memory until then.
+// Leaving the screen unmounted the editor and took them with it, which is
+// indistinguishable from a save that silently failed.
+//
+// This writes a beat after you stop typing, when you tap away from the box,
+// when the editor leaves the screen, and when iOS takes the tab. Done still
+// exists and still does the one thing autosave deliberately will not: clear a
+// note you emptied on purpose (see noteAutosave.ts for why that asymmetry is
+// the safety property).
+function useNoteAutosave(
+  editing: boolean,
+  value: string,
+  onChange: (html: string) => void
+) {
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // What the editor serialized the moment InitPlugin seeded it. Lexical's HTML
+  // is not byte-identical to what was stored (classes, normalization), so
+  // "has the user changed anything" must be measured against what the editor
+  // itself produced on open. Measured against the stored string instead, every
+  // open would look like an edit and would stamp a note nobody touched — and
+  // the stamp is what decides sync merges.
+  const baselineRef = useRef<string | null>(null);
+  // The newest serialization since the last commit; null means untouched.
+  const pendingRef = useRef<string | null>(null);
+  // When the oldest uncommitted keystroke arrived, for the max-wait ceiling.
+  const sinceRef = useRef(0);
+  const timerRef = useRef<any>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const commit = useCallback((reason: CommitReason) => {
+    clearTimer();
+    const html = pendingRef.current;
+    if (html == null) return;
+    const r = noteCommit(html, valueRef.current, reason);
+    if (!r.save) return;
+    // Believe our own write until the parent hands the value back. Without it,
+    // a second commit before that round trip re-sends identical text and bumps
+    // the stamp again for no edit.
+    valueRef.current = r.text;
+    sinceRef.current = 0;
+    onChangeRef.current(r.text);
+  }, []);
+
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  const onEditorChange = useCallback((editorState: any, editor: any) => {
+    let html = "";
+    editorState.read(() => {
+      html = $generateHtmlFromNodes(editor, null);
+    });
+    // The seeding update, not a keystroke.
+    if (baselineRef.current === null) {
+      baselineRef.current = html;
+      return;
+    }
+    if (pendingRef.current === null && html === baselineRef.current) return;
+    pendingRef.current = html;
+    const now = Date.now();
+    if (!sinceRef.current) sinceRef.current = now;
+    if (autosaveDueNow(now, sinceRef.current)) {
+      commitRef.current("typing");
+      return;
+    }
+    clearTimer();
+    timerRef.current = setTimeout(
+      () => commitRef.current("typing"),
+      AUTOSAVE_PAUSE_MS
+    );
+  }, []);
+
+  // Leaving the screen, and iOS reclaiming the tab, both end an editing session
+  // without a Done — and a pending debounce dies with the process, which is
+  // exactly how an iPhone PWA loses the last thing you wrote. Flush on the way
+  // out of both.
+  useEffect(() => {
+    if (!editing) return;
+    const flush = () => commitRef.current("typing");
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+      flush();
+    };
+  }, [editing]);
+
+  // Done and Delete own the write from that point on. Dropping what is pending
+  // keeps the unmount flush above from writing over what they just decided.
+  const reset = useCallback(() => {
+    clearTimer();
+    pendingRef.current = null;
+    baselineRef.current = null;
+    sinceRef.current = 0;
+  }, []);
+
+  return { onEditorChange, commit, reset };
+}
+
 // ═══ RichCardText: a study-table card's text slot (SCR-63) ═════════════════
 // The lazy-mount rule in one component: at rest the value renders as static
 // HTML in the CARD's own typography — no editor mounted, so a table of 30+
@@ -1130,10 +1256,10 @@ export function RichCardText({
   onDone?: () => void;
 }) {
   const [editing, setEditing] = useState(!!autoFocus);
-  const htmlRef = useRef(value);
   const has = (value || "").trim().length > 0;
+  const autosave = useNoteAutosave(editing, value, onChange);
   const openEditor = () => {
-    htmlRef.current = value;
+    autosave.reset();
     setEditing(true);
   };
   // If the parent re-mounts this slot mid-flow, a still-true autoFocus
@@ -1169,17 +1295,13 @@ export function RichCardText({
     nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, HorizontalRuleNode, ChipNode, DefChipNode],
     html: { import: styleImportMap },
   };
+  // Done runs the same rule autosave runs, with the one power autosave lacks:
+  // clearing a card the user emptied on purpose. By now the text is usually
+  // already saved \u2014 Done's job is to close the card, not to be the only chance
+  // the words get.
   const save = () => {
-    // an editor holding only an empty paragraph saves as empty
-    const out = htmlRef.current || "";
-    const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
-    // An editor that opened empty and is still empty has nothing to say. It
-    // used to save "" anyway, which reads as a deletion \u2014 and a deletion that
-    // syncs. That is how an untouched Done could erase a note the editor had
-    // simply never been handed. Emptying text the user could see is still a
-    // real clear and still saves.
-    if (textOnly) onChange(out);
-    else if (has) onChange("");
+    autosave.commit("done");
+    autosave.reset();
     setEditing(false);
     if (onDone) onDone();
   };
@@ -1204,6 +1326,10 @@ export function RichCardText({
             contentEditable={
               <ContentEditable
                 className="scribal-rich-editor"
+                // Tapping any control outside the box — including a card's own
+                // buttons — commits first, so no button on the screen can be
+                // the one that discards what you just wrote.
+                onBlur={() => autosave.commit("typing")}
                 style={{
                   padding: "10px 12px",
                   minHeight: "56px",
@@ -1239,13 +1365,7 @@ export function RichCardText({
             accidental <tag>-looking tokens — enters the editor escaped, never
             DOM-parsed as markup. */}
         <InitPlugin html={value ? richToHtml(value) : ""} />
-        <OnChangePlugin
-          onChange={(editorState: any, editor: any) => {
-            editorState.read(() => {
-              htmlRef.current = $generateHtmlFromNodes(editor, null);
-            });
-          }}
-        />
+        <OnChangePlugin onChange={autosave.onEditorChange} />
       </LexicalComposer>
       <div
         style={{
@@ -1298,7 +1418,11 @@ export default function RichNoteField({
   const [defFilter, setDefFilter] = useState("");
   const [preview, setPreview] = useState<{ ref: string; focused: boolean } | null>(null);
   const has = (value || "").trim().length > 0;
-  const htmlRef = useRef(value);
+  const autosave = useNoteAutosave(editing, value, onChange);
+  const openEditor = () => {
+    autosave.reset();
+    setEditing(true);
+  };
 
   const groups: { name: string; color: MarkColor | null; verses: LinkableVerse[] }[] = [];
   linkableVerses.forEach((v) => {
@@ -1389,6 +1513,10 @@ export default function RichNoteField({
               contentEditable={
                 <ContentEditable
                   className="scribal-rich-editor"
+                  // Tapping any control outside the box — Save to Studies, a
+                  // chapter arrow, the view tabs — commits first, so no button
+                  // on the screen can be the one that discards what you wrote.
+                  onBlur={() => autosave.commit("typing")}
                   style={{ padding: "11px 12px", minHeight: "96px", fontSize: editorFontSize + "px", lineHeight: 1.7, color: "var(--text)", outline: "none", fontFamily: "system-ui, sans-serif" }}
                 />
               }
@@ -1405,29 +1533,19 @@ export default function RichNoteField({
           <TabIndentationPlugin />
           <HistoryPlugin />
           <InitPlugin html={value} />
-          <OnChangePlugin
-            onChange={(editorState: any, editor: any) => {
-              editorState.read(() => {
-                htmlRef.current = $generateHtmlFromNodes(editor, null);
-              });
-            }}
-          />
+          <OnChangePlugin onChange={autosave.onEditorChange} />
         </LexicalComposer>
         <div style={{ display: "flex", gap: "8px", padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
           <button
             onMouseDown={(e) => e.preventDefault()}
+            // Done runs the same rule autosave runs, plus the one power
+            // autosave deliberately lacks: clearing a note the user emptied on
+            // purpose. By the time it is pressed the text is normally already
+            // saved, so Done closes the box rather than being the only chance
+            // the words ever get. Delete, below, is still the deliberate wipe.
             onClick={() => {
-              // an editor holding only an empty paragraph saves as empty
-              const out = htmlRef.current || "";
-              const textOnly = out.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
-              // An editor that opened empty and is still empty has nothing to
-              // say. It used to save "" anyway, which reads as a deletion \u2014 and
-              // under last-write-wins, a deletion that syncs. That is how an
-              // untouched Done could erase a note the editor had simply never
-              // been handed. Emptying text the user could actually see is still
-              // a real clear; Delete, below, remains the deliberate path.
-              if (textOnly) onChange(out);
-              else if (has) onChange("");
+              autosave.commit("done");
+              autosave.reset();
               setEditing(false);
               setLinkOpen(false);
             }}
@@ -1438,7 +1556,10 @@ export default function RichNoteField({
           {has && (
             <button
               onMouseDown={(e) => e.preventDefault()}
+              // Reset first: dropping what is pending stops the unmount flush
+              // from writing the text straight back over the wipe.
               onClick={() => {
+                autosave.reset();
                 onChange("");
                 setEditing(false);
               }}
@@ -1467,7 +1588,7 @@ export default function RichNoteField({
             }}
           />
           <button
-            onClick={() => setEditing(true)}
+            onClick={openEditor}
             style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: "8px", padding: "5px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "system-ui, sans-serif", color: "var(--muted)" }}
           >
             Edit
@@ -1509,7 +1630,7 @@ export default function RichNoteField({
 
   return (
     <button
-      onClick={() => setEditing(true)}
+      onClick={openEditor}
       aria-label={addLabel || "Add a note"}
       style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px dashed var(--border)", borderRadius: "8px", padding: "10px", cursor: "pointer", fontFamily: "system-ui, sans-serif" }}
     >
