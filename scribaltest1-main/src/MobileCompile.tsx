@@ -13,7 +13,7 @@ import {
   synthesisKeyForScope,
 } from "./synthesisKey";
 import { useWebsterReady } from "./useWebsterReady";
-import { dockLine } from "./chromeDock";
+import { dockTop } from "./chromeDock";
 import {
   linkableDefinitionsFor,
   hasTaggedWords,
@@ -282,6 +282,13 @@ export default function MobileCompile({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // The scroll area clears the chrome with padding rather than by resizing, so
+  // nothing reflows when the chrome slides. One constant, used by the scroller
+  // itself and by the toolbar's offset — a sticky offset resolves against this
+  // container's CONTENT box, so anything docking to the top of the SCREEN has to
+  // subtract it back off.
+  const scrollPadTop = headerH + 10;
+
   // Publish the line a note's toolbar docks to. A note cannot work this out from
   // the inside — the chrome is an absolute overlay over the scroller, not a
   // sticky ancestor — and only App.tsx was ever setting the variable, so on
@@ -295,12 +302,19 @@ export default function MobileCompile({
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--scribal-chrome-h",
-      dockLine({ chromeH: headerH, chromeHidden: headHidden }) + "px"
+      dockTop({
+        chromeH: headerH,
+        chromeHidden: headHidden,
+        // The scroller's own padding sits between the top of the screen and a
+        // sticky `top: 0`, so the offset has to cancel it. Same expression as
+        // the scroller below, off one constant, so the two cannot drift.
+        scrollerPadTop: scrollPadTop,
+      })
     );
     return () => {
       document.documentElement.style.setProperty("--scribal-chrome-h", "0px");
     };
-  }, [headerH, headHidden]);
+  }, [headerH, headHidden, scrollPadTop]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
@@ -1288,7 +1302,7 @@ export default function MobileCompile({
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
           overscrollBehavior: "contain",
-          paddingTop: headerH + 10,
+          paddingTop: scrollPadTop,
           paddingLeft: 16,
           paddingRight: 16,
           paddingBottom: selectMode

@@ -1,38 +1,81 @@
-// The toolbar docks to the top of the screen, clearing the chrome only while
-// the chrome is on screen.
-import { dockLine } from "./chromeDock";
+// Where the toolbar lands, and what its `top` is measured from. The second one
+// is the part that was wrong twice.
+import { dockTarget, dockTop } from "./chromeDock";
 
-const CHROME = 120;
+const CHROME = 127;
+const PAD = CHROME + 10; // the mobile scroller's paddingTop
 
-test("clears the chrome while the chrome is showing", () => {
-  expect(dockLine({ chromeH: CHROME, chromeHidden: false })).toBe(120);
-});
-
-test("goes to the top of the screen once the chrome slides away", () => {
-  expect(dockLine({ chromeH: CHROME, chromeHidden: true })).toBe(0);
-});
-
-// The keyboard needs no term of its own: iOS clamps the fixed compile screen to
-// the visual viewport, so the top of the screen IS the top of what can be seen.
-// Adding visualViewport.offsetTop on top of that docked the toolbar one full
-// keyboard-pan too low — mid-screen, between the note's own lines.
-test("the dock line depends on nothing but the chrome", () => {
-  const inputs = { chromeH: CHROME, chromeHidden: true };
-  expect(dockLine(inputs)).toBe(0);
-  expect(dockLine({ ...inputs, chromeHidden: false })).toBe(120);
-  // Same two answers whatever the viewport is doing — there is no third input
-  // that can push it down the screen.
-  expect(Object.keys(inputs).length).toBe(2);
-});
-
-describe("nothing may push it below the top", () => {
-  test("an unmeasured or nonsense chrome docks at the top", () => {
-    expect(dockLine({ chromeH: 0, chromeHidden: false })).toBe(0);
-    expect(dockLine({ chromeH: -50, chromeHidden: false })).toBe(0);
-    expect(dockLine({ chromeH: NaN as any, chromeHidden: false })).toBe(0);
-    expect(dockLine({ chromeH: undefined as any, chromeHidden: false })).toBe(0);
+describe("where it should land on screen", () => {
+  test("scrolled, chrome gone: under the camera cutout", () => {
+    expect(dockTarget({ chromeH: CHROME, chromeHidden: true })).toBe(
+      "env(safe-area-inset-top)"
+    );
   });
-  test("always a finite number", () => {
-    expect(Number.isFinite(dockLine({ chromeH: NaN as any, chromeHidden: false }))).toBe(true);
+  test("chrome showing: flush under it, since the chrome paints over the scroller", () => {
+    expect(dockTarget({ chromeH: CHROME, chromeHidden: false })).toBe("127px");
+  });
+});
+
+describe("the offset cancels the scroller's own top padding", () => {
+  // A sticky offset resolves against the scroll container's CONTENT box, so the
+  // padding already sits between the top of the screen and `top: 0`. Publishing
+  // the target on its own put the bar one chrome-height down the screen.
+  test("scrolled: lands at the safe-area top, not at the padding", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: true, scrollerPadTop: PAD })
+    ).toBe("calc(env(safe-area-inset-top) - 137px)");
+  });
+
+  test("chrome showing: lands flush under the chrome", () => {
+    expect(
+      dockTop({ chromeH: CHROME, chromeHidden: false, scrollerPadTop: PAD })
+    ).toBe("calc(127px - 137px)");
+  });
+
+  test("the value is expected to go negative — that is the point", () => {
+    // 127 - 137 renders at 127 from the top of the screen. Refusing to go
+    // negative would pin it at the padding, which is the bug.
+    const v = dockTop({
+      chromeH: CHROME,
+      chromeHidden: false,
+      scrollerPadTop: PAD,
+    });
+    expect(v).toContain("- 137px");
+  });
+});
+
+describe("a container with no padding — the desktop compile screen", () => {
+  test("target and offset are the same number", () => {
+    expect(
+      dockTop({ chromeH: 76, chromeHidden: false, scrollerPadTop: 0 })
+    ).toBe("76px");
+  });
+  test("no pointless calc() wrapper", () => {
+    expect(
+      dockTop({ chromeH: 76, chromeHidden: false, scrollerPadTop: 0 })
+    ).not.toContain("calc");
+  });
+});
+
+describe("nonsense in, usable CSS out", () => {
+  test("an unmeasured chrome still yields a valid value", () => {
+    expect(
+      dockTop({ chromeH: 0, chromeHidden: false, scrollerPadTop: 0 })
+    ).toBe("0px");
+    expect(
+      dockTop({ chromeH: NaN as any, chromeHidden: false, scrollerPadTop: PAD })
+    ).toBe("calc(0px - 137px)");
+  });
+  test("a negative or missing padding is not subtracted", () => {
+    expect(
+      dockTop({ chromeH: 50, chromeHidden: false, scrollerPadTop: -20 })
+    ).toBe("50px");
+    expect(
+      dockTop({
+        chromeH: 50,
+        chromeHidden: false,
+        scrollerPadTop: undefined as any,
+      })
+    ).toBe("50px");
   });
 });

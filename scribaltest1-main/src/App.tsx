@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./desktop.css";
+import { dockTop } from "./chromeDock";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
 import { useWordTags } from "./hooks/useWordTags";
@@ -1295,11 +1296,16 @@ export default function App() {
   // is the ONLY place the synthesis box lives, the toolbar docked ~112px below
   // a header that had nothing under it. It was sticking to a line measured off
   // a different screen, which is why it appeared to hover in open space.
+  //
+  // scrollerPadTop is 0 here: the compile screen scrolls the DOCUMENT, which has
+  // no top padding, so the offset and the place it lands are the same number.
+  // Mobile's scroller does have padding and has to subtract it — see
+  // chromeDock.ts, which is the shared contract for what this variable means.
   useEffect(() => {
     const chromeH = mode === "read" ? headerH + tabsH + 46 : headerH;
     document.documentElement.style.setProperty(
       "--scribal-chrome-h",
-      chromeH + "px"
+      dockTop({ chromeH, chromeHidden: false, scrollerPadTop: 0 })
     );
   }, [headerH, tabsH, mode]);
 
