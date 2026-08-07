@@ -281,6 +281,22 @@ export default function MobileCompile({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // Publish that same measurement as the line a note's toolbar docks to. A note
+  // cannot see this chrome from the inside — it is an absolute overlay over the
+  // scroller, not a sticky ancestor — and only App.tsx was ever setting the
+  // variable, so on mobile the toolbar fell back to top: 0 and docked to the
+  // top of the scroll box, underneath the overlay. It tracks the slide too: the
+  // chrome leaves on scroll-down, and the toolbar rides up with it instead of
+  // holding a gap where the header used to be.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--scribal-chrome-h",
+      (headHidden ? 0 : headerH) + "px"
+    );
+    return () => {
+      document.documentElement.style.setProperty("--scribal-chrome-h", "0px");
+    };
+  }, [headerH, headHidden]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );

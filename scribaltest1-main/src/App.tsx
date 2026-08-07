@@ -1288,12 +1288,20 @@ export default function App() {
   // the toolbar pinned itself to top: 0, which is behind the header (z-index 24
   // against its 12): it was sticking correctly and landing out of sight, so a
   // long synthesis meant scrolling up to reach it and back down to keep typing.
+  //
+  // It has to be the chrome that is ON SCREEN, not the tallest the app can get.
+  // The tab strip and the legend bar are both `mode === "read"` only, but this
+  // published all three heights in every mode — so on the compile screen, which
+  // is the ONLY place the synthesis box lives, the toolbar docked ~112px below
+  // a header that had nothing under it. It was sticking to a line measured off
+  // a different screen, which is why it appeared to hover in open space.
   useEffect(() => {
+    const chromeH = mode === "read" ? headerH + tabsH + 46 : headerH;
     document.documentElement.style.setProperty(
       "--scribal-chrome-h",
-      headerH + tabsH + 46 + "px"
+      chromeH + "px"
     );
-  }, [headerH, tabsH]);
+  }, [headerH, tabsH, mode]);
 
   // Link groups: maps a chapter scope ("Genesis 1") to a group id. Chapters in
   // the same group are one study — they compile together and share one set of

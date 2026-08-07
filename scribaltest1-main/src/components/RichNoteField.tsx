@@ -1457,7 +1457,16 @@ export default function RichNoteField({
               synthesis grows as tall as it wants; with the toolbar pinned to
               the top of the box you had to scroll back up to use it, and a
               picker rendered at the bottom of the box opened below the fold —
-              you could not see the options you had just asked for. */}
+              you could not see the options you had just asked for.
+
+              This wrapper is what the toolbar sticks WITHIN, and it deliberately
+              holds only the toolbar and the text — not the Done / Delete row
+              below it. A sticky element ranges over its whole containing block,
+              so with the box itself as the container the toolbar stayed pinned
+              after the text had scrolled past and came to rest sitting on top
+              of the footer buttons. Ending the container where the text ends
+              hands it back to the top of the box on the way out. */}
+          <div style={{ position: "relative" }}>
           <div
             style={{
               // Dock beneath the app's sticky chrome, whose height the shell
@@ -1469,6 +1478,17 @@ export default function RichNoteField({
               zIndex: 12,
               background: "var(--soft)",
               borderRadius: "8px 8px 0 0",
+              // Mobile's chrome slides away on scroll-down and back on
+              // scroll-up, so the line this docks to MOVES. Matching that
+              // 0.3s ease means the toolbar travels with the header instead of
+              // snapping to the new position a frame later.
+              transition: "top 0.3s ease",
+              // A hairline so the text scrolling underneath reads as passing
+              // BEHIND the toolbar. Without it the bar and the box share one
+              // background and the words simply vanish at an invisible edge,
+              // which is most of what made it look like a strip floating loose
+              // over the page.
+              borderBottom: "1px solid var(--border)",
             }}
           >
             <Toolbar
@@ -1527,6 +1547,7 @@ export default function RichNoteField({
               }
               ErrorBoundary={LexicalErrorBoundary}
             />
+          </div>
           </div>
           <ListPlugin />
           <CheckListPlugin />
