@@ -10267,7 +10267,12 @@ export default function App() {
               const evictRisk = cloudPersisted === false;
               const label =
                 (!cloudSignedIn
-                  ? "Local only"
+                  ? timeStr
+                    ? // Synced before but signed out now: edits are stranded
+                      // on this machine. The quiet version of this state cost
+                      // an afternoon (Aug 7) — never whisper it.
+                      "Not syncing — signed out ⚠"
+                    : "Local only"
                   : cloudError
                   ? "Sync failed ⚠"
                   : cloudSyncing

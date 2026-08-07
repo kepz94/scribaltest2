@@ -4792,14 +4792,27 @@ export default function MobileApp() {
             <span
               style={{
                 fontSize: "11px",
-                color: C.muted,
+                // The signed-out-but-used-to-sync state gets the flash amber
+                // and bold — it is the one label on this row that means "your
+                // edits are not leaving this phone".
+                color:
+                  !cloudSignedIn && lastSync ? "#d9a441" : C.muted,
+                fontWeight: !cloudSignedIn && lastSync ? 700 : undefined,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
               {(!cloudSignedIn
-                ? "Saved on this phone"
+                ? lastSync
+                  ? // This device HAS synced before, so signed-out is an
+                    // anomaly, not a lifestyle — and it must not whisper.
+                    // Aug 7 2026: a logged-out phone showed the same quiet
+                    // gray label as a healthy local-only install, and an
+                    // entire afternoon went into "sync is broken" while the
+                    // phone simply wasn't listening.
+                    "Not syncing — signed out ⚠"
+                  : "Saved on this phone"
                 : cloudError
                 ? "Sync failed ⚠"
                 : cloudSyncing
@@ -7872,6 +7885,24 @@ export default function MobileApp() {
                   </>
                 ) : (
                   <>
+                    {/* Signed out on a device that HAS synced: say what that
+                        means before offering the button. The quiet version of
+                        this state cost an afternoon (Aug 7). */}
+                    {lastSync && (
+                      <div
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          color: "#d9a441",
+                          lineHeight: 1.5,
+                          marginBottom: "8px",
+                        }}
+                      >
+                        ⚠ You’re signed out. Nothing made on this phone is
+                        reaching your other devices, and their changes aren’t
+                        arriving here.
+                      </div>
+                    )}
                     {actionBtn(
                       "Sign in with Google",
                       () => {
