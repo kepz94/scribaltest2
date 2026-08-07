@@ -258,10 +258,22 @@ export default function MobileCompile({
   // Hide the header + toggles while reading down through verses (and bring
   // them back when scrolling up), so a long study isn't half-covered by chrome.
   const [headHidden, setHeadHidden] = useState(false);
+  // How many note editors are open. While one is, its toolbar is anchored to the
+  // top of the screen, and the chrome is not allowed to take that back: scrolling
+  // up by a line would otherwise slide the header in over the toolbar and shove
+  // it a chrome's height down the screen mid-paragraph. It still gets out of the
+  // way on scroll-down, and it still comes home once you are back at the top of
+  // the study, where the chrome is what you are reaching for.
+  const [editorsOpen, setEditorsOpen] = useState(0);
+  const noteEditing = (on: boolean) =>
+    setEditorsOpen((n) => Math.max(0, n + (on ? 1 : -1)));
+  const editorsOpenRef = useRef(0);
+  editorsOpenRef.current = editorsOpen;
   const lastY = useRef(0);
   const onScroll = (y: number) => {
     if (y > lastY.current + 6 && y > 40) setHeadHidden(true);
-    else if (y < lastY.current - 6) setHeadHidden(false);
+    else if (y < lastY.current - 6 && !(editorsOpenRef.current > 0 && y > 40))
+      setHeadHidden(false);
     lastY.current = y;
   };
   // Measure the chrome (header + toggles) so the scroll area can pad its top by
@@ -502,6 +514,9 @@ export default function MobileCompile({
     focusedFor: focusedForRef,
     fullTextFor: fullTextForRef,
     onJumpToReference: onJump,
+    // Every note field on this screen reports its editor, so the chrome knows
+    // to leave the top of the screen alone while one is open.
+    onEditingChange: noteEditing,
   };
 
   const studySummary = () =>

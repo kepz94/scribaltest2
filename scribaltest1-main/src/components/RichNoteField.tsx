@@ -87,6 +87,13 @@ interface Props {
   // >= 16 — iOS zooms (and the zoom can stick in installed PWAs) when any
   // focused editable's font is under 16px.
   editorFontSize?: number;
+  // Whether this field currently has its editor open. The mobile compile screen
+  // uses it to stop the chrome reclaiming the top of the screen while you are
+  // writing — the toolbar is anchored up there, and a returning header would
+  // push it back down the moment you scrolled up a line. Reported on unmount
+  // too, so a field that leaves the screen mid-edit does not leave the count
+  // holding a door open forever.
+  onEditingChange?: (editing: boolean) => void;
 }
 
 const isPlainText = (v: string) => !/<[a-z][\s\S]*>/i.test(v);
@@ -1409,6 +1416,7 @@ export default function RichNoteField({
   fullTextFor,
   onJumpToReference,
   editorFontSize = 13.5,
+  onEditingChange,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -1423,6 +1431,27 @@ export default function RichNoteField({
     autosave.reset();
     setEditing(true);
   };
+
+  // Report the open/closed edge, and always report closed on the way out — a
+  // field unmounted mid-edit (leaving for the reader) would otherwise leave the
+  // listener believing an editor is still open.
+  const editingCbRef = useRef(onEditingChange);
+  useEffect(() => {
+    editingCbRef.current = onEditingChange;
+  }, [onEditingChange]);
+  // Strictly a matched pair: true on the way in, false on the way out —
+  // including when the field unmounts mid-edit. Reporting the current value on
+  // mount instead would fire `false` for every field that merely rendered, and
+  // a listener counting open editors would be decremented by fields that were
+  // never open.
+  useEffect(() => {
+    if (!editing) return;
+    const cb = editingCbRef.current;
+    if (cb) cb(true);
+    return () => {
+      if (cb) cb(false);
+    };
+  }, [editing]);
 
   const groups: { name: string; color: MarkColor | null; verses: LinkableVerse[] }[] = [];
   linkableVerses.forEach((v) => {
