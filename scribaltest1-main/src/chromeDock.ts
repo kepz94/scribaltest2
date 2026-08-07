@@ -1,51 +1,33 @@
-// Where a note's sticky toolbar should dock, in the compile screen's own
-// coordinates.
+// Where a note's sticky toolbar docks, in the compile screen's own coordinates.
 //
-// The compile screen is `position: fixed; inset: 0`, so it is laid out against
-// the LAYOUT viewport — and the layout viewport does not move when the software
-// keyboard opens. What moves is the VISUAL viewport: iOS shrinks it to sit above
-// the keyboard and then pans it down the layout viewport so the caret stays in
-// sight. Everything anchored to the top of the fixed screen — the chrome, and
-// the toolbar docked under it — pans straight out of view with it.
+// One rule: the top of the screen, below the chrome only while the chrome is
+// actually there. Scroll down, the chrome slides away, the toolbar goes to the
+// top and stays there.
 //
-// So the dock line is the lower of two edges, both measured from the top of the
-// fixed screen:
-//   1. the bottom of the chrome overlay, when the chrome is showing
-//   2. the top of the part of the screen the reader can actually SEE
+// It does NOT add visualViewport.offsetTop, and that is the whole lesson of
+// this file. The reasoning that said it should went: the compile screen is
+// `position: fixed; inset: 0`, so it is laid out against the layout viewport,
+// which the software keyboard does not move — therefore anything docked to its
+// top pans out of view when iOS pans the visual viewport to clear the keyboard.
+// Every step of that is true except the conclusion, because iOS already clamps
+// the fixed screen to the visual viewport. The offset is applied for us. Adding
+// it again put the toolbar exactly one keyboard-pan BELOW where it belonged —
+// floating in the middle of the screen between the note's own lines, which is
+// what Kepu photographed (Aug 7, ~266px down, chrome not even on screen).
 //
-// Below the chrome while the chrome is there; below the keyboard's fold once
-// the keyboard has pushed the view past it. Taking the max is what makes it
-// answer to both, instead of only to the one that happens to be moving.
+// If a keyboard-aware offset is ever wanted here again: measure it on a device
+// first. This one was shipped on unit tests and a model of iOS, and the model
+// was wrong in the one way that mattered.
 
 export interface DockInput {
   // Measured height of the chrome overlay (header + toggles).
   chromeH: number;
   // Whether the chrome has slid away on scroll-down.
   chromeHidden: boolean;
-  // visualViewport.offsetTop: how far the visible window has been panned down
-  // the layout viewport. 0 whenever no keyboard is up.
-  viewportTop: number;
 }
 
-export function dockLine({
-  chromeH,
-  chromeHidden,
-  viewportTop,
-}: DockInput): number {
-  const chromeBottom = chromeHidden ? 0 : Math.max(0, chromeH || 0);
-  const visibleTop = Math.max(0, viewportTop || 0);
-  return Math.max(chromeBottom, visibleTop);
-}
-
-// How long the toolbar should take to travel to a new dock line.
-//
-// The chrome's slide is a 0.3s animation and the toolbar should ride with it,
-// or it arrives early and waits for the header to catch up. A keyboard move is
-// not an animation — it is tracking a gesture, and a transition there makes the
-// toolbar lag visibly behind the thing it is supposed to be pinned under.
-export const DOCK_ANIM_SLIDE = "0.3s";
-export const DOCK_ANIM_INSTANT = "0s";
-
-export function dockAnim(viewportMoved: boolean): string {
-  return viewportMoved ? DOCK_ANIM_INSTANT : DOCK_ANIM_SLIDE;
+export function dockLine({ chromeH, chromeHidden }: DockInput): number {
+  if (chromeHidden) return 0;
+  const h = Number(chromeH);
+  return Number.isFinite(h) && h > 0 ? h : 0;
 }

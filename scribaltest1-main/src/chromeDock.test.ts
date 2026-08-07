@@ -1,83 +1,38 @@
-// The dock line has to answer to two independent things that move the toolbar's
-// reference: the chrome sliding on scroll, and the keyboard panning the visible
-// window. It only ever answered to the first.
-import {
-  dockLine,
-  dockAnim,
-  DOCK_ANIM_SLIDE,
-  DOCK_ANIM_INSTANT,
-} from "./chromeDock";
+// The toolbar docks to the top of the screen, clearing the chrome only while
+// the chrome is on screen.
+import { dockLine } from "./chromeDock";
 
 const CHROME = 120;
 
-describe("no keyboard — the chrome alone decides", () => {
-  test("docks below the chrome while it is showing", () => {
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: false, viewportTop: 0 })
-    ).toBe(120);
-  });
-  test("rides to the top once the chrome slides away", () => {
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: true, viewportTop: 0 })
-    ).toBe(0);
-  });
+test("clears the chrome while the chrome is showing", () => {
+  expect(dockLine({ chromeH: CHROME, chromeHidden: false })).toBe(120);
 });
 
-describe("keyboard up — the visible window decides once it passes the chrome", () => {
-  // iOS pans the visual viewport down the layout viewport to keep the caret
-  // above the keyboard. The fixed screen does not move, so the chrome and
-  // anything docked under it pan out of view.
-  test("a pan smaller than the chrome leaves the chrome in charge", () => {
-    // 80px down: the chrome's bottom edge (120) is still the lower of the two.
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: false, viewportTop: 80 })
-    ).toBe(120);
-  });
-
-  test("a pan past the chrome hands over to the visible top", () => {
-    // The whole chrome is now above the fold; docking at 120 would put the
-    // toolbar off-screen, which is the reported bug.
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: false, viewportTop: 260 })
-    ).toBe(260);
-  });
-
-  test("keyboard up AND chrome slid away still follows the keyboard", () => {
-    // The case the old code got most wrong: both inputs say "move", and it
-    // tracked neither.
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: true, viewportTop: 260 })
-    ).toBe(260);
-  });
-
-  test("the keyboard closing returns it to the chrome", () => {
-    expect(
-      dockLine({ chromeH: CHROME, chromeHidden: false, viewportTop: 0 })
-    ).toBe(120);
-  });
+test("goes to the top of the screen once the chrome slides away", () => {
+  expect(dockLine({ chromeH: CHROME, chromeHidden: true })).toBe(0);
 });
 
-describe("nothing is allowed to push it above the fold", () => {
-  test("negative or missing values floor at 0", () => {
-    expect(
-      dockLine({ chromeH: -50, chromeHidden: false, viewportTop: -10 })
-    ).toBe(0);
-    expect(
-      dockLine({ chromeH: NaN as any, chromeHidden: false, viewportTop: 0 })
-    ).toBe(0);
-  });
-  test("a chrome not yet measured docks at the top, not at NaN", () => {
-    const d = dockLine({ chromeH: 0, chromeHidden: false, viewportTop: 0 });
-    expect(d).toBe(0);
-    expect(Number.isFinite(d)).toBe(true);
-  });
+// The keyboard needs no term of its own: iOS clamps the fixed compile screen to
+// the visual viewport, so the top of the screen IS the top of what can be seen.
+// Adding visualViewport.offsetTop on top of that docked the toolbar one full
+// keyboard-pan too low — mid-screen, between the note's own lines.
+test("the dock line depends on nothing but the chrome", () => {
+  const inputs = { chromeH: CHROME, chromeHidden: true };
+  expect(dockLine(inputs)).toBe(0);
+  expect(dockLine({ ...inputs, chromeHidden: false })).toBe(120);
+  // Same two answers whatever the viewport is doing — there is no third input
+  // that can push it down the screen.
+  expect(Object.keys(inputs).length).toBe(2);
 });
 
-describe("how it travels", () => {
-  test("the chrome's slide is animated so the toolbar rides with it", () => {
-    expect(dockAnim(false)).toBe(DOCK_ANIM_SLIDE);
+describe("nothing may push it below the top", () => {
+  test("an unmeasured or nonsense chrome docks at the top", () => {
+    expect(dockLine({ chromeH: 0, chromeHidden: false })).toBe(0);
+    expect(dockLine({ chromeH: -50, chromeHidden: false })).toBe(0);
+    expect(dockLine({ chromeH: NaN as any, chromeHidden: false })).toBe(0);
+    expect(dockLine({ chromeH: undefined as any, chromeHidden: false })).toBe(0);
   });
-  test("a keyboard move is instant — a transition reads as lag", () => {
-    expect(dockAnim(true)).toBe(DOCK_ANIM_INSTANT);
+  test("always a finite number", () => {
+    expect(Number.isFinite(dockLine({ chromeH: NaN as any, chromeHidden: false }))).toBe(true);
   });
 });

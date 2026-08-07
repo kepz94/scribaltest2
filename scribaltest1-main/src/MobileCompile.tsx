@@ -13,7 +13,7 @@ import {
   synthesisKeyForScope,
 } from "./synthesisKey";
 import { useWebsterReady } from "./useWebsterReady";
-import { dockLine, dockAnim, DOCK_ANIM_SLIDE } from "./chromeDock";
+import { dockLine } from "./chromeDock";
 import {
   linkableDefinitionsFor,
   hasTaggedWords,
@@ -282,52 +282,25 @@ export default function MobileCompile({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // How far the keyboard has pushed the visible window down this screen.
-  //
-  // This screen is `position: fixed; inset: 0`, so it is laid out against the
-  // LAYOUT viewport — which the software keyboard does not move. iOS shrinks the
-  // VISUAL viewport to sit above the keyboard and pans it down to keep the caret
-  // in sight, and everything anchored to the top of a fixed screen pans out of
-  // view with it. Nothing in the app watched for that, which is why the toolbar
-  // answered to the chrome sliding but not to the keyboard opening.
-  const [viewportTop, setViewportTop] = useState(0);
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const read = () => setViewportTop(Math.max(0, Math.round(vv.offsetTop)));
-    read();
-    vv.addEventListener("resize", read);
-    vv.addEventListener("scroll", read);
-    return () => {
-      vv.removeEventListener("resize", read);
-      vv.removeEventListener("scroll", read);
-    };
-  }, []);
-
   // Publish the line a note's toolbar docks to. A note cannot work this out from
   // the inside — the chrome is an absolute overlay over the scroller, not a
-  // sticky ancestor, and the keyboard is not visible to it at all — and only
-  // App.tsx was ever setting the variable, so on mobile the toolbar fell back to
-  // top: 0 and docked underneath the overlay. See chromeDock.ts for why the line
-  // is the lower of the chrome's bottom and the top of what can be seen.
-  const lastViewportTop = useRef(0);
+  // sticky ancestor — and only App.tsx was ever setting the variable, so on
+  // mobile the toolbar fell back to top: 0 and docked underneath the overlay.
+  //
+  // The chrome is the only input. The keyboard needs no term of its own: iOS
+  // clamps this fixed screen to the visual viewport, so the top of the screen
+  // already IS the top of what can be seen. See chromeDock.ts — adding
+  // visualViewport.offsetTop on top of that is what left the toolbar floating
+  // mid-screen.
   useEffect(() => {
-    // A keyboard move is tracking a gesture and has to be instant; the chrome's
-    // own slide is a 0.3s animation the toolbar should ride along with.
-    const moved = viewportTop !== lastViewportTop.current;
-    lastViewportTop.current = viewportTop;
-    const s = document.documentElement.style;
-    s.setProperty("--scribal-chrome-anim", dockAnim(moved));
-    s.setProperty(
+    document.documentElement.style.setProperty(
       "--scribal-chrome-h",
-      dockLine({ chromeH: headerH, chromeHidden: headHidden, viewportTop }) +
-        "px"
+      dockLine({ chromeH: headerH, chromeHidden: headHidden }) + "px"
     );
     return () => {
-      s.setProperty("--scribal-chrome-h", "0px");
-      s.setProperty("--scribal-chrome-anim", DOCK_ANIM_SLIDE);
+      document.documentElement.style.setProperty("--scribal-chrome-h", "0px");
     };
-  }, [headerH, headHidden, viewportTop]);
+  }, [headerH, headHidden]);
   const [versesPreview, setVersesPreview] = useState<VersesCardEntry[] | null>(
     null
   );
