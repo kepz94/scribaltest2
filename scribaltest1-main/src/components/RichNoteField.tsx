@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MarkColor, COLOR_MAP } from "../types";
 import { isThemelessColor, richToHtml } from "../cardText";
+import { blockArmAction } from "../blockArm";
 import {
   noteCommit,
   autosaveDueNow,
@@ -533,9 +534,36 @@ function Toolbar({
     editor.update(() => {
       const sel = $getSelection();
       if (!$isRangeSelection(sel)) return;
-      if (kind === "p") $setBlocksType(sel, () => $createParagraphNode());
-      else if (kind === "quote") $setBlocksType(sel, () => $createQuoteNode());
-      else $setBlocksType(sel, () => $createHeadingNode(kind));
+      const make = () =>
+        kind === "p"
+          ? $createParagraphNode()
+          : kind === "quote"
+          ? $createQuoteNode()
+          : $createHeadingNode(kind);
+      // The professional-editor rule (see blockArm.ts): a block style applies
+      // to the SELECTION, or to what is typed NEXT — never to text already
+      // typed. Unconditional $setBlocksType converted the whole block under a
+      // collapsed caret, so one press of Heading swallowed an entire typed
+      // synthesis (or a linked verse's block), and the only defense was
+      // breaking the block with a divider first.
+      let block: any = null;
+      try {
+        const n: any = sel.anchor.getNode();
+        block = n.getTopLevelElementOrThrow
+          ? n.getTopLevelElementOrThrow()
+          : null;
+      } catch {}
+      const action = blockArmAction(
+        sel.isCollapsed(),
+        !block || block.getTextContent().trim() === ""
+      );
+      if (action === "new-block-after" && block) {
+        const fresh = make();
+        block.insertAfter(fresh);
+        (fresh as any).select();
+      } else {
+        $setBlocksType(sel, make);
+      }
     });
     setPop("");
   };
@@ -570,7 +598,23 @@ function Toolbar({
       // reset what the NEXT typed character inherits
       sel.format = 0;
       sel.style = "";
-      $setBlocksType(sel, () => $createParagraphNode());
+      // Same rule as setBlock: only a selection (or an empty block) converts
+      // the block back to a paragraph. A collapsed caret on a filled heading
+      // clears what comes NEXT — it does not restyle the line already written.
+      let block: any = null;
+      try {
+        const n: any = sel.anchor.getNode();
+        block = n.getTopLevelElementOrThrow
+          ? n.getTopLevelElementOrThrow()
+          : null;
+      } catch {}
+      if (
+        blockArmAction(
+          sel.isCollapsed(),
+          !block || block.getTextContent().trim() === ""
+        ) !== "new-block-after"
+      )
+        $setBlocksType(sel, () => $createParagraphNode());
     });
 
   const penColors = [
