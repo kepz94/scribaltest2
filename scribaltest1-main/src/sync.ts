@@ -330,16 +330,19 @@ function countBookNotesFromJson(raw: string | null | undefined): number {
   if (!raw) return 0;
   try {
     const s = JSON.parse(raw);
-    const books = s && s.books;
-    if (!books || typeof books !== "object") return 0;
     let n = 0;
-    Object.keys(books).forEach((id) => {
-      const notes = books[id] && books[id].notes;
+    const countMap = (notes: any) => {
       if (!notes || typeof notes !== "object") return;
       Object.keys(notes).forEach((k) => {
         if (typeof notes[k] === "string" && notes[k].trim() !== "") n++;
       });
-    });
+    };
+    // The global store at the payload root (where every note lives now), plus
+    // any still embedded in books (older payloads).
+    countMap(s && s.notes);
+    const books = s && s.books;
+    if (books && typeof books === "object")
+      Object.keys(books).forEach((id) => countMap(books[id] && books[id].notes));
     return n;
   } catch {
     return 0;

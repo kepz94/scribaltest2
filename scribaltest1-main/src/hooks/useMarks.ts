@@ -74,6 +74,24 @@ type State = {
   // creation, so a tombstoned id is gone for good and no "was it re-created
   // after the delete?" comparison is needed.
   deletedBooks: Record<string, number>;
+  // ═══ THE GLOBAL NOTES STORE ═══
+  // Notes used to live inside whichever book was ACTIVE when they were written
+  // (books[activeId].notes). That made a note's storage location depend on a
+  // per-device pointer that deliberately does not sync — so two devices with
+  // different active books each wrote to and read from a different book's map,
+  // every byte synced perfectly, and the screens still disagreed forever
+  // (Aug 7 2026: desktop showed an edit its phone could never see). It was the
+  // fourth divergence bug in this area in a week, and every one traced to notes
+  // being addressed by mutable context. This store is the structural fix:
+  // ONE map for the whole account, keyed by content identity (scope / chapter /
+  // verse), independent of books, with per-key stamps and deletion markers so
+  // last-write-wins actually converges. Books' embedded notes survive on disk
+  // as a legacy substrate — never written again, harvested on load AND on merge
+  // (a device on an older build still writes there, and a strip that runs in
+  // only one place does not hold — see stripRetiredScopeFields above).
+  notes: Record<string, string>;
+  noteAt: Record<string, number>;
+  noteDel: Record<string, number>;
   past: Mark[][];
   future: Mark[][];
 };
@@ -372,6 +390,44 @@ export function mergeNotes(
   return { notes, noteAt, noteDel, changed: changed || delChanged };
 }
 
+// Sweep every book's embedded notes into a global accumulator, under the same
+// stamped merge rules as a device-to-device sync. Books are visited in sorted
+// order so the result is deterministic. Pure and exported for tests.
+export function harvestNotes(
+  books: Record<string, { notes?: Record<string, string>; noteAt?: Record<string, number>; noteDel?: Record<string, number> }>,
+  seedNotes: Record<string, string>,
+  seedAt: Record<string, number>,
+  seedDel: Record<string, number>
+): {
+  notes: Record<string, string>;
+  noteAt: Record<string, number>;
+  noteDel: Record<string, number>;
+  changed: boolean;
+} {
+  let acc = { notes: seedNotes, noteAt: seedAt, noteDel: seedDel, changed: false };
+  Object.keys(books)
+    .sort()
+    .forEach((id) => {
+      const b = books[id];
+      if (!b || !b.notes || typeof b.notes !== "object") return;
+      const m = mergeNotes(
+        acc.notes,
+        acc.noteAt,
+        b.notes,
+        b.noteAt || {},
+        acc.noteDel,
+        b.noteDel || {}
+      );
+      acc = {
+        notes: m.notes,
+        noteAt: m.noteAt,
+        noteDel: m.noteDel,
+        changed: acc.changed || m.changed,
+      };
+    });
+  return acc;
+}
+
 const safeSet = (key: string, value: string) => {
   try {
     localStorage.setItem(key, value);
@@ -492,14 +548,37 @@ function initState(): State {
     });
     order = ["master", ...order.filter((id) => id !== "master")];
     const activeId = books[saved.activeId] ? saved.activeId : "master";
-    return { books, order, activeId, deletedBooks, past: [], future: [] };
+    // Global notes: what was persisted at the root, plus a harvest of anything
+    // still embedded in books — an older build's writes, or the first launch
+    // after this store existed at all.
+    const g = harvestNotes(
+      books,
+      saved.notes && typeof saved.notes === "object" ? saved.notes : {},
+      saved.noteAt && typeof saved.noteAt === "object" ? saved.noteAt : {},
+      saved.noteDel && typeof saved.noteDel === "object" ? saved.noteDel : {}
+    );
+    return {
+      books,
+      order,
+      activeId,
+      deletedBooks,
+      notes: g.notes,
+      noteAt: g.noteAt,
+      noteDel: g.noteDel,
+      past: [],
+      future: [],
+    };
   }
   const master = migrateMaster();
+  const g = harvestNotes({ master }, {}, {}, {});
   return {
     books: { master },
     order: ["master"],
     activeId: "master",
     deletedBooks: {},
+    notes: g.notes,
+    noteAt: g.noteAt,
+    noteDel: g.noteDel,
     past: [],
     future: [],
   };
@@ -1150,13 +1229,28 @@ export function reducer(state: State, action: Action): State {
           ...active,
           marks: action.marks.slice(),
           colorLabels: { ...action.colorLabels },
-          notes: { ...action.notes },
           lastStudiedAt: Date.now(),
         },
       };
+      // Imported notes land in the global store, stamped now — same door every
+      // other note comes through.
+      const impNotes = { ...state.notes };
+      const impAt = { ...state.noteAt };
+      const impDel = { ...state.noteDel };
+      const now = Date.now();
+      Object.keys(action.notes || {}).forEach((k) => {
+        const t = action.notes[k];
+        if (typeof t !== "string" || !t.trim()) return;
+        impNotes[k] = t;
+        impAt[k] = now;
+        delete impDel[k];
+      });
       return {
         ...state,
         books,
+        notes: impNotes,
+        noteAt: impAt,
+        noteDel: impDel,
         past: [...state.past, active.marks].slice(-HISTORY_CAP),
         future: [],
       };
@@ -1405,13 +1499,52 @@ export function reducer(state: State, action: Action): State {
           changed = true;
         }
       });
+      // Global notes, two sources: the remote's own global store, then a
+      // harvest of notes still embedded in its books — a device on an older
+      // build writes only there, and skipping the harvest would silently drop
+      // its edits. Tombstoned books are excluded so a deleted book's notes do
+      // not ride back in through the harvest.
+      let g = {
+        notes: state.notes,
+        noteAt: state.noteAt,
+        noteDel: state.noteDel,
+        changed: false,
+      };
+      const gm = mergeNotes(
+        g.notes,
+        g.noteAt,
+        remote.notes && typeof remote.notes === "object" ? remote.notes : {},
+        remote.noteAt && typeof remote.noteAt === "object" ? remote.noteAt : {},
+        g.noteDel,
+        remote.noteDel && typeof remote.noteDel === "object"
+          ? remote.noteDel
+          : {}
+      );
+      g = { notes: gm.notes, noteAt: gm.noteAt, noteDel: gm.noteDel, changed: gm.changed };
+      const rbLive: Record<string, StudyBook> = {};
+      Object.keys(rbooks).forEach((id) => {
+        if (rbooks[id] && deletedBooks[id] == null) rbLive[id] = rbooks[id];
+      });
+      const gh = harvestNotes(rbLive, g.notes, g.noteAt, g.noteDel);
+      const gChanged = g.changed || gh.changed;
+      if (gChanged) changed = true;
+
       if (!changed) return state; // unchanged — no re-render / persist / push
       // A book dropped by a remote deletion has to leave `order` too, and can't
       // be left as the active book — that would strand the reader on a book
       // that no longer exists.
       order = order.filter((id) => books[id]);
       const activeId = books[state.activeId] ? state.activeId : "master";
-      return { ...state, books, order, activeId, deletedBooks };
+      return {
+        ...state,
+        books,
+        order,
+        activeId,
+        deletedBooks,
+        notes: gh.notes,
+        noteAt: gh.noteAt,
+        noteDel: gh.noteDel,
+      };
     }
 
     case "setLabel":
@@ -1430,14 +1563,18 @@ export function reducer(state: State, action: Action): State {
       };
 
     case "setNote": {
+      // Writes go to the GLOBAL store only — never into a book. The book maps
+      // are a frozen legacy substrate from before the store existed; writing
+      // them again would re-open the split this store was built to close.
+      //
       // A save that changes nothing must not move the clock. The stamp decides
       // merges, so re-saving identical text used to hand this device a "newer"
       // copy of a note it had not actually edited — enough to win against a
       // real edit made elsewhere.
-      const prevText = active.notes[action.key] || "";
+      const prevText = state.notes[action.key] || "";
       if (prevText === action.text) return state;
       const wasCleared = !!prevText.trim() && !action.text.trim();
-      const noteDel = { ...(active.noteDel || {}) };
+      const noteDel = { ...state.noteDel };
       // Clearing text the user could actually see is a deliberate deletion and
       // earns the marker that lets it propagate. Writing blank over blank does
       // not, and neither does writing content — that revokes any old marker.
@@ -1445,18 +1582,9 @@ export function reducer(state: State, action: Action): State {
       else if (action.text.trim()) delete noteDel[action.key];
       return {
         ...state,
-        books: {
-          ...state.books,
-          [state.activeId]: {
-            ...active,
-            notes: { ...active.notes, [action.key]: action.text },
-            noteAt: {
-              ...(active.noteAt || {}),
-              [action.key]: Date.now(),
-            },
-            noteDel,
-          },
-        },
+        notes: { ...state.notes, [action.key]: action.text },
+        noteAt: { ...state.noteAt, [action.key]: Date.now() },
+        noteDel,
       };
     }
 
@@ -1574,9 +1702,23 @@ export function useMarks() {
         // Rides the same blob the cloud push serializes, so a deletion travels
         // to the other devices instead of dying on the one that made it.
         deletedBooks: state.deletedBooks,
+        // The global notes store rides the same blob too — one document, one
+        // merge path, and a device on an older build simply ignores the extra
+        // root fields.
+        notes: state.notes,
+        noteAt: state.noteAt,
+        noteDel: state.noteDel,
       })
     );
-  }, [state.books, state.order, state.activeId, state.deletedBooks]);
+  }, [
+    state.books,
+    state.order,
+    state.activeId,
+    state.deletedBooks,
+    state.notes,
+    state.noteAt,
+    state.noteDel,
+  ]);
 
   const active = state.books[state.activeId] || state.books["master"];
 
@@ -1843,17 +1985,20 @@ export function useMarks() {
           string,
           Record<number, string>
         >,
-        notes: b.notes,
+        // Notes are global now — the same map whichever book is asked for, so
+        // shares and Present rooms carry the notes the author actually sees.
+        notes: state.notes,
         name: b.name,
       };
     },
-    [state.books]
+    [state.books, state.notes]
   );
 
   return {
     marks: active.marks,
     colorLabels: active.colorLabels,
-    notes: active.notes,
+    // The global store: identical on every screen, every book, every device.
+    notes: state.notes,
     addMark,
     deleteMark,
     addMarks,

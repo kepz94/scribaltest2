@@ -25,6 +25,9 @@ const stateWith = (...ids: string[]): MarksState => {
     order: ["master", ...ids],
     activeId: "master",
     deletedBooks: {},
+    notes: {},
+    noteAt: {},
+    noteDel: {},
     past: [],
     future: [],
   };

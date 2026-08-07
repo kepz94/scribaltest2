@@ -198,7 +198,14 @@ export default function MobileCompile({
   // returns null and this never fires again.
   useEffect(() => {
     const old = legacySynthesisKeyToMigrate(notes, compileChapters(), scope);
-    if (old) setNote(synthesisKeyForScope(scope), notes[old]);
+    if (old) {
+      const text = notes[old];
+      setNote(synthesisKeyForScope(scope), text);
+      // Clear the legacy key once its text is safely on the scope key. Leaving
+      // it meant deleting the migrated synthesis re-ran this migration and the
+      // old copy came straight back — a delete that silently reverted.
+      setNote(old, "");
+    }
     // eslint-disable-next-line
   }, [scope, notes]);
   const readVerseNote = (color: number, ref: string) => {
@@ -208,14 +215,11 @@ export default function MobileCompile({
   };
   // The synthesis as it was written — headings, dividers, lists and all. Every
   // surface that can render structure takes this one.
-  const readSynthRaw = () => {
-    const v = notes[dSynthKey()];
-    if (v && v.trim()) return v;
-    return (
-      activeColors.map((c) => notes[synthKey(c)] || "").find((x) => x.trim()) ||
-      ""
-    );
-  };
+  // The study synthesis and nothing else. This used to fall back to the first
+  // per-THEME synthesis it could find, so the box could display text that was
+  // not its own — and clearing the box made the theme text "come back", which
+  // read as data resurrecting. One key, one reader.
+  const readSynthRaw = () => notes[dSynthKey()] || "";
   const [sortMode, setSortMode] = useState<SortMode>("order");
   // Lead verses (pins): user-chosen verses that always sit at a theme's top,
   // in the order they were pinned — above any automatic sort.

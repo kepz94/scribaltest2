@@ -152,7 +152,14 @@ export default function Outline(props: OutlineProps) {
       compileTabs.map(tabLabel),
       scope
     );
-    if (old) setNote(synthesisKeyForScope(scope), (notes || {})[old]);
+    if (old) {
+      const text = (notes || {})[old];
+      setNote(synthesisKeyForScope(scope), text);
+      // Clear the legacy key once its text is safely on the scope key. Leaving
+      // it meant deleting the migrated synthesis re-ran this migration and the
+      // old copy came straight back — a delete that silently reverted.
+      setNote(old, "");
+    }
     // eslint-disable-next-line
   }, [scope, notes, compileTabs]);
 
