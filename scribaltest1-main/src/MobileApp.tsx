@@ -1913,6 +1913,7 @@ export default function MobileApp() {
     () => !!localStorage.getItem("scribal_drive_enabled")
   );
   const [syncMsg, setSyncMsg] = useState("");
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   // When the phone couldn't renew the Google sign-in quietly, show a tap cue.
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -1999,6 +2000,10 @@ export default function MobileApp() {
       setCloudSyncing(s.syncing);
       setCloudEmail(s.email);
       setCloudPersisted(s.persisted);
+      // A failed write is a fact the user must SEE. cloudSync has recorded
+      // lastError since SCR-84 — and no shell ever read it, so a rejected
+      // books write looked exactly like "Synced" while devices diverged.
+      setCloudError(s.lastError);
       if (s.lastSync) setLastSync(s.lastSync);
     });
     initCloud();
@@ -4795,6 +4800,8 @@ export default function MobileApp() {
             >
               {(!cloudSignedIn
                 ? "Saved on this phone"
+                : cloudError
+                ? "Sync failed ⚠"
                 : cloudSyncing
                 ? "Saving…"
                 : "Synced " + relTime(lastSync)) +
@@ -7839,7 +7846,9 @@ export default function MobileApp() {
                       }}
                     >
                       <span style={{ color: COLOR_MAP[4] }}>●</span>
-                      {cloudSyncing
+                      {cloudError
+                        ? "Sync failed — " + cloudError
+                        : cloudSyncing
                         ? "Syncing…"
                         : "Synced" + (cloudEmail ? " · " + cloudEmail : "")}
                     </div>

@@ -440,3 +440,135 @@ test("SCR-84: the legacy single-doc payload is merged forward exactly once", asy
   await flush();
   expect(applied).toEqual([BOOKS_WITH_MARK]);
 });
+
+// ---- Aug 7 2026: the book store shards per book ------------------------------
+// scribal_books_v1 was still ONE doc inside the split store. Past Firestore's
+// 1 MiB ceiling its writes 400 — silently sinking ALL note/mark sync while
+// every other key kept working, which reads as "sync is broken for just this
+// edit". Now each book is its own doc; one big book can never block the rest.
+
+const TWO_BOOKS = JSON.stringify({
+  books: {
+    master: { marks: [{ id: "m1" }], notes: { k: "<p>master note</p>" } },
+    sessionA: { marks: [], notes: { k: "<p>session note</p>" } },
+  },
+  deletedBooks: { ghost: 123 },
+});
+
+test("a push writes one shard per book, a meta doc with the tombstones, and the monolith for old builds", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", TWO_BOOKS);
+  // Server snapshot first (empty store, new account) so the gate is open.
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 2);
+  await flush();
+  const keys = writtenKeys();
+  expect(keys).toContain("scribal_books_v1.b.master");
+  expect(keys).toContain("scribal_books_v1.b.sessionA");
+  expect(keys).toContain("scribal_books_v1.meta");
+  expect(keys).toContain("scribal_books_v1");
+  // Each shard is a books-blob the ordinary merge accepts, holding ONLY its book.
+  const shard = JSON.parse(writtenValue("scribal_books_v1.b.sessionA")!);
+  expect(Object.keys(shard.books)).toEqual(["sessionA"]);
+  expect(shard.books.sessionA.notes.k).toBe("<p>session note</p>");
+  const meta = JSON.parse(writtenValue("scribal_books_v1.meta")!);
+  expect(meta.deletedBooks.ghost).toBe(123);
+});
+
+test("editing one book re-uploads THAT shard, not every book", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", TWO_BOOKS);
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 2);
+  await flush();
+  mockBatchWrites = [];
+  // A note edit in sessionA only.
+  const next = JSON.parse(TWO_BOOKS);
+  next.books.sessionA.notes.k = "<p>edited</p>";
+  localStorage.setItem("scribal_books_v1", JSON.stringify(next));
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 2);
+  await flush();
+  const keys = writtenKeys();
+  expect(keys).toContain("scribal_books_v1.b.sessionA");
+  expect(keys).not.toContain("scribal_books_v1.b.master");
+  expect(keys).not.toContain("scribal_books_v1.meta");
+});
+
+test("an inbound shard routes into the SAME books merge as the monolith", async () => {
+  const mergeRemoteBooks = jest.fn();
+  bootSignedIn({ mergeRemoteBooks });
+  await flush();
+  mockSnapCb!(
+    collSnap({
+      fromCache: false,
+      docs: {
+        "scribal_books_v1.b.sessionA": JSON.stringify({
+          books: { sessionA: { notes: { k: "<p>from desktop</p>" } } },
+        }),
+        "scribal_books_v1.meta": JSON.stringify({
+          books: {},
+          deletedBooks: { ghost: 123 },
+        }),
+      },
+    })
+  );
+  await flush();
+  const blobs = mergeRemoteBooks.mock.calls.map((c) => c[0]);
+  expect(blobs.some((b: string) => b.indexOf("from desktop") >= 0)).toBe(true);
+  expect(blobs.some((b: string) => b.indexOf("ghost") >= 0)).toBe(true);
+});
+
+test("THE FAILURE ITSELF: an oversized doc is skipped BY NAME, the rest of the batch ships, and the error is loud", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  // A study payload of incompressible noise well past the ceiling, plus one
+  // healthy key. (Math.random is fine here — this is jest, not a workflow.)
+  let noise = "";
+  while (noise.length < 1_100_000)
+    noise += Math.random().toString(36).slice(2);
+  localStorage.setItem("scribal_studies_v1", JSON.stringify([{ id: "s1", name: noise }]));
+  localStorage.setItem("scribal_search_studies", ONE_STUDY);
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 2);
+  await flush();
+  const keys = writtenKeys();
+  expect(keys).toContain("scribal_search_studies"); // healthy key still shipped
+  expect(keys).not.toContain("scribal_studies_v1"); // oversized one held back
+  const last = seen[seen.length - 1];
+  expect(last.lastError).toContain("scribal_studies_v1");
+  expect(last.lastError).toContain("KB");
+});
+
+test("an oversized MONOLITH is not an error — the shards are the store of record", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  // One giant book of incompressible marks pushes the whole blob past the
+  // ceiling as a monolith; per-book it still exceeds — so we build TWO books
+  // that are individually small but jointly large: monolith skipped, both
+  // shards ship, no error.
+  let noise = "";
+  while (noise.length < 700_000) noise += Math.random().toString(36).slice(2);
+  const big = JSON.stringify({
+    books: {
+      master: { marks: [{ id: "m1", verseText: noise }] },
+      sessionA: { marks: [{ id: "m2", verseText: noise }] },
+    },
+  });
+  localStorage.setItem("scribal_books_v1", big);
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 2);
+  await flush();
+  const keys = writtenKeys();
+  expect(keys).toContain("scribal_books_v1.b.master");
+  expect(keys).toContain("scribal_books_v1.b.sessionA");
+  expect(keys).not.toContain("scribal_books_v1");
+  const last = seen[seen.length - 1];
+  expect(last.lastError).toBeNull();
+});

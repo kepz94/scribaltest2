@@ -1950,6 +1950,7 @@ export default function App() {
   // evict Scribal's on-device data under storage pressure (SCR-68), so the
   // sync pill shows a warning. null = unknown / unsupported.
   const [cloudPersisted, setCloudPersisted] = useState<boolean | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   // Hide the legacy Google Drive sign-in UI while we run on Firebase. The Drive
   // code stays in place (so nothing breaks) but can't be triggered from the UI.
   const SHOW_LEGACY_DRIVE = false;
@@ -2228,6 +2229,10 @@ export default function App() {
       setCloudSyncing(s.syncing);
       setCloudEmail(s.email);
       setCloudPersisted(s.persisted);
+      // A failed write is a fact the user must SEE. cloudSync has recorded
+      // lastError since SCR-84 — and no shell ever read it, so a rejected
+      // books write looked exactly like "Synced" while devices diverged.
+      setCloudError(s.lastError);
       if (s.lastSync) setLastSync(s.lastSync);
     });
     initCloud();
@@ -10263,6 +10268,8 @@ export default function App() {
               const label =
                 (!cloudSignedIn
                   ? "Local only"
+                  : cloudError
+                  ? "Sync failed ⚠"
                   : cloudSyncing
                   ? "Saving…"
                   : "Synced" + (timeStr ? " ✓ " + timeStr : " ✓")) +
@@ -10281,6 +10288,8 @@ export default function App() {
                   title={
                     (!cloudSignedIn
                       ? "Saved on this device only — click to sign in with Google and sync across your devices."
+                      : cloudError
+                      ? "Cloud write failed — " + cloudError
                       : timeStr
                       ? "Last synced at " + timeStr
                       : "Synced to the cloud") + evictNote

@@ -262,15 +262,78 @@ function unpackValue(stored: string): string | null {
   }
 }
 
+// ═══ per-book sharding of the book store (Aug 7 2026) ═══
+// scribal_books_v1 — every book, every mark, every note — was still ONE
+// Firestore document inside the split store. Firestore rejects any doc over
+// 1,048,487 bytes, and this app has already lived the failure once (Jul 24:
+// writes 400'd for days while the UI said "Synced" and devices quietly
+// diverged). One growing book was again a single point of failure for ALL
+// note/mark sync — a desktop edit that never left the machine while studies
+// and tables kept syncing looks exactly like "sync is broken for just this".
+// Now each book is its own doc, so the ceiling applies per book and one big
+// book can never block the others. Each shard's value is itself a books-blob
+// ({books:{id:...}}), so the receiving side feeds it straight into the same
+// stamped mergeRemoteBooks — no second merge path to drift. The monolithic
+// key is still written when it fits, so a device on an older build keeps
+// receiving; when it no longer fits, the shards are the store of record.
+export const BOOKS_KEY = "scribal_books_v1";
+export const BOOK_SHARD_PREFIX = BOOKS_KEY + ".b.";
+export const BOOKS_META_KEY = BOOKS_KEY + ".meta";
+// Firestore's hard ceiling is 1,048,487 bytes for the whole doc; leave head-
+// room for the field names, timestamp and writer id.
+export const DOC_VALUE_CEILING = 1_000_000;
+
+// Split a local books blob into per-book shard values plus a meta doc carrying
+// the deletion tombstones (order/activeId are per-device and never synced as
+// authority — the merge derives order and keeps its own activeId). Pure, and
+// exported for tests. Returns null on an unparseable blob.
+export function shardBooksValue(
+  raw: string
+): Array<{ key: string; v: string }> | null {
+  try {
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== "object" || !s.books || typeof s.books !== "object")
+      return null;
+    const out: Array<{ key: string; v: string }> = [];
+    Object.keys(s.books).forEach((id) => {
+      out.push({
+        key: BOOK_SHARD_PREFIX + id,
+        v: JSON.stringify({ books: { [id]: s.books[id] } }),
+      });
+    });
+    out.push({
+      key: BOOKS_META_KEY,
+      v: JSON.stringify({
+        books: {},
+        deletedBooks:
+          s.deletedBooks && typeof s.deletedBooks === "object"
+            ? s.deletedBooks
+            : {},
+      }),
+    });
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 // Route one received key/value into the right merge hook. Books and vault have
 // dedicated hooks; everything else accumulates into one record for mergeOther
-// (matching what applyRemoteLive fed it in the single-doc era).
+// (matching what applyRemoteLive fed it in the single-doc era). A book shard
+// or the meta doc is already a books-blob, so it takes the same door as the
+// monolith — deletions in the meta doc and books in the shards both land in
+// the one stamped merge.
 function routeValue(
   key: string,
   v: string,
   otherAcc: Record<string, string | null>
 ) {
-  if (key === "scribal_books_v1") mergeBooks(v);
+  if (
+    key === BOOKS_KEY ||
+    key === BOOKS_META_KEY ||
+    key.indexOf(BOOK_SHARD_PREFIX) === 0
+  )
+    mergeBooks(v);
   else if (key === "scribal_vault_v1") mergeVault(v);
   else otherAcc[key] = v;
 }
@@ -433,15 +496,54 @@ async function doPush() {
       v = localStorage.getItem(key);
     } catch {}
     if (v === null) return; // never sync deletions of whole keys
+    if (key === BOOKS_KEY) {
+      // The book store syncs as per-book shards + a tombstone meta doc, each
+      // dirty-checked on its own, so editing a note in one book uploads that
+      // one book. The monolith is also kept up to date for devices on older
+      // builds — but only while it fits; past the ceiling it is skipped and
+      // the shards alone carry the store (that unwritable monolith IS the
+      // failure this sharding exists to end).
+      //
+      // A CLEAN monolith short-circuits everything: the cloud already holds
+      // exactly this blob, so there is nothing to shard — merely RECEIVING a
+      // monolith from an old-build device must not trigger a shard backfill,
+      // or every inbound apply would echo a write (the SCR-84 invariant).
+      if (cloudVals[key] === v) return;
+      const shards = shardBooksValue(v);
+      if (shards)
+        shards.forEach((s) => {
+          if (cloudVals[s.key] !== s.v) changed.push(s);
+        });
+      if (!shards || v.length <= DOC_VALUE_CEILING) changed.push({ key, v });
+      return;
+    }
     if (cloudVals[key] !== v) changed.push({ key, v });
   });
-  if (!changed.length) return;
+  // Any doc whose packed value would breach Firestore's ceiling is reported by
+  // NAME and size, and the rest of the batch still ships — one oversized value
+  // must never silently sink every other key's sync, and it must never be
+  // silent (Jul 24's lesson, now enforced before the wire instead of diagnosed
+  // after it).
+  const oversized: string[] = [];
+  const writable = changed.filter((c) => {
+    const packedLen = packValue(c.v).length;
+    if (packedLen <= DOC_VALUE_CEILING) return true;
+    if (c.key !== BOOKS_KEY)
+      oversized.push(c.key + " (" + Math.round(packedLen / 1024) + " KB)");
+    return false;
+  });
+  if (oversized.length)
+    state.lastError = "too large to sync: " + oversized.join(", ");
+  if (!writable.length) {
+    if (oversized.length) emit();
+    return;
+  }
   state.syncing = true;
   emit();
   try {
     const batch = writeBatch(db);
     const now = Date.now();
-    changed.forEach((c) => {
+    writable.forEach((c) => {
       batch.set(doc(db, "users", user.uid, "sync", c.key), {
         v: packValue(c.v),
         updatedAt: now,
@@ -451,14 +553,16 @@ async function doPush() {
     await batch.commit();
     // The cloud now holds these values — keep the dirty check and emptiness
     // guards tracking reality even before our writes echo back.
-    changed.forEach((c) => {
+    writable.forEach((c) => {
       cloudVals[c.key] = c.v;
     });
     try {
       localStorage.setItem("scribal_sync_seen", new Date().toISOString());
     } catch {}
     state.lastSync = now;
-    state.lastError = null;
+    // An oversized-key report from this same pass survives the batch success —
+    // the other keys shipping is not the oversized one syncing.
+    if (!oversized.length) state.lastError = null;
   } catch (e: any) {
     // A rejected write is a fact the user must be able to see — the
     // single-doc era swallowed these and the sync UI lied for days.
