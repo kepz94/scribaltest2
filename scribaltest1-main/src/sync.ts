@@ -49,6 +49,9 @@ export const CORE_KEYS = [
   "scribal_color_intensity",
   // Study tables (lesson boards): built on desktop, presentable on any device.
   "scribal_tables_v1",
+  // Parallel-view row alignment, one entry per study scope. Says which verses
+  // of side-by-side chapters correspond; absent means lockstep.
+  "scribal_parallel_v1",
 ];
 
 // Merge a remote chapter-link map into the local one. Two chapters belong to the
