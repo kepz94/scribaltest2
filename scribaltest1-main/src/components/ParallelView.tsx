@@ -32,14 +32,19 @@ const SERIF =
 const GUTTER_W = 44;
 const DRAWER_W = 320;
 
-// How narrow a column may get before it stops being readable. Scripture wants
-// room, but a comparison wants COLUMNS — being able to see the eighth account
-// beats giving the first one a comfortable measure. So the floor drops as the
-// board widens, and the reader can still scroll when even that will not fit.
-// At eight columns this is 8 x 168 + 44 = 1388px, which lands inside a laptop
-// window once the note drawer is out of the way.
-const colMinFor = (n: number): number =>
-  n <= 2 ? 320 : n <= 3 ? 300 : n <= 4 ? 260 : n <= 5 ? 224 : n <= 6 ? 200 : 168;
+// Columns FIT THE WINDOW rather than claiming a minimum width.
+//
+// The first attempt gave each column a floor — 168px at eight columns — which
+// reads well but needs 1388px of board to show all eight, and anything narrower
+// silently pushed the rest into the horizontal scroll. Asking for eight columns
+// and being shown four is the wrong answer however good the four look, so the
+// grid is `minmax(0, 1fr)`: every column always on screen, sharing whatever
+// width there is.
+//
+// Wide mode is the escape hatch. It restores generous columns and lets the
+// board scroll sideways, for when reading one account matters more than seeing
+// all of them at once.
+const WIDE_COL = 300;
 
 // One shared empty array, so a verse with no marks never mints a new one and
 // MarkedVerse's props stay referentially stable across renders.
@@ -139,6 +144,8 @@ export default function ParallelView({
   );
   const [message, setMessage] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  // Off by default: seeing every column beats giving any one of them room.
+  const [wide, setWide] = useState(false);
 
   const columns: Column[] = useMemo(() => {
     const seen = new Set<string>();
@@ -401,7 +408,7 @@ export default function ParallelView({
     return null;
   })();
 
-  const tight = columns.length > 5;
+  const tight = !wide && columns.length > 4;
   const cellBase = {
     borderRight: "1px solid var(--border)",
     borderBottom: "1px solid var(--border)",
@@ -427,6 +434,26 @@ export default function ParallelView({
             : "⇄ pair two verses · ↓ ↑ nudge within a segment"}
         </span>
         <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => setWide((w) => !w)}
+            title={
+              wide
+                ? "Fit every column on screen"
+                : "Give columns room to read, and scroll the board sideways"
+            }
+            style={{
+              background: wide ? "var(--soft)" : "var(--panel)",
+              border: "1px solid var(--border)",
+              color: "var(--text)",
+              borderRadius: "8px",
+              padding: "6px 12px",
+              font: "inherit",
+              fontSize: "12.5px",
+              cursor: "pointer",
+            }}
+          >
+            {wide ? "Fit columns" : "Wider columns"}
+          </button>
           <button
             onClick={matchByWording}
             title="Propose an alignment from the wording of the verses"
@@ -516,9 +543,7 @@ export default function ParallelView({
                 GUTTER_W +
                 "px repeat(" +
                 columns.length +
-                ", minmax(" +
-                colMinFor(columns.length) +
-                "px, 1fr))",
+                (wide ? ", minmax(" + WIDE_COL + "px, 1fr))" : ", minmax(0, 1fr))"),
             }}
           >
             <div
