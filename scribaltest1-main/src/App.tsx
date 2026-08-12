@@ -12,6 +12,9 @@ import ScribalMark from "./components/ScribalMark";
 import ScribalWordmark from "./components/ScribalWordmark";
 import StudyTablesDesktop from "./components/StudyTablesDesktop";
 import { useStudyTables, newCardId, TableCard } from "./hooks/useStudyTables";
+import { useParallel } from "./hooks/useParallel";
+import type { ParallelAlignment } from "./parallelAlign";
+import ParallelView from "./components/ParallelView";
 import SplashScreen from "./components/SplashScreen";
 import Outline from "./components/Outline";
 import { resolveSynthesisKey } from "./synthesisKey";
@@ -396,16 +399,18 @@ const GROUP_COLORS = LINK_COLORS.filter(
 const VIEW_NAMES: Record<string, string> = {
   outline: "Outline",
   distilled: "Distilled",
+  parallel: "Parallel",
 };
 
-type CompileView = "outline" | "distilled" | "semantic";
+type CompileView = "outline" | "distilled" | "semantic" | "parallel";
 
 // A study saved before Charting and Relational were retired still carries that
 // view on its record. Setting it verbatim would select a view nothing renders —
 // a blank board, no error, no way back except picking another tab. Everything
-// unrecognised lands on Outline.
+// unrecognised lands on Outline. The live set is Outline, Distilled, Semantic
+// and Parallel.
 const liveView = (v: string | undefined | null): CompileView =>
-  v === "distilled" || v === "semantic" ? v : "outline";
+  v === "distilled" || v === "semantic" || v === "parallel" ? v : "outline";
 
 type Mode = "read" | "compile" | "vault" | "table";
 
@@ -1023,6 +1028,22 @@ export default function App() {
     addShelfArrivals: tableShelfArrivals,
     mergeRemote: tablesMergeRemote,
   } = useStudyTables();
+  // Parallel-view row alignments, one per study scope. Absent means lockstep,
+  // so this store stays empty until a comparison is actually aligned.
+  const {
+    getAlignment: getParallelAlignment,
+    setAlignment: setParallelAlignment,
+    clearAlignment: clearParallelAlignment,
+    mergeRemote: parallelMergeRemote,
+  } = useParallel();
+  // An ad-hoc compile (chapters ticked together without saving a study) has no
+  // stable identity: its scope is just its first tab's chapter, so two unrelated
+  // comparisons that happen to start with the same chapter would collide on one
+  // key — SCR-101 in a new place. Those alignments stay here and die with the
+  // view; only a saved study's alignment is persisted.
+  const [adHocAlignment, setAdHocAlignment] = useState<
+    ParallelAlignment | undefined
+  >(undefined);
   const [openTableId, setOpenTableId] = useState<string | null>(null);
   // Study Table marking panel: a full-screen VerseViewer that loads a set of the
   // table's verses so they can be marked together (not one card at a time). Each
@@ -1082,6 +1103,10 @@ export default function App() {
     // owns the rules), so a table edited on one device and renamed on another
     // converges instead of one side clobbering the other.
     tablesMergeRemote(data["scribal_tables_v1"]);
+    // Parallel row alignments: last-write-wins per study scope, with a reset
+    // tombstone so clearing an alignment on one device is not undone by the
+    // other still holding a copy.
+    parallelMergeRemote(data["scribal_parallel_v1"]);
     // Chapter-link groups + their per-scope timestamps. Converges links AND
     // unlinks; reads current state via refs so this long-lived merge (held by the
     // Firebase listener) never works off stale mount-time values.
@@ -1128,7 +1153,10 @@ export default function App() {
   // a blank compile board with no error.
   const [compileView, setCompileView] = useState<CompileView>(() => {
     const saved = localStorage.getItem("scribal_compile_view");
-    return saved === "outline" || saved === "distilled" || saved === "semantic"
+    return saved === "outline" ||
+      saved === "distilled" ||
+      saved === "semantic" ||
+      saved === "parallel"
       ? saved
       : "outline";
   });
@@ -13172,6 +13200,9 @@ export default function App() {
                 {viewTabButton(compileView === "semantic", "Semantic", () =>
                   setCompileView("semantic")
                 )}
+                {viewTabButton(compileView === "parallel", "Parallel", () =>
+                  setCompileView("parallel")
+                )}
               </div>
             </div>
           </div>
@@ -13443,6 +13474,48 @@ export default function App() {
             {compileView === "distilled" && (
               <Distilled {...sharedCompileProps} />
             )}
+            {compileView === "parallel" &&
+              (() => {
+                // Only a SAVED study has a scope stable enough to key an
+                // alignment by; an ad-hoc compile's scope is just its first
+                // chapter. See adHocAlignment above.
+                const saved = !!compileStudy;
+                const synthKey = () =>
+                  resolveSynthesisKey(
+                    notes || {},
+                    sharedCompileProps.compileTabs.map(tabLabel),
+                    effectiveScope
+                  );
+                return (
+                  <ParallelView
+                    chapters={sharedCompileProps.compileTabs.map(chapterScopeOf)}
+                    marks={sharedCompileProps.marks}
+                    tags={effectiveTags}
+                    notes={notes}
+                    setNote={setNote}
+                    synthesisValue={notes[synthKey()] || ""}
+                    onSynthesis={(t) => setNote(synthKey(), t)}
+                    alignment={
+                      saved ? getParallelAlignment(effectiveScope) : adHocAlignment
+                    }
+                    onAlignment={(a) =>
+                      saved
+                        ? setParallelAlignment(effectiveScope, a)
+                        : setAdHocAlignment({
+                            ...a,
+                            scope: effectiveScope,
+                            updatedAt: Date.now(),
+                          })
+                    }
+                    onClearAlignment={() =>
+                      saved
+                        ? clearParallelAlignment(effectiveScope)
+                        : setAdHocAlignment(undefined)
+                    }
+                    dark={dark}
+                  />
+                );
+              })()}
             {/* Word Studies renders in ONE place — the Outline (the study's
                 primary compiled output) — instead of trailing every view tab
                 (SCR-13). */}
