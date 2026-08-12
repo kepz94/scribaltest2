@@ -7,7 +7,7 @@
 //
 // If one of these numbers moves, the constant moved with it — treat that as a
 // regression in the matcher, not as a new baseline to write down.
-import { alignSequences } from "./parallelMatch";
+import { alignSequences, groupByCorrespondence } from "./parallelMatch";
 
 type Verse = { verse: number; text: string };
 
@@ -81,5 +81,55 @@ describe("unrelated chapters are not forced together", () => {
     // freely, MATCH_FLOOR has drifted too low and every board will look aligned
     // when it is not.
     expect(matchCount("Genesis 1", "Isaiah 52")).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("a study holding both creation accounts at once", () => {
+  // The board Kepu actually built: Genesis 1 and 2, Moses 2 and 3, Abraham 4
+  // and 5. Six columns, two accounts. Aligning everything against the leftmost
+  // column would try to match Moses 3 to Genesis 1, which share nothing.
+  const NAMES = [
+    "Genesis 1", "Genesis 2", "Moses 2", "Moses 3", "Abraham 4", "Abraham 5",
+  ];
+  const cols = NAMES.map((n) => chapters[n]);
+
+  test("splits into the two accounts, not six strangers or one blob", () => {
+    const groups = groupByCorrespondence(cols).map((g) => g.map((i) => NAMES[i]));
+    expect(groups).toEqual([
+      ["Genesis 1", "Moses 2", "Abraham 4"],
+      ["Genesis 2", "Moses 3", "Abraham 5"],
+    ]);
+  });
+
+  test("the accounts are separated by a wide margin, not a hair", () => {
+    // Same account 0.81-1.00, different account 0.00-0.12 — the threshold sits
+    // in an empty range. If this margin ever narrows, GROUP_FLOOR needs looking
+    // at before the grouping starts guessing.
+    const { correspondence } = require("./parallelMatch");
+    const same = [
+      correspondence(chapters["Genesis 1"], chapters["Moses 2"]),
+      correspondence(chapters["Genesis 1"], chapters["Abraham 4"]),
+      correspondence(chapters["Genesis 2"], chapters["Moses 3"]),
+      correspondence(chapters["Genesis 2"], chapters["Abraham 5"]),
+    ];
+    const different = [
+      correspondence(chapters["Genesis 1"], chapters["Genesis 2"]),
+      correspondence(chapters["Genesis 1"], chapters["Moses 3"]),
+      correspondence(chapters["Moses 2"], chapters["Abraham 5"]),
+      correspondence(chapters["Abraham 4"], chapters["Abraham 5"]),
+    ];
+    expect(Math.min(...same)).toBeGreaterThan(0.8);
+    expect(Math.max(...different)).toBeLessThan(0.2);
+  });
+
+  test("Nephi and Isaiah group the same way", () => {
+    const names = ["2 Nephi 7", "Isaiah 50", "2 Nephi 8", "Isaiah 51"];
+    const groups = groupByCorrespondence(names.map((n) => chapters[n])).map((g) =>
+      g.map((i) => names[i])
+    );
+    expect(groups).toEqual([
+      ["2 Nephi 7", "Isaiah 50"],
+      ["2 Nephi 8", "Isaiah 51"],
+    ]);
   });
 });

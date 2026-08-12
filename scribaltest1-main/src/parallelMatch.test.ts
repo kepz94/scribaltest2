@@ -4,9 +4,12 @@
 import {
   similarity,
   alignSequences,
+  correspondence,
+  groupByCorrespondence,
   MATCH_FLOOR,
   GAP_PENALTY,
   MISS_PENALTY,
+  GROUP_FLOOR,
 } from "./parallelMatch";
 
 describe("how alike two verses are", () => {
@@ -142,5 +145,53 @@ describe("the partial overlap that motivated MISS_PENALTY", () => {
     const hits = map.filter((m): m is number => m !== null);
     expect(hits).toEqual([2, 3]);
     expect(hits.length).toBe(2);
+  });
+});
+
+describe("grouping columns into accounts", () => {
+  const A1 = ["alpha beta gamma delta", "epsilon zeta eta theta"];
+  const A2 = ["alpha beta gamma delta epsilon", "epsilon zeta eta theta iota"];
+  const B1 = ["commerce shipping tariffs harbour", "freight schedules manifest cargo"];
+  const B2 = ["commerce shipping tariffs harbour docks", "freight schedules manifest cargo lading"];
+
+  test("two tellings of the same thing land in one group", () => {
+    expect(groupByCorrespondence([A1, A2])).toEqual([[0, 1]]);
+  });
+
+  test("unrelated columns stay apart", () => {
+    expect(groupByCorrespondence([A1, B1])).toEqual([[0], [1]]);
+  });
+
+  test("interleaved columns are grouped, not merely sorted", () => {
+    // A1, B1, A2, B2 -> the two accounts separate even though they alternate.
+    expect(groupByCorrespondence([A1, B1, A2, B2])).toEqual([[0, 2], [1, 3]]);
+  });
+
+  test("groups come out in the order they first appear", () => {
+    expect(groupByCorrespondence([B1, A1, B2, A2])).toEqual([[0, 2], [1, 3]]);
+  });
+
+  test("members keep their original left-to-right order", () => {
+    const g = groupByCorrespondence([A2, B1, A1]);
+    expect(g[0]).toEqual([0, 2]);
+  });
+
+  test("a lone column is its own group", () => {
+    expect(groupByCorrespondence([A1])).toEqual([[0]]);
+  });
+
+  test("no columns is no groups", () => {
+    expect(groupByCorrespondence([])).toEqual([]);
+  });
+
+  test("an empty chapter corresponds to nothing", () => {
+    expect(correspondence([], A1)).toBe(0);
+    expect(correspondence(A1, [])).toBe(0);
+  });
+
+  test("correspondence is measured against the shorter chapter", () => {
+    // A1 is fully contained in A2's wording, so it reads as a full match even
+    // though A2 is no longer. Using the longer one would understate it.
+    expect(correspondence(A1, A2)).toBeGreaterThanOrEqual(GROUP_FLOOR);
   });
 });

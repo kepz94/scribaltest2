@@ -12,7 +12,7 @@ import {
   nudge,
   pairRows,
 } from "../parallelAlign";
-import { alignSequences } from "../parallelMatch";
+import { alignSequences, groupByCorrespondence } from "../parallelMatch";
 
 // The Parallel compile view: a study's chapters laid side by side, one column
 // each, so parallel accounts can be read across instead of one after another.
@@ -29,9 +29,17 @@ const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const SERIF =
   '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif';
 
-const GUTTER_W = 56;
-const COL_MIN = 300;
+const GUTTER_W = 44;
 const DRAWER_W = 320;
+
+// How narrow a column may get before it stops being readable. Scripture wants
+// room, but a comparison wants COLUMNS — being able to see the eighth account
+// beats giving the first one a comfortable measure. So the floor drops as the
+// board widens, and the reader can still scroll when even that will not fit.
+// At eight columns this is 8 x 168 + 44 = 1388px, which lands inside a laptop
+// window once the note drawer is out of the way.
+const colMinFor = (n: number): number =>
+  n <= 2 ? 320 : n <= 3 ? 300 : n <= 4 ? 260 : n <= 5 ? 224 : n <= 6 ? 200 : 168;
 
 // One shared empty array, so a verse with no marks never mints a new one and
 // MarkedVerse's props stay referentially stable across renders.
@@ -144,8 +152,22 @@ export default function ParallelView({
         verses: verseList.filter((v) => v.chapterRef === chapter),
       });
     });
-    return out;
-  }, [chapters]);
+    // A stored alignment carries the column ORDER as well as the rows, because
+    // matching regroups the board so chapters telling the same account stand
+    // together. Columns the stored order has never heard of keep their place at
+    // the end, so adding a chapter to the study never scrambles the rest.
+    const order = alignment && alignment.order;
+    if (!order || !order.length) return out;
+    const rank = new Map(order.map((id, i) => [id, i]));
+    return out
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => {
+        const ra = rank.has(a.c.id) ? (rank.get(a.c.id) as number) : order.length + a.i;
+        const rb = rank.has(b.c.id) ? (rank.get(b.c.id) as number) : order.length + b.i;
+        return ra - rb;
+      })
+      .map((x) => x.c);
+  }, [chapters, alignment]);
 
   // One pass over the marks instead of one filter per cell. A full board is
   // eight columns of a long chapter — up to a few hundred cells — and each one
@@ -263,35 +285,63 @@ export default function ParallelView({
     commit(currentSlots(), pins);
   };
 
-  // Ask the text which verses correspond. The leftmost column is the reference;
-  // every other column is aligned against it. Matches become pins, so they are
-  // corrected with exactly the same controls as a hand-made pair.
+  // Ask the text which verses correspond.
+  //
+  // A board can hold more than one account — Genesis 1 / Moses 2 / Abraham 4 is
+  // the first creation account, Genesis 2 / Moses 3 / Abraham 5 the second, and
+  // a study can carry all six at once. So this groups the columns first, stands
+  // each account's chapters together, and aligns each group against its OWN
+  // longest chapter. Aligning everything against the leftmost column would try
+  // to match Moses 3 to Genesis 1, which share nothing, and scatter both
+  // accounts across rows neither belongs on.
+  //
+  // Matches become pins, so every one of them is corrected with the same ⇄ and
+  // ↓ as a pair made by hand.
   const matchByWording = () => {
     if (columns.length < 2) return;
-    const ref = columns[0];
-    const refTexts = ref.verses.map((v) => v.text);
-    const slots: Record<string, Slots> = { [ref.id]: ref.verses.map((_, i) => i) };
-    const pins: Record<string, number[]> = { [ref.id]: [] };
+
+    const groups = groupByCorrespondence(
+      columns.map((c) => c.verses.map((v) => v.text))
+    );
+
+    const slots: Record<string, Slots> = {};
+    const pins: Record<string, number[]> = {};
     let matched = 0;
 
-    columns.slice(1).forEach((c) => {
-      const map = alignSequences(refTexts, c.verses.map((v) => v.text));
-      const out: Slots = [];
-      const p: number[] = [];
-      let nextFree = 0;
-      c.verses.forEach((_, vi) => {
-        const m = map[vi];
-        const target = m == null ? nextFree : Math.max(m, nextFree);
-        while (out.length < target) out.push(null);
-        out.push(vi);
-        if (m != null) {
-          p.push(vi);
-          matched++;
-        }
-        nextFree = out.length;
+    groups.forEach((group) => {
+      // The longest chapter is the spine: it offers the most places for the
+      // others to attach, and nothing has to be invented to hold a gap.
+      const refIdx = group.reduce(
+        (best, i) =>
+          columns[i].verses.length > columns[best].verses.length ? i : best,
+        group[0]
+      );
+      const ref = columns[refIdx];
+      const refTexts = ref.verses.map((v) => v.text);
+      slots[ref.id] = ref.verses.map((_, i) => i);
+      pins[ref.id] = [];
+
+      group.forEach((i) => {
+        if (i === refIdx) return;
+        const c = columns[i];
+        const map = alignSequences(refTexts, c.verses.map((v) => v.text));
+        const out: Slots = [];
+        const p: number[] = [];
+        let nextFree = 0;
+        c.verses.forEach((_, vi) => {
+          const m = map[vi];
+          const target = m == null ? nextFree : Math.max(m, nextFree);
+          while (out.length < target) out.push(null);
+          out.push(vi);
+          if (m != null) {
+            p.push(vi);
+            matched++;
+          }
+          nextFree = out.length;
+        });
+        slots[c.id] = out;
+        pins[c.id] = p;
       });
-      slots[c.id] = out;
-      pins[c.id] = p;
     });
 
     if (!matched) {
@@ -300,14 +350,23 @@ export default function ParallelView({
       );
       return;
     }
-    commit(slots, pins);
+
+    // Regroup the board so each account's chapters stand together.
+    const order = groups.reduce(
+      (acc: string[], g) => acc.concat(g.map((i) => columns[i].id)),
+      []
+    );
+    onAlignment({ order, slots, pins });
+
+    const accounts = groups.filter((g) => g.length > 1).length;
     setBanner(
       "Matched " +
         matched +
         " verse" +
         (matched === 1 ? "" : "s") +
-        " against " +
-        ref.chapter +
+        (accounts > 1
+          ? " across " + accounts + " accounts, and stood each account's chapters together"
+          : "") +
         ". Matched verses are pinned; correct any of them with ⇄ or ↓."
     );
   };
@@ -342,10 +401,11 @@ export default function ParallelView({
     return null;
   })();
 
+  const tight = columns.length > 5;
   const cellBase = {
     borderRight: "1px solid var(--border)",
     borderBottom: "1px solid var(--border)",
-    padding: "12px 14px",
+    padding: tight ? "9px 10px" : "12px 14px",
     minWidth: 0,
   } as const;
 
@@ -457,7 +517,7 @@ export default function ParallelView({
                 "px repeat(" +
                 columns.length +
                 ", minmax(" +
-                COL_MIN +
+                colMinFor(columns.length) +
                 "px, 1fr))",
             }}
           >
@@ -523,7 +583,10 @@ export default function ParallelView({
           </div>
         </div>
 
-        {/* Verse note */}
+        {/* Verse note. Only present once a verse is chosen — an empty 320px
+            panel sitting there permanently costs two whole columns, and on a
+            board this wide the columns are the point. */}
+        {selRec && (
         <aside
           style={{
             flex: "0 0 " + DRAWER_W + "px",
@@ -545,12 +608,7 @@ export default function ParallelView({
           >
             Verse note
           </div>
-          {!selRec ? (
-            <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
-              Click any verse to write a note about it. Notes here are the same
-              notes the Outline shows.
-            </p>
-          ) : (
+          {selRec && (
             <div>
               <div style={{ fontSize: "13.5px", fontWeight: 650 }}>
                 {selRec.verse.reference}
@@ -596,6 +654,7 @@ export default function ParallelView({
             </div>
           )}
         </aside>
+        )}
       </div>
 
       {/* Study synthesis — the same one Outline and Semantic show. */}
