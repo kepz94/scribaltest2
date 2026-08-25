@@ -2014,6 +2014,12 @@ export default function App() {
   const [sendPicking, setSendPicking] = useState(false);
   // Third send destination: picking which study table to set the verses aside in.
   const [sendTablesPicking, setSendTablesPicking] = useState(false);
+  // Set when the sheet was opened from a keyword search panel's selection: the
+  // search words, which the chapter-link destination needs as the study's name.
+  // Null for a reading-panel send, which has no chapter-link destination. Only
+  // read while sendRefs is non-null, so both open sites set it and nothing has
+  // to clear it on close.
+  const [sendSearchLabel, setSendSearchLabel] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<{
     id: string;
     kind: "chapter" | "linked" | "keyword";
@@ -4685,6 +4691,21 @@ export default function App() {
     const drop = new Set(refs);
     updateStudy(studyId, { refs: study.refs.filter((r) => !drop.has(r)) });
   };
+  // The keyword studies the send picker may offer: live ones only. searchStudies
+  // is the raw store and keeps tombstones (isSearchStudyDeleted decides), so an
+  // unfiltered list offers deleted studies as destinations. Most recently
+  // touched first, so the study you were just in is the first one you see.
+  const sendableStudies = useMemo(
+    () =>
+      searchStudies
+        .filter((s) => !isSearchStudyDeleted(s))
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+        ),
+    [searchStudies]
+  );
   // Display name for a study's book in the send picker.
   const bookLabel = (bookId: string) => {
     const b = books.find((x) => x.id === bookId);
@@ -9096,9 +9117,11 @@ export default function App() {
                     marginTop: "3px",
                   }}
                 >
-                  Start a new study from{" "}
-                  {sendRefs.length === 1 ? "it" : "them"}, or add to one you
-                  already have.
+                  {"Start a new study from " +
+                    (sendRefs.length === 1 ? "it" : "them") +
+                    (sendSearchLabel !== null
+                      ? ", add to one you already have, or link a chapter."
+                      : ", or add to one you already have.")}
                 </div>
                 <button
                   onClick={() => {
@@ -9141,6 +9164,53 @@ export default function App() {
                 >
                   Add to an existing study
                 </button>
+                {/* Search-only fourth destination: link the gathered verses to
+                    a chapter, so they share its themes and compile with it.
+                    A reading-panel send has no such step (sendSearchLabel is
+                    null there) — a chapter already owns those verses. */}
+                {sendSearchLabel !== null && (
+                  <button
+                    onClick={() => {
+                      const refs = sendRefs;
+                      const label = sendSearchLabel;
+                      setSendRefs(null);
+                      setSendPicking(false);
+                      onLinkSearchToChapter(refs, label);
+                    }}
+                    style={{
+                      width: "100%",
+                      marginTop: "10px",
+                      padding: "12px 14px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border)",
+                      background: "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+                      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+                    </svg>
+                    Link to a chapter
+                  </button>
+                )}
                 <button
                   onClick={() => setSendTablesPicking(true)}
                   style={{
@@ -9218,7 +9288,7 @@ export default function App() {
                   {sendRefs.length === 1 ? "1 verse" : sendRefs.length + " verses"}{" "}
                   will be added to the study you pick.
                 </div>
-                {searchStudies.length === 0 ? (
+                {sendableStudies.length === 0 ? (
                   <div
                     style={{
                       marginTop: "16px",
@@ -9240,7 +9310,7 @@ export default function App() {
                       gap: "8px",
                     }}
                   >
-                    {searchStudies.map((s) => (
+                    {sendableStudies.map((s) => (
                       <button
                         key={s.id}
                         onClick={() => {
@@ -9298,6 +9368,9 @@ export default function App() {
                           {s.refs.length === 1
                             ? "1 verse"
                             : s.refs.length + " verses"}
+                          {/* A linked study folds into its chapter's compile,
+                              so say so rather than hide it (owner call). */}
+                          {s.linkedScope ? " · linked to " + s.linkedScope : ""}
                         </div>
                       </button>
                     ))}
@@ -9326,7 +9399,7 @@ export default function App() {
                   >
                     Back
                   </button>
-                  {searchStudies.length === 0 && (
+                  {sendableStudies.length === 0 && (
                     <button
                       onClick={() => {
                         const refs = sendRefs;
@@ -12210,6 +12283,7 @@ export default function App() {
                         ? undefined
                         : (refs) => {
                             if (refs.length) {
+                              setSendSearchLabel(null);
                               setSendRefs(refs);
                               setSendPicking(false);
                               setSendTablesPicking(false);
@@ -12329,6 +12403,19 @@ export default function App() {
                     }
                     onLinkSearchToChapter={(refs, label) => {
                       onLinkSearchToChapter(refs, label, panel.linkTabId);
+                    }}
+                    onSendVerses={(refs, label) => {
+                      if (!refs.length) return;
+                      const ordered = refs
+                        .slice()
+                        .sort((a, b) => orderOfRef(a) - orderOfRef(b));
+                      // A non-null label is what makes the sheet's chapter-link
+                      // destination appear, so it must be set even when the
+                      // search box is empty.
+                      setSendSearchLabel(label);
+                      setSendRefs(ordered);
+                      setSendPicking(false);
+                      setSendTablesPicking(false);
                     }}
                     linkChapterLabel={
                       linkTab ? tabLabel(linkTab) : undefined

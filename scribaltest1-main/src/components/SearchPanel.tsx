@@ -26,6 +26,12 @@ interface SearchPanelProps {
   onOpenNewTab: (reference: string) => void;
   onLinkStudy?: (refs: string[]) => void;
   onLinkSearchToChapter?: (refs: string[], label: string) => void;
+  // A plain search panel sends its selection through the SAME sheet the reading
+  // panel's "Send verses" opens — new study, an existing keyword study, link a
+  // chapter, or a study table. Before this, the panel's own two buttons could
+  // only make a new study or link a CHAPTER: an existing keyword study was
+  // unreachable from search, though the button read "Link to an existing study".
+  onSendVerses?: (refs: string[], label: string) => void;
   // When set, the search was opened from a chapter's link prompt: the link
   // button names that chapter (e.g. Link to "1 Nephi 1") instead of reading
   // generically, since the destination is already fixed.
@@ -79,6 +85,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     onOpenNewTab,
     onLinkStudy,
     onLinkSearchToChapter,
+    onSendVerses,
     linkChapterLabel,
     addToStudyName,
     onAddToStudy,
@@ -913,8 +920,11 @@ export default function SearchPanel(props: SearchPanelProps) {
                         Save as new study
                       </button>
                     </>
-                  ) : (
+                  ) : linkChapterLabel && onLinkSearchToChapter ? (
                     <>
+                      {/* Opened from a chapter's link prompt: the destination is
+                          already fixed, so this stays the one-tap link (SCR-30)
+                          rather than routing through the send sheet. */}
                       {onLinkSearchToChapter && (
                         <button
                           onClick={() => {
@@ -952,30 +962,47 @@ export default function SearchPanel(props: SearchPanelProps) {
                             <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
                             <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
                           </svg>
-                          {linkChapterLabel
-                            ? "Link to \u201c" + linkChapterLabel + "\u201d"
-                            : "Link to an existing study"}
+                          {"Link to \u201c" + linkChapterLabel + "\u201d"}
                         </button>
                       )}
-                      {onLinkStudy && (
+                    </>
+                  ) : (
+                    <>
+                      {/* A plain search panel sends through the SAME sheet the
+                          reading panel's "Send verses" opens, so the selection can
+                          reach a new study, an EXISTING keyword study, a chapter,
+                          or a study table. The two buttons this replaces could
+                          only make a new study or link a chapter \u2014 an existing
+                          keyword study had no route in from search. Selection
+                          clears on open, exactly as both old buttons did. */}
+                      {onSendVerses && (
                         <button
                           onClick={() => {
-                            onLinkStudy(Array.from(selectedRefs));
+                            onSendVerses(
+                              Array.from(selectedRefs),
+                              query.trim()
+                            );
                             setSelectedRefs(new Set());
                           }}
                           style={{
-                            padding: "6px 12px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "7px",
+                            padding: "6px 14px",
                             borderRadius: "999px",
-                            border: "1px solid var(--border)",
-                            background: "transparent",
-                            color: "var(--text)",
+                            border: "none",
+                            background: "#3b82f6",
+                            color: "#fff",
                             cursor: "pointer",
                             fontSize: "12.5px",
-                            fontWeight: 600,
+                            fontWeight: 700,
                             fontFamily: "inherit",
                           }}
                         >
-                          Create a new study
+                          Send{" "}
+                          {selectedRefs.size === 1
+                            ? "verse"
+                            : selectedRefs.size + " verses"}
                         </button>
                       )}
                     </>
