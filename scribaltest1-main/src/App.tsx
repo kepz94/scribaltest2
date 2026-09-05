@@ -1,5 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./desktop.css";
+import {
+  reconcileRowOrder,
+  carryRowOrder,
+  carryPanelWidth,
+  clearPanelWidth,
+} from "./panelIdentity";
 import { dockTop } from "./chromeDock";
 import { useMarks } from "./hooks/useMarks";
 import { useVault } from "./hooks/useVault";
@@ -280,6 +286,45 @@ const makeTabId = (
 const DEFAULT_PANEL_WIDTH = 540;
 const MIN_PANEL_WIDTH = 240;
 const MAX_PANEL_WIDTH = 900;
+
+// SCR-109: one chrome for every reading-row panel. The four panel kinds
+// (chapter, search, study, new-tab launcher) each carried their own inline
+// style block, and they had drifted apart — a bare hairline right border,
+// square corners, no surface of their own — so the row read as unfinished and
+// panels ran into each other with nothing separating them. rowPanelStyle is
+// the single source for that chrome: each panel is a card on --panel with a
+// full border, a shared radius, and a quiet elevation that lifts on the active
+// reader. Sizing (order / flex / width / height) is still passed in per panel,
+// so nothing about the layout or the SCR-29 width model changes here.
+const PANEL_RADIUS = 12;
+const PANEL_GAP = 10;
+const rowPanelStyle = (opts: {
+  order: number;
+  height: string;
+  // A lone panel fills the row (SCR-29); every other panel holds a set width.
+  fill?: boolean;
+  width?: number;
+  active?: boolean;
+}): React.CSSProperties => ({
+  order: opts.order,
+  flex: opts.fill ? 1 : "0 0 auto",
+  width: opts.fill ? undefined : opts.width,
+  minWidth: 0,
+  position: "relative",
+  overflow: "hidden",
+  height: opts.height,
+  // No global box-sizing in this app: without this the card's new 1px top and
+  // bottom border would add 2px past `height: calc(100vh - chrome)` and scroll
+  // the whole window — the failure the headerH/tabsH measuring exists to avoid.
+  boxSizing: "border-box",
+  background: "var(--panel)",
+  border: "1px solid var(--border)",
+  borderRadius: PANEL_RADIUS + "px",
+  boxShadow: opts.active
+    ? "0 1px 2px rgba(0,0,0,0.05), 0 8px 22px rgba(0,0,0,0.08)"
+    : "0 1px 2px rgba(0,0,0,0.04)",
+  transition: "box-shadow 0.18s ease, border-color 0.18s ease",
+});
 
 // Cap on open reading tabs (matches mobile's MAX_TABS).
 const MAX_TABS = 8;
@@ -1245,12 +1290,17 @@ export default function App() {
       );
     } catch {}
   }, [panelWidths]);
+  // Which panel's resize handle is being dragged (SCR-109) — the handle used
+  // to be a 9px invisible strip with no sign it existed. It now shows a rail on
+  // hover and stays lit for the whole drag, so resizing is discoverable.
+  const [resizingPanelId, setResizingPanelId] = useState<string | null>(null);
   // Drag the right-edge handle to set a panel's width. Listeners live on window
   // so the drag keeps tracking even when the cursor outruns the handle; the
   // functional setState captures the live delta with no stale-closure risk.
   const startPanelResize = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setResizingPanelId(id);
     const startX = e.clientX;
     const startW = panelWidths[id] || DEFAULT_PANEL_WIDTH;
     const onMove = (ev: MouseEvent) => {
@@ -1267,6 +1317,7 @@ export default function App() {
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      setResizingPanelId(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -1596,9 +1647,7 @@ export default function App() {
     ...studyPanels.map((p) => p.id),
     ...newTabPanels,
   ];
-  const orderedRowIds = rowOrder
-    .filter((id) => rowIds.includes(id))
-    .concat(rowIds.filter((id) => !rowOrder.includes(id)));
+  const orderedRowIds = reconcileRowOrder(rowOrder, rowIds);
   const rowIndexOf = (id: string) => orderedRowIds.indexOf(id);
   const reorderRow = (fromId: string | null, toId: string) => {
     if (!fromId || fromId === toId) return;
@@ -1641,6 +1690,29 @@ export default function App() {
     });
     setNewTabPanels((prev) => prev.filter((x) => x !== fromId));
   };
+  // SCR-109: a chapter panel's id IS its location (makeTabId), so re-aiming a
+  // panel at another chapter or book mints a NEW id for the same on-screen
+  // panel. Everything keyed by that id has to be carried across the rename or
+  // the panel visibly changes out from under the user:
+  //   - panelWidths[oldId] is orphaned, so the panel snapped back to
+  //     DEFAULT_PANEL_WIDTH on every chapter change;
+  //   - rowOrder still held oldId, which orderedRowIds filters out, and newId
+  //     was unknown, so it appended at the END of the row — the panel swapped
+  //     places with whatever sat to its right.
+  // Same transfer convertLauncher (SCR-43) does, but for a panel that stays a
+  // panel. Call it ONLY when the tab is actually retargeted: when the target
+  // chapter is already open the source tab is dropped instead, and a dropped
+  // id is left stale in both maps exactly the way closeTab leaves it (rowOrder
+  // filters unknown ids at read time).
+  const carryPanelIdentity = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setRowOrder((prev) => carryRowOrder(prev, fromId, toId));
+    setPanelWidths((prev) => carryPanelWidth(prev, fromId, toId));
+  };
+  // Double-clicking a panel's resize handle drops its stored width, so the
+  // panel returns to DEFAULT_PANEL_WIDTH like a freshly opened one.
+  const resetPanelWidth = (id: string) =>
+    setPanelWidths((prev) => clearPanelWidth(prev, id));
   const launcherPickChapter = (
     launchId: string,
     v: number,
@@ -2483,6 +2555,8 @@ export default function App() {
   const switchTabBook = (t: Tab, bookId: string) => {
     if (t.studyId || t.looseRefs || bookId === t.bookId) return;
     const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(t.id, newId);
     setTabs((prev) => {
       // That book+chapter already open in another tab → just switch to it.
       if (prev.some((x) => x.id === newId && x.id !== t.id))
@@ -2497,6 +2571,8 @@ export default function App() {
   const updateActiveTab = (volume: number, book: number, chapter: number) => {
     const bookId = activeTab.bookId || "master";
     const newId = makeTabId(bookId, volume, book, chapter);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(activeTabId, newId);
     setTabs((prev) => {
       const existing = prev.find((t) => t.id === newId);
       if (existing) {
@@ -2539,6 +2615,8 @@ export default function App() {
       if (c >= count) c = chapter;
     }
     const newId = makeTabId(bookId, volume, book, c);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(tabId, newId);
     setTabs((prev) => {
       const existing = prev.find((t) => t.id === newId);
       if (existing) {
@@ -2558,6 +2636,8 @@ export default function App() {
     const t = tabs.find((x) => x.id === activeTabId);
     if (!t) return;
     const newId = makeTabId(bookId, t.volume, t.book, t.chapter);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(t.id, newId);
     setTabs((prev) => {
       // if that book+chapter is already open in another tab, switch to it
       if (prev.some((x) => x.id === newId && x.id !== t.id)) {
@@ -2913,6 +2993,8 @@ export default function App() {
       const plain = tabs.find((t) => !t.studyId && !t.looseRefs);
       if (!plain) return;
       const rid = makeTabId(plain.bookId, loc.v, loc.b, loc.c);
+      // SCR-109: keep this panel's row slot and dragged width across the rename.
+      if (!tabs.some((x) => x.id === rid)) carryPanelIdentity(plain.id, rid);
       setTabs((prev) =>
         prev.map((t) =>
           t.id === plain.id
@@ -2980,6 +3062,8 @@ export default function App() {
     const t = tabs.find((x) => x.id === activeTabId);
     if (!t) return;
     const newId = makeTabId(bookId, loc.v, loc.b, loc.c);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(t.id, newId);
     setTabs((prev) => {
       if (prev.some((x) => x.id === newId && x.id !== t.id)) {
         return prev.filter((x) => x.id !== t.id);
@@ -3024,6 +3108,8 @@ export default function App() {
     const loc = locOfScope(scope);
     if (!loc) return;
     const newId = makeTabId(t.bookId, loc.v, loc.b, loc.c);
+    // SCR-109: keep this panel's row slot and dragged width across the rename.
+    if (!tabs.some((x) => x.id === newId)) carryPanelIdentity(t.id, newId);
     setTabs((prev) => {
       if (prev.some((x) => x.id === newId && x.id !== t.id)) {
         return prev.filter((x) => x.id !== t.id);
@@ -12115,6 +12201,14 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               display: "flex",
+              // Same reason as rowPanelStyle: the row's new side padding must
+              // stay inside its flex width, not add to it.
+              boxSizing: "border-box",
+              // SCR-109: panels are cards now, so the row gives them a gutter
+              // between each other and against the window edge instead of
+              // butting them together with a hairline.
+              gap: PANEL_GAP + "px",
+              padding: "0 " + PANEL_GAP + "px",
               overflowX:
                 tabs.length +
                   searchPanels.length +
@@ -12164,23 +12258,18 @@ export default function App() {
                   data-compile-tab={t.id}
                   data-row-panel={t.id}
                   onMouseDown={() => setActiveTabId(t.id)}
-                  style={{
+                  style={rowPanelStyle({
                     // SCR-29: panels hold a set width (no flex-grow) when
                     // several are open, so they don't balloon to fill the row
                     // and empty space to the right stays empty. A single panel
                     // still fills the reader.
                     // SCR-33: panels render in the pill row's order.
                     order: rowIndexOf(t.id),
-                    flex: multi ? "0 0 auto" : 1,
-                    width: multi
-                      ? panelWidths[t.id] || DEFAULT_PANEL_WIDTH
-                      : undefined,
-                    minWidth: 0,
-                    borderRight: multi ? "1px solid var(--border)" : "none",
-                    position: "relative",
-                    overflow: "hidden",
+                    fill: !multi,
+                    width: panelWidths[t.id] || DEFAULT_PANEL_WIDTH,
+                    active: multi && isActive,
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
-                  }}
+                  })}
                 >
                   {/* SCR-40: the active-tab border is an overlay div, not a CSS
                       outline — the sticky reading header inside the scroller
@@ -12192,7 +12281,12 @@ export default function App() {
                       style={{
                         position: "absolute",
                         inset: 0,
-                        border: "2px solid " + ICON_ACCENT,
+                        // SCR-109: the ring follows the card's corners now, and
+                        // reads as a focus ring (hairline + soft accent halo)
+                        // rather than the flat 2px slab it used to be.
+                        border: "1.5px solid " + ICON_ACCENT,
+                        borderRadius: PANEL_RADIUS + "px",
+                        boxShadow: "inset 0 0 0 3px rgba(139,92,246,0.10)",
                         pointerEvents: "none",
                         zIndex: 25,
                       }}
@@ -12324,18 +12418,25 @@ export default function App() {
                   </div>
                   {multi && (
                     <div
+                      className={
+                        "scribal-panel-grip" +
+                        (resizingPanelId === t.id ? " is-resizing" : "")
+                      }
                       onMouseDown={(e) => startPanelResize(t.id, e)}
-                      title="Drag to resize this panel"
+                      onDoubleClick={() => resetPanelWidth(t.id)}
+                      title="Drag to resize this panel · double-click to reset it"
                       style={{
                         position: "absolute",
                         top: 0,
                         right: 0,
                         bottom: 0,
-                        width: "9px",
+                        width: "11px",
                         cursor: "col-resize",
                         zIndex: 6,
                       }}
-                    />
+                    >
+                      <span className="scribal-panel-grip-rail" />
+                    </div>
                   )}
                   {growMoment &&
                     t.studyId &&
@@ -12375,16 +12476,11 @@ export default function App() {
                 <div
                   key={panel.id}
                   data-row-panel={panel.id}
-                  style={{
-                    flex: "0 0 auto",
-                    width,
-                    minWidth: 0,
+                  style={rowPanelStyle({
                     order: rowIndexOf(panel.id),
-                    borderRight: "1px solid var(--border)",
-                    position: "relative",
-                    overflow: "hidden",
+                    width,
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
-                  }}
+                  })}
                 >
                   <SearchPanel
                     embedded
@@ -12434,18 +12530,25 @@ export default function App() {
                     onClose={() => closeSearchPanel(panel.id)}
                   />
                   <div
+                    className={
+                      "scribal-panel-grip" +
+                      (resizingPanelId === panel.id ? " is-resizing" : "")
+                    }
                     onMouseDown={(e) => startPanelResize(panel.id, e)}
-                    title="Drag to resize this panel"
+                    onDoubleClick={() => resetPanelWidth(panel.id)}
+                    title="Drag to resize this panel · double-click to reset it"
                     style={{
                       position: "absolute",
                       top: 0,
                       right: 0,
                       bottom: 0,
-                      width: "9px",
+                      width: "11px",
                       cursor: "col-resize",
                       zIndex: 6,
                     }}
-                  />
+                  >
+                    <span className="scribal-panel-grip-rail" />
+                  </div>
                 </div>
               );
             })}
@@ -12466,16 +12569,11 @@ export default function App() {
                 <div
                   key={p.id}
                   data-row-panel={p.id}
-                  style={{
-                    flex: "0 0 auto",
-                    width: panelWidths[p.id] || DEFAULT_PANEL_WIDTH,
-                    minWidth: 0,
+                  style={rowPanelStyle({
                     order: rowIndexOf(p.id),
-                    borderRight: "1px solid var(--border)",
-                    position: "relative",
-                    overflow: "hidden",
+                    width: panelWidths[p.id] || DEFAULT_PANEL_WIDTH,
                     height: `calc(100vh - ${headerH + tabsH + 46}px)`,
-                  }}
+                  })}
                 >
                   <StudyPanel
                     title={studyPanelTitle(p)}
@@ -12508,18 +12606,25 @@ export default function App() {
                     }
                   />
                   <div
+                    className={
+                      "scribal-panel-grip" +
+                      (resizingPanelId === p.id ? " is-resizing" : "")
+                    }
                     onMouseDown={(e) => startPanelResize(p.id, e)}
-                    title="Drag to resize this panel"
+                    onDoubleClick={() => resetPanelWidth(p.id)}
+                    title="Drag to resize this panel · double-click to reset it"
                     style={{
                       position: "absolute",
                       top: 0,
                       right: 0,
                       bottom: 0,
-                      width: "9px",
+                      width: "11px",
                       cursor: "col-resize",
                       zIndex: 6,
                     }}
-                  />
+                  >
+                    <span className="scribal-panel-grip-rail" />
+                  </div>
                 </div>
               );
             })}
@@ -12529,16 +12634,11 @@ export default function App() {
               <div
                 key={id}
                 data-row-panel={id}
-                style={{
-                  flex: "0 0 auto",
-                  width: panelWidths[id] || DEFAULT_PANEL_WIDTH,
-                  minWidth: 0,
+                style={rowPanelStyle({
                   order: rowIndexOf(id),
-                  borderRight: "1px solid var(--border)",
-                  position: "relative",
-                  overflow: "hidden",
+                  width: panelWidths[id] || DEFAULT_PANEL_WIDTH,
                   height: `calc(100vh - ${headerH + tabsH + 46}px)`,
-                }}
+                })}
               >
                 <NewTabPanel
                   vols={vols}
@@ -12549,18 +12649,25 @@ export default function App() {
                   onClose={() => closeNewTabPanel(id)}
                 />
                 <div
+                  className={
+                    "scribal-panel-grip" +
+                    (resizingPanelId === id ? " is-resizing" : "")
+                  }
                   onMouseDown={(e) => startPanelResize(id, e)}
-                  title="Drag to resize this panel"
+                  onDoubleClick={() => resetPanelWidth(id)}
+                  title="Drag to resize this panel · double-click to reset it"
                   style={{
                     position: "absolute",
                     top: 0,
                     right: 0,
                     bottom: 0,
-                    width: "9px",
+                    width: "11px",
                     cursor: "col-resize",
                     zIndex: 6,
                   }}
-                />
+                >
+                  <span className="scribal-panel-grip-rail" />
+                </div>
               </div>
             ))}
           </div>

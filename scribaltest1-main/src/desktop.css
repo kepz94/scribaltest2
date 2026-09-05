@@ -261,3 +261,40 @@ textarea:focus-visible {
   vertical-align: super;
   padding: 0 2px;
 }
+
+/* Reading-panel resize grip (SCR-109). The handle used to be a 9px invisible
+   strip — nothing on screen said a panel could be resized at all. It now shows
+   a rail: quiet on hover, lit and full-height for the whole drag, so the panel
+   edge behaves like every other draggable divider. Hidden at rest so the row
+   stays calm; the cursor still flips to col-resize over the whole strip. */
+.scribal-panel-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.scribal-panel-grip-rail {
+  width: 3px;
+  height: 44px;
+  border-radius: 3px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, height 0.15s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .scribal-panel-grip:hover .scribal-panel-grip-rail {
+    opacity: 1;
+    background: #8b5cf6;
+    height: 72px;
+  }
+}
+.scribal-panel-grip.is-resizing .scribal-panel-grip-rail {
+  opacity: 1;
+  background: #8b5cf6;
+  height: 100%;
+  border-radius: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scribal-panel-grip-rail {
+    transition: none;
+  }
+}
