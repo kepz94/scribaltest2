@@ -1887,6 +1887,20 @@ export default function App() {
       combined: boolean
     ) => {
       if (left.id === right.id) return;
+      // SCR-110: the seam is an animation BETWEEN TWO PANELS ALREADY ON SCREEN.
+      // It used to accept a SYNTHESIZED tab for whichever side wasn't open
+      // (tabForScope builds one from chapterLoc when no panel shows the scope,
+      // and the keyword branch below builds both outright) and then splice it
+      // into the row — so linking chapters, which is a pure data change, opened
+      // panels the user never asked for: up to two per link, plus a reorder and
+      // a jump to the newly opened one. If either side isn't already open there
+      // is nothing on screen to animate between, so the link just applies and
+      // the row is left exactly as the user arranged it.
+      if (
+        !tabs.some((t) => t.id === left.id) ||
+        !tabs.some((t) => t.id === right.id)
+      )
+        return;
       setTabs((prev) => {
         let arr = prev;
         if (!arr.some((t) => t.id === left.id)) arr = [...arr, left];
