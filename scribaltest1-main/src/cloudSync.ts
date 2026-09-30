@@ -18,6 +18,22 @@
 // changed, so a mark edit no longer re-uploads the whole dataset, and each
 // doc stays far below the ceiling. The legacy users/{uid} doc is read once
 // per device (to migrate its content forward) and never written again.
+//
+// COMPARE-AND-SET (SCR-120). A set() is a blind overwrite, and the dirty check
+// above decides WHAT to write from `cloudVals` — which the offline cache feeds
+// too. On Sep 30 2026 a phone opened at home, took its hours-old cache for the
+// cloud, pushed inside the 1.2 s debounce before the server snapshot landed,
+// and replaced the work PC's day of study with its own copy; the next snapshot
+// was its own write, so the union merge never ran, and the work only came back
+// when the work PC reopened and re-pushed. Every write now goes through a
+// transaction against one small doc, users/{uid}/sync/_versions, holding a
+// sequence number per key. A key is written only if the server's number is
+// still the one this device last merged; otherwise the write is held, the
+// listener delivers the newer doc, the ordinary merge makes the union, and the
+// union is pushed. The versions doc has no `v` field, so older builds' listeners
+// skip it (they drop any doc without a string `v`). Costs one tiny read and one
+// extra write per push — chosen over reading the data docs, which would
+// download a whole book shard before every push (free-tier transfer budget).
 
 import { initializeApp } from "firebase/app";
 import {
@@ -35,7 +51,7 @@ import {
   collection,
   onSnapshot,
   getDoc,
-  writeBatch,
+  runTransaction,
   enableIndexedDbPersistence,
 } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
@@ -138,6 +154,93 @@ let serverSnapSeen = false;
 // snapshot so no local change is lost.
 let pushHeld = false;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ---- compare-and-set state (SCR-120) ----------------------------------------
+// The doc holding one sequence number per key. Not a backup key (those all
+// start "scribal_"), never routed to a merge, and carries no `v` field.
+export const VERSIONS_KEY = "_versions";
+// Per key, the sequence of the data doc this device last merged or wrote.
+// A number is a compare-and-set doc; LEGACY is a doc written without one (a
+// pre-SCR-120 write, or an older build) — its place in history is unknown, so
+// it is trusted only once the server has confirmed this listen's view.
+// Absent = this device has never seen the key at all.
+const LEGACY = "legacy";
+let seenSeq: Record<string, number | typeof LEGACY> = {};
+// Per key, the exact value this device last wrote successfully. On a
+// compare-and-set chain every later doc was written by a device that had
+// merged ours, so while local still equals this, the cloud already holds
+// everything we have — re-pushing different bytes of the same content was the
+// write ping-pong between two open devices (mark order differs per device).
+let lastWritten: Record<string, string> = {};
+// One push in flight at a time: overlapping transactions would only contend
+// on the versions doc and hold each other back. A push stuck longer than
+// PUSH_STALL_MS (a proxy holding a request open) stops blocking the next one —
+// compare-and-set keeps two concurrent pushes correct, the guard only saves
+// work — and the generation stops the stale one's finish from touching flags.
+const PUSH_STALL_MS = 30000;
+let pushing = false;
+let pushAgain = false;
+let pushStartedAt = 0;
+let pushGen = 0;
+// Held keys (the server moved) and offline failures retry on a backoff; the
+// listener delivering the newer doc usually gets there first.
+const RETRY_MIN_MS = 5000;
+const RETRY_MAX_MS = 60000;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = RETRY_MIN_MS;
+
+function scheduleRetry() {
+  if (retryTimer) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    schedulePush(true);
+  }, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+}
+
+function resetRetry() {
+  retryDelay = RETRY_MIN_MS;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+// May this device write `key`, given the server's current sequence for it?
+// Pure over its inputs; exported for tests.
+export function casAllows(
+  seen: number | typeof LEGACY | undefined,
+  current: number | undefined,
+  serverConfirmed: boolean
+): boolean {
+  // We merged a compare-and-set doc: write only if nobody has written since.
+  // (A missing entry means the versions doc itself was reset — e.g. deleted
+  // in the console — so fall back to the confirmed-view rule rather than
+  // holding this key forever.)
+  if (typeof seen === "number")
+    return current === seen || (current === undefined && serverConfirmed);
+  // We merged a doc of unknown age: only once the server has spoken this
+  // listen, so the listener has delivered whatever is newest.
+  if (seen === LEGACY) return serverConfirmed;
+  // Never seen the key: fine while nobody has ever versioned it; if somebody
+  // has, wait for the listener to deliver that doc first.
+  return current === undefined;
+}
+
+// Offline / transport failures are not failed writes — the change is safe in
+// localStorage and ships on retry. Everything else is surfaced (Jul 24).
+// "aborted" and "failed-precondition" are how Firestore reports a transaction
+// that lost to concurrent writes on every one of its 5 attempts (the SDK's own
+// TransactionRunner retries exactly these); "unavailable" is offline.
+function isTransient(e: any): boolean {
+  const code = e && e.code;
+  return (
+    code === "unavailable" ||
+    code === "deadline-exceeded" ||
+    code === "aborted" ||
+    code === "failed-precondition"
+  );
+}
 
 const state: CloudState = {
   ready: false,
@@ -379,13 +482,22 @@ function startListening(uid: string) {
   serverSnapSeen = false;
   cloudVals = {};
   pushHeld = false;
+  seenSeq = {};
+  lastWritten = {};
+  resetRetry();
   migrateLegacyDoc(uid);
   const ref = collection(db, "users", uid, "sync");
   unsub = onSnapshot(
     ref,
-    { includeMetadataChanges: false },
+    // Metadata changes ON (SCR-120): when the server confirms a cached view
+    // with nothing new, the only event is fromCache flipping to false — a
+    // metadata-only change, dropped without this. That flip is what tells a
+    // device its view is current. docChanges() below still excludes
+    // metadata-only changes, so the doc loop sees exactly what it did before.
+    { includeMetadataChanges: true },
     (snap: any) => {
       const fromServer = !snap.metadata.fromCache;
+      const firstServer = fromServer && !serverSnapSeen;
       if (fromServer) serverSnapSeen = true;
       const otherAcc: Record<string, string | null> = {};
       let applied = false;
@@ -397,7 +509,11 @@ function startListening(uid: string) {
         // Skip the optimistic local echo of our own in-flight write; the
         // server-confirmed copy still lands below and updates cloudVals.
         if (d.metadata && d.metadata.hasPendingWrites) return;
-        const body = d.data() as { v?: string; writer?: string } | undefined;
+        // The versions doc is bookkeeping for the transaction, never data.
+        if (d.id === VERSIONS_KEY) return;
+        const body = d.data() as
+          | { v?: string; writer?: string; seq?: number }
+          | undefined;
         if (!body || typeof body.v !== "string") return;
         const raw = unpackValue(body.v);
         if (raw === null) return; // undecodable blob — ignore, never merge
@@ -406,6 +522,7 @@ function startListening(uid: string) {
         // the cloud holds, arming the emptiness guards and the dirty check.
         // cloudVals always holds RAW values; compression is a wire format.
         cloudVals[key] = raw;
+        seenSeq[key] = typeof body.seq === "number" ? body.seq : LEGACY;
         if (body.writer === deviceId) return; // our own write echoing back
         routeValue(key, raw, otherAcc);
         applied = true;
@@ -433,6 +550,12 @@ function startListening(uid: string) {
         // guards in doPush still apply.
         pushHeld = false;
         schedulePush(true);
+      } else if (firstServer) {
+        // The server has confirmed this listen's view. A change from an
+        // earlier short session (iOS suspended the app before its push got
+        // through — SCR-83's case) lives in localStorage; the dirty check
+        // finds it and ships it now, safely, against the confirmed view.
+        schedulePush(false);
       }
     },
     () => {
@@ -464,7 +587,32 @@ function cloudCounts(): ContentCounts {
   return contentCountsFromBackup(JSON.stringify({ data: cloudVals }));
 }
 
+// One push at a time; a push asked for mid-flight runs once afterwards.
 async function doPush() {
+  if (pushing && Date.now() - pushStartedAt < PUSH_STALL_MS) {
+    pushAgain = true;
+    // If the push in flight is stuck and never finishes, this retry is what
+    // gets past it once the stall window closes (cleared on the next success).
+    scheduleRetry();
+    return;
+  }
+  const gen = ++pushGen;
+  pushing = true;
+  pushStartedAt = Date.now();
+  try {
+    await pushOnce();
+  } finally {
+    if (gen === pushGen) {
+      pushing = false;
+      if (pushAgain) {
+        pushAgain = false;
+        schedulePush(false);
+      }
+    }
+  }
+}
+
+async function pushOnce() {
   const user = auth.currentUser;
   if (!user) return;
   const local = contentCountsFromLocal();
@@ -473,6 +621,9 @@ async function doPush() {
   // overwriting a full store it had never seen, and only that side needs the
   // gate. A data-holding device writes immediately, so its change reaches
   // Firestore's persisted offline queue and survives short sessions.
+  // (SCR-120: writes are compare-and-set transactions now, which do not queue
+  // offline. A short session's change waits in localStorage instead and ships
+  // on the next session's first server snapshot — see the listener.)
   if (!serverSnapSeen && totalContent(local) === 0) {
     pushHeld = true;
     return;
@@ -519,13 +670,21 @@ async function doPush() {
     }
     if (cloudVals[key] !== v) changed.push({ key, v });
   });
+  // Loop breaker (SCR-120): a key whose local value is exactly what this
+  // device last wrote, while the cloud's doc is a compare-and-set doc, has
+  // nothing to add — that doc was written by a device that merged ours. Only
+  // the bytes differ (per-device mark order, device-local fields), and pushing
+  // them made two open devices rewrite each other forever.
+  const fresh = changed.filter(
+    (c) => !(lastWritten[c.key] === c.v && typeof seenSeq[c.key] === "number")
+  );
   // Any doc whose packed value would breach Firestore's ceiling is reported by
   // NAME and size, and the rest of the batch still ships — one oversized value
   // must never silently sink every other key's sync, and it must never be
   // silent (Jul 24's lesson, now enforced before the wire instead of diagnosed
   // after it).
   const oversized: string[] = [];
-  const writable = changed.filter((c) => {
+  const writable = fresh.filter((c) => {
     const packedLen = packValue(c.v).length;
     if (packedLen <= DOC_VALUE_CEILING) return true;
     if (c.key !== BOOKS_KEY)
@@ -535,42 +694,114 @@ async function doPush() {
   if (oversized.length)
     state.lastError = "too large to sync: " + oversized.join(", ");
   if (!writable.length) {
+    // Nothing left to send means nothing is held: stand the retry down.
+    resetRetry();
     if (oversized.length) emit();
     return;
   }
   state.syncing = true;
   emit();
   try {
-    const batch = writeBatch(db);
     const now = Date.now();
+    // Compressed once, outside the transaction body (which may re-run).
+    const packed: Record<string, string> = {};
     writable.forEach((c) => {
-      batch.set(doc(db, "users", user.uid, "sync", c.key), {
-        v: packValue(c.v),
-        updatedAt: now,
-        writer: deviceId,
-      });
+      packed[c.key] = packValue(c.v);
     });
-    await batch.commit();
+    const serverConfirmed = serverSnapSeen;
+    const versionsRef = doc(db, "users", user.uid, "sync", VERSIONS_KEY);
+    // Compare-and-set (SCR-120): read the server's sequence per key, write
+    // only the keys it still agrees this device has merged, and bump their
+    // sequence in the same atomic commit. The body is pure over its reads —
+    // Firestore re-runs it if the versions doc moves underneath it.
+    const result = await runTransaction(db, async (tx) => {
+      const vsnap: any = await tx.get(versionsRef);
+      const vdata = vsnap && vsnap.exists() ? vsnap.data() : null;
+      const cur: Record<string, number> =
+        vdata && vdata.seq && typeof vdata.seq === "object" ? vdata.seq : {};
+      const next: Record<string, number> = { ...cur };
+      const ok: Array<{ key: string; v: string; seq: number }> = [];
+      const held: string[] = [];
+      const allowed = writable.filter((c) => {
+        const current =
+          typeof cur[c.key] === "number" ? cur[c.key] : undefined;
+        if (casAllows(seenSeq[c.key], current, serverConfirmed)) return true;
+        held.push(c.key);
+        return false;
+      });
+      // The clean-monolith short-circuit above reads "monolith written ⇒ its
+      // shards written" — true while a push was all-or-nothing. With per-key
+      // holds, a written monolith beside a held shard would hide that shard
+      // from every later dirty check. So a held shard (or meta) holds the
+      // monolith with it.
+      const bookHeld = held.some(
+        (k) => k === BOOKS_META_KEY || k.indexOf(BOOK_SHARD_PREFIX) === 0
+      );
+      allowed.forEach((c) => {
+        if (bookHeld && c.key === BOOKS_KEY) {
+          held.push(c.key);
+          return;
+        }
+        const current =
+          typeof cur[c.key] === "number" ? cur[c.key] : undefined;
+        const seq = (current || 0) + 1;
+        next[c.key] = seq;
+        ok.push({ key: c.key, v: c.v, seq });
+      });
+      if (ok.length) {
+        ok.forEach((c) => {
+          tx.set(doc(db, "users", user.uid, "sync", c.key), {
+            v: packed[c.key],
+            updatedAt: now,
+            writer: deviceId,
+            seq: c.seq,
+          });
+        });
+        // No `v` field: older builds' listeners skip this doc outright.
+        tx.set(versionsRef, { seq: next, updatedAt: now, writer: deviceId });
+      }
+      return { ok, held };
+    });
     // The cloud now holds these values — keep the dirty check and emptiness
     // guards tracking reality even before our writes echo back.
-    writable.forEach((c) => {
+    result.ok.forEach((c) => {
       cloudVals[c.key] = c.v;
+      seenSeq[c.key] = c.seq;
+      lastWritten[c.key] = c.v;
     });
-    try {
-      localStorage.setItem("scribal_sync_seen", new Date().toISOString());
-    } catch {}
-    state.lastSync = now;
-    // An oversized-key report from this same pass survives the batch success —
-    // the other keys shipping is not the oversized one syncing.
-    if (!oversized.length) state.lastError = null;
+    if (result.ok.length) {
+      try {
+        localStorage.setItem("scribal_sync_seen", new Date().toISOString());
+      } catch {}
+      state.lastSync = now;
+      // An oversized-key report from this same pass survives the batch
+      // success — the other keys shipping is not the oversized one syncing.
+      // Only a real write clears an error; a pass that held everything
+      // wrote nothing and proves nothing.
+      if (!oversized.length) state.lastError = null;
+    }
+    // Held keys are not errors: another device wrote since this one last
+    // merged. The listener brings that doc, the merge makes the union, and
+    // the union is pushed; the retry is the safety net if it is slow.
+    if (result.held.length) {
+      pushHeld = true;
+      scheduleRetry();
+    } else resetRetry();
   } catch (e: any) {
-    // A rejected write is a fact the user must be able to see — the
-    // single-doc era swallowed these and the sync UI lied for days.
-    state.lastError = (e && (e.message || e.code)) || "write failed";
-    try {
-      // eslint-disable-next-line no-console
-      console.error("Scribal cloud push failed:", e);
-    } catch {}
+    if (isTransient(e)) {
+      // Offline or the connection dropped: nothing was written and nothing
+      // is lost (the change is in localStorage). Try again shortly.
+      pushHeld = true;
+      scheduleRetry();
+    } else {
+      // A rejected write is a fact the user must be able to see — the
+      // single-doc era swallowed these and the sync UI lied for days.
+      state.lastError = (e && (e.message || e.code)) || "write failed";
+      try {
+        // eslint-disable-next-line no-console
+        console.error("Scribal cloud push failed:", e);
+      } catch {}
+    }
   } finally {
     state.syncing = false;
     emit();

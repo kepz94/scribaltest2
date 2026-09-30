@@ -20,6 +20,15 @@ let mockCommitImpl: () => Promise<void> = () => Promise.resolve();
 let mockCommitCount = 0;
 // getDoc(users/{uid}) — the legacy single-doc read for migration.
 let mockLegacyDoc: { payload?: string } | undefined = undefined;
+// SCR-120: pushes are compare-and-set transactions. Data-doc sets still land
+// in mockBatchWrites (so every assertion above about WHICH DATA KEYS were
+// written keeps its meaning); the versions-doc write lands here instead.
+// mockVersionsDoc is the server's users/{uid}/sync/_versions body, read by
+// tx.get and replaced on each successful commit.
+let mockVersionWrites: Array<{ path: string; body: any }> = [];
+let mockVersionsDoc: { seq: Record<string, number> } | undefined = undefined;
+// Replaces the transaction's read — reject it to model an offline client.
+let mockTxGetImpl: (() => Promise<void>) | null = null;
 
 jest.mock("firebase/app", () => ({ initializeApp: () => ({}) }));
 jest.mock("firebase/auth", () => ({
@@ -61,6 +70,40 @@ jest.mock("firebase/firestore", () => ({
     },
   }),
   enableIndexedDbPersistence: () => Promise.resolve(),
+  runTransaction: (
+    _db: unknown,
+    fn: (tx: unknown) => Promise<unknown>
+  ) => {
+    const dataSets: Array<{ path: string; body: any }> = [];
+    const versionSets: Array<{ path: string; body: any }> = [];
+    const tx = {
+      get: (ref: { __path: string }) =>
+        (mockTxGetImpl ? mockTxGetImpl() : Promise.resolve()).then(() => ({
+          exists: () =>
+            /\/_versions$/.test(ref.__path) && mockVersionsDoc !== undefined,
+          data: () => mockVersionsDoc,
+        })),
+      set: (ref: { __path: string }, body: any) => {
+        (/\/_versions$/.test(ref.__path) ? versionSets : dataSets).push({
+          path: ref.__path,
+          body,
+        });
+        return tx;
+      },
+    };
+    return fn(tx).then((res) => {
+      // A transaction that wrote nothing commits nothing.
+      if (!dataSets.length && !versionSets.length) return res;
+      dataSets.forEach((s) => mockBatchWrites.push(s));
+      versionSets.forEach((s) => mockVersionWrites.push(s));
+      mockCommitCount++;
+      return mockCommitImpl().then(() => {
+        if (versionSets.length)
+          mockVersionsDoc = versionSets[versionSets.length - 1].body;
+        return res;
+      });
+    });
+  },
 }));
 
 // ---- helpers ---------------------------------------------------------------
@@ -80,6 +123,9 @@ function collSnap(opts: {
   docs?: Record<string, string>;
   writer?: string;
   pending?: boolean;
+  // SCR-120: the compare-and-set sequence stamped on each doc (absent = a
+  // doc written without one, i.e. pre-SCR-120 or an older build).
+  seq?: Record<string, number>;
 }) {
   const entries = Object.keys(opts.docs || {}).map((key) => ({
     type: "added",
@@ -89,6 +135,7 @@ function collSnap(opts: {
       data: () => ({
         v: (opts.docs as Record<string, string>)[key],
         writer: opts.writer || "other_device",
+        seq: opts.seq ? opts.seq[key] : undefined,
       }),
     },
   }));
@@ -103,12 +150,16 @@ function collSnap(opts: {
 // mockSnapCb captured, but NO snapshot has been delivered yet.
 function bootSignedIn(hooks?: {
   mergeRemoteBooks?: (json: string) => void;
+  mergeRemoteStudies?: (data: Record<string, string | null>) => void;
   legacy?: { payload?: string };
 }) {
   jest.resetModules();
   mockBatchWrites = [];
   mockCommitCount = 0;
   mockCommitImpl = () => Promise.resolve();
+  mockVersionWrites = [];
+  mockVersionsDoc = undefined;
+  mockTxGetImpl = null;
   mockLegacyDoc = hooks && hooks.legacy;
   mockAuthCb = null;
   mockSnapCb = null;
@@ -124,7 +175,7 @@ function bootSignedIn(hooks?: {
     ],
     mergeRemoteBooks: (hooks && hooks.mergeRemoteBooks) || jest.fn(),
     vaultMergeRemote: jest.fn(),
-    mergeRemoteStudies: jest.fn(),
+    mergeRemoteStudies: (hooks && hooks.mergeRemoteStudies) || jest.fn(),
   });
   cloud.initCloud();
   mockAuth.currentUser = { uid: "u1", email: "kepu@example.com" };
@@ -144,8 +195,11 @@ function writtenValue(key: string): string | undefined {
 }
 
 // Let the microtask queue drain (getDoc/commit promises) under fake timers.
+// SCR-120: a push is now a transaction (read → body → commit → bookkeeping,
+// inside the one-push-at-a-time wrapper), several more promise hops than the
+// old batch.commit — so drain deeper.
 async function flush() {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  for (let i = 0; i < 25; i++) await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -571,4 +625,461 @@ test("an oversized MONOLITH is not an error — the shards are the store of reco
   expect(keys).not.toContain("scribal_books_v1");
   const last = seen[seen.length - 1];
   expect(last.lastError).toBeNull();
+});
+
+// ---- SCR-120: compare-and-set --------------------------------------------------
+// Sep 30 2026: study done on the work PC vanished on the phone at home and came
+// back only when the work PC reopened. The phone took its hours-old offline
+// cache for the cloud, pushed before the server snapshot landed, and a blind
+// set() replaced the work PC's newer doc; the next snapshot was the phone's own
+// write, so the union merge never ran. Pushes are now transactions that write a
+// key only while the server's sequence for it is the one this device merged.
+// These drive the REAL useMarks reducer as the books merge, so "union" below is
+// the app's union, not a stand-in.
+
+const { reducer: marksReducer } = require("./hooks/useMarks");
+
+const SHARD = "scribal_books_v1.b.master";
+
+const bookWith = (ids: string[]) => ({
+  id: "master",
+  name: "Master Book",
+  locked: true,
+  marks: ids.map((id) => ({ id, reference: "Genesis 1:1" })),
+  colorLabels: {},
+  notes: {},
+  createdAt: 1000,
+  lastStudiedAt: 1000,
+});
+
+const shardWith = (ids: string[]) =>
+  JSON.stringify({ books: { master: bookWith(ids) } });
+
+// A device whose books live in the real reducer and persist to localStorage
+// exactly as useMarks' persist effect writes them.
+function booksDevice(ids: string[]) {
+  let S: any = {
+    books: { master: bookWith(ids) },
+    order: ["master"],
+    activeId: "master",
+    deletedBooks: {},
+    past: [],
+    future: [],
+  };
+  const persist = () =>
+    localStorage.setItem(
+      "scribal_books_v1",
+      JSON.stringify({
+        books: S.books,
+        order: S.order,
+        activeId: S.activeId,
+        deletedBooks: S.deletedBooks,
+      })
+    );
+  persist();
+  return {
+    merge: (json: string) => {
+      S = marksReducer(S, { type: "mergeRemoteBooks", json });
+      persist();
+    },
+    mark: (id: string) => {
+      const b = S.books.master;
+      S = {
+        ...S,
+        books: {
+          ...S.books,
+          master: { ...b, marks: b.marks.concat([{ id, reference: "Genesis 1:2" }]) },
+        },
+      };
+      persist();
+    },
+  };
+}
+
+const idsOf = (stored: string | undefined) => {
+  if (!stored) return [];
+  const raw =
+    stored.indexOf("z1:") === 0 ? LZ.decompressFromBase64(stored.slice(3)) : stored;
+  return JSON.parse(raw).books.master.marks.map((m: any) => m.id).sort();
+};
+
+// The server confirming a cached view with nothing new: a metadata-only event.
+const serverConfirms = () => ({
+  metadata: { fromCache: false },
+  empty: false,
+  docChanges: () => [],
+});
+
+test("SCR-120 THE BUG: a stale cache + an edit before the server snapshot never overwrites the work PC's newer doc", async () => {
+  // Phone's last-synced state: m1, its own write at seq 1, still in its cache.
+  const phone = booksDevice(["m1"]);
+  const cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  const me = localStorage.getItem("scribal_device_id") as string;
+  // During the day the work PC wrote w1, w2: the server is at seq 2.
+  mockVersionsDoc = { seq: { [SHARD]: 2 } };
+  mockSnapCb!(
+    collSnap({ fromCache: true, docs: { [SHARD]: shardWith(["m1"]) }, writer: me, seq: { [SHARD]: 1 } })
+  );
+  // Kepu marks a verse at once, while the listener is still reconnecting.
+  phone.mark("p1");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // Held: the server moved past what this phone merged. Nothing overwritten.
+  expect(writtenKeys()).not.toContain(SHARD);
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(2);
+  // The listener delivers the work PC's doc; the real merge makes the union.
+  mockSnapCb!(
+    collSnap({ docs: { [SHARD]: shardWith(["m1", "w1", "w2"]) }, writer: "work_pc", seq: { [SHARD]: 2 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // The union ships on top of the work PC's doc — both days of study survive.
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1", "w1", "w2"]);
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(3);
+});
+
+test("SCR-120 trigger B: just OPENING the phone never overwrites the work PC's newer doc", async () => {
+  // Phone merged the work PC's morning doc (seq 1) earlier; its cache still
+  // holds that doc. The work PC has since written seq 2.
+  const phone = booksDevice(["m1", "p0", "w0"]);
+  bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  mockVersionsDoc = { seq: { [SHARD]: 2 } };
+  mockSnapCb!(
+    collSnap({ fromCache: true, docs: { [SHARD]: shardWith(["m1", "w0"]) }, writer: "work_pc", seq: { [SHARD]: 1 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain(SHARD);
+  mockSnapCb!(
+    collSnap({ docs: { [SHARD]: shardWith(["m1", "w0", "w1", "w2"]) }, writer: "work_pc", seq: { [SHARD]: 2 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p0", "w0", "w1", "w2"]);
+});
+
+test("SCR-120 resume: a device whose listener slept cannot overwrite a doc written since", async () => {
+  const phone = booksDevice(["m1"]);
+  const cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  const me = localStorage.getItem("scribal_device_id") as string;
+  mockVersionsDoc = { seq: { [SHARD]: 1 } };
+  // A live, server-confirmed view earlier in the session...
+  mockSnapCb!(collSnap({ docs: { [SHARD]: shardWith(["m1"]) }, writer: me, seq: { [SHARD]: 1 } }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // ...then the app sat in the background while another device wrote seq 2.
+  mockVersionsDoc = { seq: { [SHARD]: 2 } };
+  phone.mark("p1");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain(SHARD);
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(2);
+});
+
+test("SCR-120 keeps SCR-83: a change from a short session ships on the NEXT session's first server confirmation", async () => {
+  const phone = booksDevice(["m1"]);
+  let cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  const me = localStorage.getItem("scribal_device_id") as string;
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  mockVersionsDoc = { seq: { [SHARD]: 1 } };
+  mockSnapCb!(collSnap({ docs: { [SHARD]: shardWith(["m1"]) }, writer: me, seq: { [SHARD]: 1 } }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // Session 1: mark, but the phone is offline and iOS suspends it.
+  mockTxGetImpl = () =>
+    Promise.reject(Object.assign(new Error("client is offline"), { code: "unavailable" }));
+  phone.mark("p1");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain(SHARD);
+  // Offline is not a failed write — nothing alarming on the status line.
+  expect(seen[seen.length - 1].lastError).toBeNull();
+  // The process dies (timers with it). Session 2 on the same device.
+  jest.clearAllTimers();
+  cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  mockVersionsDoc = { seq: { [SHARD]: 1 } };
+  // Cache answers first (own doc — nothing to apply), then the server
+  // confirms that view with no changes. That confirmation ships p1.
+  mockSnapCb!(
+    collSnap({ fromCache: true, docs: { [SHARD]: shardWith(["m1"]) }, writer: me, seq: { [SHARD]: 1 } })
+  );
+  mockSnapCb!(serverConfirms());
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1"]);
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(2);
+});
+
+test("SCR-120 covers every key, not just books: a stale study list is held against a newer server copy", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  const me = localStorage.getItem("scribal_device_id") as string;
+  mockVersionsDoc = { seq: { scribal_studies_v1: 2, scribal_books_v1: 1 } };
+  mockSnapCb!(
+    collSnap({
+      fromCache: true,
+      docs: { scribal_studies_v1: ONE_STUDY, scribal_books_v1: BOOKS_WITH_MARK },
+      writer: me,
+      seq: { scribal_studies_v1: 1, scribal_books_v1: 1 },
+    })
+  );
+  localStorage.setItem(
+    "scribal_studies_v1",
+    JSON.stringify([{ id: "s1", name: "Faith" }, { id: "s2", name: "Hope" }])
+  );
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain("scribal_studies_v1");
+  // Once the newer server copy has been merged, the push goes through.
+  mockSnapCb!(
+    collSnap({ docs: { scribal_studies_v1: ONE_STUDY }, writer: "work_pc", seq: { scribal_studies_v1: 2 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).toContain("scribal_studies_v1");
+  expect(mockVersionsDoc!.seq.scribal_studies_v1).toBe(3);
+});
+
+test("SCR-120 loop breaker: the same content in different bytes from another device is never written back", async () => {
+  const phone = booksDevice(["a1", "a2"]);
+  bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  // New account: this device seeds the cloud (seq 1 for each key).
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(10);
+  await flush();
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(1);
+  const commitsAfterSeed = mockCommitCount;
+  // Another device merged ours and wrote the SAME marks in its own order.
+  // The server's versions doc moves with each of its writes, so the
+  // compare-and-set check WOULD allow a write-back — only the loop breaker
+  // stands in the way.
+  for (let round = 0; round < 3; round++) {
+    mockVersionsDoc = { seq: { ...mockVersionsDoc!.seq, [SHARD]: 2 + round } };
+    mockSnapCb!(
+      collSnap({ docs: { [SHARD]: shardWith(["a2", "a1"]) }, writer: "other", seq: { [SHARD]: 2 + round } })
+    );
+    jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+    await flush();
+  }
+  // Before SCR-120 every one of these rounds wrote the shard back.
+  expect(mockCommitCount).toBe(commitsAfterSeed);
+});
+
+test("SCR-120 loop breaker: a merge that ADDS content is pushed once, and its echo is not", async () => {
+  const phone = booksDevice(["a1"]);
+  bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  jest.advanceTimersByTime(10);
+  await flush();
+  const base = mockCommitCount;
+  // The other device adds b1 on top of our a1.
+  mockVersionsDoc = { seq: { ...mockVersionsDoc!.seq, [SHARD]: 2 } };
+  mockSnapCb!(
+    collSnap({ docs: { [SHARD]: shardWith(["b1", "a1"]) }, writer: "other", seq: { [SHARD]: 2 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(mockCommitCount).toBe(base + 1); // our union, in our order
+  expect(idsOf(writtenValue(SHARD))).toEqual(["a1", "b1"]);
+  // It answers with the same union in its order: silence from here on.
+  mockVersionsDoc = { seq: { ...mockVersionsDoc!.seq, [SHARD]: 4 } };
+  mockSnapCb!(
+    collSnap({ docs: { [SHARD]: shardWith(["b1", "a1"]) }, writer: "other", seq: { [SHARD]: 4 } })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS * 3);
+  await flush();
+  expect(mockCommitCount).toBe(base + 1);
+});
+
+test("SCR-120 offline: a failed transaction is retried on its own once the connection is back", async () => {
+  const phone = booksDevice(["m1"]);
+  const cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  const me = localStorage.getItem("scribal_device_id") as string;
+  mockVersionsDoc = { seq: { [SHARD]: 1 } };
+  mockSnapCb!(collSnap({ docs: { [SHARD]: shardWith(["m1"]) }, writer: me, seq: { [SHARD]: 1 } }));
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  mockTxGetImpl = () =>
+    Promise.reject(Object.assign(new Error("client is offline"), { code: "unavailable" }));
+  phone.mark("p1");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain(SHARD);
+  mockTxGetImpl = null; // back online
+  jest.advanceTimersByTime(5000 + 10); // first backoff step
+  await flush();
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1"]);
+});
+
+test("SCR-120 a doc of unknown age (no seq) from the cache waits for the server's confirmation", async () => {
+  const phone = booksDevice(["m1", "p1"]);
+  bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  // Pre-SCR-120 doc in the cache; the versions doc does not exist yet.
+  mockSnapCb!(
+    collSnap({ fromCache: true, docs: { [SHARD]: shardWith(["m1"]) }, writer: "work_pc" })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).not.toContain(SHARD);
+  // The monolith is held WITH its shard: written alone, the clean-monolith
+  // short-circuit would hide the held shard from every later dirty check.
+  expect(writtenKeys()).not.toContain("scribal_books_v1");
+  mockSnapCb!(serverConfirms());
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1"]);
+  expect(writtenKeys()).toContain("scribal_books_v1");
+  expect(mockVersionsDoc!.seq[SHARD]).toBe(1);
+});
+
+test("SCR-120 the versions doc carries no `v` (older builds skip it) and is never routed to a merge", async () => {
+  const mergeRemoteBooks = jest.fn();
+  const mergeRemoteStudies = jest.fn();
+  const cloud = bootSignedIn({ mergeRemoteBooks, mergeRemoteStudies });
+  await flush();
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  const body = mockVersionWrites[mockVersionWrites.length - 1].body;
+  expect(body.v).toBeUndefined();
+  expect(typeof body.seq.scribal_books_v1).toBe("number");
+  // The same doc arriving through the listener changes nothing.
+  mockSnapCb!({
+    metadata: { fromCache: false },
+    empty: false,
+    docChanges: () => [
+      {
+        type: "added",
+        doc: { id: "_versions", metadata: { hasPendingWrites: false }, data: () => body },
+      },
+    ],
+  });
+  await flush();
+  expect(mergeRemoteBooks).not.toHaveBeenCalled();
+  expect(mergeRemoteStudies).not.toHaveBeenCalled();
+});
+
+test("SCR-120 casAllows maps every branch", () => {
+  const { casAllows } = require("./cloudSync");
+  // Merged a compare-and-set doc.
+  expect(casAllows(3, 3, false)).toBe(true); // nobody wrote since
+  expect(casAllows(3, 4, true)).toBe(false); // somebody did
+  expect(casAllows(3, undefined, true)).toBe(true); // versions doc was reset
+  expect(casAllows(3, undefined, false)).toBe(false);
+  // Merged a doc of unknown age.
+  expect(casAllows("legacy", undefined, true)).toBe(true);
+  expect(casAllows("legacy", 5, true)).toBe(true);
+  expect(casAllows("legacy", undefined, false)).toBe(false);
+  expect(casAllows("legacy", 5, false)).toBe(false);
+  // Never seen the key.
+  expect(casAllows(undefined, undefined, false)).toBe(true);
+  expect(casAllows(undefined, 1, true)).toBe(false);
+});
+
+test("SCR-120 a transaction stuck behind a proxy does not block sync: the next push goes through after the stall window", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+  mockSnapCb!(collSnap({ fromCache: false, docs: {} }));
+  // The first transaction's read never answers.
+  mockTxGetImpl = () => new Promise<void>(() => {});
+  jest.advanceTimersByTime(10);
+  await flush();
+  expect(mockCommitCount).toBe(0);
+  mockTxGetImpl = null;
+  localStorage.setItem("scribal_studies_v1", ONE_STUDY);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(mockCommitCount).toBe(0); // still inside the stall window — deferred
+  // No further edits: the deferral's own retry gets past the stuck push.
+  for (let i = 0; i < 8; i++) {
+    jest.advanceTimersByTime(10000);
+    await flush();
+  }
+  expect(writtenKeys()).toContain("scribal_studies_v1");
+});
+
+test("SCR-120 a transaction that loses to concurrent writes is retried, not reported as a failure", async () => {
+  for (const code of ["aborted", "failed-precondition", "deadline-exceeded"]) {
+    const cloud = bootSignedIn();
+    await flush();
+    const seen: any[] = [];
+    cloud.onCloudState((s: any) => seen.push(s));
+    localStorage.clear();
+    localStorage.setItem("scribal_books_v1", BOOKS_WITH_MARK);
+    mockTxGetImpl = () => Promise.reject(Object.assign(new Error(code), { code }));
+    cloud.noteLocalChange();
+    jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+    await flush();
+    expect(seen[seen.length - 1].lastError).toBeNull();
+    mockTxGetImpl = null;
+    jest.advanceTimersByTime(5000 + 10);
+    await flush();
+    expect(writtenKeys()).toContain("scribal_books_v1");
+    jest.clearAllTimers();
+  }
+});
+
+test("SCR-120 only a real write clears an error — a pass that held every key leaves it showing", async () => {
+  const phone = booksDevice(["m1"]);
+  const cloud = bootSignedIn({ mergeRemoteBooks: phone.merge });
+  await flush();
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  const me = localStorage.getItem("scribal_device_id") as string;
+  mockVersionsDoc = { seq: { [SHARD]: 1, scribal_books_v1: 1, "scribal_books_v1.meta": 1 } };
+  mockSnapCb!(
+    collSnap({
+      docs: { [SHARD]: shardWith(["m1"]) },
+      writer: me,
+      seq: { [SHARD]: 1 },
+    })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  // A genuine rejected write puts an error on the status line.
+  mockCommitImpl = () => Promise.reject(new Error("PERMISSION_DENIED"));
+  phone.mark("p1");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(seen[seen.length - 1].lastError).toBe("PERMISSION_DENIED");
+  // Next pass: another device has moved every book key, so all are held.
+  mockCommitImpl = () => Promise.resolve();
+  mockVersionsDoc = { seq: { [SHARD]: 2, scribal_books_v1: 2, "scribal_books_v1.meta": 2 } };
+  phone.mark("p2");
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(seen[seen.length - 1].lastError).toBe("PERMISSION_DENIED");
+  // The newer doc arrives, the union is written — THAT clears it.
+  mockSnapCb!(
+    collSnap({
+      docs: { [SHARD]: shardWith(["m1", "w1"]) },
+      writer: "work_pc",
+      seq: { [SHARD]: 2 },
+    })
+  );
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1", "p2", "w1"]);
+  expect(seen[seen.length - 1].lastError).toBeNull();
 });
