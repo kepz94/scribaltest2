@@ -64,6 +64,11 @@ import {
   totalContent,
 } from "./sync";
 import type { ContentCounts } from "./sync";
+import {
+  booksSaveFailed,
+  readStoredValue,
+  STORAGE_FULL_MESSAGE,
+} from "./booksStore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDz_Xhisj5POlSc0VFTDQ936Dm3p_j4stM",
@@ -615,6 +620,22 @@ async function doPush() {
 async function pushOnce() {
   const user = auth.currentUser;
   if (!user) return;
+  // SCR-121: while the last save of the book store failed (storage full),
+  // what is stored is older than what this device shows — so no book key is
+  // uploaded at all (a stale upload over the cloud was the Oct 1 data loss),
+  // and the status line says so. Every other key still syncs. This keeps the
+  // invariant the own-writer skip relies on: a device's uploads are always
+  // in its own storage.
+  const booksHeld = booksSaveFailed();
+  if (booksHeld) {
+    if (state.lastError !== STORAGE_FULL_MESSAGE) {
+      state.lastError = STORAGE_FULL_MESSAGE;
+      emit();
+    }
+  } else if (state.lastError === STORAGE_FULL_MESSAGE) {
+    state.lastError = null;
+    emit();
+  }
   const local = contentCountsFromLocal();
   // SCR-68 gate, narrowed for SCR-83: only a device that LOOKS EMPTY waits
   // for a server-confirmed snapshot — the wipe incident was an empty device
@@ -642,10 +663,10 @@ async function pushOnce() {
   // is written (SCR-10's concern, solved structurally).
   const changed: Array<{ key: string; v: string }> = [];
   backupKeys.forEach((key) => {
-    let v: string | null = null;
-    try {
-      v = localStorage.getItem(key);
-    } catch {}
+    // readStoredValue: the book store is compressed at rest (SCR-121); the
+    // cloud carries its raw JSON, exactly as before.
+    if (key === BOOKS_KEY && booksHeld) return;
+    const v: string | null = readStoredValue(key);
     if (v === null) return; // never sync deletions of whole keys
     if (key === BOOKS_KEY) {
       // The book store syncs as per-book shards + a tombstone meta doc, each
@@ -693,6 +714,8 @@ async function pushOnce() {
   });
   if (oversized.length)
     state.lastError = "too large to sync: " + oversized.join(", ");
+  // Storage full outranks it: that one means this device is losing changes.
+  if (booksHeld) state.lastError = STORAGE_FULL_MESSAGE;
   if (!writable.length) {
     // Nothing left to send means nothing is held: stand the retry down.
     resetRetry();
@@ -777,8 +800,9 @@ async function pushOnce() {
       // An oversized-key report from this same pass survives the batch
       // success — the other keys shipping is not the oversized one syncing.
       // Only a real write clears an error; a pass that held everything
-      // wrote nothing and proves nothing.
-      if (!oversized.length) state.lastError = null;
+      // wrote nothing and proves nothing. Nor does a write of other keys
+      // clear storage-full while the book store still is not saving.
+      if (!oversized.length && !booksHeld) state.lastError = null;
     }
     // Held keys are not errors: another device wrote since this one last
     // merged. The listener brings that doc, the merge makes the union, and

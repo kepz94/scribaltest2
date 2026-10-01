@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useCallback } from "react";
 import { Mark, MarkStyle, MarkColor } from "../types";
+import { readBooksJson, writeBooksJson } from "../booksStore";
 
 // Stable fallback for books without scopedLabels. An inline `|| {}` mints a
 // new object identity every render, which the shells' syncData effects read
@@ -380,11 +381,6 @@ export function mergeNotes(
   return { notes, noteAt, noteDel, changed: changed || delChanged };
 }
 
-const safeSet = (key: string, value: string) => {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-};
 const safeParse = <T>(raw: string | null, fallback: T): T => {
   if (!raw) return fallback;
   try {
@@ -439,7 +435,9 @@ function stripRetiredScopeFields(
 }
 
 function initState(): State {
-  const saved = safeParse<any>(safeGet("scribal_books_v1"), null);
+  // Through booksStore (SCR-121): the blob is compressed at rest, and a
+  // legacy raw-JSON blob from before that reads unchanged.
+  const saved = safeParse<any>(readBooksJson(), null);
   if (saved && saved.books && saved.books.master) {
     const books: Record<string, StudyBook> = saved.books;
     // Deletions this device already knows about. Applied on load as well as on
@@ -1629,8 +1627,12 @@ export function useMarks() {
     const persistActive = persistBooks[state.activeId]
       ? state.activeId
       : "master";
-    safeSet(
-      "scribal_books_v1",
+    // Through booksStore (SCR-121): saved compressed, and a save that does not
+    // land (storage full) is recorded instead of swallowed — sync then refuses
+    // to upload the stale stored copy, and the status line says so. Until
+    // Oct 1 2026 this was a bare try/catch, and the phone stopped saving for
+    // ten days without a word.
+    writeBooksJson(
       JSON.stringify({
         books: persistBooks,
         order: persistOrder,

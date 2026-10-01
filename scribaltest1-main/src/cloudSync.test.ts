@@ -1083,3 +1083,77 @@ test("SCR-120 only a real write clears an error — a pass that held every key l
   expect(idsOf(writtenValue(SHARD))).toEqual(["m1", "p1", "p2", "w1"]);
   expect(seen[seen.length - 1].lastError).toBeNull();
 });
+
+// ---- SCR-121: the book store is compressed at rest, and a failed save is never uploaded
+// Oct 1 2026: the phone's localStorage filled; every save of the book store
+// failed silently for ten days, and the push — which uploads what it READS
+// from storage — sent the ten-day-old copy over the cloud. Compare-and-set
+// (above) allowed it: the phone HAD merged the latest version, in memory.
+
+test("SCR-121 a compressed book store is uploaded as raw JSON — the cloud never sees the at-rest form", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const store = require("./booksStore");
+  localStorage.setItem("scribal_books_v1", store.encodeBooks(TWO_BOOKS));
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenValue("scribal_books_v1")).toBe(TWO_BOOKS);
+  const shard = JSON.parse(writtenValue("scribal_books_v1.b.sessionA") as string);
+  expect(shard.books.sessionA.notes.k).toBe("<p>session note</p>");
+  writtenKeys().forEach((k) =>
+    expect(String(writtenValue(k)).indexOf("zf1:")).not.toBe(0)
+  );
+});
+
+test("SCR-121 THE FAILURE ITSELF: while the book store is not saving, no book key is uploaded, other keys still are, and the status line says so", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const store = require("./booksStore");
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  // What storage holds: the older copy.
+  store.writeBooksJson(BOOKS_WITH_MARK);
+  // Storage fills; the next save of the book store fails.
+  const realSet = Storage.prototype.setItem;
+  const spy = jest
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === "scribal_books_v1") throw new DOMException("quota", "QuotaExceededError");
+      return realSet.call(this, k, v);
+    });
+  expect(store.writeBooksJson(TWO_BOOKS)).toBe(false);
+  localStorage.setItem("scribal_studies_v1", ONE_STUDY);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  const keys = writtenKeys();
+  expect(keys).toContain("scribal_studies_v1"); // everything else still syncs
+  expect(keys.filter((k) => k.indexOf("scribal_books_v1") === 0)).toEqual([]);
+  expect(seen[seen.length - 1].lastError).toBe(store.STORAGE_FULL_MESSAGE);
+  spy.mockRestore();
+});
+
+test("SCR-121 when saving works again, the book store uploads and the warning clears", async () => {
+  const cloud = bootSignedIn();
+  await flush();
+  const store = require("./booksStore");
+  const seen: any[] = [];
+  cloud.onCloudState((s: any) => seen.push(s));
+  const spy = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("quota", "QuotaExceededError");
+  });
+  store.writeBooksJson(TWO_BOOKS);
+  spy.mockRestore();
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(seen[seen.length - 1].lastError).toBe(store.STORAGE_FULL_MESSAGE);
+  expect(store.writeBooksJson(TWO_BOOKS)).toBe(true);
+  cloud.noteLocalChange();
+  jest.advanceTimersByTime(PUSH_DEBOUNCE_MS + 10);
+  await flush();
+  expect(writtenKeys()).toContain("scribal_books_v1.b.master");
+  expect(writtenValue("scribal_books_v1")).toBe(TWO_BOOKS);
+  expect(seen[seen.length - 1].lastError).toBeNull();
+});

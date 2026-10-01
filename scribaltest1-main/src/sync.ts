@@ -14,6 +14,7 @@
 //     own reading position / scroll when a pulled backup is applied).
 
 import * as drive from "./googleDrive";
+import { readBooksJson, readStoredValue } from "./booksStore";
 
 // Paste your Google OAuth Client ID here (looks like 1234-abc.apps.googleusercontent.com),
 // or set REACT_APP_GOOGLE_CLIENT_ID in your hosting env instead.
@@ -383,13 +384,9 @@ export function contentCountsFromBackup(text: string): ContentCounts {
 
 // Census of this device's localStorage.
 export function contentCountsFromLocal(): ContentCounts {
-  return countContent((k) => {
-    try {
-      return localStorage.getItem(k);
-    } catch {
-      return null;
-    }
-  });
+  // readStoredValue: the book store is compressed at rest (SCR-121); counts
+  // need its JSON. Every other key reads exactly as stored.
+  return countContent((k) => readStoredValue(k));
 }
 
 // Run a Drive operation with the CURRENT valid token, or skip it. Background
@@ -416,11 +413,9 @@ export async function withFreshToken<T>(
 export function buildBackupString(keys: string[], pretty = false): string {
   const data: Record<string, string | null> = {};
   keys.forEach((k) => {
-    try {
-      data[k] = localStorage.getItem(k);
-    } catch {
-      data[k] = null;
-    }
+    // Backups (the downloaded file AND the Drive payload) always carry the
+    // book store as raw JSON, never its compressed at-rest form (SCR-121).
+    data[k] = readStoredValue(k);
   });
   const payload = {
     app: "scribal",
@@ -501,9 +496,7 @@ export async function pushToDrive(
 ): Promise<PushResult> {
   const remoteText = await withFreshToken((tok) => drive.loadData(tok));
   const base = Date.parse(localStorage.getItem("scribal_sync_seen") || "") || 0;
-  const localMarks = countBookMarksFromJson(
-    localStorage.getItem("scribal_books_v1")
-  );
+  const localMarks = countBookMarksFromJson(readBooksJson());
   const localStudies = countStudiesFromJson(
     localStorage.getItem("scribal_studies_v1")
   );
@@ -586,9 +579,7 @@ export async function pullIfNewer(
       parsed && parsed.exportedAt ? Date.parse(parsed.exportedAt) : 0;
     const seen =
       Date.parse(localStorage.getItem("scribal_sync_seen") || "") || 0;
-    const localMarks = countBookMarksFromJson(
-      localStorage.getItem("scribal_books_v1")
-    );
+    const localMarks = countBookMarksFromJson(readBooksJson());
     const localStudies = countStudiesFromJson(
       localStorage.getItem("scribal_studies_v1")
     );

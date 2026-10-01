@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { readBooksJson } from "./booksStore";
 import { getScriptures, volumesProxy } from "./data/scripturesStore";
 import {
   Mark,
@@ -4137,9 +4138,8 @@ export default function MobileApp() {
 
   // One-look diagnostic: compares what THIS device has vs what's in the cloud.
   const runDiag = async () => {
-    const localMarks = countBookMarksFromJson(
-      localStorage.getItem("scribal_books_v1")
-    );
+    // Through booksStore: the blob is compressed at rest (SCR-121).
+    const localMarks = countBookMarksFromJson(readBooksJson());
     const seen = localStorage.getItem("scribal_sync_seen") || "(never)";
     setDiag("Phone: " + localMarks + " marks. Checking cloud…");
     try {
